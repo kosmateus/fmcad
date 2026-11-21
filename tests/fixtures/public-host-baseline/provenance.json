@@ -78,5 +78,53 @@
   "src/catalog/index.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "6ceefc220d4f3b4631a59f132327b8b54a0c97e8793fc2bf90cfaa9473afbe00"
+  },
+  "src/ui.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "0bfa65e34ddc8af4e368135e8c2d9287aa26d63a3701310b182828ab55fdf34a"
+  },
+  "src/entrypoints/cli/application.ts": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "9afb3674c834fe1a42f513b7280050383d0b7723458594e9c2818a8a56a61d18"
+  },
+  "src/console.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "b956e68cd3ca91a87a22843fa254f06ee846932904396cb370387f7170a425e1"
+  },
+  "src/console-project.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "db5b27d93d2ab8308d5e51486fb21d9cabbc32999c1ebce1cc9a98bc46b2eb90"
+  },
+  "src/i18n.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "88e159c2a64fe65589b2696fa79cdcdd467ca0e7af0709334bbcd0020fd81e44"
+  },
+  "src/opencode/presence.cjs": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "3ce3b706253f373dc9916363bd191e37937ba2da90e493568baa6816811e9b54"
+  },
+  "src/opencode/project-logger.cjs": {
+    "commit": "7cc23f1e19207ab268aaaf1eb4795d33196a5a6d",
+    "sha256": "33d7ef3c69bf2290ae4fdf44a1e4366c7e98437539bbae79ccee38d75216547d"
+  },
+  "src/cad-input.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "aa83a8beea9ed36777e51b9721e2232231083a3003e612690928ba83263d749b"
+  },
+  "src/addin-client.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "efb1f8e1440dd15c9c5b5927c185d5022aa92b784d866a26f76876425e8245fc"
+  },
+  "src/backends.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "5e331fac465a76a7a4e72b26f03f4f26f682281f8ad0b72013bbafe819d8d940"
+  },
+  "src/addin-bridge.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "9b4e2b75b578362c578400ac25b0287fb463940155d76639d7f38a459dc7ee9f"
+  },
+  "src/docops.js": {
+    "commit": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sha256": "02640ab227f04ac596824939b8ba766fd405328d320600af17a60cae4a69777c"
   }
 }

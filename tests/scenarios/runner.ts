@@ -1,3 +1,20 @@
+import { spawn } from "node:child_process";
+import assert from "node:assert/strict";
+import {
+  cliSettlementTimeoutMs,
+  legacyIntents,
+  recordCliSettlement,
+  recordCliSettlementFailure,
+  recoverLegacyInvocations,
+  writeHandoff,
+  childProcessIdentity,
+  type LegacyLease,
+} from "./legacy-handoff";
+import { commandResult, recoveredCommandResult } from "./command-result";
+import {
+  resolveCleanupHold,
+  type CleanupHoldPorts,
+} from "./cleanup-hold-resolution";
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -7,16 +24,32 @@ import type {
   FixtureFolder,
   Owner,
   ScenarioBackend,
+  ScriptRequest,
 } from "./contracts";
 import { record, text } from "./contracts";
 import * as programs from "./programs";
-import { boundedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
+import {
+  captureOriginalView,
+  restoreOriginalView,
+  prepareCaptureView,
+  verifiedViewCapture,
+  verifiedViewRefusal,
+  selectViewCapture,
+  viewCapturePlanFile,
+  assertViewReadmission,
+} from "./original-view-programs";
+import { scopedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
 import * as savedPrograms from "./saved-programs";
+import {
+  savedIdentityTransition,
+  type SavedIdentityTransition,
+} from "./saved-identity";
 import {
   cleanupSavedFile,
   observeSavedFile,
   recoveredFile,
   resultValue,
+  defaultCloudPolling,
   saveIntent,
   UnsettledCloudOperation,
   SavedEvidenceError,
@@ -24,8 +57,21 @@ import {
 import { revisionProgram, recoverRevision } from "./revision";
 import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
+import {
+  assertFencedClosedDocumentInventory,
+  assertReceiptBoundDocumentInventory,
+  assertFencedDocumentInventory,
+  assertOwnedUnsavedDocument,
+  currentProcessIdentity,
+  discoverOwnedUnsavedFixtureProofs,
+  exactScenarioRequestId,
+  prepareSupplementalCloseProof,
+  publishSupplementalCloseProof,
+} from "./fixture-provenance";
 
 export interface Scenario {
+  readonly lifecycle?: "read-only";
+  readonly scope?: "owned-document" | "exclusive-instance";
   readonly id: string;
   readonly requires: readonly string[];
   readonly fixture?: FixtureFolder;
@@ -39,16 +85,51 @@ export interface ScenarioReport {
   readonly protocol: ScenarioBackend["protocol"];
   readonly backendIdentity: string;
   readonly fixture?: FixtureFolder;
-  status: "running" | "passed" | "failed" | "unsupported";
+  status: "running" | "passed" | "failed" | "unsupported" | "not-run";
+  scope?: "owned-document" | "exclusive-instance";
+  lifecycle?: "read-only";
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
+  cleanupExpectedModified?: boolean;
   document?: Document;
   originalDocument?: Document;
-  readonly requests: { requestId: string; phase: string; result?: Execution }[];
+  savedIdentityTransition?: SavedIdentityTransition;
+  readonly requests: {
+    requestId: string;
+    phase: string;
+    intent?: Record<string, unknown>;
+    result?: Execution;
+  }[];
   error?: string;
   cleanupError?: string;
+  cleanupHold?: { requestId: string; reason: string };
+  peers?: Owner[];
 }
 function errorText(error: unknown): string {
+  if (error instanceof AggregateError)
+    return error.message + ": " + error.errors.map(errorText).join("; ");
   return error instanceof Error ? error.message : String(error);
+}
+function observedCreationIds(reports: readonly ScenarioReport[]): Set<string> {
+  const ids = new Set<string>();
+  for (const report of reports) {
+    for (const entry of report.requests) {
+      if (
+        !entry.phase.startsWith("observe-") ||
+        entry.intent?.["kind"] !== "script"
+      )
+        continue;
+      const documents = resultValue(entry)?.["documents"];
+      if (Array.isArray(documents))
+        for (const document of documents)
+          ids.add(text(record(document)["creationId"]));
+    }
+  }
+  // These owned closures were already validated by each session's cleanup.
+  // Peer disappearance still requires its independently discovered receipt.
+  for (const report of reports)
+    if (report.cleanup === "complete" && report.document)
+      ids.delete(report.document.creationId);
+  return ids;
 }
 function creationProof(
   value: Record<string, unknown>,
@@ -81,6 +162,8 @@ function persist(filename: string, value: unknown): void {
   fs.renameSync(temporary, filename);
 }
 export class ScenarioSession {
+  #parentSession: ScenarioSession | undefined;
+  readonly #peerSessions = new Map<string, ScenarioSession>();
   #uncertain = false;
   #sequence = 0;
   #document: Document | undefined;
@@ -116,14 +199,706 @@ export class ScenarioSession {
     if (!this.#document) throw new Error("Scenario has no owned document");
     return this.#document;
   }
+  get uncertain(): boolean {
+    return this.#uncertain;
+  }
+  /** Opt-in phase guard, persisted for exact unsaved cleanup and recovery. */
+  expectCleanupModified(value: boolean): void {
+    assert.equal(
+      this.document.file,
+      undefined,
+      "Modified phase guard requires an unsaved scratch",
+    );
+    assert.equal(
+      this.#uncertain,
+      false,
+      "Cannot infer cleanup phase from an unsettled request",
+    );
+    this.report.cleanupExpectedModified = value;
+    this.persist();
+  }
+  /** A second real readonly client, linked before creation to this same lifecycle. */
+  createReadonlyPeer(label: string): ScenarioSession {
+    if (
+      this.report.lifecycle !== "read-only" ||
+      this.report.scope !== "exclusive-instance" ||
+      this.#document ||
+      this.#parentSession ||
+      this.#uncertain ||
+      !/^[a-z][a-z0-9-]{0,20}$/u.test(label)
+    )
+      throw new Error(
+        "Readonly peer requires an exclusive settled parent and a bounded label",
+      );
+    const scenarioId = this.report.owner.scenarioId + "-peer-" + label;
+    if (
+      scenarioId.length > 100 ||
+      this.report.peers?.some((peer) => peer.scenarioId === scenarioId)
+    )
+      throw new Error(
+        "Readonly peer already exists or has an invalid identity",
+      );
+    const owner = {
+      runId: this.report.owner.runId,
+      scenarioId,
+      clientId: "scenario:" + this.report.owner.runId + ":" + scenarioId,
+    };
+    (this.report.peers ??= []).push(owner);
+    this.persist();
+    const peer = new ScenarioSession(
+      this.backend,
+      owner,
+      path.join(path.dirname(this.directory), scenarioId),
+      this.signal,
+    );
+    peer.report.lifecycle = "read-only";
+    peer.report.scope = "exclusive-instance";
+    peer.#parentSession = this;
+    peer.persist();
+    this.#peerSessions.set(scenarioId, peer);
+    return peer;
+  }
+  get originalView(): Record<string, unknown> {
+    const result = selectViewCapture(this.report.requests)?.result;
+    if (!result?.sdkSettled || result.state !== "succeeded")
+      throw new Error(
+        "Original user view has no successful bound capture receipt",
+      );
+    const lines = result.stdout
+      .split(/\r?\n/u)
+      .filter((line) => line.startsWith(programs.marker));
+    if (lines.length !== 1)
+      throw new Error("Invalid original user view capture");
+    return record(
+      JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
+    );
+  }
+  async captureUserView(strictCamera = false): Promise<void> {
+    if (this.#document || this.report.scope !== "exclusive-instance")
+      throw new Error(
+        "Original view capture requires an exclusive scenario before fixture creation",
+      );
+    const deadline = Date.now() + defaultCloudPolling.timeoutMs;
+    const prepare = () =>
+      prepareCaptureView(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+        this.#coordinatorBaseline()["documents"] as Record<string, unknown>[],
+        undefined,
+        {
+          ...(this.signal ? { signal: this.signal } : {}),
+          polling: {
+            ...defaultCloudPolling,
+            timeoutMs: Math.max(0, deadline - Date.now()),
+          },
+        },
+      );
+    let plan = await prepare();
+    const consumed = new Set<string>();
+    const admitted = new Set(
+      plan.peers
+        .filter((peer) => peer.state === "open")
+        .map((peer) => peer.document.creationId),
+    );
+    const maximum = admitted.size;
+    for (;;) {
+      assert.ok(
+        Date.now() < deadline,
+        "View capture admission deadline exceeded",
+      );
+      this.signal?.throwIfAborted();
+      const value = await this.#dispatch(
+        consumed.size
+          ? "original-user-view-capture-readmitted"
+          : "original-user-view-capture",
+        (requestId) => {
+          fs.writeFileSync(
+            viewCapturePlanFile(this.directory, requestId),
+            JSON.stringify(plan, null, 2) + "\n",
+            { flag: "wx", mode: 0o600 },
+          );
+          return captureOriginalView(strictCamera, plan);
+        },
+      );
+      if (value["viewAdmissionChanged"] !== true) return;
+      assert.ok(
+        consumed.size < maximum,
+        "View capture cannot renew admission indefinitely",
+      );
+      const attempt = this.report.requests.at(-1)!;
+      if (this.backend.qualification === "broker")
+        assert.deepEqual(
+          await verifiedViewRefusal(
+            this.directory,
+            this.report.owner,
+            attempt,
+            this.backend,
+          ),
+          value,
+        );
+      const next = await prepare();
+      const key = assertViewReadmission(plan, next, value);
+      assert.ok(
+        admitted.has(key),
+        "New peers cannot extend the original capture budget",
+      );
+      assert.ok(!consumed.has(key), "View peer close already consumed");
+      consumed.add(key);
+      plan = next;
+    }
+  }
+  async restoreUserView(): Promise<void> {
+    if (
+      !this.report.requests.some(
+        (entry) => entry.phase === "original-user-view-capture",
+      )
+    )
+      return;
+    if (this.report.cleanup !== "complete") return;
+    try {
+      const prior = this.report.requests.find(
+        (entry) => entry.phase === "original-user-view-restore",
+      );
+      if (prior) {
+        if (!prior.result?.sdkSettled || prior.result.state !== "succeeded")
+          throw new Error(
+            "Original user view restoration remains unverified; never replay it",
+          );
+        const lines = prior.result.stdout
+          .split(/\r?\n/u)
+          .filter((line) => line.startsWith(programs.marker));
+        if (
+          lines.length !== 1 ||
+          record(
+            JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
+          )["restored"] !== true
+        )
+          throw new Error(
+            "Original restoration receipt does not prove the user view",
+          );
+        return;
+      }
+      const capture = selectViewCapture(this.report.requests);
+      assert.ok(capture);
+      const snapshot =
+        this.backend.qualification === "broker"
+          ? (
+              await verifiedViewCapture(
+                this.directory,
+                this.report.owner,
+                capture,
+                this.backend,
+              )
+            ).snapshot
+          : this.originalView;
+      const current = await this.#dispatch(
+        "original-user-view-observe",
+        programs.snapshot(),
+      );
+      const proofs = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+      );
+      assertReceiptBoundDocumentInventory(
+        snapshot["documents"],
+        current["documents"],
+        proofs,
+        "User documents changed before view restoration",
+        false,
+      );
+      assert.ok(Array.isArray(snapshot["documents"]));
+      const value = await this.#dispatch(
+        "original-user-view-restore",
+        restoreOriginalView(snapshot, {
+          baseline: snapshot["documents"].map(record),
+          peers: [...proofs.values()],
+        }),
+      );
+      assert.equal(
+        value["restored"],
+        true,
+        "Original user view was not restored",
+      );
+    } catch (error) {
+      this.#uncertain = true;
+      this.report.cleanup = "deferred";
+      this.persist();
+      throw error;
+    }
+  }
+  /** Register a checkpoint/import child before its original SDK request is sent. */
+  prepareChildReceipt(
+    phase: string,
+    requestId: string,
+    inputPath: string,
+    options: { allowCopiedCreationId?: true } = {},
+  ): string {
+    if (
+      !/^[a-z][a-z0-9-]{0,90}$/u.test(phase) ||
+      this.report.requests.at(-1)?.requestId !== requestId ||
+      this.report.requests.at(-1)?.phase !== phase ||
+      !path.resolve(inputPath).startsWith(this.directory + path.sep)
+    )
+      throw new Error(
+        "Child import intent does not belong to the current owned request",
+      );
+    const folder = path.join(this.directory, "children");
+    fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const receipt = path.join(folder, phase + ".receipt.json");
+    writeHandoff(
+      path.join(folder, phase + ".intent.json"),
+      {
+        version: 1,
+        owner: this.report.owner,
+        requestId,
+        phase,
+        parentCreationId: this.document.creationId,
+        ...(options.allowCopiedCreationId
+          ? { allowCopiedCreationId: true }
+          : {}),
+        path: this.backend.fusionPath(path.resolve(inputPath)),
+        receipt: this.backend.fusionPath(receipt),
+      },
+      true,
+    );
+    return this.backend.fusionPath(receipt);
+  }
+  #verifyChildClosures(): void {
+    const folder = path.join(this.directory, "children");
+    if (!fs.existsSync(folder)) return;
+    const read = (filename: string) => {
+      const stat = fs.lstatSync(filename);
+      if (!stat.isFile() || stat.isSymbolicLink())
+        throw new Error("Expected an owned child receipt");
+      return record(JSON.parse(fs.readFileSync(filename, "utf8")) as unknown);
+    };
+    for (const filename of fs
+      .readdirSync(folder)
+      .filter((name) => name.endsWith(".intent.json"))) {
+      if (!/^[a-z][a-z0-9-]{0,90}\.intent\.json$/u.test(filename))
+        throw new Error("Invalid child intent name");
+      const intent = read(path.join(folder, filename)),
+        identity = record(intent["owner"]);
+      assert.deepEqual(identity, this.report.owner);
+      const phase = filename.slice(0, -".intent.json".length);
+      assert.equal(intent["phase"], phase);
+      assert.equal(intent["version"], 1);
+      assert.equal(intent["parentCreationId"], this.document.creationId);
+      const original = this.report.requests.find(
+        (entry) =>
+          entry.requestId === intent["requestId"] && entry.phase === phase,
+      );
+      assert.ok(
+        original?.result?.sdkSettled && original.result.state !== "unknown",
+        "Original child request remains unsettled",
+      );
+      const filenameProof = path.join(folder, phase + ".receipt.json");
+      assert.equal(intent["receipt"], this.backend.fusionPath(filenameProof));
+      const proof = read(filenameProof);
+      assert.equal(proof["requestId"], intent["requestId"]);
+      assert.equal(proof["clientId"], this.report.owner.clientId);
+      assert.equal(proof["parentCreationId"], this.document.creationId);
+      assert.equal(proof["path"], intent["path"]);
+      const childCreationId = text(proof["creationId"]);
+      const childName = text(proof["name"]);
+      if (childCreationId === this.document.creationId) {
+        assert.equal(intent["allowCopiedCreationId"], true);
+        assert.equal(
+          proof["identityMode"],
+          "native-object-in-original-request",
+        );
+        assert.ok(childName.startsWith(this.document.name + "_"));
+      }
+      assert.equal(proof["saved"], false);
+      assert.equal(proof["fileId"], null);
+      assert.equal(
+        proof["status"],
+        "closed",
+        "Owned child closure is unverified; leave both documents for original-request recovery",
+      );
+    }
+  }
+  /** Check original child closure evidence before deleting case-owned files. */
+  verifyChildClosures(): void {
+    try {
+      this.#verifyChildClosures();
+    } catch (error) {
+      this.#uncertain = true;
+      this.report.cleanup = "deferred";
+      this.persist();
+      throw error;
+    }
+  }
   persist(): void {
     persist(path.join(this.directory, "report.json"), this.report);
   }
-  async execute(
+  /** A case can preserve a domain-specific uncertain mutation without retrying it. */
+  deferCleanup(reason: string): never {
+    this.#uncertain = true;
+    this.report.cleanup = "deferred";
+    this.report.cleanupHold = {
+      requestId: text(this.report.requests.at(-1)?.requestId),
+      reason,
+    };
+    this.persist();
+    throw new Error(reason);
+  }
+  #coordinatorBaseline(): Record<string, unknown> {
+    const filename = path.join(this.directory, "..", "index.json"),
+      stat = fs.lstatSync(filename);
+    assert.ok(stat.isFile() && !stat.isSymbolicLink());
+    const coordinator = record(
+      JSON.parse(fs.readFileSync(filename, "utf8")) as unknown,
+    );
+    assert.equal(coordinator["runId"], this.report.owner.runId);
+    assert.ok(
+      Array.isArray(coordinator["scenarioIds"]) &&
+        coordinator["scenarioIds"].includes(this.report.owner.scenarioId),
+    );
+    const before = record(coordinator["before"]);
+    assert.ok(Array.isArray(before["documents"]));
+    return before;
+  }
+  /** Run a canonical helper call with a checked same-SDK-turn inventory fence. */
+  async cadFenced(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+    options: { component?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    return this.#cadFencedAdmission(phase, operation, data, options);
+  }
+  async #cadFencedAdmission(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+    options: { component?: string },
+    readmission?: {
+      deadline: number;
+      attempts: number;
+      remainingClosures: ReadonlySet<string>;
+    },
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (!phase.startsWith("cad-"))
+      throw new Error("CAD phase must use cad- prefix");
+    const baseline = this.#coordinatorBaseline(),
+      baselineDocuments = baseline["documents"] as Record<string, unknown>[],
+      peerFixtures = new Map(
+        discoverOwnedUnsavedFixtureProofs(
+          path.dirname(path.dirname(this.directory)),
+          this.backend,
+        ),
+      );
+    const existingTarget = peerFixtures.get(this.document.creationId);
+    if (existingTarget)
+      assert.deepEqual(existingTarget.document, this.document);
+    if (
+      existingTarget?.state === "unsettled" ||
+      existingTarget?.state === "retained" ||
+      existingTarget?.state === "closed" ||
+      existingTarget?.state === "saved"
+    )
+      throw new Error("Owned target lacks a live settled creation receipt");
+    peerFixtures.delete(this.document.creationId);
+    const openPeers = [...peerFixtures.values()]
+        .filter((proof) => proof.state === "open" || proof.state === "retained")
+        .map((proof) => proof.document),
+      closedPeerIds = [...peerFixtures]
+        .filter(([, proof]) => proof.state === "closed")
+        .map(([creationId]) => creationId),
+      savedTransfers = [...peerFixtures.values()].flatMap(
+        (proof): programs.SavedPeerTransfer[] =>
+          proof.state === "saved" && proof.savedState !== "unsettled"
+            ? [
+                {
+                  document: proof.document,
+                  savedDocument: proof.savedDocument,
+                  savedState: proof.savedState,
+                },
+              ]
+            : [],
+      );
+    const admissionBudget = readmission ?? {
+      deadline: Date.now() + cliSettlementTimeoutMs,
+      attempts: 0,
+      remainingClosures: new Set(
+        [...peerFixtures]
+          .filter(
+            ([, proof]) =>
+              proof.state === "open" ||
+              (proof.state === "saved" && proof.savedState === "open"),
+          )
+          .map(([id]) => id),
+      ),
+    };
+    try {
+      assert.ok(
+        Date.now() < admissionBudget.deadline,
+        "ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn",
+      );
+      const output = await this.#dispatch(
+        phase,
+        (requestId) =>
+          programs.cadFence(
+            this.document,
+            operation,
+            structuredClone(data),
+            baselineDocuments,
+            openPeers,
+            closedPeerIds,
+            options.component,
+            requestId,
+            savedTransfers,
+          ),
+        this.document,
+        true,
+        "cad-v1",
+        undefined,
+        undefined,
+        operation,
+      );
+      const entry = this.report.requests.at(-1);
+      assert.ok(entry?.result, "Fenced CAD turn lacks its original receipt");
+      const execution = entry.result;
+      assert.equal(execution.requestId, entry.requestId);
+      assert.equal(execution.state, "succeeded");
+      assert.equal(execution.sdkSettled, true);
+      if (this.backend.qualification === "broker") {
+        const receipt = record(execution.brokerReceipt);
+        assert.equal(receipt["requestId"], entry.requestId);
+        assert.equal(receipt["clientId"], this.report.owner.clientId);
+        assert.equal(receipt["state"], "succeeded");
+        assert.ok(typeof receipt["jobId"] === "string" && receipt["jobId"]);
+      }
+      assert.equal(output["success"], true);
+      assert.equal(output["operation"], operation);
+      assert.equal(output["document"], this.document.name);
+      assert.equal(output["creationId"], this.document.creationId);
+      const fence = record(output["inventoryFence"]);
+      assert.equal(fence["version"], 1);
+      if (output["admission"] !== undefined) {
+        const refreshed = new Map(
+          discoverOwnedUnsavedFixtureProofs(
+            path.dirname(path.dirname(this.directory)),
+            this.backend,
+          ),
+        );
+        refreshed.delete(this.document.creationId);
+        for (const [creationId, previous] of peerFixtures) {
+          if (
+            previous.state !== "open" &&
+            !(previous.state === "saved" && previous.savedState === "open")
+          )
+            continue;
+          const current = refreshed.get(creationId);
+          assert.ok(
+            current &&
+              current.state !== "unsettled" &&
+              !(
+                current.state === "saved" && current.savedState === "unsettled"
+              ),
+            "A previously admitted peer lost its exact lifecycle proof",
+          );
+          assert.deepEqual(current.document, previous.document);
+          if (
+            previous.state === "open" &&
+            current.state === "retained" &&
+            previous.lastSettledReceipt?.requestId ===
+              current.terminalReceipt.requestId
+          )
+            assert.equal(
+              current.terminalReceipt.jobId,
+              previous.lastSettledReceipt.jobId,
+              "A previously observed request changed its original job identity",
+            );
+          if (previous.state === "saved") {
+            assert.equal(
+              current.state,
+              "saved",
+              "Saved peer lost its identity transfer proof",
+            );
+            assert.ok(current.state === "saved");
+            assert.deepEqual(current.savedDocument, previous.savedDocument);
+          }
+        }
+        // A no-helper receipt alone never authorizes another request. Every
+        // observed difference must be explained by exact lifecycle receipts.
+        assert.ok(Array.isArray(fence["before"]));
+        const observedIds = new Set(
+          fence["before"].map((document) =>
+            text(record(document)["creationId"]),
+          ),
+        );
+        const baselineIds = new Set(
+          baselineDocuments.map((document) => text(document["creationId"])),
+        );
+        const snapshotProofs = new Map(
+          [...refreshed].filter(
+            ([id, proof]) =>
+              observedIds.has(id) ||
+              baselineIds.has(id) ||
+              peerFixtures.has(id) ||
+              (proof.state === "saved" &&
+                (observedIds.has(proof.savedDocument.creationId) ||
+                  baselineIds.has(proof.savedDocument.creationId))),
+          ),
+        );
+        assertFencedDocumentInventory(
+          fence["before"],
+          fence["after"],
+          this.document,
+          baselineDocuments,
+          snapshotProofs,
+          "Inventory re-admission lacks exact peer lifecycle receipts",
+        );
+        // A new ordinary peer result is not itself a lifecycle transition.
+        const lifecycleProofs = (values: typeof snapshotProofs) =>
+          [...values].map(([id, proof]) => [
+            id,
+            proof.state === "open"
+              ? { document: proof.document, state: proof.state }
+              : proof,
+          ]);
+        assert.notDeepEqual(
+          lifecycleProofs(snapshotProofs),
+          lifecycleProofs(peerFixtures),
+          "Inventory changed without new lifecycle evidence",
+        );
+        const remainingClosures = new Set(admissionBudget.remainingClosures);
+        let terminalProgress = false;
+        for (const id of admissionBudget.remainingClosures) {
+          const previous = peerFixtures.get(id),
+            current = snapshotProofs.get(id);
+          if (
+            (previous?.state === "open" &&
+              (current?.state === "closed" ||
+                (current?.state === "retained" &&
+                  (!previous.lastSettledReceipt ||
+                    Number(
+                      current.terminalReceipt.requestId.split(":").at(-1),
+                    ) >
+                      Number(
+                        previous.lastSettledReceipt.requestId.split(":").at(-1),
+                      ))))) ||
+            (previous?.state === "saved" &&
+              previous.savedState === "open" &&
+              current?.state === "saved" &&
+              current.savedState === "closed")
+          ) {
+            remainingClosures.delete(id);
+            terminalProgress = true;
+          }
+        }
+        // Keep the original single refresh for a new lifecycle proof. Further
+        // turns must consume a distinct, initially admitted peer's exact close
+        // or fully settled retained terminal receipt;
+        // the finite set and one shared deadline cannot grow during retries.
+        if (admissionBudget.attempts > 0 && !terminalProgress)
+          throw new Error(
+            "ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed",
+          );
+        return await this.#cadFencedAdmission(
+          phase + "-readmitted",
+          operation,
+          data,
+          options,
+          {
+            deadline: admissionBudget.deadline,
+            attempts: admissionBudget.attempts + 1,
+            remainingClosures,
+          },
+        );
+      }
+      assertFencedDocumentInventory(
+        fence["before"],
+        fence["after"],
+        this.document,
+        baselineDocuments,
+        peerFixtures,
+        "A baseline or non-target document changed during the fenced CAD turn",
+      );
+      return output;
+    } catch (error) {
+      if (this.uncertain) throw error;
+      this.deferCleanup(
+        "Fenced CAD turn failed; leave the owned document for inspection: " +
+          errorText(error),
+      );
+    }
+  }
+  /** Observe exact owned state without the CLI activating the target first. */
+  async observe(
     phase: string,
     source: string,
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (!phase.startsWith("observe-"))
+      throw new Error("Observation phase must use observe- prefix");
+    return this.#dispatch(phase, source, this.document, false);
+  }
+  /** Retained inventory guards accept only receipt-proven peer fixtures. */
+  async verifyOwnedUnsaved(phase: string): Promise<void> {
+    if (this.report.scope !== "exclusive-instance")
+      throw new Error(
+        "Full foreign inventory observation requires an exclusive scenario",
+      );
+    try {
+      const before = this.#coordinatorBaseline();
+      const current = await this.observe(
+        phase,
+        programs.unsavedState(this.document),
+      );
+      // Bind the observed inventory to receipts settled by that SDK turn. A
+      // peer may have completed its exact cleanup while this observation ran.
+      const peerFixtures = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+      );
+      const ownedFixtures = new Map(peerFixtures),
+        ownProof = ownedFixtures.get(this.document.creationId);
+      if (ownProof) {
+        assert.equal(ownProof.state, "open");
+        assert.deepEqual(ownProof.document, this.document);
+      }
+      ownedFixtures.set(this.document.creationId, {
+        document: this.document,
+        state: "open",
+      });
+      // This is a read-only inventory observation. Fenced CAD turns still
+      // reject unsettled peers and compare every non-target document in-turn.
+      assertReceiptBoundDocumentInventory(
+        before["documents"],
+        current["documents"],
+        ownedFixtures,
+        "A non-fixture document changed during the owned unsaved case",
+        true,
+        observedCreationIds([this.report]),
+      );
+      assertOwnedUnsavedDocument(current["documents"], this.document);
+      const active = current["active"];
+      assert.ok(
+        active === null ||
+          (typeof active === "string" &&
+            (Array.isArray(current["documents"]) ? current["documents"] : [])
+              .map(record)
+              .some((document) => document["creationId"] === active)),
+        "Active document identity is not present in the observed inventory",
+      );
+    } catch (error) {
+      if (this.#uncertain) throw error;
+      this.deferCleanup(
+        "Owned unsaved fixture guard failed; inspect original identity before cleanup: " +
+          errorText(error),
+      );
+    }
+  }
+  async execute(
+    phase: string,
+    source: string | ((requestId: string) => string),
     target: Document = this.document,
     helpers?: "cad-v1",
+    routeTarget = true,
   ): Promise<Record<string, unknown>> {
     this.signal?.throwIfAborted();
     if (
@@ -146,7 +921,408 @@ export class ScenarioSession {
     const owned = this.document;
     if (target.creationId !== owned.creationId || target.name !== owned.name)
       throw new Error("Target does not belong to this scenario");
-    return this.#dispatch(phase, source, owned, true, helpers);
+    return this.#dispatch(phase, source, owned, routeTarget, helpers);
+  }
+  /** Run one retained native CLI case under this same durable owner/cleanup ledger. */
+  async legacyScript(
+    source:
+      | "tests/live-data-import.ts"
+      | "tests/scenarios/legacy-owned-driver.ts" = "tests/live-data-import.ts",
+  ): Promise<void> {
+    if (this.report.scope !== "exclusive-instance" || this.document.file)
+      throw new Error(
+        "Native import requires the exclusive owned unsaved fixture",
+      );
+    return this.legacyCli(
+      source,
+      source === "tests/live-data-import.ts"
+        ? "native-data-import"
+        : "native-legacy-cli",
+      "owned-unsaved-script",
+    );
+  }
+  async legacyCli(
+    source: string,
+    testCase: string,
+    mode?: "owned-unsaved-script",
+  ): Promise<void> {
+    if (this.#uncertain)
+      throw new Error("Unsettled original request; never start another child");
+    if (
+      this.backend.qualification !== "broker" ||
+      !this.backend.lookup ||
+      (!this.document.file && mode !== "owned-unsaved-script")
+    )
+      throw new Error(
+        "Retained native CLI cases require a broker-owned saved fixture and original request lookup",
+      );
+    const root = path.resolve(__dirname, "../../.."),
+      filename = path.resolve(
+        root,
+        mode ? "dist/" + source.replace(/\.ts$/u, ".js") : source,
+      );
+    if (
+      mode
+        ? ![
+            "tests/live-data-import.ts",
+            "tests/scenarios/legacy-owned-driver.ts",
+          ].includes(source) ||
+          this.document.file ||
+          this.report.scope !== "exclusive-instance"
+        : !(
+            source.startsWith("tests/integration/") ||
+            source === "tests/fixtures/owned-cli/handoff.test.js" ||
+            source === "tests/fixtures/owned-cli/settlement-fence.test.js"
+          ) ||
+          !source.endsWith(".test.js") ||
+          !(
+            filename.startsWith(
+              path.join(root, "tests/integration") + path.sep,
+            ) ||
+            filename ===
+              path.join(root, "tests/fixtures/owned-cli/handoff.test.js") ||
+            filename ===
+              path.join(
+                root,
+                "tests/fixtures/owned-cli/settlement-fence.test.js",
+              )
+          ) ||
+          fs.lstatSync(filename).isSymbolicLink()
+    )
+      throw new Error("Expected a retained integration test source");
+    if (
+      !fs.lstatSync(filename).isFile() ||
+      fs.lstatSync(filename).isSymbolicLink()
+    )
+      throw new Error("Expected a regular retained child program");
+    const directory = path.join(this.directory, "legacy");
+    fs.mkdirSync(directory, { mode: 0o700 });
+    fs.mkdirSync(path.join(directory, "intents"), { mode: 0o700 });
+    const lease: LegacyLease = {
+      version: 1,
+      owner: this.report.owner,
+      document: this.document,
+      directory: this.directory,
+      source,
+      testCase,
+      protocol: this.backend.protocol,
+      ...(mode ? { mode } : {}),
+    };
+    const scopeFile = path.join(directory, "lease.json"),
+      launchFile = path.join(directory, "launch.json");
+    writeHandoff(scopeFile, lease, true);
+    writeHandoff(launchFile, { state: "preparing" }, true);
+    this.#uncertain = true;
+    this.persist();
+    const stdoutFile = path.join(directory, "stdout.log"),
+      stderrFile = path.join(directory, "stderr.log");
+    const stdout = fs.openSync(stdoutFile, "wx", 0o600),
+      stderr = fs.openSync(stderrFile, "wx", 0o600);
+    let code: number | null;
+    const settledResults = new Map<string, Execution>(),
+      settlementStartedAt = new Map<string, number>();
+    let childExited = false;
+    try {
+      const pattern =
+        "^" + testCase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&") + "$";
+      const child = spawn(
+        process.execPath,
+        mode
+          ? [filename, "--run"]
+          : [
+              "--test",
+              "--experimental-test-isolation=none",
+              "--test-reporter=tap",
+              "--test-name-pattern=" + pattern,
+              filename,
+            ],
+        {
+          cwd: root,
+          stdio: ["ignore", stdout, stderr],
+          env: {
+            ...process.env,
+            FMCAD_TEST_DOC: this.document.name,
+            FMCAD_TEST_CASE: testCase,
+            FMCAD_LIVE_CLIENT: this.report.owner.clientId,
+            FMCAD_CLIENT: this.report.owner.clientId,
+            FMCAD_LIVE_ROUTING: "queue",
+            FMCAD_ROUTING: "queue",
+            FMCAD_LIVE_OWNED_SCOPE: scopeFile,
+            FMCAD_LIVE_SUITE: source,
+            FMCAD_LIVE_FIXTURE_NAME: this.document.name,
+            FMCAD_LIVE_FIXTURE_ID: this.document.creationId,
+          },
+        },
+      );
+      const completed = new Promise<number | null>((resolve, reject) => {
+        child.once("error", (error) => {
+          childExited = true;
+          reject(error);
+        });
+        child.once("exit", (exitCode) => {
+          childExited = true;
+          resolve(exitCode);
+        });
+      });
+      if (!child.pid) await completed;
+      if (!child.pid)
+        throw new Error(
+          "Retained child has no process identity; inspect handoff before cleanup",
+        );
+      const launched = {
+        pid: child.pid,
+        birth: childProcessIdentity.processBirth(child.pid),
+      };
+      writeHandoff(launchFile, { state: "running", ...launched });
+      const settleCompletedCommands = async () => {
+        for (const intent of legacyIntents(this.directory, this.report.owner)) {
+          if (
+            !intent.completed ||
+            !intent.admissionRequested ||
+            intent.settlement ||
+            intent.settlementFailure
+          )
+            continue;
+          const startedAt =
+            settlementStartedAt.get(intent.requestId) ?? Date.now();
+          settlementStartedAt.set(intent.requestId, startedAt);
+          let result: Execution | null = null,
+            failure:
+              | "lookup-unavailable"
+              | "lookup-error"
+              | "invalid-terminal-result" = "lookup-unavailable";
+          try {
+            result = await this.backend.lookup!(
+              this.report.owner,
+              intent.requestId,
+            );
+          } catch {
+            failure = "lookup-error";
+          }
+          if (result) {
+            try {
+              recordCliSettlement(
+                text(intent.filename),
+                this.report.owner,
+                result,
+              );
+              settledResults.set(intent.requestId, result);
+              continue;
+            } catch {
+              failure = "invalid-terminal-result";
+            }
+          }
+          if (Date.now() - startedAt >= cliSettlementTimeoutMs)
+            recordCliSettlementFailure(
+              text(intent.filename),
+              this.report.owner,
+              failure,
+            );
+        }
+      };
+      let settlementMonitorError: unknown;
+      const settlementMonitor = (async () => {
+        do {
+          await settleCompletedCommands();
+          if (!childExited)
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        } while (!childExited);
+        await settleCompletedCommands();
+      })().catch((error: unknown) => {
+        settlementMonitorError = error;
+      });
+      code = await completed;
+      childExited = true;
+      await settlementMonitor;
+      if (settlementMonitorError) throw settlementMonitorError;
+      writeHandoff(launchFile, { state: "completed", ...launched, code });
+    } finally {
+      fs.closeSync(stdout);
+      fs.closeSync(stderr);
+    }
+    // Read real original broker receipts, including commands whose caller lost its reply.
+    const recovered = await recoverLegacyInvocations(
+      this.backend,
+      this.directory,
+      this.report.owner,
+      settledResults,
+    );
+    this.report.requests.push(...recovered);
+    if (mode) {
+      const completionFile = path.join(directory, "completion.json");
+      if (
+        !fs.existsSync(completionFile) ||
+        fs.lstatSync(completionFile).isSymbolicLink()
+      )
+        this.deferCleanup(
+          "Native import child lacks its durable completion disposition; inspect original requests",
+        );
+      const completion = record(
+        JSON.parse(fs.readFileSync(completionFile, "utf8")) as unknown,
+      );
+      assert.deepEqual(completion["owner"], this.report.owner);
+      assert.deepEqual(completion["document"], this.document);
+      if (completion["safeForCleanup"] !== true)
+        this.deferCleanup(
+          "Native import child retained an uncertain outcome; inspect original requests",
+        );
+    }
+    this.#uncertain = false;
+    this.persist();
+    const output = fs.readFileSync(stdoutFile, "utf8");
+    const selected = output
+      .split(/\r?\n/u)
+      .filter(
+        (line) =>
+          /^ok \d+ - /u.test(line) &&
+          line.includes(testCase) &&
+          !line.includes("# SKIP"),
+      );
+    if (code !== 0 || (!mode && selected.length !== 1))
+      throw new Error(
+        "Retained owned CLI case did not pass exactly once; inspect its original child logs",
+      );
+  }
+  async cad(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+    options: { component?: string; spelling?: readonly string[] } = {},
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (!phase.startsWith("cad-"))
+      throw new Error("CAD phase must use cad- prefix");
+    return this.#dispatch(phase, "", this.document, true, undefined, {
+      operation,
+      data: structuredClone(data),
+      ...options,
+    });
+  }
+  /** Inspect a real rejected terminal command; never manufacture a CLI exit code. */
+  async cadRejected(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+    options: { component?: string; spelling?: readonly string[] } = {},
+  ): Promise<Execution> {
+    this.signal?.throwIfAborted();
+    if (!phase.startsWith("cad-"))
+      throw new Error("CAD phase must use cad- prefix");
+    await this.#dispatch(phase, "", this.document, true, undefined, {
+      operation,
+      data: structuredClone(data),
+      ...options,
+      expectRejected: true,
+    });
+    const execution = this.report.requests.at(-1)?.result;
+    assert.ok(
+      execution && execution.sdkSettled && execution.state === "failed",
+      "Expected a rejected settled command receipt",
+    );
+    return execution;
+  }
+  /** Preserve exact public readonly CLI output and its original terminal receipt. */
+  async inspectCli(
+    phase: string,
+    command: "active" | "doc-list",
+  ): Promise<Execution> {
+    if (!phase.startsWith("inspect-"))
+      throw new Error("CLI inspection phase must use inspect- prefix");
+    await this.#dispatch(
+      phase,
+      "",
+      undefined,
+      false,
+      undefined,
+      undefined,
+      command,
+    );
+    const execution = this.report.requests.at(-1)?.result;
+    assert.ok(execution?.sdkSettled && execution.state === "succeeded");
+    return execution;
+  }
+  /** Bind an existing transport's original request to this same durable ledger. */
+  async registeredRequest<T>(
+    phase: string,
+    intent: Record<string, unknown>,
+    dispatch: (context: {
+      owner: Owner;
+      requestId: string;
+      directory: string;
+    }) => Promise<{ execution: Execution; value: T }>,
+  ): Promise<T> {
+    this.signal?.throwIfAborted();
+    return this.#registeredRequest(phase, intent, dispatch);
+  }
+  async #registeredRequest<T>(
+    phase: string,
+    intent: Record<string, unknown>,
+    dispatch: (context: {
+      owner: Owner;
+      requestId: string;
+      directory: string;
+    }) => Promise<{ execution: Execution; value: T }>,
+  ): Promise<T> {
+    if (this.report.lifecycle === "read-only" && intent["readOnly"] !== true)
+      throw new Error(
+        "Readonly scenario requests require explicit readonly intent",
+      );
+    if (
+      this.#uncertain ||
+      (this.#parentSession && this.#parentSession.#uncertain)
+    )
+      throw new Error(
+        "Unsettled original request; inspect before continuing, never replay",
+      );
+    const requestId = this.report.owner.clientId + ":" + this.#sequence++;
+    const entry: ScenarioReport["requests"][number] = {
+      requestId,
+      phase,
+      intent: structuredClone(intent),
+    };
+    this.report.requests.push(entry);
+    this.persist();
+    let result: { execution: Execution; value: T };
+    try {
+      result = await dispatch({
+        owner: this.report.owner,
+        requestId,
+        directory: this.directory,
+      });
+    } catch (error) {
+      this.#uncertain = true;
+      if (this.#parentSession) {
+        this.#parentSession.#uncertain = true;
+        this.#parentSession.persist();
+      }
+      this.persist();
+      throw error;
+    }
+    entry.result = result.execution;
+    const receipt = result.execution.brokerReceipt;
+    this.#uncertain =
+      result.execution.requestId !== requestId ||
+      !result.execution.sdkSettled ||
+      result.execution.state === "unknown" ||
+      (receipt !== undefined &&
+        (receipt.requestId !== requestId ||
+          receipt.clientId !== this.report.owner.clientId ||
+          !receipt.jobId ||
+          receipt.state !== result.execution.state));
+    if (this.#uncertain && this.#parentSession) {
+      this.#parentSession.#uncertain = true;
+      this.#parentSession.persist();
+    }
+    this.persist();
+    if (this.#uncertain)
+      throw new Error(
+        "Unsettled or mismatched original request; cleanup deferred, never replay",
+      );
+    // Native import receipts must settle before a case catch/finally can issue
+    // further probes or delete the file that proves its original child identity.
+    if (fs.existsSync(path.join(this.directory, "children")))
+      this.verifyChildClosures();
+    return result.value;
   }
   async #dispatch(
     phase: string,
@@ -154,38 +1330,46 @@ export class ScenarioSession {
     target?: Document,
     routeTarget = true,
     helpers?: "cad-v1",
+    command?: ScriptRequest["command"],
+    inspectCli?: ScriptRequest["inspectCli"],
+    helperOperation?: string,
   ): Promise<Record<string, unknown>> {
-    if (this.#uncertain)
-      throw new Error(
-        "Unsettled original request; inspect before continuing, never replay",
-      );
-    const requestId = this.report.owner.clientId + ":" + this.#sequence++;
-    const entry: ScenarioReport["requests"][number] = { requestId, phase };
-    this.report.requests.push(entry);
-    this.persist(); // Durable intent before a possibly mutating send.
-    let execution: Execution;
-    try {
-      execution = await this.backend.execute({
-        owner: this.report.owner,
-        requestId,
-        source: typeof source === "string" ? source : source(requestId),
-        directory: this.directory,
-        ...(helpers ? { helpers } : {}),
-        ...(target && routeTarget ? { target } : {}),
-      });
-    } catch (error) {
-      this.#uncertain = true; // A transport exception never proves not-started.
-      throw error;
-    }
-    entry.result = execution;
-    this.#uncertain =
-      execution.requestId !== requestId ||
-      !execution.sdkSettled ||
-      execution.state === "unknown";
-    this.persist();
-    if (this.#uncertain)
-      throw new Error(
-        "Unsettled or mismatched original request; cleanup deferred, never replay",
+    const execution = await this.#registeredRequest(
+      phase,
+      {
+        kind: helperOperation
+          ? "cad-fenced"
+          : inspectCli
+            ? "inspect-cli"
+            : command
+              ? "cad"
+              : "script",
+        ...(inspectCli ? { readOnly: true } : {}),
+        ...(inspectCli ? { command: inspectCli } : {}),
+        ...(helperOperation ? { operation: helperOperation } : {}),
+      },
+      async ({ owner, requestId, directory }) => {
+        const execution = await this.backend.execute({
+          owner,
+          requestId,
+          source: typeof source === "string" ? source : source(requestId),
+          directory,
+          ...(helpers ? { helpers } : {}),
+          ...(command ? { command } : {}),
+          ...(inspectCli ? { inspectCli } : {}),
+          ...(target && routeTarget ? { target } : {}),
+        });
+        return { execution, value: execution };
+      },
+    );
+    if (
+      this.backend.qualification === "broker" &&
+      execution.state === "succeeded"
+    )
+      assert.equal(
+        execution.exitCode,
+        0,
+        "Successful public CLI command lacks its original zero exit status",
       );
     if (
       phase === "create" &&
@@ -193,23 +1377,114 @@ export class ScenarioSession {
       !execution.mayHaveMutated
     )
       this.report.cleanup = "not-created";
+    if (command?.expectRejected && execution.state === "failed") {
+      try {
+        if (execution.stdout.trim())
+          commandResult(
+            execution.stdout,
+            target ? [target] : undefined,
+            command.operation,
+          );
+      } catch (error) {
+        this.#uncertain = true;
+        this.persist();
+        throw error;
+      }
+      return {};
+    }
+    if (command && execution.stdout.trim()) {
+      if (!target) throw new Error("CAD command has no owned target");
+      try {
+        const output = commandResult(
+          execution.stdout,
+          [target],
+          command.operation,
+        );
+        if (
+          output["context"] === undefined &&
+          output["success"] === true &&
+          !["preview", "validate"].includes(String(command.data["mode"])) &&
+          ["definition.instantiate", "batch.run"].includes(command.operation)
+        )
+          throw new Error("Successful batch has no pinned context");
+        return output;
+      } catch (error) {
+        this.#uncertain = true;
+        this.persist();
+        throw error;
+      }
+    }
     if (execution.state !== "succeeded")
       throw new Error(execution.error || "Fusion operation failed");
+    if (inspectCli) return {};
+    if (helperOperation) {
+      try {
+        const helperLines = execution.stdout
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("FMCAD_RESULT "));
+        if (helperLines.length !== 1)
+          throw new Error("Expected exactly one cad-v1 result marker");
+        const wrapper = record(
+          JSON.parse(helperLines[0]!.slice("FMCAD_RESULT ".length)) as unknown,
+        );
+        if (wrapper["success"] !== true)
+          throw new Error("cad-v1 helper turn did not succeed");
+        const calls = wrapper["helperCallsOnly"];
+        const value = record(wrapper["result"]);
+        if (value["admission"] !== undefined) {
+          assert.equal(execution.sdkSettled, true);
+          const admission = record(value["admission"]);
+          assert.equal(admission["status"], "inventory-changed");
+          assert.equal(admission["requestId"], execution.requestId);
+          assert.equal(admission["helperCalls"], 0);
+          assert.equal(admission["mutationStarted"], false);
+          assert.deepEqual(calls, []);
+          assert.equal(value["operation"], helperOperation);
+          assert.equal(value["creationId"], target?.creationId);
+          assert.equal(value["document"], target?.name);
+          return value;
+        }
+        if (!Array.isArray(calls) || calls.length !== 1)
+          throw new Error(
+            "Fenced CAD turn must contain exactly one helper call",
+          );
+        const call = record(calls[0]);
+        if (
+          call["operation"] !== helperOperation ||
+          call["status"] !== "completed" ||
+          call["effects"] !== "observed"
+        )
+          throw new Error(
+            "Fenced CAD helper receipt differs from its operation",
+          );
+        if (target && value["creationId"] !== target.creationId)
+          throw new Error("Fenced CAD result has a foreign target identity");
+        return value;
+      } catch (error) {
+        this.#uncertain = true;
+        this.persist();
+        throw error;
+      }
+    }
     const lines = execution.stdout
       .split(/\r?\n/)
       .filter((line) => line.startsWith(programs.marker));
-    if (lines.length !== 1)
-      throw new Error("Expected exactly one scenario result marker");
-    const value = record(
-      JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
-    );
-    if (target && value["creationId"] !== target.creationId) {
-      this.#uncertain = true;
-      throw new Error(
-        "Foreign document result; recover the original request before cleanup",
+    try {
+      if (lines.length !== 1)
+        throw new Error("Expected exactly one scenario result marker");
+      const value = record(
+        JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
       );
+      if (target && value["creationId"] !== target.creationId)
+        throw new Error(
+          "Foreign document result; recover the original request before cleanup",
+        );
+      return value;
+    } catch (error) {
+      this.#uncertain = true;
+      this.persist();
+      throw error;
     }
-    return value;
   }
   async setup(): Promise<void> {
     this.signal?.throwIfAborted();
@@ -230,13 +1505,14 @@ export class ScenarioSession {
     try {
       const requestId = text(this.report.requests.at(-1)?.requestId);
       const returned = creationProof(value, this.report.owner, requestId);
-      const durable = creationProof(
-        readCreation(this.directory),
-        this.report.owner,
-        requestId,
-      );
+      const durableValue = readCreation(this.directory);
+      const durable = creationProof(durableValue, this.report.owner, requestId);
       if (returned.creationId !== durable.creationId)
         throw new Error("Returned and durable creation identities differ");
+      if (value["activeCreationId"] !== durableValue["activeCreationId"])
+        throw new Error(
+          "Returned and durable creation active observations differ",
+        );
       this.#document = returned;
     } catch (error) {
       this.#uncertain = true;
@@ -244,6 +1520,10 @@ export class ScenarioSession {
     }
     this.report.document = this.#document;
     this.persist();
+    if (value["activeCreationId"] !== this.document.creationId)
+      throw new Error(
+        "Newly created document was not active at creation completion",
+      );
     this.signal?.throwIfAborted();
     await this.#dispatch(
       "export",
@@ -255,6 +1535,7 @@ export class ScenarioSession {
     if (this.report.fixture) {
       this.signal?.throwIfAborted();
       const folder = this.report.fixture;
+      const saveOrigin = this.document;
       await this.#dispatch(
         "save",
         (requestId) =>
@@ -265,6 +1546,9 @@ export class ScenarioSession {
             requestId,
             this.backend.fusionPath(
               path.join(this.directory, "save-intent.json"),
+            ),
+            this.backend.fusionPath(
+              path.join(this.directory, "save-transition.json"),
             ),
           ),
         this.document,
@@ -282,6 +1566,23 @@ export class ScenarioSession {
           intent.folderId !== folder.folderId
         )
           throw new Error("Configured and accepted fixture folders differ");
+        if (this.backend.qualification === "broker") {
+          const transition = savedIdentityTransition(
+            this.directory,
+            saveOrigin,
+            this.report.owner,
+            this.report.requests,
+          );
+          if (transition) {
+            this.report.savedIdentityTransition = transition;
+            this.#document = Object.freeze({
+              creationId: transition.creationId,
+              name: transition.name,
+            });
+            this.report.document = this.#document;
+            this.persist();
+          }
+        }
       } catch (error) {
         this.#uncertain = true;
         throw error;
@@ -294,6 +1595,8 @@ export class ScenarioSession {
           folder,
           this.#dispatch.bind(this),
           false,
+          undefined,
+          saveOrigin.name,
         );
       } catch (error) {
         if (
@@ -436,7 +1739,11 @@ export class ScenarioSession {
     }
   }
   async cleanup(): Promise<void> {
-    if (this.report.cleanup === "complete") return;
+    if (this.report.cleanup === "complete" && !this.#uncertain) return;
+    for (const peer of this.#peerSessions.values()) {
+      await peer.cleanup();
+      if (peer.report.cleanup !== "complete") this.#uncertain = true;
+    }
     // A malformed creation result can still leave a durable identity written by the exact original request.
     if (!this.#document && !this.#uncertain) {
       const receipt = path.join(this.directory, "creation.json");
@@ -462,6 +1769,14 @@ export class ScenarioSession {
     }
     if (this.#document) {
       try {
+        this.#verifyChildClosures();
+      } catch (error) {
+        this.#uncertain = true;
+        this.report.cleanup = "deferred";
+        this.persist();
+        throw error;
+      }
+      try {
         const folder = saveIntent(
           this.directory,
           this.report.originalDocument ?? this.#document,
@@ -477,6 +1792,8 @@ export class ScenarioSession {
             folder,
             this.#dispatch.bind(this),
             accepted?.["accepted"] !== true,
+            undefined,
+            text(readCreation(this.directory)["name"]),
           );
           if (file) {
             this.#document = Object.freeze({ ...this.#document, file });
@@ -489,6 +1806,8 @@ export class ScenarioSession {
             this.#document,
             this.report.requests,
             this.#dispatch.bind(this),
+            undefined,
+            text(readCreation(this.directory)["name"]),
           );
           fs.rmSync(this.file, { force: true });
           this.report.cleanup = "complete";
@@ -520,7 +1839,7 @@ export class ScenarioSession {
       try {
         result = await this.#dispatch(
           "cleanup",
-          programs.close(this.#document),
+          programs.close(this.#document, this.report.cleanupExpectedModified),
           this.#document,
         );
       } catch (error) {
@@ -534,6 +1853,16 @@ export class ScenarioSession {
         throw new Error(
           "Cleanup result does not prove closure of the owned document",
         );
+      if (this.report.scope === "exclusive-instance" && !this.#document.file) {
+        const fence = record(result["inventoryFence"]);
+        assert.equal(fence["version"], 1);
+        assertFencedClosedDocumentInventory(
+          fence["before"],
+          fence["after"],
+          this.#document,
+          "A non-target document changed during owned cleanup",
+        );
+      }
     }
     fs.rmSync(this.file, { force: true });
     this.report.cleanup = "complete";
@@ -554,6 +1883,14 @@ export async function runScenario(
     signal,
     scenario.fixture,
   );
+  session.report.scope = scenario.scope ?? "owned-document";
+  if (scenario.lifecycle === "read-only") {
+    if (scenario.scope !== "exclusive-instance" || scenario.fixture)
+      throw new Error(
+        "Readonly transport scenarios require exclusive scope without a fixture",
+      );
+    session.report.lifecycle = "read-only";
+  }
   if (
     scenario.requires.some(
       (capability) => !backend.capabilities.has(capability),
@@ -567,7 +1904,14 @@ export async function runScenario(
     return session.report;
   }
   try {
-    await session.setup();
+    if (
+      scenario.requires.includes("original-user-view") ||
+      scenario.requires.includes("original-user-view-absolute-camera")
+    )
+      await session.captureUserView(
+        scenario.requires.includes("original-user-view-absolute-camera"),
+      );
+    if (scenario.lifecycle !== "read-only") await session.setup();
     await scenario.run(session);
     session.report.status = "passed";
   } catch (error) {
@@ -576,6 +1920,7 @@ export async function runScenario(
   } finally {
     try {
       await session.cleanup();
+      await session.restoreUserView();
     } catch (error) {
       if (session.report.cleanup !== "deferred")
         session.report.cleanup = "failed";
@@ -601,6 +1946,11 @@ export async function runScenarios(
       ids.has(scenario.id)
     )
       throw new Error("Invalid or duplicate scenario id: " + scenario.id);
+    if (
+      scenario.scope !== undefined &&
+      !["owned-document", "exclusive-instance"].includes(scenario.scope)
+    )
+      throw new Error("Invalid scenario scope");
     ids.add(scenario.id);
   }
   const runId = randomUUID();
@@ -651,10 +2001,68 @@ export async function runScenarios(
   const hasSupported = scenarios.some((s) =>
     s.requires.every((c) => backend.capabilities.has(c)),
   );
-  const before =
+  let before =
     hasSupported && !signal?.aborted
       ? await observation("before", programs.snapshot())
       : undefined;
+  const processIdentity = currentProcessIdentity();
+  if (before) {
+    const peerFixtures = discoverOwnedUnsavedFixtureProofs(root, backend),
+      documents = before["documents"];
+    if (!Array.isArray(documents))
+      throw new Error("Missing coordinator document inventory");
+    const observedIds = new Set(
+      documents.map((document) => text(record(document)["creationId"])),
+    );
+    // Discovery follows the SDK snapshot. Future creations are not obligations
+    // of that older snapshot; a later close stays in the original baseline.
+    const observedPeers = new Map(
+      [...peerFixtures].filter(([id, proof]) => {
+        if (proof.state !== "saved")
+          return observedIds.has(id) && proof.state === "open";
+        const successorId = proof.savedDocument.creationId;
+        if (
+          id !== successorId &&
+          observedIds.has(id) &&
+          observedIds.has(successorId)
+        )
+          throw new Error(
+            "Both original and saved successor identities remain visible",
+          );
+        // The bridge may have been published after this snapshot. Preserve
+        // an observed unsaved original as baseline until a later fenced turn.
+        return (
+          proof.savedState === "open" &&
+          documents.some((row) => {
+            const document = record(row);
+            return (
+              document["creationId"] === successorId &&
+              document["saved"] === true
+            );
+          })
+        );
+      }),
+    );
+    assertReceiptBoundDocumentInventory(
+      documents,
+      documents,
+      observedPeers,
+      "A proven peer fixture does not match its current identity",
+    );
+    before = {
+      ...before,
+      documents: documents.map(record).filter((document) => {
+        const id = text(document["creationId"]);
+        return (
+          !observedPeers.has(id) &&
+          ![...observedPeers.values()].some(
+            (proof) =>
+              proof.state === "saved" && proof.savedDocument.creationId === id,
+          )
+        );
+      }),
+    };
+  }
   const folders = [
     ...new Map(
       scenarios
@@ -680,49 +2088,78 @@ export async function runScenarios(
     mode: backend.mode,
     qualification: backend.qualification,
     protocol: backend.protocol,
+    backendIdentity: backend.identity,
+    processIdentity,
     before,
     cloudBefore,
     scenarioIds: scenarios.map((s) => s.id),
     status: "running",
   });
-  const reports = await boundedMap(scenarios, concurrency, async (scenario) => {
+  const tasks = scenarios.map((scenario) => {
     const owner = {
       runId,
       scenarioId: scenario.id,
       clientId: "scenario:" + runId + ":" + scenario.id,
     };
-    return runScenario(
-      backend,
-      scenario,
-      owner,
-      path.join(runRoot, scenario.id),
-      signal,
-    );
+    const directory = path.join(runRoot, scenario.id);
+    return {
+      exclusive: scenario.scope === "exclusive-instance",
+      run: () => runScenario(backend, scenario, owner, directory, signal),
+      blocked: (reason: string): ScenarioReport => {
+        fs.mkdirSync(directory, { recursive: false, mode: 0o700 });
+        const report: ScenarioReport = {
+          owner,
+          directory,
+          mode: backend.mode,
+          qualification: backend.qualification,
+          backendIdentity: backend.identity,
+          protocol: backend.protocol,
+          scope: scenario.scope ?? "owned-document",
+          status: "not-run",
+          cleanup: "not-created",
+          requests: [],
+          error: reason,
+          ...(scenario.fixture ? { fixture: scenario.fixture } : {}),
+        };
+        persist(path.join(directory, "report.json"), report);
+        return report;
+      },
+    };
+  });
+  const reports = await scopedMap(tasks, concurrency, (report) => {
+    if (report.status === "passed" && report.cleanup === "complete")
+      return "passed";
+    if (
+      report.status === "unsupported" &&
+      report.cleanup === "not-created" &&
+      report.scope !== "exclusive-instance"
+    )
+      return "passed";
+    if (report.cleanup === "complete" || report.cleanup === "not-created")
+      return "settled-failure";
+    return "unsettled";
   });
   let auditError: string | undefined;
   try {
     if (
       before &&
       reports.every(
-        (r) => r.cleanup === "complete" || r.status === "unsupported",
+        (r) =>
+          r.cleanup === "complete" ||
+          r.status === "unsupported" ||
+          (r.status === "not-run" && r.cleanup === "not-created"),
       )
     ) {
-      const after = await observation("after", programs.snapshot());
-      const documents = (value: unknown): string => {
-        if (!Array.isArray(value))
-          throw new Error("Missing coordinator document inventory");
-        return JSON.stringify(
-          value
-            .map(record)
-            .sort((a, b) =>
-              text(a["creationId"]).localeCompare(text(b["creationId"])),
-            ),
-        );
-      };
-      if (documents(before["documents"]) !== documents(after["documents"]))
-        throw new Error(
-          "Original documents changed or scenario documents remain after cleanup",
-        );
+      const after = await observation("after", programs.snapshot()),
+        finalPeerProofs = discoverOwnedUnsavedFixtureProofs(root, backend);
+      assertReceiptBoundDocumentInventory(
+        before["documents"],
+        after["documents"],
+        finalPeerProofs,
+        "Original documents changed or an unowned scenario document remains after cleanup",
+        true,
+        observedCreationIds(reports),
+      );
       const files = (value: Record<string, unknown>): string => {
         if (!Array.isArray(value["files"]))
           throw new Error("Missing fixture folder inventory");
@@ -747,7 +2184,24 @@ export async function runScenarios(
             "Original cloud files changed or scenario files remain after cleanup",
           );
       }
-      if (typeof before["active"] === "string")
+      const baselineIds = Array.isArray(before["documents"])
+        ? before["documents"].map((value: unknown) =>
+            text(record(value)["creationId"]),
+          )
+        : [];
+      const activePeer =
+        typeof before["active"] === "string"
+          ? finalPeerProofs.get(before["active"])
+          : undefined;
+      // This snapshot already validated the exact saved lifecycle. An owned
+      // peer transferred since the initial snapshot is not user baseline focus.
+      const transferredActivePeer =
+        activePeer?.state === "saved" && activePeer.savedState !== "unsettled";
+      if (
+        typeof before["active"] === "string" &&
+        baselineIds.includes(before["active"]) &&
+        !transferredActivePeer
+      )
         await observation("restore", programs.restoreActive(before["active"]));
     }
   } catch (error) {
@@ -766,6 +2220,8 @@ export async function runScenarios(
     mode: backend.mode,
     qualification: backend.qualification,
     protocol: backend.protocol,
+    backendIdentity: backend.identity,
+    processIdentity,
     before,
     cloudBefore,
     scenarioIds: scenarios.map((s) => s.id),
@@ -779,6 +2235,7 @@ export async function runScenarios(
 export async function resumeCleanup(
   backend: ScenarioBackend,
   filename: string,
+  ports?: CleanupHoldPorts,
 ): Promise<ScenarioReport> {
   if (!backend.lookup)
     throw new Error("Backend cannot recover original request evidence");
@@ -815,13 +2272,121 @@ export async function resumeCleanup(
     );
   const requests = raw["requests"].map((entry: unknown) => {
     const row = record(entry);
-    return { requestId: text(row["requestId"]), phase: text(row["phase"]) };
+    return {
+      requestId: text(row["requestId"]),
+      phase: text(row["phase"]),
+      ...(row["intent"] ? { intent: record(row["intent"]) } : {}),
+    };
   });
   if (
     new Set(requests.map((r) => r.requestId)).size !== requests.length ||
-    requests.some((r) => !r.requestId.startsWith(owner.clientId + ":"))
+    requests.some(
+      (r, index) =>
+        !exactScenarioRequestId(r.requestId, owner.clientId) &&
+        !(
+          index === requests.length - 1 &&
+          r.phase === "legacy-cli" &&
+          (owner.scenarioId === "native-legacy-0" ||
+            /^native-import-\d+$/u.test(owner.scenarioId)) &&
+          raw["cleanupHold"] !== undefined &&
+          record(raw["cleanupHold"])["requestId"] === r.requestId &&
+          record(raw["cleanupHold"])["reason"] ===
+            "Native import child retained an uncertain outcome; inspect original requests" &&
+          r.requestId.startsWith(owner.clientId + ":legacy:") &&
+          /^[a-f0-9-]{36}$/u.test(
+            r.requestId.slice((owner.clientId + ":legacy:").length),
+          ) &&
+          (fs.existsSync(
+            path.join(directory, "cleanup-legacy-readonly-binding.json"),
+          ) ||
+            (/^native-import-\d+$/u.test(owner.scenarioId) &&
+              fs.existsSync(
+                path.join(
+                  directory,
+                  "cleanup-succeeded-import-observation-binding.json",
+                ),
+              )))
+        ),
+    )
   )
     throw new Error("Invalid original request inventory");
+  if (
+    raw["cleanupHold"] !== undefined ||
+    fs.existsSync(path.join(directory, "legacy/terminal-disposition.json")) ||
+    fs.existsSync(path.join(directory, "cleanup-native-result-binding.json"))
+  ) {
+    if (!ports)
+      throw new Error(
+        "Case-specific mutation outcome remains unresolved; original SDK completion alone cannot release its cleanup hold",
+      );
+    const proofBackend = {
+      identity: backend.identity,
+      mode: backend.mode,
+      qualification: backend.qualification,
+      protocol: backend.protocol,
+      lookup: backend.lookup.bind(backend),
+    };
+    const held = record(raw["document"]);
+    const document: Document = {
+      creationId: text(held["creationId"]),
+      name: text(held["name"]),
+    };
+    if (fs.existsSync(path.join(directory, "supplemental-close.json"))) {
+      const closed = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(directory)),
+        backend,
+      ).get(document.creationId);
+      assert.equal(
+        closed?.state,
+        "closed",
+        "Existing held closure is unverified",
+      );
+      assert.deepEqual(closed.document, document);
+    } else if (
+      fs.existsSync(path.join(directory, "supplemental-close.intent.json"))
+    ) {
+      // Recover publication from the original close receipt only. An admitted or
+      // uncertain close must never cause another inspection or close submission.
+      await publishSupplementalCloseProof(directory, proofBackend, ports);
+    } else {
+      const resolution = await resolveCleanupHold(backend, directory, ports);
+      const ordinal =
+        Number(resolution.inspectionRequestId.split(":").at(-1)) + 1;
+      assert.ok(Number.isSafeInteger(ordinal));
+      const prepared = await prepareSupplementalCloseProof(
+        directory,
+        proofBackend,
+        owner.clientId + ":" + ordinal,
+        ports,
+      );
+      const result = await backend.execute({
+        owner: prepared.owner,
+        requestId: prepared.requestId,
+        source: prepared.source,
+        target: prepared.document,
+        directory: prepared.directory,
+      });
+      assert.equal(
+        result.state,
+        "succeeded",
+        "Held cleanup did not succeed; preserve original evidence",
+      );
+      assert.equal(
+        result.sdkSettled,
+        true,
+        "Held cleanup is unsettled; never replay",
+      );
+      await publishSupplementalCloseProof(directory, proofBackend, ports);
+    }
+    // The historical report/hold is immutable. Only the returned cleanup view changes;
+    // canonical resolution and closure sidecars carry the new receipts.
+    return { ...raw, cleanup: "complete" } as unknown as ScenarioReport;
+  }
+  // A crashed parent may not yet have appended the child's durable original request IDs.
+  const legacy = await recoverLegacyInvocations(backend, directory, owner);
+  for (const entry of legacy)
+    if (!requests.some((request) => request.requestId === entry.requestId))
+      requests.push({ requestId: entry.requestId, phase: entry.phase });
   // Every result is reread from the backend, not trusted from editable report JSON.
   const recovered: ScenarioReport["requests"] = [];
   for (const entry of requests) {
@@ -836,9 +2401,74 @@ export async function resumeCleanup(
         "Original request remains unsettled; cleanup must stay deferred: " +
           entry.requestId,
       );
+    if (entry.phase.startsWith("cad-") && result.stdout.trim())
+      recoveredCommandResult(result.stdout, entry.intent, entry.requestId);
     recovered.push({ ...entry, result });
   }
   const creation = recovered.filter((entry) => entry.phase === "create");
+  if (raw["lifecycle"] === "read-only") {
+    assert.equal(raw["scope"], "exclusive-instance");
+    assert.equal(raw["document"], undefined);
+    assert.equal(raw["fixture"], undefined);
+    assert.equal(creation.length, 0);
+    assert.ok(
+      recovered.every(
+        (entry) =>
+          entry.intent?.["readOnly"] === true &&
+          entry.result?.mayHaveMutated === false,
+      ),
+      "Original readonly receipts do not prove no mutation",
+    );
+    const peers: Owner[] = [];
+    if (raw["peers"] !== undefined) {
+      assert.ok(Array.isArray(raw["peers"]) && raw["peers"].length <= 10);
+      for (const value of raw["peers"]) {
+        const peer = record(value);
+        const scenarioId = text(peer["scenarioId"]);
+        assert.ok(scenarioId.startsWith(owner.scenarioId + "-peer-"));
+        assert.match(
+          scenarioId.slice((owner.scenarioId + "-peer-").length),
+          /^[a-z][a-z0-9-]{0,20}$/u,
+        );
+        assert.equal(peer["runId"], owner.runId);
+        assert.equal(
+          peer["clientId"],
+          "scenario:" + owner.runId + ":" + scenarioId,
+        );
+        const identity = {
+          runId: owner.runId,
+          scenarioId,
+          clientId: text(peer["clientId"]),
+        };
+        assert.ok(!peers.some((prior) => prior.clientId === identity.clientId));
+        const result = await resumeCleanup(
+          backend,
+          path.join(path.dirname(directory), scenarioId, "report.json"),
+        );
+        assert.equal(result.lifecycle, "read-only");
+        assert.equal(result.cleanup, "complete");
+        peers.push(identity);
+      }
+    }
+    const report: ScenarioReport = {
+      owner,
+      directory,
+      mode: backend.mode,
+      qualification: backend.qualification,
+      protocol: backend.protocol,
+      backendIdentity: backend.identity,
+      lifecycle: "read-only",
+      scope: "exclusive-instance",
+      status: "failed",
+      cleanup: "complete",
+      requests: recovered,
+      ...(peers.length ? { peers } : {}),
+      error: "Recovered readonly requests; assertions were not rerun",
+    };
+    persist(file, report);
+    await auditRecovery(backend, report);
+    return report;
+  }
   if (creation.length !== 1 || creation[0]?.result?.state !== "succeeded")
     throw new Error(
       "No single successful original creation receipt; inspect before cleanup",
@@ -861,6 +2491,31 @@ export async function resumeCleanup(
       throw new Error("Original and durable creation identities differ");
   }
   const folder = saveIntent(directory, document, owner, recovered);
+  const saveOrigin = document;
+  const transition =
+    backend.qualification === "broker"
+      ? savedIdentityTransition(directory, document, owner, recovered)
+      : undefined;
+  if (transition)
+    document = Object.freeze({
+      creationId: transition.creationId,
+      name: transition.name,
+    });
+  for (const [index, entry] of recovered.entries())
+    if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim()) {
+      const saved = folder
+        ? recoveredFile(document, folder, recovered.slice(0, index))
+        : undefined;
+      const target = saved
+        ? Object.freeze({ ...document, file: saved })
+        : document;
+      recoveredCommandResult(
+        entry.result.stdout,
+        entry.intent,
+        entry.requestId,
+        [target],
+      );
+    }
   if (folder) {
     const saved = recoveredFile(document, folder, recovered);
     if (saved) document = Object.freeze({ ...document, file: saved });
@@ -868,7 +2523,8 @@ export async function resumeCleanup(
   const originalDocument = document;
 
   const report: ScenarioReport = {
-    originalDocument,
+    originalDocument: transition ? saveOrigin : originalDocument,
+    ...(transition ? { savedIdentityTransition: transition } : {}),
     owner: Object.freeze(owner),
     directory,
     mode: backend.mode,
@@ -895,7 +2551,23 @@ export async function resumeCleanup(
   );
   await session.recoverSavedTransitions();
   try {
+    for (const entry of recovered)
+      if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
+        recoveredCommandResult(
+          entry.result.stdout,
+          entry.intent,
+          entry.requestId,
+          [originalDocument, session.document],
+        );
+  } catch (error) {
+    report.cleanup = "deferred";
+    report.cleanupError = errorText(error);
+    session.persist();
+    throw error;
+  }
+  try {
     await session.cleanup();
+    await session.restoreUserView();
   } catch (error) {
     if (
       error instanceof SavedEvidenceError ||

@@ -85,10 +85,28 @@ export function documentScenarios(folder: FixtureFolder): Scenario[] {
             (p) => p["name"] === "MigrationMidRenamed",
           ),
         );
+        const renamedList = await command(
+          session,
+          "renamed-list",
+          "plane_list",
+        );
+        assert.match(
+          text(renamedList["output"]),
+          /PLANE name=MigrationMidRenamed/,
+        );
         const deleted = await command(session, "delete", "plane_delete", [
           "MigrationMidRenamed",
         ]);
         assert.deepEqual(rows(deleted, "planes"), rows(offset, "planes"));
+        const deletedList = await command(
+          session,
+          "deleted-list",
+          "plane_list",
+        );
+        assert.doesNotMatch(
+          text(deletedList["output"]),
+          /PLANE name=MigrationMid/,
+        );
         const angled = await command(session, "angle", "plane_add", [
           "MigrationAngle",
           "angle",
@@ -100,6 +118,8 @@ export function documentScenarios(folder: FixtureFolder): Scenario[] {
           text(angled["output"]),
           /CREATED_PLANE name=MigrationAngle/,
         );
+        const angleList = await command(session, "angle-list", "plane_list");
+        assert.match(text(angleList["output"]), /PLANE name=MigrationAngle/);
         const angle = rows(angled, "planes").find(
           (p) => p["name"] === "MigrationAngle",
         );
@@ -146,6 +166,11 @@ export function documentScenarios(folder: FixtureFolder): Scenario[] {
           /CREATED_COMP name=MigrationComponent parent=/,
         );
         assert.equal(rows(parent, "components").length, 2);
+        const parentList = await command(session, "parent-list", "comp_list");
+        assert.match(
+          text(parentList["output"]),
+          /COMP name=MigrationComponent parent=/,
+        );
         const child = await command(session, "child", "comp_add", [
           "NestedComponent",
           "MigrationComponent",

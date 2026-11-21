@@ -1,0 +1,49 @@
+exports.wordWrapAnsi = ( str , width ) => string.wordwrap( str , {
+	width: width ,
+	noJoin: true ,
+	fill: true ,
+	regroupFn: strArray => {
+		var sequence = '' ,
+			csi = false ,
+			newStrArray = [] ;
+
+		strArray.forEach( char => {
+			var charCode ;
+
+			if ( csi ) {
+				sequence += char ;
+				charCode = char.charCodeAt( 0 ) ;
+
+				if ( ( charCode >= 0x41 && charCode <= 0x5a ) || ( charCode >= 0x61 && charCode <= 0x7a ) ) {
+					newStrArray.push( sequence ) ;
+					sequence = '' ;
+					csi = false ;
+				}
+			}
+			else if ( sequence ) {
+				sequence += char ;
+
+				if ( char === '[' ) {
+					csi = true ;
+				}
+				else {
+					newStrArray.push( sequence ) ;
+					sequence = '' ;
+				}
+			}
+			else if ( char === '\x1b' ) {
+				sequence = char ;
+			}
+			else {
+				newStrArray.push( char ) ;
+			}
+		} ) ;
+
+		return newStrArray ;
+	} ,
+	charWidthFn: char => {
+		if ( char[ 0 ] === '\x1b' ) { return 0 ; }
+		return string.unicode.charWidth( char ) ;
+	}
+} ) ;
+

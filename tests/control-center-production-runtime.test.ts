@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
@@ -6,11 +7,12 @@ import { test } from "node:test";
 import type { ConsoleQueryScope } from "../packages/control-center/dist/contracts/query.js";
 import { setupProjects } from "./control-center-test-support.js";
 
+const load = createRequire(__filename);
 const root = process.cwd();
-const { createControlCenterComposition } = require(
+const { createControlCenterComposition } = load(
   path.join(root, "dist/src/dist/composition/control-center.js"),
 ) as typeof import("../dist/library-build/src/composition/control-center.js");
-const { createPassiveConsoleTelemetry } = require(
+const { createPassiveConsoleTelemetry } = load(
   path.join(
     root,
     "dist/src/dist/node-adapters/control-center/passive-runtime.js",
@@ -18,6 +20,63 @@ const { createPassiveConsoleTelemetry } = require(
 ) as typeof import("../packages/node-adapters/dist/control-center/passive-runtime.js");
 const digest = (file: string): string =>
   createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+
+test("installed project controls persist aliases and refuse unfenced archival", async (t) => {
+  const fixture = setupProjects(t, ["project-a", "project-b"]);
+  const composition = createControlCenterComposition(
+    {
+      port: 4748,
+      installationRoot: path.join(root, "dist"),
+      stateDirectory: path.join(fixture.root, "service"),
+      buildIdentity: "a".repeat(64),
+      protocolVersion: 1,
+      instanceNonce: "b".repeat(64),
+    },
+    {
+      registry: { filePath: fixture.registry.readonlyPath },
+      queueDirectory: path.join(fixture.root, "absent-queue"),
+      openCodePresenceDirectory: path.join(fixture.root, "absent-presence"),
+    },
+  );
+  t.after(() => composition.close?.());
+  const principal = await composition.resolvePrincipal({
+    subject: "local-browser",
+    createdAt: Date.now(),
+  });
+  const scope = { kind: "project" as const, projectId: "project-a" };
+  const snapshot = await composition.query.snapshot(scope, principal);
+  assert.ok("revision" in snapshot);
+  const alias = await composition.projectActions!(principal, {
+    version: 1,
+    action: "set-alias",
+    projectId: "project-a",
+    expectedRevision: snapshot.revision,
+    alias: "Production assembly",
+  });
+  assert.equal(alias.state, "ok");
+  const refreshed = await composition.query.snapshot(scope, principal);
+  assert.ok("revision" in refreshed);
+  const archived = await composition.projectActions!(principal, {
+    version: 1,
+    action: "archive",
+    projectId: "project-a",
+    expectedRevision: refreshed.revision,
+  });
+  assert.notEqual(archived.state, "ok");
+  assert.equal(fixture.registry.lookup("project-a")?.monitoring, true);
+  const forbidden = await composition.projectActions!(
+    { ...principal, projectIds: ["project-b"] },
+    {
+      version: 1,
+      action: "set-alias",
+      projectId: "project-a",
+      expectedRevision: refreshed.revision,
+      alias: "Unauthorized",
+    },
+  );
+  assert.notEqual(forbidden.state, "ok");
+  assert.equal(fs.existsSync(path.join(fixture.root, "absent-queue")), false);
+});
 
 test("installed composition reads registered SQLite histories without crossing project boundaries", async (t) => {
   const fixture = setupProjects(t, ["project-a", "project-b"]);

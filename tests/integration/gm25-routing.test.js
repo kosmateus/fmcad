@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm25-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-25 (3D routing). These are read-only CAD
 // commands resolved against the coordinator-provided document; every test is
 // guarded and clears the shared document before/after.

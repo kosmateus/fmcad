@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Annular sector segment", "data": {"name": "Annulus", "innerRadius": "10 mm", "outerRadius": "20 mm", "start": "0 deg", "sweep": "120 deg", "height": "5 mm"}, "requires": "Native component; Annulus and Annulus__section unused.", "output": "result.recipe is annular_segment; result.refs.inner/outer identify the driving-radius arcs; result.diameters echoes the declared span."}
     ],
-    "audit": {"sources": ["assets/cad/shapes.py:_shapes_annular_segment,_shapes_declared_plane","assets/cad/model.py:model_feature(extrude)","assets/cad/core.py:CadContext.resolve,ref"], "verified": ["Radii as driving dimensions and sector closure", "Center/start/sweep initialization with plane/frame orientation"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/shapes.py:_shapes_annular_segment,_shapes_declared_plane","assets/cad/model.py:model_feature(extrude)","assets/cad/core.py:CadContext.resolve,ref"], "verified": ["Radii as driving dimensions and sector closure", "Center/start/sweep initialization with plane/frame orientation"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   },
   "shape.arc_strip": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Curved blade strip", "data": {"name": "Blade", "centerline": {"radius": "30 mm", "start": "10 deg", "sweep": "80 deg"}, "thickness": "2 mm", "height": "20 mm"}, "requires": "Native component; Blade and Blade__section unused.", "output": "result.recipe is arc_strip; result.centerline echoes inner/outer radii; thickness is retained in both radius expressions."}
     ],
-    "audit": {"sources": ["assets/cad/shapes.py:_shapes_arc_strip,_shapes_circle_from_points,_shapes_declared_plane","assets/cad/model.py:model_feature(extrude)"], "verified": ["Normal radial thickness as offset radii", "Three-point centerline circle reduction and off-origin semantics"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/shapes.py:_shapes_arc_strip,_shapes_circle_from_points,_shapes_declared_plane","assets/cad/model.py:model_feature(extrude)"], "verified": ["Normal radial thickness as offset radii", "Three-point centerline circle reduction and off-origin semantics"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   },
   "shape.can": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "Opened cylindrical can", "data": {"name": "Can", "diameter": "40 mm", "height": "60 mm", "wallThickness": "1.5 mm", "opening": "top", "radii": ["2 mm", "1 mm"]}, "requires": "Native component; Can and Can__section unused. Blank revolve/shell/fillet features must be kernel-feasible.", "output": "result.recipe is can; result.shell and result.fillets describe the composed native features."}
     ],
-    "audit": {"sources": ["assets/cad/shapes.py:_shapes_can,_shapes_cap_face,_shapes_circular_edges","assets/cad/model.py:model_feature(revolve,shell,fillet)"], "verified": ["Blank/shell/fillet composition and feature dependencies", "Extreme cap-face and circular-edge discovery along X/Y/Z axes"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/shapes.py:_shapes_can,_shapes_cap_face,_shapes_circular_edges","assets/cad/model.py:model_feature(revolve,shell,fillet)"], "verified": ["Blank/shell/fillet composition and feature dependencies", "Extreme cap-face and circular-edge discovery along X/Y/Z axes"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   },
   "shape.impeller": {
     "sections": [
@@ -37,7 +37,7 @@
     "examples": [
       {"label": "Six-blade impeller", "data": {"name": "Impeller", "hub": {"diameter": "20 mm", "height": "15 mm"}, "blade": {"innerRadius": "10 mm", "outerRadius": "40 mm", "sweep": "60 deg", "height": "15 mm"}, "count": 6}, "requires": "Native component; Impeller and helper names unused. The blade innerRadius (10 mm) matches the hub radius (20 mm / 2) so the seed blade joins the hub.", "output": "result.hub.feature, result.blade.feature and result.pattern.feature identify the dependency chain."}
     ],
-    "audit": {"sources": ["assets/cad/shapes.py:_shapes_impeller,_shapes_primitive","assets/cad/model.py:model_feature(revolve,circular)"], "verified": ["Hub/blade/pattern dependency wiring", "Seed blade joined to hub implicitly (join carries no participants) and patterned"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/shapes.py:_shapes_impeller,_shapes_primitive","assets/cad/model.py:model_feature(revolve,circular)"], "verified": ["Hub/blade/pattern dependency wiring", "Seed blade joined to hub implicitly (join carries no participants) and patterned"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   },
   "shape.boss_pattern": {
     "sections": [
@@ -47,6 +47,6 @@
     "examples": [
       {"label": "Circular boss-hole pattern", "data": {"name": "Bosses", "boss": {"diameter": "8 mm", "height": "5 mm"}, "hole": {"diameter": "3 mm", "depth": "5 mm"}, "layout": {"type": "circular", "axis": "Z", "quantity": 6, "angle": "360 deg"}}, "requires": "Native component; Bosses and helper names unused.", "output": "result.boss.feature and result.hole.feature feed result.pattern as the patterned seed set."}
     ],
-    "audit": {"sources": ["assets/cad/shapes.py:_shapes_boss_pattern,_shapes_primitive","assets/cad/model.py:model_feature(hole,rectangular,circular)"], "verified": ["Boss/hole dependency and rectangular/circular/list layouts", "Seed feature(s) feed the native pattern"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/shapes.py:_shapes_boss_pattern,_shapes_primitive","assets/cad/model.py:model_feature(hole,rectangular,circular)"], "verified": ["Boss/hole dependency and rectangular/circular/list layouts", "Seed feature(s) feed the native pattern"], "tests": ["tests/shapes_gm10_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   }
 }

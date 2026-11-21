@@ -1,5 +1,7 @@
 """Geometry sketch: domain; retained cad-v1 shared namespace."""
 
+from fmcad.domain.values import JsonObject
+
 
 def _sketch_policy(data: "JsonObject") -> str:
     policy = data.get('inferencePolicy', 'explicit')

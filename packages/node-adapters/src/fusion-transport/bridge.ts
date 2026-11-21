@@ -1,5 +1,6 @@
 import type { ObjectValue } from "./contracts.js";
 import { object } from "./contracts.js";
+import { pythonLiteral } from "../python/artifact.js";
 
 export function buildBridgeScript(
   toolName: string,
@@ -67,13 +68,8 @@ export function buildBridgeScript(
         );
     }
   } else unsupported(`Tool ${toolName}`);
-  const json = JSON.stringify({ toolName, request }).replace(
-    /[^\x00-\x7f]/g,
-    (character) =>
-      "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
-  );
   return source.replace(
     "_BRIDGE_REQUEST = {}",
-    () => `_BRIDGE_REQUEST = __import__('json').loads(${JSON.stringify(json)})`,
+    () => `_BRIDGE_REQUEST = ${pythonLiteral({ toolName, request })}`,
   );
 }

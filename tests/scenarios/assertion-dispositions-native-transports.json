@@ -1,0 +1,2253 @@
+{
+  "schemaVersion": 1,
+  "status": "reviewed-retained-obligations",
+  "sourceCommit": "a32c49e705bd403c247caefa1007ad82d6d200d1",
+  "meaning": "Individual real-transport obligations, all native NOT RUN. Shared runner source and injected offline transport proofs do not qualify installed Fusion.",
+  "sources": [
+    "tests/live-backend-adapter.js",
+    "tests/live-mcp-stdio.js",
+    "tests/live-rpc-recovery.js"
+  ],
+  "mappings": [
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "8e6719b696ae329c1c06-1",
+      "sourceLine": 27,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Keep the retained launcher argument rejection and positive safe-integer timeout bound; the shared factory accepts the same timeout range and the native CLI must require explicit execution. A factory registration alone does not prove the retained launcher arguments.",
+      "qualification": "not-run",
+      "nativeObligation": "invocation:8e6719b696ae329c1c06-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.ok(args.length === 0 || (args.length === 2 && args[0] === '--timeout-ms'),\n    'Usage: node tests/live-backend-adapter.js [--timeout-ms 60000]')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "5d84736022a9b89ba557-1",
+      "sourceLine": 30,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Keep the retained launcher argument rejection and positive safe-integer timeout bound; the shared factory accepts the same timeout range and the native CLI must require explicit execution. A factory registration alone does not prove the retained launcher arguments.",
+      "qualification": "not-run",
+      "nativeObligation": "invocation:5d84736022a9b89ba557-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 2147482647,\n    'timeout-ms must be a positive integer at most 2147482647')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "fdaf043267e38e6a24a9-1",
+      "sourceLine": 60,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Observe one actual private add-in adapter initialization, the identical server-issued session on every subsequent request, execute_python only and persistent:false. Every underlying RPC uses a previously persisted ScenarioSession request, with no direct or fallback send.",
+      "qualification": "not-run",
+      "nativeObligation": "session:fdaf043267e38e6a24a9-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(report.initializeCount, 1, 'Unexpected session reinitialization')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "cbbd6fe027a11330a167-1",
+      "sourceLine": 62,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Observe one actual private add-in adapter initialization, the identical server-issued session on every subsequent request, execute_python only and persistent:false. Every underlying RPC uses a previously persisted ScenarioSession request, with no direct or fallback send.",
+      "qualification": "not-run",
+      "nativeObligation": "session:cbbd6fe027a11330a167-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.ok(sessionSeen, 'Request before initialization')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "0308c10e76d51fb0695a-1",
+      "sourceLine": 63,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Observe one actual private add-in adapter initialization, the identical server-issued session on every subsequent request, execute_python only and persistent:false. Every underlying RPC uses a previously persisted ScenarioSession request, with no direct or fallback send.",
+      "qualification": "not-run",
+      "nativeObligation": "session:0308c10e76d51fb0695a-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(sessionId, clientSession, 'Client session changed')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "1c3a0fef51bdcdd868e3-1",
+      "sourceLine": 66,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Observe one actual private add-in adapter initialization, the identical server-issued session on every subsequent request, execute_python only and persistent:false. Every underlying RPC uses a previously persisted ScenarioSession request, with no direct or fallback send.",
+      "qualification": "not-run",
+      "nativeObligation": "session:1c3a0fef51bdcdd868e3-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(payload.params.name, 'execute_python', 'Unexpected tool or native fallback')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "170529ffd1c3a329f324-1",
+      "sourceLine": 67,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Observe one actual private add-in adapter initialization, the identical server-issued session on every subsequent request, execute_python only and persistent:false. Every underlying RPC uses a previously persisted ScenarioSession request, with no direct or fallback send.",
+      "qualification": "not-run",
+      "nativeObligation": "session:170529ffd1c3a329f324-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(payload.params.arguments.persistent, false)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "e700896608679c41215c-1",
+      "sourceLine": 109,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the actual add-in ToolResult success flag, readOnlyRequested true, readOnlyEnforced false and exact normalized stdout including its final newline. A readonly source declaration never substitutes for worker SDK-settlement or no-mutation evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "tool-result:e700896608679c41215c-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.failed, false, out.text)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "091f91a22994d9afcc1d-1",
+      "sourceLine": 110,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the actual add-in ToolResult success flag, readOnlyRequested true, readOnlyEnforced false and exact normalized stdout including its final newline. A readonly source declaration never substitutes for worker SDK-settlement or no-mutation evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "tool-result:091f91a22994d9afcc1d-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.readOnlyRequested, true)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "0962633ae22911721c8f-1",
+      "sourceLine": 111,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the actual add-in ToolResult success flag, readOnlyRequested true, readOnlyEnforced false and exact normalized stdout including its final newline. A readonly source declaration never substitutes for worker SDK-settlement or no-mutation evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "tool-result:0962633ae22911721c8f-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.readOnlyEnforced, false)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "e3160a8769c135e95104-1",
+      "sourceLine": 112,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the actual add-in ToolResult success flag, readOnlyRequested true, readOnlyEnforced false and exact normalized stdout including its final newline. A readonly source declaration never substitutes for worker SDK-settlement or no-mutation evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "tool-result:e3160a8769c135e95104-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.text.replace(/\\r\\n/g, '\\n'), expected + '\\n')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "2512bd2f55b8dc4123aa-1",
+      "sourceLine": 134,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the actual add-in ToolResult success flag, readOnlyRequested true, readOnlyEnforced false and exact normalized stdout including its final newline. A readonly source declaration never substitutes for worker SDK-settlement or no-mutation evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "tool-result:2512bd2f55b8dc4123aa-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "success(out)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "ea575a43bab67f7a75b2-1",
+      "sourceLine": 136,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:ea575a43bab67f7a75b2-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.ok(Array.isArray(data.documents))",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "8b3a608c0833a83933c9-1",
+      "sourceLine": 137,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:8b3a608c0833a83933c9-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.ok(Number.isInteger(data.frameDepth) && data.frameDepth > 0)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "f664411d5ffd130d651c-1",
+      "sourceLine": 138,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:f664411d5ffd130d651c-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(typeof data.stdoutType, 'string')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "61157cdac468e559bd02-1",
+      "sourceLine": 144,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the real add-in capabilities to state that readonly is not enforced and automatic fallback is disabled. Capability registration or a fabricated readonly receipt cannot certify physical execution.",
+      "qualification": "not-run",
+      "nativeObligation": "capability:61157cdac468e559bd02-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(report.readOnlyEnforced, false)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "9f8e768bbeafd3d2a38b-1",
+      "sourceLine": 145,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the real add-in capabilities to state that readonly is not enforced and automatic fallback is disabled. Capability registration or a fabricated readonly receipt cannot certify physical execution.",
+      "qualification": "not-run",
+      "nativeObligation": "capability:9f8e768bbeafd3d2a38b-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(report.automaticFallback, false)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "dcd7e288833ad20e1415-1",
+      "sourceLine": 146,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:dcd7e288833ad20e1415-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "snapshot('before')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "2512bd2f55b8dc4123aa-2",
+      "sourceLine": 149,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require the actual add-in ToolResult success flag, readOnlyRequested true, readOnlyEnforced false and exact normalized stdout including its final newline. A readonly source declaration never substitutes for worker SDK-settlement or no-mutation evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "tool-result:2512bd2f55b8dc4123aa-2",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "success(out)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "c5337518a86629ff9b4b-1",
+      "sourceLine": 150,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Exercise the real document.open compatibility bridge and require a results array, exact JSON text/data equivalence and cardinality equal to the before inventory. No simulated marker is accepted as native bridge evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "document-bridge:c5337518a86629ff9b4b-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.ok(Array.isArray(out.data?.results), 'Missing bridged document results')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "966bfc6d09a999f6bb9d-1",
+      "sourceLine": 151,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Exercise the real document.open compatibility bridge and require a results array, exact JSON text/data equivalence and cardinality equal to the before inventory. No simulated marker is accepted as native bridge evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "document-bridge:966bfc6d09a999f6bb9d-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.deepEqual(JSON.parse(out.text), out.data)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "705d951aad9ef397edad-1",
+      "sourceLine": 152,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Exercise the real document.open compatibility bridge and require a results array, exact JSON text/data equivalence and cardinality equal to the before inventory. No simulated marker is accepted as native bridge evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "document-bridge:705d951aad9ef397edad-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.data.results.length, report.before.documents.length)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "189684e80e4ef1443bdd-1",
+      "sourceLine": 158,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Execute all 450 sequential ADAPTER_PROBE ordinals through the real single initialized adapter, verifying each exact stdout marker and final count 450. Registration, truncated loops or a synthetic final count do not satisfy this obligation.",
+      "qualification": "not-run",
+      "nativeObligation": "450-markers:189684e80e4ef1443bdd-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "success(await script(`def run(_context: str):\\n print(\"${marker}\")`), marker)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "1004277cd4f51bde9337-1",
+      "sourceLine": 168,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Preserve the exact Polish, Chinese and emoji marker, separate stdout ADAPTER_STDOUT and stderr ADAPTER_STDERR with newline normalization. Require actual real-transport payload bytes and no change in session or automatic replay.",
+      "qualification": "not-run",
+      "nativeObligation": "unicode-stderr:1004277cd4f51bde9337-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "success(await script(`def run(_context: str):\\n print(${JSON.stringify(unicode)})`), unicode)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "5a0e7ae37aadd8810747-1",
+      "sourceLine": 170,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Preserve the exact Polish, Chinese and emoji marker, separate stdout ADAPTER_STDOUT and stderr ADAPTER_STDERR with newline normalization. Require actual real-transport payload bytes and no change in session or automatic replay.",
+      "qualification": "not-run",
+      "nativeObligation": "unicode-stderr:5a0e7ae37aadd8810747-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "success(out, 'ADAPTER_STDOUT')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "64cb73ef32a838a2a67a-1",
+      "sourceLine": 171,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Preserve the exact Polish, Chinese and emoji marker, separate stdout ADAPTER_STDOUT and stderr ADAPTER_STDERR with newline normalization. Require actual real-transport payload bytes and no change in session or automatic replay.",
+      "qualification": "not-run",
+      "nativeObligation": "unicode-stderr:64cb73ef32a838a2a67a-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.stderr.replace(/\\r\\n/g, '\\n'), 'ADAPTER_STDERR\\n')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "299124ef8fa22b5451e8-1",
+      "sourceLine": 175,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require a failed real Python call containing both ValueError and ADAPTER_EXPECTED_EXCEPTION, followed by the explicitly separate successful ADAPTER_AFTER_EXCEPTION request. An uncertain reply blocks continuation instead of being treated as an expected Python failure.",
+      "qualification": "not-run",
+      "nativeObligation": "exception-continuation:299124ef8fa22b5451e8-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(out.failed, true)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "89b1a4c3986686cd3444-1",
+      "sourceLine": 176,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require a failed real Python call containing both ValueError and ADAPTER_EXPECTED_EXCEPTION, followed by the explicitly separate successful ADAPTER_AFTER_EXCEPTION request. An uncertain reply blocks continuation instead of being treated as an expected Python failure.",
+      "qualification": "not-run",
+      "nativeObligation": "exception-continuation:89b1a4c3986686cd3444-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.match(out.text, /ValueError/)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "f195e36696e1c6417e74-1",
+      "sourceLine": 177,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require a failed real Python call containing both ValueError and ADAPTER_EXPECTED_EXCEPTION, followed by the explicitly separate successful ADAPTER_AFTER_EXCEPTION request. An uncertain reply blocks continuation instead of being treated as an expected Python failure.",
+      "qualification": "not-run",
+      "nativeObligation": "exception-continuation:f195e36696e1c6417e74-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.match(out.text, /ADAPTER_EXPECTED_EXCEPTION/)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "365a81aa20ab2e44ba15-1",
+      "sourceLine": 179,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Require a failed real Python call containing both ValueError and ADAPTER_EXPECTED_EXCEPTION, followed by the explicitly separate successful ADAPTER_AFTER_EXCEPTION request. An uncertain reply blocks continuation instead of being treated as an expected Python failure.",
+      "qualification": "not-run",
+      "nativeObligation": "exception-continuation:365a81aa20ab2e44ba15-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "success(await script('def run(_context: str):\\n print(\"ADAPTER_AFTER_EXCEPTION\")'), 'ADAPTER_AFTER_EXCEPTION')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "ed9c1e86940873c41c3d-1",
+      "sourceLine": 189,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Keep all four unsupported recent/licensing/undo/redo calls and their unsupported-or-unavailable, --backend mcp and no-fallback diagnostics. These negative calls must not silently select another native backend.",
+      "qualification": "not-run",
+      "nativeObligation": "unsupported:ed9c1e86940873c41c3d-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.rejects(call(request, tool), error => {\n          assert.match(error.message, /unsupported|unavailable/i);\n          assert.match(error.message, /--backend mcp/);\n          assert.match(error.message, /no .*fallback/i);\n          report.unsupported.push({ tool, request, error: error.message });\n          return true;\n        })",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "39f8d7c729a3c64f0995-1",
+      "sourceLine": 190,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Keep all four unsupported recent/licensing/undo/redo calls and their unsupported-or-unavailable, --backend mcp and no-fallback diagnostics. These negative calls must not silently select another native backend.",
+      "qualification": "not-run",
+      "nativeObligation": "unsupported:39f8d7c729a3c64f0995-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.match(error.message, /unsupported|unavailable/i)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "e123b1a59a40f0121c6b-1",
+      "sourceLine": 191,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Keep all four unsupported recent/licensing/undo/redo calls and their unsupported-or-unavailable, --backend mcp and no-fallback diagnostics. These negative calls must not silently select another native backend.",
+      "qualification": "not-run",
+      "nativeObligation": "unsupported:e123b1a59a40f0121c6b-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.match(error.message, /--backend mcp/)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "4faec1d581cfde75f0ef-1",
+      "sourceLine": 192,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Keep all four unsupported recent/licensing/undo/redo calls and their unsupported-or-unavailable, --backend mcp and no-fallback diagnostics. These negative calls must not silently select another native backend.",
+      "qualification": "not-run",
+      "nativeObligation": "unsupported:4faec1d581cfde75f0ef-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.match(error.message, /no .*fallback/i)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "dbf76528cdb9d00c257a-1",
+      "sourceLine": 199,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:dbf76528cdb9d00c257a-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "snapshot('after')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "43d3d3f6d4db68421987-1",
+      "sourceLine": 200,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:43d3d3f6d4db68421987-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.deepEqual(report.after.documents, report.before.documents)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "734137216efa0ff12464-1",
+      "sourceLine": 201,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Read actual stdout frame depth/type and complete visible-document metadata before and after the soak. Keep exact document identity/name/saved/modified comparison and active document unchanged; the existing exclusive coordinator also audits full foreign inventory.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:734137216efa0ff12464-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(report.after.activeCreationId, report.before.activeCreationId)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "2dec10209aad45318b1e-1",
+      "sourceLine": 202,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Observe one actual private add-in adapter initialization, the identical server-issued session on every subsequent request, execute_python only and persistent:false. Every underlying RPC uses a previously persisted ScenarioSession request, with no direct or fallback send.",
+      "qualification": "not-run",
+      "nativeObligation": "session:2dec10209aad45318b1e-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(report.initializeCount, 1)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "9568fe2e5fe4f6711504-1",
+      "sourceLine": 203,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "Execute all 450 sequential ADAPTER_PROBE ordinals through the real single initialized adapter, verifying each exact stdout marker and final count 450. Registration, truncated loops or a synthetic final count do not satisfy this obligation.",
+      "qualification": "not-run",
+      "nativeObligation": "450-markers:9568fe2e5fe4f6711504-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "assert.equal(report.markersCompleted, 450)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-backend-adapter.js",
+      "assertionId": "2789c84e11e1313291ad-1",
+      "sourceLine": 223,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-backend-adapter-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "evidence": "tests/scenarios/native-backend-adapter-cases.ts",
+      "reason": "The retained complete adapter run remains a native obligation covering every stage and final receipt. The pure factory, source review and offline injected faults do not claim execution of the 450-marker installed-Fusion run.",
+      "qualification": "not-run",
+      "nativeObligation": "whole-run:2789c84e11e1313291ad-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-adapter-soak"
+      ],
+      "retainedSource": "tests/live-backend-adapter.js",
+      "requiredObservation": "main()",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "1056f6795a5e5a0bf005-1",
+      "sourceLine": 13,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Run the exact installed fmcad-mcp entry with --help, require exit zero and Usage: fmcad-mcp in actual stdout. This launch is distinct from native execution and remains part of the selected installed-candidate evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "installed-entry-help:1056f6795a5e5a0bf005-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.equal(help.status, 0, help.stderr || help.stdout || help.error?.message)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "78051033bbd9b83c4345-1",
+      "sourceLine": 14,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Run the exact installed fmcad-mcp entry with --help, require exit zero and Usage: fmcad-mcp in actual stdout. This launch is distinct from native execution and remains part of the selected installed-candidate evidence.",
+      "qualification": "not-run",
+      "nativeObligation": "installed-entry-help:78051033bbd9b83c4345-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.match(help.stdout, /Usage: fmcad-mcp/)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "63b44be2fc6d42ceb5ff-1",
+      "sourceLine": 43,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Initialize the actual OpenCode stdio process and require serverInfo.name fmcad plus both execute_python and fmcad_execute tools. Preserve NDJSON request/response framing and child PID/birth evidence before any SDK-bound stdin request.",
+      "qualification": "not-run",
+      "nativeObligation": "stdio-discovery:63b44be2fc6d42ceb5ff-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.equal(init.serverInfo.name, 'fmcad')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "d42b19dc65685c10c627-1",
+      "sourceLine": 46,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Initialize the actual OpenCode stdio process and require serverInfo.name fmcad plus both execute_python and fmcad_execute tools. Preserve NDJSON request/response framing and child PID/birth evidence before any SDK-bound stdin request.",
+      "qualification": "not-run",
+      "nativeObligation": "stdio-discovery:d42b19dc65685c10c627-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.ok(tools.tools.some(tool => tool.name === 'execute_python'))",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "2f8ea44780aa522972a7-1",
+      "sourceLine": 47,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Initialize the actual OpenCode stdio process and require serverInfo.name fmcad plus both execute_python and fmcad_execute tools. Preserve NDJSON request/response framing and child PID/birth evidence before any SDK-bound stdin request.",
+      "qualification": "not-run",
+      "nativeObligation": "stdio-discovery:2f8ea44780aa522972a7-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.ok(tools.tools.some(tool => tool.name === 'fmcad_execute'))",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "f4324a2eaec1310b36a8-1",
+      "sourceLine": 61,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Persist the original request ID before stdin submission, retain queue admission and exact owner/request/job binding, then poll only that job. Require the actual RPC raw response and no JSON-RPC error; unresolved terminal states defer recovery without resubmission.",
+      "qualification": "not-run",
+      "nativeObligation": "owned-receipt:f4324a2eaec1310b36a8-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.ok(value.rpc?.raw, 'Missing owned RPC result; inspect job ' + accepted.jobId)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "80a81d1705bcc74de61d-1",
+      "sourceLine": 63,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Persist the original request ID before stdin submission, retain queue admission and exact owner/request/job binding, then poll only that job. Require the actual RPC raw response and no JSON-RPC error; unresolved terminal states defer recovery without resubmission.",
+      "qualification": "not-run",
+      "nativeObligation": "owned-receipt:80a81d1705bcc74de61d-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.equal(message.error, undefined, JSON.stringify(message.error))",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "481731e15b1ae5ad6466-1",
+      "sourceLine": 67,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Persist the original request ID before stdin submission, retain queue admission and exact owner/request/job binding, then poll only that job. Require the actual RPC raw response and no JSON-RPC error; unresolved terminal states defer recovery without resubmission.",
+      "qualification": "not-run",
+      "nativeObligation": "owned-receipt:481731e15b1ae5ad6466-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.ok(['queued', 'running', 'sending', 'preparing', 'ready', 'processing'].includes(value?.job?.state),\n          'Unresolved job; inspect without resubmission: ' + accepted.jobId)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "a4a6ddff844a807cd33b-1",
+      "sourceLine": 72,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Require the actual physical add-in result isError false, decoded success true and exact FUSION_ADDIN_STDIO_OK stdout. The authoritative original queue result must independently prove SDK settlement; metadata-only discovery cannot satisfy this marker.",
+      "qualification": "not-run",
+      "nativeObligation": "stdio-marker:a4a6ddff844a807cd33b-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.equal(result.isError, false)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "70ef2a629539f64b8d53-1",
+      "sourceLine": 74,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Require the actual physical add-in result isError false, decoded success true and exact FUSION_ADDIN_STDIO_OK stdout. The authoritative original queue result must independently prove SDK settlement; metadata-only discovery cannot satisfy this marker.",
+      "qualification": "not-run",
+      "nativeObligation": "stdio-marker:70ef2a629539f64b8d53-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.equal(payload.success, true)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "b09cfc5f7575b27be46d-1",
+      "sourceLine": 75,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "Require the actual physical add-in result isError false, decoded success true and exact FUSION_ADDIN_STDIO_OK stdout. The authoritative original queue result must independently prove SDK settlement; metadata-only discovery cannot satisfy this marker.",
+      "qualification": "not-run",
+      "nativeObligation": "stdio-marker:b09cfc5f7575b27be46d-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "assert.equal(payload.stdout.trim(), 'FUSION_ADDIN_STDIO_OK')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-mcp-stdio.js",
+      "assertionId": "2789c84e11e1313291ad-1",
+      "sourceLine": 82,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-mcp-stdio-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "evidence": "tests/scenarios/native-mcp-stdio-cases.ts",
+      "reason": "The exact stdio smoke entry and its complete native marker path remain NOT RUN until exercised on the selected installed candidate. Factory registration and simulated process framing alone do not qualify native OpenCode transport.",
+      "qualification": "not-run",
+      "nativeObligation": "whole-run:2789c84e11e1313291ad-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-mcp-stdio"
+      ],
+      "retainedSource": "tests/live-mcp-stdio.js",
+      "requiredObservation": "main()",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "a88eb9929fc39da6e671-1",
+      "sourceLine": 30,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Require explicit native --run, the add-in backend and an absent global broker lock before preparation. Never stop or replace an existing user broker; cleanup may close only the broker handle created by this profile and retains its unknown-work refusal.",
+      "qualification": "not-run",
+      "nativeObligation": "isolated-profile:a88eb9929fc39da6e671-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.ok(process.argv.includes('--run'), 'Explicit --run required')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "4958ee783232c7e882c0-1",
+      "sourceLine": 32,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Require explicit native --run, the add-in backend and an absent global broker lock before preparation. Never stop or replace an existing user broker; cleanup may close only the broker handle created by this profile and retains its unknown-work refusal.",
+      "qualification": "not-run",
+      "nativeObligation": "isolated-profile:4958ee783232c7e882c0-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.ok(!fs.existsSync(path.join(dir, 'broker.lock')), 'Drain/stop the idle broker before this isolated physical fault-injection test')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "b883ae59c73a28c803a0-1",
+      "sourceLine": 34,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Require explicit native --run, the add-in backend and an absent global broker lock before preparation. Never stop or replace an existing user broker; cleanup may close only the broker handle created by this profile and retains its unknown-work refusal.",
+      "qualification": "not-run",
+      "nativeObligation": "isolated-profile:b883ae59c73a28c803a0-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(configured.backend, 'addin', 'This real transport test currently covers the installed addin backend only')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "73e7354cce4828c67601-1",
+      "sourceLine": 78,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Capture actual complete document identity/name/saved/modified/active metadata through settled readonly original requests before and after both physical faults. Exact before/after equality is mandatory and no owned model is created or user document closed.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:73e7354cce4828c67601-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(result.job.state, 'succeeded')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "70ef2a629539f64b8d53-1",
+      "sourceLine": 81,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Capture actual complete document identity/name/saved/modified/active metadata through settled readonly original requests before and after both physical faults. Exact before/after equality is mandatory and no owned model is created or user document closed.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:70ef2a629539f64b8d53-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(payload.success, true)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "8c73897632a3d94c5fb4-1",
+      "sourceLine": 85,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Capture actual complete document identity/name/saved/modified/active metadata through settled readonly original requests before and after both physical faults. Exact before/after equality is mandatory and no owned model is created or user document closed.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:8c73897632a3d94c5fb4-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "snapshot()",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "67ea281849734d3dc11b-1",
+      "sourceLine": 94,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Execute the real physical marker once, deliberately discard only its return after completion, and require failed RESULT_UNAVAILABLE with dropped count one. A separately journaled peer client must succeed within the retained 10000ms continuation bound after receipt proof.",
+      "qualification": "not-run",
+      "nativeObligation": "physical-reply-loss:67ea281849734d3dc11b-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(dropped, 1, 'Physical operation must never be replayed')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "a90614a447ec0387ffd6-1",
+      "sourceLine": 95,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Execute the real physical marker once, deliberately discard only its return after completion, and require failed RESULT_UNAVAILABLE with dropped count one. A separately journaled peer client must succeed within the retained 10000ms continuation bound after receipt proof.",
+      "qualification": "not-run",
+      "nativeObligation": "physical-reply-loss:a90614a447ec0387ffd6-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(lost.job.state, 'failed')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "f376361b8f2ec4d2702c-1",
+      "sourceLine": 98,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Execute the real physical marker once, deliberately discard only its return after completion, and require failed RESULT_UNAVAILABLE with dropped count one. A separately journaled peer client must succeed within the retained 10000ms continuation bound after receipt proof.",
+      "qualification": "not-run",
+      "nativeObligation": "physical-reply-loss:f376361b8f2ec4d2702c-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(lost.job.code, 'RESULT_UNAVAILABLE')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "5a962e72f67cc25f63ac-1",
+      "sourceLine": 99,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Execute the real physical marker once, deliberately discard only its return after completion, and require failed RESULT_UNAVAILABLE with dropped count one. A separately journaled peer client must succeed within the retained 10000ms continuation bound after receipt proof.",
+      "qualification": "not-run",
+      "nativeObligation": "physical-reply-loss:5a962e72f67cc25f63ac-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(next.job.state, 'succeeded')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "8fc0491e84d5cd87652f-1",
+      "sourceLine": 100,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Execute the real physical marker once, deliberately discard only its return after completion, and require failed RESULT_UNAVAILABLE with dropped count one. A separately journaled peer client must succeed within the retained 10000ms continuation bound after receipt proof.",
+      "qualification": "not-run",
+      "nativeObligation": "physical-reply-loss:8fc0491e84d5cd87652f-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.ok(Date.now() - releasedAt < 10000, 'Other client must resume promptly after completion proof')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "78c5bcbb4a6159254db8-1",
+      "sourceLine": 119,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Persist original intent before writing the submit socket and deliberately lose only the admission acknowledgement. Recover by the same owner/request lookup, require original success with rpcCount exactly one and separate peer success; never resubmit to reconstruct a missing reply.",
+      "qualification": "not-run",
+      "nativeObligation": "admission-ack-loss:78c5bcbb4a6159254db8-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(owned.job.state, 'succeeded')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "0fb65c93d4cf6462e016-1",
+      "sourceLine": 120,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Persist original intent before writing the submit socket and deliberately lose only the admission acknowledgement. Recover by the same owner/request lookup, require original success with rpcCount exactly one and separate peer success; never resubmit to reconstruct a missing reply.",
+      "qualification": "not-run",
+      "nativeObligation": "admission-ack-loss:0fb65c93d4cf6462e016-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(followed.job.state, 'succeeded')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "2b701e11391fb387d012-1",
+      "sourceLine": 121,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Persist original intent before writing the submit socket and deliberately lose only the admission acknowledgement. Recover by the same owner/request lookup, require original success with rpcCount exactly one and separate peer success; never resubmit to reconstruct a missing reply.",
+      "qualification": "not-run",
+      "nativeObligation": "admission-ack-loss:2b701e11391fb387d012-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(owned.job.dispatch.rpcCount, 1)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "8c73897632a3d94c5fb4-2",
+      "sourceLine": 123,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Capture actual complete document identity/name/saved/modified/active metadata through settled readonly original requests before and after both physical faults. Exact before/after equality is mandatory and no owned model is created or user document closed.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:8c73897632a3d94c5fb4-2",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "snapshot()",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "ebf58893ed280d8ffdfa-1",
+      "sourceLine": 124,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Capture actual complete document identity/name/saved/modified/active metadata through settled readonly original requests before and after both physical faults. Exact before/after equality is mandatory and no owned model is created or user document closed.",
+      "qualification": "not-run",
+      "nativeObligation": "shared-state:ebf58893ed280d8ffdfa-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.deepEqual(report.after, report.before, 'User documents or active document changed')",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "3c1a81a2664551390657-1",
+      "sourceLine": 125,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "Require the actual owned broker status blocked field null only after both original faulted requests and peer requests settle. Unknown work preserves the parent/peer recovery ledger and broker ownership instead of manufacturing an unblocked result.",
+      "qualification": "not-run",
+      "nativeObligation": "final-unblocked:3c1a81a2664551390657-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "assert.equal(broker.status().blocked, null)",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    },
+    {
+      "source": "tests/live-rpc-recovery.js",
+      "assertionId": "2789c84e11e1313291ad-1",
+      "sourceLine": 138,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-rpc-recovery-*",
+      "capabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "evidence": "tests/scenarios/native-rpc-recovery-cases.ts",
+      "reason": "The isolated real-transport recovery profile remains native NOT RUN; it requires real physical completion receipts, second-client continuation and unchanged user inventory. Offline fault injection proves journal safety only, not installed Fusion behavior.",
+      "qualification": "not-run",
+      "nativeObligation": "whole-run:2789c84e11e1313291ad-1",
+      "requiredCapabilities": [
+        "documents",
+        "queue-receipts",
+        "native-addin-rpc-recovery"
+      ],
+      "retainedSource": "tests/live-rpc-recovery.js",
+      "requiredObservation": "main()",
+      "nativeEvidenceRequired": [
+        "exact final installed commit/build and add-in protocol",
+        "original owner/request/job and authoritative SDK settlement",
+        "actual raw transport payload and retained assertion outcome",
+        "complete unchanged foreign inventory and certainty-aware recovery"
+      ],
+      "runnerStatus": "migration-required",
+      "blocker": "docs/refactor-agents/E_NATIVE_TRANSPORTS.md"
+    }
+  ]
+}

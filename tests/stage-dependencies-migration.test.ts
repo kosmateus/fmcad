@@ -107,6 +107,9 @@ function reader(version: keyof typeof sources, storage: Storage = {}): Reader {
     if (name === "node:module") return { createRequire: () => read };
     if (name === "node:fs")
       return {
+        existsSync(file: string) {
+          return fs.existsSync(file);
+        },
         realpathSync(directory: string) {
           assert.equal(
             directory,
@@ -156,17 +159,18 @@ function reader(version: keyof typeof sources, storage: Storage = {}): Reader {
   };
   const module: { exports: unknown } = { exports: {} };
   const evaluate = vm.runInThisContext(
-    "(function(require,module,exports,__filename){\n" +
+    "(function(exports,require,module,__filename,__dirname){\n" +
       source +
       "\nmodule.exports={...module.exports,documentSaveReceipt,batchReceipt,helperReceipt,resolvePinnedDocument,createBatchStages,createHelperStages};\n})",
     { filename },
   ) as (
+    exports: unknown,
     loader: typeof read,
     module: { exports: unknown },
-    exports: unknown,
     filename: string,
+    dirname: string,
   ) => void;
-  evaluate(read, module, module.exports, filename);
+  evaluate(module.exports, read, module, filename, path.dirname(filename));
   return module.exports as Reader;
 }
 

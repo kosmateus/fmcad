@@ -222,3 +222,82 @@ test("corrupt reports retain rejection and sanitized diagnostics", async (t) => 
     assert.equal(errors[1], errors[0]);
   }
 });
+
+for (const variant of [
+  "rejected",
+  "foreign-operation",
+  "created",
+  "extra-proof",
+  "thrown",
+] as const) {
+  test(`primitive input rejection settles only authoritative no-mutation evidence: ${variant}`, async (t) => {
+    const directory = await fixture(t);
+    let calls = 0;
+    const operation = "shape.box";
+    const output = {
+      success: false,
+      operation,
+      created: variant === "created" ? [{ token: "partial" }] : [],
+      result: {
+        status: "failed",
+        rejection: {
+          kind: "cad-input-rejection",
+          version: 1,
+          operation: variant === "foreign-operation" ? "shape.cone" : operation,
+          mutationStatus: "not_started",
+          ...(variant === "extra-proof" ? { callerClaim: true } : {}),
+        },
+        error: {
+          code: "INVALID_INPUT",
+          message: "Invalid or incompatible expression: literal",
+        },
+      },
+    };
+    const data = request(directory);
+    data["operations"] = ["first", "second"].map((id) => ({
+      id,
+      operation,
+      data: { name: id },
+      onExisting: "reuse",
+    }));
+    const report = await current.runBatch(
+      null,
+      data,
+      context,
+      async () => {
+        calls++;
+        if (variant === "thrown")
+          throw new Error("Invalid or incompatible expression: literal");
+        return output;
+      },
+      { [operation]: catalog["test.create"]! },
+    );
+    const steps = report["steps"] as {
+      status: string;
+      mutationStatus: string;
+      error?: { message: string; code?: string };
+    }[];
+    assert.equal(calls, 1);
+    assert.equal(report["success"], false);
+    assert.equal(report["status"], variant === "thrown" ? "unknown" : "failed");
+    assert.equal(steps[1]!.status, "skipped");
+    assert.equal(
+      steps[0]!.mutationStatus,
+      variant === "rejected" ? "not_started" : "unknown",
+    );
+    if (variant === "rejected")
+      assert.deepEqual(steps[0]!.error, output.result.error);
+    else assert.notEqual(steps[0]!.error?.code, "INVALID_INPUT");
+    await assert.rejects(
+      current.runBatch(
+        null,
+        data,
+        context,
+        async () => {
+          assert.fail("a failed or unknown batch must never replay");
+        },
+        { [operation]: catalog["test.create"]! },
+      ),
+    );
+  });
+}

@@ -5,6 +5,7 @@ import pathlib
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -1347,6 +1348,14 @@ class ModelTests(unittest.TestCase):
         self.call('model.shell', dict(CATALOG['model.shell']['example'], outsideThickness='1 mm'))
         self.assertIn(('set', 'outsideThickness', ('expression', '1 mm')), TRACE)
 
+    def test_thread_cosmetic_mode_is_forwarded_as_false(self):
+        self.call('model.thread', dict(CATALOG['model.thread']['example'], modeled=False))
+
+        self.assertIn(('threadInfo', False, 'ISO Metric profile', 'M10x1.5', '6g', True), TRACE)
+        modeled = [entry for entry in TRACE if entry[:2] == ('set', 'isModeled')]
+        self.assertEqual(len(modeled), 1)
+        self.assertIs(modeled[0][2], False)
+
     def test_counterbore_and_countersink_modes(self):
         base = CATALOG['model.hole']['example']
         self.call('model.hole', dict(base, type='counterbore', boreDiameter='8 mm', boreDepth='2 mm'))
@@ -1393,6 +1402,22 @@ class ModelTests(unittest.TestCase):
         self.call('model.extrude', {'profile': profile, 'distance': 'wall * 2'})
         self.assertEqual(next(t[1] for t in reversed(TRACE) if t[0] == 'oneSideExtent').value,
                          ('expression', 'wall * 2'))
+
+    def test_extrude_executes_without_multimode_feature_dispatch(self):
+        def unrelated(*args):
+            raise AssertionError('Extrude entered another feature execution family')
+
+        with patch.dict(namespace, {'model_feature': unrelated,
+                                    '_surface_model_preflight': unrelated,
+                                    '_model_path': unrelated, '_entity_query': unrelated}):
+            result = self.call('model.extrude', {
+                'profile': {'kind': 'profile', 'sketch': 'Section', 'index': 0},
+                'distance': '2 in', 'name': 'SeparateExtrusion'})
+        self.assertEqual(result['feature']['name'], 'SeparateExtrusion')
+        self.assertEqual(result['healthState'], 0)
+        self.assertEqual(next(t[1] for t in TRACE if t[0] == 'oneSideExtent').value,
+                         ('expression', '2 in'))
+        self.assertTrue(next(t[2] for t in TRACE if t[:2] == ('set', 'isSolid')))
 
     def test_hole_all_and_to_extents_all_hole_types(self):
         for extra in ({}, {'type': 'counterbore', 'boreDiameter': '8 mm', 'boreDepth': '2 mm'},

@@ -27,7 +27,9 @@ for (const [group, modules] of Object.entries({
     "catalog-execution",
     "execution-request",
     "stage-dependencies",
+    "queue-broker",
   ],
+  entrypoints: ["broker"],
 }))
   test(`staged ${group} declarations resolve without workspace package types`, (t) => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "runtime-types-"));
@@ -49,7 +51,20 @@ for (const [group, modules] of Object.entries({
           (file, index) =>
             `import * as journal${index} from ${JSON.stringify(file.replace(/\.d\.ts$/, ".js"))};\nvoid journal${index};`,
         )
-        .join("\n"),
+        .join("\n") +
+        (group === "entrypoints" ? `
+type Provision = NonNullable<journal0.BrokerCompositionOptions["addinMetadataAdmission"]>;
+const valid: Provision = {
+  capability: "get_open_document_metadata",
+  owner: "owner", endpoint: "http://127.0.0.1:8765/admission/v1",
+  token: "private", pid: 1, birth: "birth", instance: "instance",
+  epoch: "epoch", source: "source", build: "build",
+};
+const { owner, ...missingOwner } = valid;
+// @ts-expect-error A provision without an authenticated owner must not compile.
+const rejected: Provision = missingOwner;
+void owner; void rejected;
+` : ""),
     );
     const program = ts.createProgram([entry], {
       noEmit: true,

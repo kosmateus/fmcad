@@ -22,8 +22,8 @@ export interface ReferenceDocument extends Record<string, unknown> {
   status?: string;
   saveStatus?: string;
   coldVerified?: boolean | null;
-  resultingVersion?: number;
-  method?: string;
+  resultingVersion?: number | null;
+  method?: string | null;
   metadataCoverage?: unknown;
 }
 export interface ReferenceEdge extends Record<string, unknown> {
@@ -32,9 +32,9 @@ export interface ReferenceEdge extends Record<string, unknown> {
   sourceFileId: string;
   selfReference?: boolean;
   explicitPin?: boolean;
-  targetVersion?: number;
+  targetVersion?: number | null;
   effectiveTargetVersion?: number;
-  targetVersionSource?: string;
+  targetVersionSource?: string | null;
   latestVersion?: number;
   baselineVersion?: number;
   observedAfter?: number;
@@ -43,7 +43,7 @@ export interface ReferenceEdge extends Record<string, unknown> {
 export interface ReferenceUpdate {
   fileId: string;
   method?: string;
-  fallback?: string;
+  fallback?: string | null;
   edgeIds?: string[];
 }
 export interface ReferenceApplyPlan extends ReferencePlan {
@@ -142,15 +142,18 @@ interface UiState {
   process?: { fusionVersion?: unknown; osBuild?: unknown; locale?: unknown };
 }
 interface Watcher {
-  status?: string;
+  status?: string | undefined;
   evidence?: Record<string, unknown>;
   disarm(): Promise<unknown>;
-  complete(): Promise<{ status?: string; actionSubmitted?: boolean } | null>;
+  complete(): Promise<{
+    status?: string | undefined;
+    actionSubmitted?: boolean;
+  } | null>;
 }
 export interface ReferenceApplyServices {
   backend: string | null;
-  initialBlockers?: ReferenceDiagnostic[];
-  initialSnapshot?: { lifecycleEffects?: unknown[] };
+  initialBlockers?: ReferenceDiagnostic[] | undefined;
+  initialSnapshot?: { lifecycleEffects?: unknown[] } | undefined;
   journal(input: ReferenceInput): Promise<ReferenceJournal>;
   acquire(
     input: ReferenceInput,
@@ -172,10 +175,12 @@ export interface ReferenceApplyServices {
     fileId: string,
     targets: Record<string, number | undefined>,
   ): string | ReferenceDiagnostic | null;
-  inspectUi?: (
-    data: Record<string, unknown>,
-    context: Record<string, unknown>,
-  ) => Promise<UiState>;
+  inspectUi?:
+    | ((
+        data: Record<string, unknown>,
+        context: Record<string, unknown>,
+      ) => Promise<UiState>)
+    | undefined;
   armWatcher(data: Record<string, unknown>): Promise<Watcher>;
   now(): number;
 }

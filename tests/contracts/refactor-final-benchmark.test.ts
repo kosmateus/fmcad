@@ -1,27 +1,45 @@
-const test = require("node:test") as typeof import("node:test");
-const assert: typeof import("node:assert/strict") = require("node:assert/strict");
-const { mkdtempSync, mkdirSync, rmSync, readFileSync } =
-  require("node:fs") as typeof import("node:fs");
-const { resolve, join } = require("node:path") as typeof import("node:path");
-const { tmpdir } = require("node:os") as typeof import("node:os");
-const { command } =
-  require("../../scripts/refactor-baseline.ts") as import("../../scripts/refactor-baseline").Harness;
-const { isCompleteFinalRuntime, isWithin, summarizeSamples } =
-  require("../../scripts/refactor-baseline-benchmark.ts") as import("../../scripts/refactor-baseline-benchmark").FinalBenchmarkHarness;
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
+// This repository contract runs directly through Node's TypeScript loader.
+const root = process.cwd();
+const load = createRequire(join(root, "package.json"));
+const data = load(
+  "./scripts/refactor-benchmark-data.ts",
+) as typeof import("../../scripts/refactor-benchmark-data");
+const { command } = load(
+  "./scripts/refactor-baseline.ts",
+) as import("../../scripts/refactor-baseline").Harness;
+const { isCompleteFinalRuntime, isWithin, summarizeSamples } = load(
+  "./scripts/refactor-baseline-benchmark.ts",
+) as import("../../scripts/refactor-baseline-benchmark").FinalBenchmarkHarness;
 
-const root = resolve(__dirname, "../..");
-const fixture = JSON.parse(
-  readFileSync(
-    resolve(root, "tests/fixtures/refactor-final-benchmark.json"),
-    "utf8",
+const fixtureInput = data.record(
+  data.json(
+    readFileSync(
+      resolve(root, "tests/fixtures/refactor-final-benchmark.json"),
+      "utf8",
+    ),
   ),
 );
+const fixture = {
+  nodeEnv: data.text(fixtureInput["nodeEnv"]),
+  samples: data.number(fixtureInput["samples"]),
+  warmIterations: data.number(fixtureInput["warmIterations"]),
+  clients: data.number(fixtureInput["clients"]),
+  config: data.record(fixtureInput["config"]),
+  operations: data.array(fixtureInput["operations"]).map(data.text),
+  excluded: data.array(fixtureInput["excluded"]).map(data.text),
+};
 
 test("final fixture is bounded, offline, and excludes geometric claims", () => {
   assert.equal(fixture.samples, 5);
   assert.equal(fixture.warmIterations, 5);
   assert.equal(fixture.clients, 4);
-  assert.equal(fixture.config.routing, "queue");
+  assert.equal(fixture.config["routing"], "queue");
   assert.ok(fixture.operations.includes("public-api-import"));
   assert.ok(fixture.operations.includes("mcp-tools-list"));
   assert.ok(fixture.excluded.includes("physical geometry"));
@@ -94,41 +112,46 @@ test("final runtime qualification rejects a timeout or a missing fake queue call
       },
     };
   };
-  const runtime: any = {
-    version: 1,
-    fixtureSha256: "fixture-only-sha256",
-    isolation: {
-      rootUnderOsTemp: true,
-      uniqueOwnedSubdirectories: true,
-      xdgRootsPerClient: true,
-      noGlobalBrokerOrSdk: true,
-    },
-    workloads: Object.fromEntries(
-      [
-        "api-import",
-        "help",
-        "mcp",
-        "catalog",
-        "prepare-bundle",
-        "multi-client",
-      ].map((name) => [
-        name,
-        {
-          coldRuns: Array.from({ length: fixture.samples }, () =>
-            name === "multi-client" ? multi("cold") : ordinary(name, "cold"),
-          ),
-          warmRuns: Array.from({ length: fixture.samples }, () =>
-            name === "multi-client" ? multi("warm") : ordinary(name, "warm"),
-          ),
-        },
-      ]),
-    ),
-  };
+  const runtime: import("../../scripts/refactor-benchmark-data").FinalRuntime =
+    {
+      version: 1,
+      fixtureSha256: "fixture-only-sha256",
+      isolation: {
+        rootUnderOsTemp: true,
+        uniqueOwnedSubdirectories: true,
+        xdgRootsPerClient: true,
+        noGlobalBrokerOrSdk: true,
+      },
+      workloads: Object.fromEntries(
+        [
+          "api-import",
+          "help",
+          "mcp",
+          "catalog",
+          "prepare-bundle",
+          "multi-client",
+        ].map((name) => [
+          name,
+          {
+            coldRuns: Array.from({ length: fixture.samples }, () =>
+              name === "multi-client" ? multi("cold") : ordinary(name, "cold"),
+            ),
+            warmRuns: Array.from({ length: fixture.samples }, () =>
+              name === "multi-client" ? multi("warm") : ordinary(name, "warm"),
+            ),
+          },
+        ]),
+      ),
+    };
   assert.equal(isCompleteFinalRuntime(runtime), true);
-  runtime.workloads["multi-client"].coldRuns[0].data.fakeQueue
-    .queueSummaryCalls--;
+  const multiClient = runtime.workloads["multi-client"];
+  assert.ok(multiClient);
+  const firstRun = multiClient.coldRuns[0];
+  assert.ok(firstRun?.data?.fakeQueue);
+  assert.ok(typeof firstRun.data.fakeQueue.queueSummaryCalls === "number");
+  firstRun.data.fakeQueue.queueSummaryCalls--;
   assert.equal(isCompleteFinalRuntime(runtime), false);
-  runtime.workloads["multi-client"].coldRuns[0].status = "timeout";
+  firstRun.status = "timeout";
   assert.equal(isCompleteFinalRuntime(runtime), false);
 });
 
@@ -166,6 +189,7 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
     const result = command(
       process.execPath,
       [
+        "--experimental-strip-types",
         resolve(root, "scripts/refactor-baseline-benchmark.ts"),
         "--final-worker",
         root,
@@ -198,6 +222,7 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
     const multi = command(
       process.execPath,
       [
+        "--experimental-strip-types",
         resolve(root, "scripts/refactor-baseline-benchmark.ts"),
         "--multi-worker",
         root,
@@ -211,23 +236,24 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
       env,
     );
     assert.equal(multi.status, "pass", multi.stderr);
-    const clients = JSON.parse(multi.stdout);
+    const clients = data.workerData(data.json(multi.stdout));
     assert.equal(clients.status, "pass");
     assert.equal(clients.processCount, fixture.clients);
     assert.ok(
-      clients.clients.every(
-        (client: any) =>
-          client.data.processCount === 1 &&
-          client.data.childProcessLaunchCalls === 0,
+      clients.clients?.every(
+        (client) =>
+          client.data?.processCount === 1 &&
+          client.data?.childProcessLaunchCalls === 0,
       ),
     );
     assert.equal(clients.processCount, fixture.clients);
-    assert.equal(clients.fakeQueue.registerCalls, fixture.clients);
-    assert.equal(clients.fakeQueue.queueSummaryCalls, fixture.clients);
+    assert.equal(clients.fakeQueue?.registerCalls, fixture.clients);
+    assert.equal(clients.fakeQueue?.queueSummaryCalls, fixture.clients);
 
     const apiImport = command(
       process.execPath,
       [
+        "--experimental-strip-types",
         resolve(root, "scripts/refactor-baseline-benchmark.ts"),
         "--final-worker",
         root,
@@ -251,4 +277,36 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("malformed benchmark report fields never become successful measurements", () => {
+  for (const value of [
+    null,
+    [],
+    { workloads: { help: { coldRuns: "not-an-array" } } },
+    {
+      version: 1,
+      workloads: {
+        help: { coldRuns: [{ data: { processCount: "1" } }], warmRuns: [] },
+      },
+    },
+  ])
+    assert.equal(isCompleteFinalRuntime(value), false);
+  assert.throws(
+    () =>
+      data.report({ measurements: { package: { data: [{ size: "1024" }] } } }),
+    /finite benchmark/,
+  );
+  assert.throws(
+    () => data.workerData({ first: { fakeQueue: { registerCalls: "1" } } }),
+    /finite benchmark/,
+  );
+  assert.throws(
+    () => data.workerData({ rssBytes: Number.NaN }),
+    /finite benchmark/,
+  );
+  const missing = data.workerData({ processCount: 1 });
+  assert.equal(missing.rssBytes, undefined);
+  assert.equal(missing.first, undefined);
+  assert.equal(missing.clients, undefined);
 });

@@ -6,7 +6,7 @@
 
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { docName, fmcad, clear, hasDoc, skipLive } = require('./helper');
+const { docName, fmcad, cad, clear, hasDoc, skipLive } = require('./helper');
 
 beforeEach(function () {
   if (!hasDoc()) return;
@@ -73,10 +73,13 @@ test('G14-03: cam.evaluate checks declared pressure/curvature limits', (t) => {
 
 test('G14-04: cam.cycle-check resolves release only with an explicit return law', (t) => {
   if (skipLive(t)) return;
-  const open = fmcad(['cam', 'cycle-check', '--doc', docName(), '--data', JSON.stringify({
+  const { code, json: open } = cad(['cam', 'cycle-check', '--doc', docName(), '--data', JSON.stringify({
     schemaVersion: 1, frame: 'component',
     rise: { law: 'halfCosine', lift: '10 mm', angle: '240 deg' },
   })]);
+  // Unknown is an explicit failed qualification, so the CLI intentionally exits 1.
+  assert.equal(code, 1);
+  assert.equal(open.success, false);
   // Rise-only source: release and dwell are unresolved, never auto-closed.
   assert.equal(open.status, 'unknown', JSON.stringify(open));
   assert.ok(open.result.unresolvedIntervals.some((u) => u.interval === 'release'),
@@ -124,10 +127,12 @@ test('G14-06: rise-only release is preserved (no chord/eccentric, no forced coup
 
 test('G14-07: drop/dynamics are blocked as missing data, not a fake-completed cycle', (t) => {
   if (skipLive(t)) return;
-  const out = fmcad(['cam', 'cycle-check', '--doc', docName(), '--data', JSON.stringify({
+  const { code, json: out } = cad(['cam', 'cycle-check', '--doc', docName(), '--data', JSON.stringify({
     schemaVersion: 1, frame: 'component',
     rise: { law: 'halfCosine', lift: '10 mm', angle: '240 deg' },
   })]);
+  assert.equal(code, 1);
+  assert.equal(out.success, false);
   assert.equal(out.status, 'unknown', JSON.stringify(out));
   assert.equal(out.result.dropEdgeDynamics, 'blocked (no proper definition or evidence)');
   assert.equal(out.result.cycleStatus, 'unknown');

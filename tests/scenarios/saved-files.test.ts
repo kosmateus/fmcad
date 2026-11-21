@@ -10,7 +10,20 @@ import { fixture, remaining } from "./test-support";
 import * as programs from "./programs";
 import * as saved from "./saved-programs";
 import { parse } from "./cli";
-import { observeSavedFile, UnsettledCloudOperation } from "./saved-files";
+import {
+  observeSavedFile,
+  UnsettledCloudOperation,
+  defaultCloudPolling,
+  poll,
+} from "./saved-files";
+
+test("cloud polling exposes the existing shared default budget", async () => {
+  assert.deepEqual(defaultCloudPolling, { timeoutMs: 120_000, intervalMs: 50 });
+  assert.equal(
+    await poll(async () => "complete", defaultCloudPolling),
+    "complete",
+  );
+});
 
 async function files(model: Awaited<ReturnType<typeof fixture>>["model"]) {
   const result = await model.execute(saved.inventory(simulatorFolder));

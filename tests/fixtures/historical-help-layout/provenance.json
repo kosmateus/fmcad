@@ -1,0 +1,18 @@
+{
+  "wordwrap.js.txt": {
+    "source": "node_modules/string-kit/lib/wordwrap.js",
+    "sha256": "954808601a6ba5e678ff663673a412a948f9190c488c68fe51f0c8b3597f9033"
+  },
+  "unicode.js.txt": {
+    "source": "node_modules/string-kit/lib/unicode.js",
+    "sha256": "c0cdb65c21885a4fe22f4d47b3d16c85343bb77c51bb1ea562647e4359e6f5a1"
+  },
+  "emoji-width-ranges.json": {
+    "source": "node_modules/string-kit/lib/json-data/unicode-emoji-width-ranges.json",
+    "sha256": "30584ba31e8739f62f326bba107df75716f8793d748d0c0f411ccce935ce39b7"
+  },
+  "wordWrapAnsi.js.txt": {
+    "source": "terminal-kit@3.1.4/lib/misc.js export wordWrapAnsi, unchanged excerpt",
+    "sha256": "b1878f0b504f535327bc8be8866b682a3afd0b04fc4bdf0a18495f6691aba239"
+  }
+}

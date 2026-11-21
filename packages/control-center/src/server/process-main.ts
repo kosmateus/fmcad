@@ -267,6 +267,9 @@ async function run(): Promise<void> {
     server = createControlCenterHttpServer({
       identity: config.identity,
       query: composition.query,
+      ...(composition.systemControls
+        ? { systemControls: composition.systemControls }
+        : {}),
       resolvePrincipal: composition.resolvePrincipal,
       ...(composition.projectActions !== undefined
         ? { projectActions: composition.projectActions }

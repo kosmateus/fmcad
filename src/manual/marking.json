@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Preserved Text Annotation", "data": {"schemaVersion": 1, "marks": [{"id": "level-max", "kind": "text", "representation": "annotation", "content": "MAX", "position": ["0 mm", "20 mm", "0 mm"], "dimensions": {"height": "3 mm", "width": "8 mm"}, "font": "ISO3098", "source": {"item": "tank", "level": "max", "status": "CONFIRMED"}}]}, "requires": "Open Design document; one text annotation with explicit font and source.", "output": "result.marks[0].content is exactly 'MAX', result.marks[0].nativeAcceptance is 'annotation', and result.status is 'pass'."}
     ],
-    "audit": {"sources": ["assets/cad/marking.py: _marking_create, _parse_mark, _occupancy, _marking_contract"], "verified": ["verbatim content preservation", "annotation vs gated geometry recipe", "protected-zone and keepout violations", "read-only envelope"], "tests": ["tests/marking_test.py", "tests/marking.test.js"], "gaps": [], "bugs": ["Native emboss/engrave authoring is gated (notEvaluated); no Fusion SketchTexts/Extrude call is made."]}
+    "audit": {"sources": ["assets/cad/marking.py: _marking_create, _parse_mark, _occupancy, _marking_contract"], "verified": ["verbatim content preservation", "annotation vs gated geometry recipe", "protected-zone and keepout violations", "read-only envelope"], "tests": ["tests/marking_test.py", "tests/marking.test.ts"], "gaps": [], "bugs": ["Native emboss/engrave authoring is gated (notEvaluated); no Fusion SketchTexts/Extrude call is made."]}
   },
   "marking.check": {
     "sections": [
@@ -17,6 +17,6 @@
     "examples": [
       {"label": "MAX Derived From Computed Level", "data": {"schemaVersion": 1, "marks": [{"id": "level-max", "kind": "text", "representation": "annotation", "content": "MAX", "position": ["0 mm", "20 mm", "0 mm"], "dimensions": {"height": "3 mm"}, "reference": {"kind": "liquid-level", "bound": "max"}, "levelValue": "20 mm"}], "levels": {"min": "0 mm", "max": "20 mm"}}, "requires": "Open Design document; one MAX marking whose levelValue equals the computed max level.", "output": "result.status is 'pass' and result.marks[0].checks contains a level-derivation check with passed true."}
     ],
-    "audit": {"sources": ["assets/cad/marking.py: _marking_check, _parse_mark, _marking_contract"], "verified": ["MIN/MAX level derivation", "arrow flow matching", "protected-zone and substitution violations", "read-only envelope"], "tests": ["tests/marking_test.py", "tests/marking.test.js"], "gaps": [], "bugs": ["Zone containment is axis-aligned occupancy, not native glyph outline intersection."]}
+    "audit": {"sources": ["assets/cad/marking.py: _marking_check, _parse_mark, _marking_contract"], "verified": ["MIN/MAX level derivation", "arrow flow matching", "protected-zone and substitution violations", "read-only envelope"], "tests": ["tests/marking_test.py", "tests/marking.test.ts"], "gaps": [], "bugs": ["Zone containment is axis-aligned occupancy, not native glyph outline intersection."]}
   }
 }

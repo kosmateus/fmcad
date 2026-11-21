@@ -16,6 +16,8 @@ export interface Response {
   readonly status: number;
   readonly sessionId?: string | undefined;
   readonly raw: string;
+  /** Adapter-validated tool response; raw retains the original admission evidence. */
+  readonly toolResponse?: unknown;
 }
 /** Local preparation may fail; checking a prepared call never opens a session. */
 export interface PreparedPost {
@@ -23,6 +25,8 @@ export interface PreparedPost {
   send(sessionId?: string): Promise<Response>;
 }
 export interface PreparedToolCall {
+  /** The tool send reaches the broker's _post hook after session negotiation. */
+  readonly dispatchBoundary: "broker-post";
   (): Promise<ToolResult>;
   fence(): void;
 }

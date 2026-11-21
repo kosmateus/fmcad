@@ -2,6 +2,8 @@
 import math as _thread_domain_math
 from typing import TypedDict as _thread_TypedDict, cast as _thread_cast
 
+from fmcad.domain.values import JsonObject
+
 
 class _ThreadProfile(_thread_TypedDict):
     majorDiameter: float

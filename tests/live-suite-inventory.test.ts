@@ -18,11 +18,15 @@ interface Entry {
   prerequisites: string;
   baseline:
     | { kind: "later" }
-    | { kind: "unchanged" | "changed"; path: string; sha256: string };
+    | { kind: "unverified" }
+    | { kind: "unchanged"; path: string; sha256: string }
+    | { kind: "changed"; path: string; sha256: string };
   sharedScenarios: string[];
+  nativeScenarios?: string[];
 }
 const inventory = load("./tests/live-suite-inventory.json") as {
   baselineCommit: string;
+  baselineCommitProvenance: { status: string; reason: string };
   entries: Entry[];
 };
 const runner = load("./tests/run-live.js") as {
@@ -30,6 +34,10 @@ const runner = load("./tests/run-live.js") as {
   scopedSuites: string[];
 };
 const testsDirectory = path.join(root, "tests");
+function hashCanonicalGitText(file: string): string {
+  const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+  return createHash("sha256").update(text).digest("hex");
+}
 const { parse } = load(
   "./dist/tests/scenarios/cli.js",
 ) as typeof import("./scenarios/cli.js");
@@ -89,20 +97,105 @@ test("inventory distinguishes runner registration from pending shared coverage",
   }
 });
 
-test("historical byte identity claims retain their archived hashes", () => {
+test("native scenario extraction does not claim supported model coverage", () => {
+  const manifest = load("./tests/live-required-profiles.json") as {
+    profiles: Record<
+      string,
+      {
+        cases: {
+          id: string;
+          command: string;
+          sharedScenario?: string;
+          qualification?: string;
+          expectationCorrection?: string;
+        }[];
+      }
+    >;
+  };
+  const modeled = new Set(
+    manifest.profiles["required-model"]!.cases.map((row) => row.id),
+  );
+  for (const entry of inventory.entries) {
+    for (const suite of entry.nativeScenarios ?? []) {
+      assert.ok(
+        !modeled.has(suite),
+        "Native obligation promoted to required model coverage",
+      );
+      const obligation = manifest.profiles["native-qualification"]!.cases.find(
+        (row) => row.id === entry.id,
+      );
+      assert.ok(obligation, entry.id);
+      assert.ok(obligation.command.includes("--suite " + suite));
+      assert.equal(
+        parse([
+          "--backend",
+          "fusion",
+          "--run",
+          "--suite",
+          suite,
+          "--project-id",
+          "owned-project",
+          "--folder-id",
+          "owned-folder",
+        ]).suite,
+        suite,
+      );
+      assert.throws(
+        () => parse(["--backend", "fusion", "--suite", suite]),
+        /requires --run/,
+      );
+    }
+  }
+  const solids = inventory.entries.find(
+    (entry) => entry.id === "shape-native-solids",
+  )!;
+  assert.equal(solids.model, "pending");
+  assert.deepEqual(solids.sharedScenarios, []);
+  assert.deepEqual(solids.nativeScenarios, ["native-solids"]);
+  const nativeSolids = manifest.profiles["native-qualification"]!.cases.find(
+    (row) => row.id === solids.id,
+  );
+  assert.ok(nativeSolids);
+  assert.equal(nativeSolids.sharedScenario, "native-solids-*");
+  assert.equal(nativeSolids.qualification, "not-run");
+  assert.match(
+    String(nativeSolids.expectationCorrection),
+    /20mm.*90degree.*0\.001mm/u,
+  );
+});
+
+test("archived hash claims are compared with canonical current source text", (t) => {
   assert.equal(
     inventory.baselineCommit,
     "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
   );
+  assert.equal(
+    inventory.baselineCommitProvenance.status,
+    "unverified-archival-reference",
+  );
+  assert.ok(inventory.baselineCommitProvenance.reason.length > 20);
+
+  const fixtureDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "live-inventory-source-"),
+  );
+  t.after(() => fs.rmSync(fixtureDirectory, { recursive: true, force: true }));
+  const fixture = path.join(fixtureDirectory, "source.js");
+  fs.writeFileSync(fixture, "const value = 1;\r\n");
+  const initialHash = hashCanonicalGitText(fixture);
+  fs.writeFileSync(fixture, "const value = 1;\n");
+  assert.equal(hashCanonicalGitText(fixture), initialHash);
+  fs.writeFileSync(fixture, "const value = 2;\r\n");
+  assert.notEqual(hashCanonicalGitText(fixture), initialHash);
+
   for (const entry of inventory.entries) {
     const baseline = entry.baseline;
-    assert.ok(["later", "unchanged", "changed"].includes(baseline.kind));
-    if (baseline.kind === "later") continue;
+    assert.ok(
+      ["later", "unverified", "unchanged", "changed"].includes(baseline.kind),
+    );
+    if (baseline.kind === "later" || baseline.kind === "unverified") continue;
     assert.match(baseline.path, /^tests\/live-[a-z-]+\.(js|ts)$/);
     assert.match(baseline.sha256, /^[a-f0-9]{64}$/);
-    const hash = createHash("sha256")
-      .update(fs.readFileSync(path.join(root, entry.source)))
-      .digest("hex");
+    const hash = hashCanonicalGitText(path.join(root, entry.source));
     assert.equal(
       hash === baseline.sha256,
       baseline.kind === "unchanged",

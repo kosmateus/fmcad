@@ -9,7 +9,7 @@
       {"label": "Copy a discovered library appearance", "data": {"name": "Custom Paint", "id": {"$ref": "styles.result.items.0.id"}, "library": {"$ref": "styles.result.library"}}, "requires": "Earlier styles: appearance.list {} returns a loaded library and items; standalone substitute actual id/library and a unique design name.", "output": "result.id is the actual local copy ID; reuse it without library on later assignments."},
       {"label": "Copy a design-local appearance", "data": {"name": "Variant", "id": "appearance-id"}, "requires": "appearance-id from a prior appearance.list {}; unique new name in the design.", "output": "result.copiedFrom=appearance-id; created.id is the new local ID."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:appearance_create,_style_collection,_style_properties,_style_value", "assets/cad/core.py:_cad_fields,_cad_require_result,_cad_items,_cad_unique"], "verified": ["copy and neutral-add branches", "name/ID collision rejection and actual-ID return", "no library edit in place"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_create,_style_collection,_style_properties,_style_value", "assets/cad/core.py:_cad_fields,_cad_require_result,_cad_items,_cad_unique"], "verified": ["copy and neutral-add branches", "name/ID collision rejection and actual-ID return", "no library edit in place"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "appearance.edit": {
     "sections": [
@@ -20,7 +20,7 @@
     "examples": [
       {"label": "Rename and set roughness", "data": {"id": "appearance-id", "name": "Matte Red", "properties": [{"id": "surface_roughness", "value": 0.4}]}, "requires": "appearance-id is a design-local appearance from appearance.list {}; surface_roughness exists in its appearanceProperties.", "output": "result.changed=true; result.after.properties reflects the new value; propertyChanges[0].before/after are typed."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:appearance_edit,_style_edit,_style_apply_properties,_style_set_property,_style_prop_info", "assets/cad/core.py:_cad_fields"], "verified": ["typed property read/write", "read-only and library rejection", "before/after and collision handling"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_edit,_style_edit,_style_apply_properties,_style_set_property,_style_prop_info", "assets/cad/core.py:_cad_fields"], "verified": ["typed property read/write", "read-only and library rejection", "before/after and collision handling"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "appearance.texture": {
     "sections": [
@@ -31,7 +31,7 @@
     "examples": [
       {"label": "Connect a bump heightmap", "data": {"id": "appearance-id", "channel": "normal", "image": "C:/textures/height.png", "bump": true}, "requires": "appearance-id is design-local; height.png exists on the Fusion host.", "output": "result.after.image is the connected path; result.bump=true when bumpmap_Type is writable."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:appearance_texture,_appearance_texture_channels,_style_props_by_name", "assets/cad/core.py:_cad_fields,_cad_direction"], "verified": ["channel image connect/disconnect", "scale/bump/rotation via typed properties", "blocked sub-request reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_texture,_appearance_texture_channels,_style_props_by_name", "assets/cad/core.py:_cad_fields,_cad_direction"], "verified": ["channel image connect/disconnect", "scale/bump/rotation via typed properties", "blocked sub-request reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "appearance.projection": {
     "sections": [
@@ -42,7 +42,7 @@
     "examples": [
       {"label": "Set planar projection", "data": {"id": "appearance-id", "projection": "planar"}, "requires": "appearance-id is design-local and exposes a writable texture_ProjectionType.", "output": "result.after is the readback projection value; result.changed=true."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:appearance_projection,_PROJECTIONS,_style_props_by_name", "assets/cad/core.py:_cad_fields"], "verified": ["read and set branches", "invalid/blocked projection reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_projection,_PROJECTIONS,_style_props_by_name", "assets/cad/core.py:_cad_fields"], "verified": ["read and set branches", "invalid/blocked projection reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "appearance.assign-map": {
     "sections": [
@@ -53,7 +53,7 @@
     "examples": [
       {"label": "Check body against expected appearance", "data": {"refs": [{"$ref": "bodies.result.entities.0"}], "expected": {"Body": "appearance-id"}}, "requires": "Earlier bodies: entity.list {kind:body}; appearance-id from appearance.list {}. Standalone substitute actual ref and expected id.", "output": "result.mismatchCount=0 when the body's appearance matches appearance-id; otherwise mismatches list the difference."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:_style_assign_map,_style_assignment_row,_style_resolve_refs", "assets/cad/core.py:CadContext._entities,ref,_cad_owner"], "verified": ["all target kinds and getter scoping", "expected vs actual mismatch reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:_style_assign_map,_style_assignment_row,_style_resolve_refs", "assets/cad/core.py:CadContext._entities,ref,_cad_owner"], "verified": ["all target kinds and getter scoping", "expected vs actual mismatch reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "material.create": {
     "sections": [
@@ -64,7 +64,7 @@
     "examples": [
       {"label": "Copy a discovered library material", "data": {"name": "Custom ABS", "id": {"$ref": "materials.result.items.0.id"}, "library": {"$ref": "materials.result.library"}}, "requires": "Earlier materials: material.list {} returns a loaded library and items; standalone substitute actual id/library and a unique design name.", "output": "result.id is the actual local copy ID; reuse it without library on later assignments."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:material_create,_style_collection,_style_properties", "assets/cad/core.py:_cad_fields,_cad_require_result"], "verified": ["copy-only creation", "collision rejection and actual-ID return"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:material_create,_style_collection,_style_properties", "assets/cad/core.py:_cad_fields,_cad_require_result"], "verified": ["copy-only creation", "collision rejection and actual-ID return"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "material.edit": {
     "sections": [
@@ -75,7 +75,7 @@
     "examples": [
       {"label": "Set density", "data": {"id": "material-id", "properties": [{"id": "density", "value": 1.05}]}, "requires": "material-id is design-local and exposes a writable density property.", "output": "result.propertyChanges[0].after.value reflects the new density; a missing density property is reported, not defaulted."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:material_edit,_style_edit,_style_apply_properties", "assets/cad/core.py:_cad_fields"], "verified": ["typed property edit and description", "library rejection and missing-density reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:material_edit,_style_edit,_style_apply_properties", "assets/cad/core.py:_cad_fields"], "verified": ["typed property edit and description", "library rejection and missing-density reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "material.assign-map": {
     "sections": [
@@ -86,7 +86,7 @@
     "examples": [
       {"label": "Check body against expected material", "data": {"refs": [{"$ref": "bodies.result.entities.0"}], "expected": {"Body": "material-id"}}, "requires": "Earlier bodies: entity.list {kind:body}; material-id from material.list {}. Standalone substitute actual ref and expected id.", "output": "result.mismatchCount=0 when the body's material matches material-id."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:_style_assign_map,_style_assignment_row", "assets/cad/core.py:CadContext._entities,ref,_cad_owner"], "verified": ["getter scoping and mismatch reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:_style_assign_map,_style_assignment_row", "assets/cad/core.py:CadContext._entities,ref,_cad_owner"], "verified": ["getter scoping and mismatch reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "styles.report": {
     "sections": [
@@ -97,6 +97,6 @@
     "examples": [
       {"label": "Aggregate report over the design", "data": {}, "requires": "Scoped open Design; no mutation.", "output": "result.styles maps every discovered entity; result.duplicateNames and result.density report anomalies."}
     ],
-    "audit": {"sources": ["assets/cad/appearance.py:styles_report,_style_report,_style_resolve_refs", "assets/cad/core.py:CadContext._entities,_cad_owner"], "verified": ["aggregate mapping and duplicate/missing-density detection"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/appearance.py:styles_report,_style_report,_style_resolve_refs", "assets/cad/core.py:CadContext._entities,_cad_owner"], "verified": ["aggregate mapping and duplicate/missing-density detection"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   }
 }

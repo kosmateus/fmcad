@@ -1,10 +1,9 @@
 # fmcad refactor completion plan
 
-**Current execution plan:** [parallel work packages and merge order](REFACTOR_PARALLEL_PLAN.md),
-audited through PR #34 on 8 November 2026. It assigns the remaining work to
-agents A–G and supersedes the older delivery order below. This file retains the
-historical baseline, defect evidence and completed-stage ledger; old statements
-that a later-completed stage is still pending are historical, not new assignments.
+This is a historical refactor record, not a live execution plan or task register.
+Current task status and dependencies belong in Beads. This file retains historical
+baseline, defect and completed-stage evidence; old statuses and assignments do not
+create new work or override the current repository and live-test instructions.
 
 Reference: GitHub `a80b7753e47b8260c2de362b6c4fad04025ab1b2` and the original
 archive, including Git history, worktrees and Beads. Keychain was deliberately
@@ -17,16 +16,19 @@ Saved-file support and cleanup recovery were merged in PR #3; see
 PR #4 merged [parameter commands and contracts](REFACTOR_STAGE_3A.md),
 including inherited document-selection and deletion-reporting defects.
 
-## Delivery order
+## Historical delivery policy
 
-Finish every part of the refactor that can be implemented and checked with the
-mock backend, production checker and real broker. Native Fusion testing is a
-single final qualification stage after the refactor, as requested by the owner.
-It does not block intermediate implementation or merging verified changes.
+At the time of this plan, the requested sequence was to finish offline work before
+the final native qualification. This historical ordering is not a restriction on
+targeted local Fusion checks during development. Current live tests use the shared
+configured broker and its SDK queue; see [live broker tests](LIVE_BROKER_TESTS.md)
+and the [scenario runner guide](../tests/scenarios/README.md). Do not replace broker
+coordination with a manual Fusion reservation, and do not present simulator output
+as native evidence.
 
-Every delivery must pass the complete CI matrix before merging to `main`.
-Keep PR descriptions and commit messages short; put detailed evidence here or
-in the corresponding stage document. Do not upload the archive's Git directory,
+The delivery and CI statements in the historical records below are observations
+from their original revisions, not current status. Follow repository instructions
+and Beads for active integration state. Do not upload the archive's Git directory,
 worktrees, generated reports or unrelated Beads data as repository source.
 
 A green mock run proves only its declared model behavior. Keep a separate list of
@@ -43,7 +45,9 @@ The comparison below concerns source and assertions, not a new native run.
 The frozen baseline covers 15 selected observations. An October 23 response
 recovery report records two Fusion runs, but does not establish that every live
 suite passed at this exact SHA. Other reports include interrupted runs or lack
-complete version identification. Native Fusion is unavailable in this environment.
+complete version identification. “Native Fusion is unavailable” described the
+environment at the time of the historical audit; it is not a current-access claim
+or qualification result.
 
 | Historical suite                    | Behavior to preserve                                                                                                                                          | Changes during the refactor                                                                                          |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |

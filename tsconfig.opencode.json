@@ -9,6 +9,7 @@
   "include": [
     "packages/opencode-adapter/src/**/*.ts",
     "src/composition/opencode.ts",
-    "src/entrypoints/opencode.mts"
+    "src/entrypoints/opencode.mts",
+    "src/opencode/execution.ts"
   ]
 }

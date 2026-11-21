@@ -10,6 +10,15 @@ import type { CommandEntry, CommandFlags } from "../entrypoints/cli/parser.js";
 
 const load = createRequire(__filename);
 
+function loadRuntimeModule<T>(...candidates: string[]): T {
+  const file = candidates
+    .map((candidate) => path.resolve(__dirname, candidate))
+    .find((candidate) => fs.existsSync(candidate));
+  if (!file)
+    throw new Error(`Cannot locate runtime module: ${candidates.join(", ")}`);
+  return load(file) as T;
+}
+
 export interface AcceptedCommandRequest extends WorkerRequest {
   description?: string | undefined;
 }
@@ -38,24 +47,28 @@ export function prepareRequest<T extends AcceptedCommandRequest>(job: {
   const request = job.request;
   if (request.payload && request.payload["kind"] !== "legacy-command")
     return request;
-  const parser = load(
-    "../entrypoints/cli/parser.js",
-  ) as typeof import("../entrypoints/cli/parser.js");
-  const commands = load("../../commands.js") as {
+  const parser = loadRuntimeModule<
+    typeof import("../entrypoints/cli/parser.js")
+  >("../dist/entrypoints/cli/parser.js", "../entrypoints/cli/parser.js");
+  const commands = loadRuntimeModule<{
     findCommand(argv: string[]): CommandEntry | undefined;
-  };
-  const catalog = load("../../catalog/index.js") as {
+  }>("../../commands.js", "../commands.js");
+  const catalog = loadRuntimeModule<{
     catalog: Record<string, OperationDeclaration>;
-  };
-  const inputPlanning = load(
+  }>("../../catalog/index.js", "../catalog/index.js");
+  const inputPlanning = loadRuntimeModule<
+    typeof import("../../packages/core/src/application/cad/input.js")
+  >(
     "../core/application/cad/input.js",
-  ) as typeof import("../../packages/core/src/application/cad/input.js");
-  const commandService = load(
+    "../dist/core/application/cad/input.js",
+  );
+  const commandService = loadRuntimeModule<typeof import("./cad-service.js")>(
+    "../dist/composition/cad-service.js",
     "./cad-service.js",
-  ) as typeof import("./cad-service.js");
-  const instance = load("../../queue-instance.js") as {
+  );
+  const instance = loadRuntimeModule<{
     hash(bytes: Buffer): string;
-  };
+  }>("../../queue-instance.js", "../queue-instance.js");
 
   const argv = [...request.argv];
   for (let i = 0; i < argv.length; i++) {

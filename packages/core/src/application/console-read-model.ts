@@ -1,58 +1,13 @@
-import type { OperationResult } from "../domain/contracts";
-import type { PresenceState } from "../domain/observation";
-
-/** UI records are observations, never receipts or admission authority. */
-export interface ConsoleRow {
-  id?: string;
-  requestId?: string | null;
-  clientId?: string | null;
-  agentId?: string | null;
-  sessionId?: string | null;
-  taskId?: string | null;
-  state?: string;
-  kind?: string;
-  label?: string;
-  description?: string;
-  document?: string;
-  sourcePath?: string;
-  sourceHash?: string;
-  script?: string;
-  source?: string;
-  sourceFile?: string;
-  presence?: PresenceState;
-  clientKind?: string;
-  work?: string;
-  name?: string;
-  level?: string;
-  component?: string;
-  event?: string;
-  message?: string;
-  timestamp?: string | number | null;
-  submittedAt?: number | null;
-  startedAt?: number | null;
-  finishedAt?: number | null;
-  lastSeen?: number | null;
-  order?: number | null;
-  operations?: ConsoleRow[];
-  operationResult?: OperationResult;
-  [key: string]: unknown;
-}
-
-export interface ConsoleSnapshot {
-  mode?: string;
-  project?: string;
-  readAt?: number;
-  observedAt?: number | null;
-  available?: boolean;
-  reason?: string | null;
-  capabilities?: { monitor: boolean; brokerControl: boolean };
-  operations?: ConsoleRow[] | null;
-  agents?: ConsoleRow[] | null;
-  logs?: ConsoleRow[] | null;
-  taskEvents?: { taskId: string; logs: ConsoleRow[] | null };
-  retention?: Record<string, unknown>;
-  [key: string]: unknown;
-}
+import type {
+  ConsoleRow,
+  ConsoleSnapshot,
+  ReadObservation,
+} from "../ports/console-observation";
+export type {
+  ConsoleRow,
+  ConsoleSnapshot,
+  ReadObservation,
+} from "../ports/console-observation";
 
 export const nonemptyId = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -79,7 +34,8 @@ export function projectContains(
   return cwd === root || cwd.startsWith(prefix);
 }
 
-export function sourceName(row: ConsoleRow): string | null {
+export function sourceName(row: ConsoleRow | null | undefined): string | null {
+  if (!row) return null;
   const path = nonemptyId(row.sourcePath)
     ? row.sourcePath
     : nonemptyId(row.script)
@@ -87,7 +43,10 @@ export function sourceName(row: ConsoleRow): string | null {
       : row.label?.match(/^run (.+)$/)?.[1];
   return path?.split(/[\\/]/).at(-1) || null;
 }
-export function documentLabel(row: ConsoleRow): string | null {
+export function documentLabel(
+  row: ConsoleRow | null | undefined,
+): string | null {
+  if (!row) return null;
   return nonemptyId(row.document)
     ? row.document
     : sourceName(row)
@@ -103,6 +62,65 @@ export function clientKind(id: unknown): string {
       : id.startsWith("cli:")
         ? "CLI"
         : "Other";
+}
+
+/** Text-only interface; presence semantics must not depend on a terminal renderer. */
+export interface ConsolePresenceLabels {
+  readonly language: string;
+  L(key: string): string;
+  statusText(value: ConsoleRow["presence"]): string;
+}
+
+export function presenceText(
+  row: ConsoleRow,
+  labels: ConsolePresenceLabels,
+): string {
+  if (row.source === "job-history")
+    return labels.language === "pl" ? "Tylko historia" : "History only";
+  return labels.statusText(row.presence);
+}
+
+export function presenceSummary(
+  snapshot: ConsoleSnapshot,
+  labels: ConsolePresenceLabels,
+): string {
+  const agents = snapshot.agents ?? [];
+  const observed =
+    snapshot.available === false
+      ? 0
+      : agents.filter((agent) => agent.presence === "observed").length;
+  if (observed) return `${observed} · ${labels.L("clientPresenceConfirmed")}`;
+  const tracked = agents.filter((agent) =>
+    agent.source?.endsWith("process-heartbeat"),
+  );
+  if (tracked.length)
+    return `0 online · ${tracked.filter((agent) => agent.presence === "offline").length} offline · ${tracked.filter((agent) => agent.presence !== "offline").length} ${labels.L("unconfirmed")}`;
+  return labels.L("clientPresenceUnmeasured");
+}
+
+export function identityCounts(
+  agents: readonly ConsoleRow[] | null | undefined,
+  available?: boolean,
+) {
+  if (!Array.isArray(agents)) return null;
+  const current = agents.filter(
+    (agent) => available !== false && agent.presence === "observed",
+  ).length;
+  return {
+    current: agents.every((agent) => agent.source === "job-history")
+      ? null
+      : current,
+    history: agents.length - current,
+    total: agents.length,
+    untracked: agents.filter((agent) => agent.source === "job-history").length,
+    unknown: agents.filter(
+      (agent) =>
+        agent.source !== "job-history" &&
+        (available === false ||
+          !agent.presence ||
+          agent.presence === "unknown"),
+    ).length,
+  };
 }
 
 export function matchesTask(
@@ -307,16 +325,6 @@ export class ConsoleReadStore {
   }
 }
 
-export type ReadObservation<T> =
-  | { status: "available"; value: T; observedAt: number }
-  | { status: "stale"; value: T; observedAt: number | null; reason: string }
-  | {
-      status: "missing" | "error";
-      value: null;
-      observedAt: null;
-      reason: string;
-    };
-
 /** Source comparison cannot prove execution: it compares retained and current bytes only. */
 export function sourceHashMismatch(
   expected: unknown,
@@ -357,4 +365,89 @@ export function controlIntent(
       expectedGeneration: before.generation,
     },
   };
+}
+
+/** Summary classifications preserve unknown outcomes instead of inventing success. */
+export function consoleTaskGroup(
+  row: ConsoleRow,
+): "active" | "waiting" | "unresolved" | "history" {
+  if (row.state === "queued") return "waiting";
+  if (row.state === "running" || row.state === "sending") return "active";
+  return terminalState(row.state) ? "history" : "unresolved";
+}
+export function consoleTaskCounts(
+  rows: readonly ConsoleRow[] | null | undefined,
+) {
+  if (!rows) return null;
+  return rows.reduce<Record<ReturnType<typeof consoleTaskGroup>, number>>(
+    (counts, row) => {
+      counts[consoleTaskGroup(row)]++;
+      return counts;
+    },
+    { active: 0, waiting: 0, unresolved: 0, history: 0 },
+  );
+}
+export function consoleRecordedDuration(row: ConsoleRow): number | null {
+  const start = recordedTime(row.startedAt),
+    end = recordedTime(row.finishedAt);
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start
+    ? end - start
+    : null;
+}
+export function consoleLogWindowStats(
+  rows: readonly ConsoleRow[] | null | undefined,
+) {
+  if (!rows) return null;
+  const counts = new Map(
+    ["INFO", "WARN", "ERROR", "DEBUG", "TRACE", "OTHER"].map((level) => [
+      level,
+      0,
+    ]),
+  );
+  let first: number | null = null,
+    last: number | null = null,
+    invalid = 0;
+  for (const row of rows) {
+    const level = row.level || "OTHER";
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+    const value = row.timestamp;
+    const time =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" &&
+            /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim())
+          ? Date.parse(value)
+          : NaN;
+    if (!Number.isFinite(time) || !Number.isFinite(new Date(time).getTime()))
+      invalid++;
+    else {
+      first = first === null ? time : Math.min(first, time);
+      last = last === null ? time : Math.max(last, time);
+    }
+  }
+  return { total: rows.length, counts, first, last, invalid };
+}
+
+export function documentFields(
+  row: ConsoleRow | null | undefined,
+  labels: Pick<ConsolePresenceLabels, "L">,
+) {
+  const value = documentLabel(row);
+  return [
+    { label: labels.L("documentOrScript"), value, full: true },
+    ...(value
+      ? [
+          {
+            label: labels.L("documentSource"),
+            value: labels.L(
+              nonemptyId(row?.document)
+                ? "recordedDocument"
+                : "scriptDocumentFallback",
+            ),
+            full: true,
+            tone: "muted",
+          },
+        ]
+      : []),
+  ];
 }

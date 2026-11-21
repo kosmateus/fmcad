@@ -60,8 +60,8 @@
       ],
       "tests": [
         "tests/selection_rules_test.py",
-        "tests/selection-rules-store.test.js",
-        "tests/selection-rules-e2e.test.js"
+        "tests/selection-rules-store.test.ts",
+        "tests/selection-rules-e2e.test.ts"
       ],
       "gaps": [],
       "bugs": []
@@ -111,8 +111,8 @@
         "Active document identity validation without topology enumeration"
       ],
       "tests": [
-        "tests/selection-rules-store.test.js",
-        "tests/selection-rules-e2e.test.js"
+        "tests/selection-rules-store.test.ts",
+        "tests/selection-rules-e2e.test.ts"
       ],
       "gaps": [],
       "bugs": []
@@ -167,7 +167,7 @@
       ],
       "tests": [
         "tests/selection_rules_test.py",
-        "tests/selection-rules-e2e.test.js"
+        "tests/selection-rules-e2e.test.ts"
       ],
       "gaps": [],
       "bugs": []
@@ -217,7 +217,7 @@
       ],
       "tests": [
         "tests/selection_rules_test.py",
-        "tests/selection-rules-e2e.test.js"
+        "tests/selection-rules-e2e.test.ts"
       ],
       "gaps": [],
       "bugs": []

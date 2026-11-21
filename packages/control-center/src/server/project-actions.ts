@@ -114,12 +114,20 @@ export interface ProjectActionFreshState {
   readonly presence: readonly ProjectActionFreshPresence[] | null;
 }
 
+export interface ProjectActionFreshContext {
+  readonly snapshot: ProjectHistorySnapshot;
+  readonly history: ProjectHistoryStore;
+}
+
 export interface ProjectActionsOptions {
   readonly registry: ProjectRegistryStore;
   /** Must use openRegisteredProjectHistoryStore; missing databases stay missing. */
   readonly openHistory: (project: ProjectRegistryEntry) => ProjectHistoryStore;
   /** Passive synchronous read; it must not start, probe, or resume the broker. */
-  readonly readFreshState: (projectId: string) => ProjectActionFreshState;
+  readonly readFreshState: (
+    projectId: string,
+    context: ProjectActionFreshContext,
+  ) => ProjectActionFreshState;
   readonly projectRevision: (
     snapshot: ProjectHistorySnapshot,
   ) => ConsoleRevision;
@@ -139,7 +147,10 @@ export interface ProjectActionsHandler {
   ): ProjectActionResponse;
 }
 
-export type ProjectActionsExecutor = ProjectActionsHandler["execute"];
+/** HTTP compositions may await an injected executor; the retained-store handler stays synchronous. */
+export type ProjectActionsExecutor = (
+  ...args: Parameters<ProjectActionsHandler["execute"]>
+) => ProjectActionResponse | Promise<ProjectActionResponse>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -812,7 +823,10 @@ export function createProjectActions(options: ProjectActionsOptions) {
               });
             let fresh: ProjectActionFreshState;
             try {
-              fresh = options.readFreshState(request.projectId);
+              fresh = options.readFreshState(request.projectId, {
+                snapshot: lockedSnapshot,
+                history: projectHistory,
+              });
             } catch {
               return response(
                 request,
@@ -867,7 +881,7 @@ export function createProjectActions(options: ProjectActionsOptions) {
               fence.databaseId,
               request.expectedRevision,
               fresh,
-              checkedAt,
+              now(),
             );
             if (reasons.length)
               return response(
@@ -889,7 +903,10 @@ export function createProjectActions(options: ProjectActionsOptions) {
 
             let finalFresh: ProjectActionFreshState;
             try {
-              finalFresh = options.readFreshState(request.projectId);
+              finalFresh = options.readFreshState(request.projectId, {
+                snapshot: lockedSnapshot,
+                history: projectHistory,
+              });
             } catch {
               return response(
                 request,
@@ -957,7 +974,7 @@ export function createProjectActions(options: ProjectActionsOptions) {
               fence.databaseId,
               request.expectedRevision,
               finalFresh,
-              checkedAt,
+              now(),
             );
             if (finalReasons.length)
               return response(request, "blocked", "PROJECT_ARCHIVE_GUARD", {

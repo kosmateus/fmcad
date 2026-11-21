@@ -26,35 +26,227 @@ import type { BatchStages } from "./batch.js";
 import type { DocumentSaveStageOwner } from "../../packages/core/src/application/documents/stages.js";
 
 const load = createRequire(__filename);
-const json = load(
-  "../core/application/cad/json.js",
+const stagedRoot = [
+  path.resolve(__dirname, "../dist"),
+  path.resolve(__dirname, ".."),
+].find(
+  (root) =>
+    fs.existsSync(path.join(root, "core/application/cad/json.js")) &&
+    fs.existsSync(path.join(root, "node-adapters/persistence/stage-owner.js")),
+);
+if (!stagedRoot) throw new Error("Cannot locate staged core runtime modules");
+const hostRoot = [
+  path.resolve(__dirname, ".."),
+  path.resolve(__dirname, "../.."),
+].find(
+  (root) =>
+    fs.existsSync(path.join(root, "queue-instance.js")) &&
+    fs.existsSync(path.join(root, "queue-isolated-epoch.js")),
+);
+if (!hostRoot) throw new Error("Cannot locate staged queue host modules");
+const loadStaged = (file: string) => load(path.join(stagedRoot, file));
+const loadHost = (file: string) => load(path.join(hostRoot, file));
+const json = loadStaged(
+  "core/application/cad/json.js",
 ) as typeof import("../../packages/core/src/application/cad/json.js");
-const stageCore = load(
-  "../core/application/stage-journal.js",
+const stageCore = loadStaged(
+  "core/application/stage-journal.js",
 ) as typeof import("../../packages/core/src/application/stage-journal.js");
-const documentSave = load(
-  "../core/application/documents/save.js",
+const documentSave = loadStaged(
+  "core/application/documents/save.js",
 ) as typeof import("../../packages/core/src/application/documents/save.js");
-const atomic = load(
-  "../core/application/cad/atomic-receipt.js",
+const atomic = loadStaged(
+  "core/application/cad/atomic-receipt.js",
 ) as typeof import("../../packages/core/src/application/cad/atomic-receipt.js");
-const { createAuthenticatedStageOwner } = load(
-  "../node-adapters/persistence/stage-owner.js",
+const { createAuthenticatedStageOwner } = loadStaged(
+  "node-adapters/persistence/stage-owner.js",
 ) as typeof import("../../packages/node-adapters/src/persistence/stage-owner.js");
-const { stageReceiptReference } = load(
-  "../node-adapters/persistence/stage-journal.js",
+const { stageReceiptReference } = loadStaged(
+  "node-adapters/persistence/stage-journal.js",
 ) as typeof import("../../packages/node-adapters/src/persistence/stage-journal.js");
-const { readBytes } = load(
-  "../node-adapters/persistence/records.js",
+const { readBytes } = loadStaged(
+  "node-adapters/persistence/records.js",
 ) as typeof import("../../packages/node-adapters/src/persistence/records.js");
-const queueInstance = load("../../queue-instance.js") as Pick<
+const queueInstance = loadHost("queue-instance.js") as Pick<
   StageOwnerPorts,
   "buildHash" | "sameInstance" | "nativeWorkflowIdentity"
 >;
 const epoch = () =>
-  load("../../queue-isolated-epoch.js") as {
+  loadHost("queue-isolated-epoch.js") as {
     isolatedEpochDirectory(directory: string): string;
   };
+const queueConnection = loadHost("queue-connection.js") as {
+  request(
+    directory: string,
+    message: Record<string, unknown>,
+    options?: { timeoutMs?: number },
+  ): Promise<unknown>;
+};
+
+async function readCommittedQueueSnapshot(
+  queueFile: string,
+  brokerDirectory: string,
+  jobId: string,
+): Promise<{ jobs?: Record<string, StageOwnerJob> }> {
+  const workerToken = process.env["FMCAD_QUEUE_WORKER_TOKEN"];
+  if (!workerToken)
+    throw Object.assign(
+      new Error(
+        "Authenticated worker capability is unavailable for queue-state reads",
+      ),
+      { code: "INVALID_WORKER" },
+    );
+  let previousFenceHash: string | undefined;
+  for (;;) {
+    const bytes = readBytes(queueFile, 128 * 1024 * 1024, fs, queueFile);
+    const snapshot = JSON.parse(bytes.toString("utf8")) as {
+      jobs?: Record<string, StageOwnerJob>;
+    };
+    const fence = (await queueConnection.request(
+      brokerDirectory,
+      { action: "worker-status", jobId, workerToken, snapshotFence: true },
+      { timeoutMs: 0 },
+    )) as { snapshotHash?: unknown };
+    const fenceHash = fence?.snapshotHash;
+    if (typeof fenceHash !== "string" || !/^[a-f0-9]{64}$/.test(fenceHash))
+      throw Object.assign(
+        new Error("Broker did not attest a committed queue snapshot"),
+        { code: "STORAGE_UNAVAILABLE" },
+      );
+    const snapshotHash = createHash("sha256")
+      .update(JSON.stringify(snapshot))
+      .digest("hex");
+    if (snapshotHash === fenceHash) return snapshot;
+    if (previousFenceHash === fenceHash)
+      throw Object.assign(
+        new Error("Queue snapshot differs from the broker's durable state"),
+        { code: "STORAGE_UNAVAILABLE" },
+      );
+    previousFenceHash = fenceHash;
+  }
+}
+
+function workerMetadataSample(brokerDirectory: string) {
+  const pointerFile = path.join(
+    brokerDirectory,
+    "isolated-admission-epoch.json",
+  );
+  const pointer = fs.existsSync(pointerFile)
+    ? (JSON.parse(fs.readFileSync(pointerFile, "utf8")) as {
+        epochId?: string;
+      })
+    : null;
+  const stores = [brokerDirectory];
+  if (pointer?.epochId && /^[a-f0-9-]{36}$/.test(pointer.epochId))
+    stores.push(
+      path.join(brokerDirectory, "admission-epochs", pointer.epochId),
+    );
+  const stamp = (file: string): string => {
+    try {
+      const stat = fs.lstatSync(file, { bigint: true });
+      return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+      throw error;
+    }
+  };
+  const pending = stores.some((store) => {
+    const file = path.join(store, "queue-state.pending.json");
+    try {
+      if (!fs.lstatSync(file).isFile())
+        throw Object.assign(new Error("Invalid pending snapshot marker"), {
+          code: "EPOCH_PROOF_INVALID",
+        });
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  });
+  const files = [
+    path.join(brokerDirectory, "broker.lock"),
+    pointerFile,
+    path.join(brokerDirectory, "physical-backend-head.json"),
+    ...stores.flatMap((store) => [
+      path.join(store, "queue-state.json"),
+      path.join(store, "instance.json"),
+    ]),
+  ];
+  // The active snapshot's bytes are fenced by authenticated worker-status below.
+  // A concurrent durable commit can replace its inode without changing that proof.
+  // Keep the historical root snapshot and all epoch/backend/instance identity stamps.
+  const attestedQueue = path.join(
+    stores[stores.length - 1]!,
+    "queue-state.json",
+  );
+  return {
+    hasEpochPointer: pointer !== null,
+    pending,
+    signature: files
+      .filter((file) => file !== attestedQueue)
+      .map((file) => `${file}:${stamp(file)}`)
+      .join("\n"),
+  };
+}
+
+async function readStableCommittedQueueSnapshot(
+  brokerDirectory: string,
+  jobId: string,
+): Promise<{ jobs?: Record<string, StageOwnerJob> }> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const before = workerMetadataSample(brokerDirectory);
+    let snapshot: { jobs?: Record<string, StageOwnerJob> } | undefined;
+    let error: unknown;
+    if (!before.pending || !before.hasEpochPointer) {
+      try {
+        const admissionDirectory =
+          epoch().isolatedEpochDirectory(brokerDirectory);
+        snapshot = await readCommittedQueueSnapshot(
+          path.join(admissionDirectory, "queue-state.json"),
+          brokerDirectory,
+          jobId,
+        );
+      } catch (cause) {
+        error = cause;
+      }
+    }
+    const after = workerMetadataSample(brokerDirectory);
+    if (before.pending && !before.hasEpochPointer && error !== undefined)
+      throw error;
+    if (
+      snapshot &&
+      before.pending &&
+      !before.hasEpochPointer &&
+      !after.pending &&
+      !after.hasEpochPointer
+    )
+      return snapshot;
+    if (
+      !before.pending &&
+      !after.pending &&
+      before.signature === after.signature
+    ) {
+      if (snapshot) return snapshot;
+      if (error !== undefined) throw error;
+      throw Object.assign(
+        new Error("Queue metadata did not reach a stable committed snapshot"),
+        { code: "EPOCH_PROOF_INVALID" },
+      );
+    }
+    if (Date.now() >= deadline)
+      throw (
+        error ??
+        Object.assign(
+          new Error(
+            "Queue metadata did not reach a stable committed snapshot; pending storage requires inspection",
+          ),
+          { code: "EPOCH_PROOF_INVALID" },
+        )
+      );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 type Accepted = AuthenticatedStageOwner["accepted"];
 type ReceiptInput = Parameters<StageOwnerPorts["readOriginalReceipt"]>[0];
@@ -690,19 +882,48 @@ function helperReceipt({
     postflightSha256: lifecycle.postflightEvidenceSha256,
   };
 }
+/** Reuse the broker's verified current-head authority; never promote a retired head. */
+export function resolveStageBackendIdentity(
+  brokerDirectory: string,
+  admissionDirectory: string,
+) {
+  const state = (
+    loadHost(
+      "queue-isolated-epoch.js",
+    ) as typeof import("../queue-isolated-epoch")
+  ).openIsolatedEpoch(brokerDirectory, { recover: false });
+  const resolved = (
+    loadHost(
+      "queue-backend-transition.js",
+    ) as typeof import("../queue-backend-transition")
+  ).resolveBackendHead(brokerDirectory, () => state);
+  const current = resolved.current;
+  if (!current) return null;
+  const pointer = state.epoch;
+  if (
+    !pointer ||
+    fs.realpathSync(pointer.root) !== admissionDirectory ||
+    current.head.epochId !== pointer.epochId ||
+    current.head.ownerClientId !== pointer.ownerClientId ||
+    current.head.ownerTokenHash !== pointer.ownerTokenHash
+  )
+    throw new Error(
+      "Physical backend head differs from the owning admission epoch",
+    );
+  state.assertEpoch(true);
+  return current.identity;
+}
+
 export async function createAuthenticatedStageDependencies(
   verifiedWorkerInputs?: Partial<VerifiedStageInputs> | null,
 ): Promise<AuthenticatedStageDependencies | null> {
   if (!verifiedWorkerInputs?.brokerDirectory || !verifiedWorkerInputs.jobId)
     return null;
   const brokerDirectory = fs.realpathSync(verifiedWorkerInputs.brokerDirectory);
-  const admissionDirectory = epoch().isolatedEpochDirectory(brokerDirectory);
-  if (fs.existsSync(path.join(admissionDirectory, "queue-state.pending.json")))
-    throw new Error("Queue state has an unresolved durability marker");
-  const queueFile = path.join(admissionDirectory, "queue-state.json");
-  const queue = JSON.parse(
-    readBytes(queueFile, 128 * 1024 * 1024, fs, queueFile).toString("utf8"),
-  ) as { jobs?: Record<string, StageOwnerJob> };
+  const queue = await readStableCommittedQueueSnapshot(
+    brokerDirectory,
+    verifiedWorkerInputs.jobId,
+  );
   const job = queue.jobs?.[verifiedWorkerInputs.jobId];
   if (!job || job.id !== verifiedWorkerInputs.jobId)
     throw new Error("Authenticated queue job is unavailable");
@@ -719,11 +940,15 @@ export async function createAuthenticatedStageDependencies(
   if (!isDocumentSave && !isBatch && !isHelper) return null;
   if (isHelper)
     (
-      load("./cad-service.js") as typeof import("./cad-service.js")
+      loadStaged(
+        "composition/cad-service.js",
+      ) as typeof import("./cad-service.js")
     ).decodeInvocation(payload);
   const owner = createAuthenticatedStageOwner({
     brokerDirectory,
     admissionDirectory: () => epoch().isolatedEpochDirectory(brokerDirectory),
+    backendIdentity: (admissionDirectory) =>
+      resolveStageBackendIdentity(brokerDirectory, admissionDirectory),
     jobId: verifiedWorkerInputs.jobId,
     expectedClientId: verifiedWorkerInputs.clientId,
     expectedProject: verifiedWorkerInputs.projectDirectory,
@@ -754,7 +979,9 @@ export async function createAuthenticatedStageDependencies(
   const admittedPayload = acceptedPayload(owner.job, owner.accepted);
   const document = isDocumentSave
     ? (
-        load("./document-stages.js") as typeof import("./document-stages.js")
+        loadStaged(
+          "composition/document-stages.js",
+        ) as typeof import("./document-stages.js")
       ).createDocumentSaveStages(
         owner.operationDirectory,
         owner.owner as DocumentSaveStageOwner,

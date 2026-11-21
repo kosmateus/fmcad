@@ -4,8 +4,8 @@ const path = require('node:path');
 const {spawn} = require('node:child_process');
 const packageRoot=process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE || path.resolve(__dirname,'../..');
 const load=name=>require(path.join(packageRoot,'dist/src',name));
+const {nativeReceipts}=require(path.join(__dirname,'native-source-envelope.cjs'));
 const {createBrokerTransport} = load('dist/fusion-transport/broker');
-const {createPythonChecker} = load('python');
 const {serve} = load('queue-broker');
 const {QueueClient} = load('queue-client');
 const {queueDirectory} = load('queue-connection');
@@ -22,7 +22,7 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
   const cfg=resolveFmcadConfiguration({adapter:{backend:'mcp',url:'http://queue.invalid',timeoutMs:120000},
     environment:{},file:{},platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
-  const calls=[],checks=[],clients=[];
+  const calls=[],clients=[];
   let active=0,maximum=0,products=0,fingerprint='A-1',observe=async()=>{},observeProduct=async()=>{},observeProtocol=async()=>{};
   const physical=createBrokerTransport(cfg,{version:'test',requestTimeout:s=>s.timeoutMs,bridgeSource:()=>{throw Error('No add-in bridge');}});
   physical._post=async payload=>{
@@ -35,23 +35,19 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
       const script=payload.params?.arguments?.object?.script || payload.params?.arguments?.code;
       let text='{}';
       if(script) {
-        if(!script.includes('FMCAD_QUEUE_INSTANCE')) {products++;await observeProduct(script);}
-        const binding=script.match(/_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/);
-        const filename=script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-        if(binding&&filename) {
-          const file=JSON.parse(filename[1]).replace(/^\\\\wsl\$\\[^\\]+/,'').replaceAll('\\','/');
-          if(!file.startsWith(home+'/')) throw Error('Foreign synthetic receipt path');
-          fs.writeFileSync(file,JSON.stringify({...JSON.parse(JSON.parse(binding[1])),terminal:true,outcome:'succeeded',instance}));
-        }
-        if(script.includes('FMCAD_QUEUE_INSTANCE')) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify({...instance,
-          documentState:{status:'complete',fingerprint,state:{identity:{creationId:'A'},references:[]}}});
+        const observation={...instance,
+          documentState:{status:'complete',fingerprint,state:{identity:{creationId:'A'},references:[]}}};
+        const receipts=nativeReceipts(script,home,observation);
+        const probe=receipts.some(receipt=>receipt.value.probeObservation);
+        if(!probe) {products++;await observeProduct(script);}
+        for(const receipt of receipts)
+          fs.writeFileSync(receipt.file,JSON.stringify(receipt.value));
+        if(probe) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify(observation);
         else text='typed-result';
       }
       return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text}]}})};
     } finally {active--;}
   };
-  const runtime=path.join(packageRoot,'dist/runtime/python');
-  const checker=createPythonChecker({typingRoot:path.join(runtime,'typing'),definitionsRoot:path.join(runtime,'typing'),pythonPlatform:'Windows'});
   const worker=path.join(home,'typed-service.cjs');
   if(typedService) fs.writeFileSync(worker,`
     const fs=require('node:fs');
@@ -67,17 +63,24 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
   t.after(async()=>{
     for(const client of clients) client.dispose();
     fs.rmSync(path.join(dir,'fusion-reset.lock'),{force:true});
-    await broker?.close();
-    process.chdir(oldCwd);
-    if(oldState===undefined) delete process.env.XDG_STATE_HOME;else process.env.XDG_STATE_HOME=oldState;
+    try {
+      await broker?.close();
+    } catch (error) {
+      t.diagnostic(`Admission fixture retained after close refusal: ${home}`);
+      throw error;
+    } finally {
+      process.chdir(oldCwd);
+      if(oldState===undefined) delete process.env.XDG_STATE_HOME;else process.env.XDG_STATE_HOME=oldState;
+    }
     fs.rmSync(home,{recursive:true,force:true});
   });
   broker=await serve(cfg,{dir,confirmOwnership:true,pollMs:5,createBackend:()=>physical,
-    pythonChecker:{async check(request){checks.push(request.artifact.sha256);return checker.check(request);}},
-    checkPrepared:prepared=>observe(prepared),
+    // This physical fixture writes receipts locally without executing Fusion.
+    nativePath:value=>value,
+    testCheckPrepared:prepared=>observe(prepared),
     ...(typedService?{spawnWorker(executable,args,options){return spawn(executable,[worker,args[1]],options);}}:{}),
   });
-  return {home,dir,cfg,calls,checks,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
+  return {home,dir,cfg,calls,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
     fingerprint(value){fingerprint=value;},observe(value){observe=value;},
     observeProduct(value){observeProduct=value;},
     observeProtocol(value){observeProtocol=value;},

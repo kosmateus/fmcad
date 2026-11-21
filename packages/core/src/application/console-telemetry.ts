@@ -1208,6 +1208,51 @@ function makeTimings(
   state: string | null,
   context: ConsoleTelemetrySource,
 ): ConsoleTelemetryTimings {
+  const timings = makeLegacyTimings(job, state, context);
+  const receipt = child(job, "sourcePhaseTimings");
+  if (child(receipt, "version") !== 1) return timings;
+  const totals = child(receipt, "totals"),
+    active = child(receipt, "active");
+  const mapping = {
+    prepare: "prepareMs",
+    queueWait: "queueWaitMs",
+    sdkActive: "sdkActiveMs",
+    pause: "pauseMs",
+    finalize: "finalizeMs",
+  } as const;
+  const measured: {
+    -readonly [K in keyof ConsoleTelemetryTimings]?: ConsoleTelemetryTimings[K];
+  } = {};
+  for (const phase of Object.keys(mapping) as (keyof typeof mapping)[]) {
+    const total = child(totals, phase);
+    if (total === undefined) continue;
+    const duration = nonnegative(child(total, "durationMs"));
+    const complete =
+      child(total, "complete") === true &&
+      child(active, "queue") !== phase &&
+      child(active, "local") !== phase;
+    measured[mapping[phase]] = value(complete ? duration : null, {
+      source: "broker-monotonic-phase-boundaries",
+      unit: "ms",
+      scope: phase === "queueWait" || phase === "sdkActive" ? "turn" : "job",
+      readAtMs: context.readAtMs,
+      observedAtMs: nonnegative(child(receipt, "observedAtMs")),
+      ...(!complete || duration === null
+        ? {
+            availability: "unknown" as const,
+            reason: "PHASE_INTERVAL_OPEN_OR_INCOMPLETE",
+          }
+        : {}),
+    });
+  }
+  return { ...timings, ...measured };
+}
+
+function makeLegacyTimings(
+  job: unknown,
+  state: string | null,
+  context: ConsoleTelemetrySource,
+): ConsoleTelemetryTimings {
   const submittedAt = child(job, "submittedAt");
   const finishedAt = child(job, "finishedAt");
   const physicalTurns = nonnegative(child(job, "physicalTurns"));

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@fmcad/core": ["packages/core/src/index.ts"],
+      "@fmcad/control-center": ["packages/control-center/src/index.ts"],
+      "@fmcad/control-center/*": ["packages/control-center/src/*"],
+      "@fmcad/node-adapters": ["packages/node-adapters/src/index.ts"],
+      "@fmcad/node-adapters/*": ["packages/node-adapters/src/*"],
+      "@fmcad/opencode-adapter": ["packages/opencode-adapter/src/index.ts"],
+      "@fmcad/opencode-adapter/*": ["packages/opencode-adapter/src/*"]
+    }
+  }
+}

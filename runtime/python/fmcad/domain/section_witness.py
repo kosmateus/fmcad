@@ -5,6 +5,10 @@ import time as _section_time
 from typing import Callable as _SectionCallable, ParamSpec as _SectionParamSpec
 from typing import TypeVar as _SectionTypeVar, cast as _section_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
 
 _SectionCallArgs = _SectionParamSpec('_SectionCallArgs')
 _SectionCallResult = _SectionTypeVar('_SectionCallResult')
@@ -29,13 +33,17 @@ class _SectionWitnessBudget:
         self.calls: int = 0
         self.started: float = _section_time.monotonic()
 
-    def call(self, function: "_SectionCallable[_SectionCallArgs, _SectionCallResult]",
-             *args: "_SectionCallArgs.args", **kwargs: "_SectionCallArgs.kwargs") -> "_SectionCallResult":
+    def invoke(self, function: "_SectionCallable[_SectionCallArgs, _SectionCallResult]",
+               *args: "_SectionCallArgs.args", **kwargs: "_SectionCallArgs.kwargs") -> "_SectionCallResult":
         if self.calls >= self.limits['kernelCalls'] or (_section_time.monotonic() - self.started) * 1000 >= self.limits['timeMs']:
             raise RuntimeError('Section/witness work budget exhausted')
         self.calls += 1
         # SDK calls are indivisible: this deadline prevents admission, not cancellation.
         return function(*args, **kwargs)
+
+    def call(self, function: "_SectionCallable[_SectionCallArgs, _SectionCallResult]",
+             *args: "_SectionCallArgs.args", **kwargs: "_SectionCallArgs.kwargs") -> "_SectionCallResult":
+        return self.invoke(function, *args, **kwargs)
 
     def finish(self, result: "JsonRecord") -> "JsonRecord":
         result['kernelCalls'] = self.calls

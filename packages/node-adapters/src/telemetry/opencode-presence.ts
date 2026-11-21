@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import syncFs from "node:fs";
+import { withProjectActivitiesFence } from "../persistence/project-history/activity";
 import os from "node:os";
 import path from "node:path";
 import { currentProcessIdentity } from "./client-presence";
@@ -10,6 +12,7 @@ interface OpenCodeSession {
   readonly agent?: string;
   readonly title?: string;
   readonly project?: string;
+  readonly projectDirectory?: string;
   readonly lastTool?: string;
   readonly status: string;
   readonly lastActivityAt: number;
@@ -43,6 +46,7 @@ export function createOpenCodePresence(
   const instanceId = randomUUID();
   const file = path.join(directory, `${ownerPid}-${instanceId}.json`);
   const sessions = new Map<string, OpenCodeSession>();
+  const sessionProjects = new Map<string, string>();
   let writing = false;
   let closed = false;
   let scheduled: NodeJS.Timeout | undefined;
@@ -52,7 +56,7 @@ export function createOpenCodePresence(
     if (closed || writing || !sessions.size) return;
     writing = true;
     const temp = `${file}.${randomUUID()}.tmp`;
-    const snapshot = JSON.stringify({
+    const snapshot = {
       schemaVersion: 1,
       nonce: instanceId,
       instanceId,
@@ -60,13 +64,25 @@ export function createOpenCodePresence(
       birth: ownerBirth,
       updatedAt: now(),
       sessions: [...sessions.values()],
-    });
+    };
     inFlight = (async () => {
       try {
         await privateDirectory(directory);
-        await fs.writeFile(temp, snapshot, { flag: "wx", mode: 0o600 });
-        if (!closed) await fs.rename(temp, file);
-        else await fs.unlink(temp).catch(() => {});
+        if (!closed)
+          withProjectActivitiesFence(
+            snapshot.sessions.map((session) => session.projectDirectory ?? ""),
+            (proofs) => {
+              syncFs.writeFileSync(
+                temp,
+                JSON.stringify({
+                  ...snapshot,
+                  ...(proofs.length ? { activityFences: proofs } : {}),
+                }),
+                { flag: "wx", mode: 0o600 },
+              );
+              syncFs.renameSync(temp, file);
+            },
+          );
       } catch {
         await fs.unlink(temp).catch(() => {});
       } finally {
@@ -113,8 +129,23 @@ export function createOpenCodePresence(
             .digest("hex")
             .slice(0, 40),
       });
-    sessions.set(key, session);
-    if (sessions.size > 200) sessions.delete(sessions.keys().next().value!);
+    const rawProject =
+      typeof data["project"] === "string"
+        ? data["project"]
+        : (sessionProjects.get(key) ?? project);
+    let projectDirectory = rawProject;
+    try {
+      projectDirectory = syncFs.realpathSync(rawProject);
+    } catch {
+      /* Unavailable paths remain explicitly unqualified to readers. */
+    }
+    sessions.set(key, { ...session, projectDirectory });
+    sessionProjects.set(key, projectDirectory);
+    if (sessions.size > 200) {
+      const oldest = sessions.keys().next().value!;
+      sessions.delete(oldest);
+      sessionProjects.delete(oldest);
+    }
     if (!scheduled) {
       scheduled = setTimeout(() => {
         scheduled = undefined;

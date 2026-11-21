@@ -258,5 +258,66 @@ class ScratchEpochTests(unittest.TestCase):
         self.assertEqual(self.docs.calls, 0)
 
 
+class NormalCurrentFactsTests(unittest.TestCase):
+    def setUp(self):
+        self.doc = Document('new-process-creation', 'Bez nazwy')
+        self.docs = Documents(self.doc)
+        self.app = types.SimpleNamespace(documents=self.docs,
+                                        userInterface=types.SimpleNamespace(activeCommand='SelectCommand'))
+        adsk = types.ModuleType('adsk')
+        adsk.core = types.ModuleType('adsk.core')
+        adsk.core.Application = types.SimpleNamespace(get=lambda: self.app)
+        modules = patch.dict(sys.modules, {'adsk': adsk, 'adsk.core': adsk.core})
+        modules.start()
+        self.addCleanup(modules.stop)
+        self.namespace = {}
+        source = ROOT / 'runtime/python/recovery/normal_currentstore.py'
+        exec(compile(source.read_text(), str(source), 'exec'), self.namespace)
+
+    def facts(self, permitted=True, name='Bez nazwy'):
+        return self.namespace['normal_currentstore_facts']('old-process-creation', name, permitted)
+
+    def test_fresh_clean_unsaved_default_is_distinct_in_explicit_normal_mode(self):
+        result = self.facts()
+        self.assertFalse(result['originalDocumentPresent'])
+        self.assertEqual(result['documents'][0]['creationId'], self.doc.creationId)
+        self.assertFalse(result['documents'][0]['isSaved'])
+        self.assertIsNone(result['documents'][0]['fileId'])
+        self.assertEqual(self.doc.closed, [])
+        self.assertEqual(self.docs.calls, 0)
+
+    def test_legacy_mode_keeps_name_guard(self):
+        self.assertTrue(self.facts(False)['originalDocumentPresent'])
+
+    def test_exact_creation_is_never_ignored_even_for_default_name(self):
+        self.doc.creationId = 'old-process-creation'
+        self.assertTrue(self.facts()['originalDocumentPresent'])
+
+    def test_saved_file_identity_and_modified_documents_keep_name_guard(self):
+        for attribute, value in [('isSaved', True), ('dataFile', types.SimpleNamespace(id='saved-file')),
+                                 ('isModified', True)]:
+            with self.subTest(attribute=attribute):
+                before = getattr(self.doc, attribute)
+                setattr(self.doc, attribute, value)
+                self.assertTrue(self.facts()['originalDocumentPresent'])
+                setattr(self.doc, attribute, before)
+
+    def test_named_document_is_not_an_unnamed_default(self):
+        self.doc.name = 'User design'
+        self.assertTrue(self.facts(name='User design')['originalDocumentPresent'])
+
+    def test_missing_or_duplicated_identity_is_not_a_new_default(self):
+        self.doc.creationId = ''
+        with self.assertRaises(AssertionError):
+            self.facts()
+        self.doc.creationId = 'new-process-creation'
+        self.docs.rows.append(self.doc)
+        with self.assertRaises(AssertionError):
+            self.facts()
+
+    def test_truthy_policy_is_not_explicit_authorization(self):
+        self.assertTrue(self.facts(permitted='true')['originalDocumentPresent'])
+
+
 if __name__ == '__main__':
     unittest.main()

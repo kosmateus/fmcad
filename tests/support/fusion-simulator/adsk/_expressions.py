@@ -21,6 +21,12 @@ UNITS: dict[str, Quantity] = {
     "yd": Quantity(91.44, 1), "deg": Quantity(math.pi / 180, 0, 1),
     "rad": Quantity(1, 0, 1),
 }
+for length_unit in ("mm", "cm", "m", "in", "ft", "yd"):
+    for power in (2, 3):
+        quantity = Quantity(UNITS[length_unit].value ** power, power)
+        UNITS[length_unit + str(power)] = quantity
+        UNITS[length_unit + "^" + str(power)] = quantity
+
 NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 
 
@@ -28,8 +34,10 @@ def evaluate(expression: str, unit: str, resolve: Callable[[str], Quantity]) -> 
     expected = UNITS.get(unit)
     if expected is None:
         raise NotImplementedError("Unsupported parameter unit: " + unit)
+    source = re.sub(r"(?<![A-Za-z0-9_.])(" + NUMBER + r")\s*(mm|cm|m|in|ft|yd)\s*\^([23])\b",
+                    r"(\1 * _unit_\2\3)", expression)
     source = re.sub(r"(?<![A-Za-z0-9_.])(" + NUMBER + r")\s*(mm|cm|m|in|ft|yd|deg|rad)\b",
-                    r"(\1 * _unit_\2)", expression)
+                    r"(\1 * _unit_\2)", source)
     tree = ast.parse(source.strip(), mode="eval")
     if sum(1 for _ in ast.walk(tree)) > 100:
         raise NotImplementedError("Expression exceeds model complexity limit")

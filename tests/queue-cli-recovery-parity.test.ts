@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import Module, { createRequire } from "node:module";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 const runtimeRequire = createRequire(
   path.join(
     process.env["FMCAD_TEST_RUNTIME"] || path.resolve(__dirname, ".."),
@@ -327,5 +329,81 @@ test("TypeScript queue CLI retains qualified recovery dispatch and existing cred
         }),
       );
     }
+  }
+});
+
+test("normal read-attempt CLI obtains fresh SDK0 control and rejects request or approval overrides", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "normal-retry-cli-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const saved = new Map<string, NodeModule | undefined>();
+  const replace = (name: string, exports: unknown) => {
+    const file = runtimeRequire.resolve(name);
+    saved.set(file, runtimeRequire.cache[file]);
+    const module = new Module(file);
+    module.exports = exports;
+    module.filename = file;
+    module.loaded = true;
+    runtimeRequire.cache[file] = module;
+  };
+  const entry = runtimeRequire.resolve("../src/dist/entrypoints/queue-cli.js");
+  saved.set(entry, runtimeRequire.cache[entry]);
+  delete runtimeRequire.cache[entry];
+  t.after(() => {
+    for (const [file, original] of saved) {
+      if (original) runtimeRequire.cache[file] = original;
+      else delete runtimeRequire.cache[file];
+    }
+  });
+  const calls: unknown[] = [];
+  const summary = { control: { activeOperations: 0, activeIds: [] }, marker: "fresh authenticated broker summary" };
+  class Client {
+    constructor(_id: unknown, options: { existingCredentialsOnly: boolean }) {
+      assert.equal(options.existingCredentialsOnly, true);
+    }
+    async call(action: string) { assert.equal(action, "queue-summary"); calls.push("summary"); return summary; }
+    dispose() {}
+    register() { assert.fail("No new credentials or SDK submission"); }
+  }
+  replace("../src/queue-client", { QueueClient: Client });
+  replace("../src/queue-instance", { buildHash: () => "operator-build" });
+  replace("../src/dist/composition/queue-normal-cold-successor", {
+    authorizeNormalCurrentFactsRetry(client: unknown, evidence: unknown, candidate: unknown) {
+      assert.ok(client instanceof Client); calls.push({ evidence, candidate }); return { authorized: true };
+    },
+    retireNormalCurrentFactsRetryProducer(client: unknown, reference: { path: string }, apply: boolean) {
+      assert.ok(client instanceof Client); calls.push({ path: reference.path, apply }); return { retired: apply };
+    },
+  });
+  const { queueCommand } = runtimeRequire(entry) as {
+    queueCommand(argv: string[], dependencies: Record<string, unknown>): Promise<number>;
+  };
+  const dependencies = { loadConfig: () => ({ cfg: { backend: "mcp", queue: {} } }),
+    stdout: { write() {} }, stderr: { write() { assert.fail("No child or SDK execution"); } } };
+  const reference = { path: "/immutable-prior.json", sha256: "a".repeat(64) };
+  const evidence = { previousRequestId: "previous-normal-read-scope", previousAuthority: reference, physicalResult: reference, validationFailure: reference };
+  const candidate = { requestId: "fresh-normal-read" };
+  const approval = path.join(root, "approval.json");
+  const grant = path.join(root, "grant.json");
+  fs.writeFileSync(approval, JSON.stringify({ evidence, candidate }));
+  fs.writeFileSync(grant, JSON.stringify({ candidate }));
+  const flags = ["--request-id", candidate.requestId, "--confirm-ownership", "true"];
+  const authorize = ["authorize-normal-currentfacts-retry", ...flags, "--normal-read-attempt-approval", approval];
+  assert.equal(await queueCommand(authorize, dependencies), 0);
+  assert.deepEqual(calls.splice(0), ["summary", { evidence: { ...evidence, queueSummary: summary }, candidate }]);
+  assert.equal(await queueCommand(["retire-normal-currentfacts-producer", ...flags, "--normal-read-attempt", grant], dependencies), 0);
+  assert.deepEqual(calls.splice(0), [{ path: grant, apply: false }]);
+  assert.equal(await queueCommand(["retire-normal-currentfacts-producer", ...flags, "--normal-read-attempt", grant, "--apply", "true"], dependencies), 0);
+  assert.deepEqual(calls.splice(0), [{ path: grant, apply: true }]);
+  fs.writeFileSync(approval, JSON.stringify({ evidence: { ...evidence, queueSummary: summary }, candidate }));
+  await assert.rejects(queueCommand(authorize, dependencies), /caller-supplied queue summary/);
+  fs.writeFileSync(approval, JSON.stringify({ evidence, candidate: { requestId: "foreign" } }));
+  await assert.rejects(queueCommand(authorize, dependencies), /Exact fresh normal read request/);
+  fs.writeFileSync(grant, JSON.stringify({ candidate: { requestId: "foreign" } }));
+  await assert.rejects(queueCommand(["retire-normal-currentfacts-producer", ...flags, "--normal-read-attempt", grant], dependencies), /request differs/);
+  assert.deepEqual(calls, []);
+  for (const extra of [["--client", "foreign"], ["--apply", "false"], ["--normal-target", approval], ["--", "doc", "list"]]) {
+    await assert.rejects(queueCommand([...authorize, ...extra], {
+      loadConfig() { assert.fail("Reject overrides before loading credentials"); },
+    }));
   }
 });

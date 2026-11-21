@@ -12,7 +12,7 @@ import re as _geometry_feature_re
 
 import adsk.core as _geometry_feature_core
 import adsk.fusion as _geometry_feature_fusion
-from typing import Literal as _GeometryFeatureLiteral
+from typing import TYPE_CHECKING as _GeometryFeature_TYPE_CHECKING, Literal as _GeometryFeatureLiteral
 from typing import Protocol as _GeometryFeatureProtocol
 from typing import TypeVar as _geometry_feature_TypeVar
 from typing import cast as _geometry_feature_adapter_cast
@@ -88,26 +88,27 @@ class _FeatureOwnedParameter(_GeometryFeatureProtocol):
     def name(self) -> str: ...
 
 
-class _FeatureExtrude(_GeometryFeatureProtocol):
-    hasTwoExtents: bool
-    symmetricExtent: object
-    extentOne: object
-    extentTwo: object
-    startExtent: object
-    taperAngleOne: object | None
-    taperAngleTwo: object | None
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureExtrude(_GeometryFeatureProtocol):
+        hasTwoExtents: bool
+        symmetricExtent: object
+        extentOne: object
+        extentTwo: object
+        startExtent: object
+        taperAngleOne: object | None
+        taperAngleTwo: object | None
 
-    def setOneSideExtent(self, extent: "adsk.fusion.ExtentDefinition",
-                         direction: "adsk.fusion.ExtentDirections",
-                         taperAngle: "adsk.core.ValueInput | None" = None) -> bool: ...
+        def setOneSideExtent(self, extent: "adsk.fusion.ExtentDefinition",
+                             direction: "adsk.fusion.ExtentDirections",
+                             taperAngle: "adsk.core.ValueInput | None" = None) -> bool: ...
 
-    def setSymmetricExtent(self, distance: "adsk.core.ValueInput", isFullLength: bool,
-                           taperAngle: "adsk.core.ValueInput | None" = None) -> bool: ...
+        def setSymmetricExtent(self, distance: "adsk.core.ValueInput", isFullLength: bool,
+                               taperAngle: "adsk.core.ValueInput | None" = None) -> bool: ...
 
-    def setTwoSidesExtent(self, sideOneExtent: "adsk.fusion.ExtentDefinition",
-                          sideTwoExtent: "adsk.fusion.ExtentDefinition",
-                          sideOneTaperAngle: "adsk.core.ValueInput | None" = None,
-                          sideTwoTaperAngle: "adsk.core.ValueInput | None" = None) -> bool: ...
+        def setTwoSidesExtent(self, sideOneExtent: "adsk.fusion.ExtentDefinition",
+                              sideTwoExtent: "adsk.fusion.ExtentDefinition",
+                              sideOneTaperAngle: "adsk.core.ValueInput | None" = None,
+                              sideTwoTaperAngle: "adsk.core.ValueInput | None" = None) -> bool: ...
 
 
 class _FeatureRevolve(_GeometryFeatureProtocol):
@@ -211,19 +212,21 @@ class _FeatureExtentPlan(_GeometryFeatureTypedDict):
     target: "CadEntity | None"
 
 
-class _FeatureNativePlan(_GeometryFeatureTypedDict):
-    kind: str
-    resolved: dict[str, object]
-    summary: "JsonObject"
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureNativePlan(_GeometryFeatureTypedDict):
+        kind: str
+        resolved: dict[str, object]
+        summary: "JsonObject"
 
 
-class _FeatureOperationPlan(_GeometryFeatureTypedDict):
-    kind: str
-    expected: str
-    value: str
-    expectedResultBodyCount: int
-    participants: list["adsk.fusion.BRepBody"]
-    target: object | None
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureOperationPlan(_GeometryFeatureTypedDict):
+        kind: str
+        expected: str
+        value: str
+        expectedResultBodyCount: int
+        participants: list["adsk.fusion.BRepBody"]
+        target: object | None
 
 
 class _FeatureDynamicAccess(_GeometryFeatureProtocol):
@@ -232,12 +235,13 @@ class _FeatureDynamicAccess(_GeometryFeatureProtocol):
     def __setattr__(self, name: str, value: object, /) -> None: ...
 
 
-class _FeatureRename(_GeometryFeatureProtocol):
-    @property
-    def name(self) -> str: ...
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureRename(_GeometryFeatureProtocol):
+        @property
+        def name(self) -> str: ...
 
-    @name.setter
-    def name(self, value: str) -> None: ...
+        @name.setter
+        def name(self, value: str) -> None: ...
 
 
 class _FeatureOperationMutable(_GeometryFeatureProtocol):
@@ -245,8 +249,9 @@ class _FeatureOperationMutable(_GeometryFeatureProtocol):
     participantBodies: list["adsk.fusion.BRepBody"]
 
 
-class _FeatureExpression(_GeometryFeatureProtocol):
-    def expression(self, expression: str, units: str | None = None, unitless: bool = False, /) -> object: ...
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureExpression(_GeometryFeatureProtocol):
+        def expression(self, expression: str, units: str | None = None, unitless: bool = False, /) -> object: ...
 
 
 class _FeatureEntityCollection(_GeometryFeatureProtocol):
@@ -263,12 +268,13 @@ class _FeatureObjectCollection(_GeometryFeatureProtocol):
     def item(self, index: int, /) -> object: ...
 
 
-class _FeatureToEntityExtent(_GeometryFeatureProtocol):
-    @property
-    def offset(self) -> "adsk.core.Base": ...
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureToEntityExtent(_GeometryFeatureProtocol):
+        @property
+        def offset(self) -> "adsk.core.Base": ...
 
-    @offset.setter
-    def offset(self, value: "adsk.core.ValueInput") -> None: ...
+        @offset.setter
+        def offset(self, value: "adsk.core.ValueInput") -> None: ...
 
 
 class _FeatureTimelineItem(_GeometryFeatureProtocol):
@@ -289,15 +295,16 @@ class _FeatureTimeline(_GeometryFeatureProtocol):
     def item(self, index: int, /) -> _FeatureTimelineItem: ...
 
 
-class _FeatureMutableTimeline(_GeometryFeatureProtocol):
-    @property
-    def markerPosition(self) -> int: ...
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureMutableTimeline(_GeometryFeatureProtocol):
+        @property
+        def markerPosition(self) -> int: ...
 
-    @markerPosition.setter
-    def markerPosition(self, value: int) -> None: ...
+        @markerPosition.setter
+        def markerPosition(self, value: int) -> None: ...
 
-    @property
-    def count(self) -> int: ...
+        @property
+        def count(self) -> int: ...
 
 
 class _FeatureOccurrenceCollection(_GeometryFeatureProtocol):
@@ -307,8 +314,9 @@ class _FeatureOccurrenceCollection(_GeometryFeatureProtocol):
     def item(self, index: int, /) -> "adsk.fusion.Occurrence": ...
 
 
-class _FeatureOccurrenceMatrix(_GeometryFeatureProtocol):
-    def asArray(self) -> list[float]: ...
+if _GeometryFeature_TYPE_CHECKING:
+    class _FeatureOccurrenceMatrix(_GeometryFeatureProtocol):
+        def asArray(self) -> list[float]: ...
 
 
 class _FeatureBRepEdgeCaster(_GeometryFeatureProtocol):
@@ -1029,7 +1037,7 @@ def _feature_apply_extent(ctx: "CadContext", feature: "adsk.fusion.Feature",
                           spec: "JsonObject", plan: "_FeatureExtentPlan") -> None:
     kind = plan['kind']
     if kind == 'ExtrudeFeature':
-        extrude = _geometry_feature_adapter_cast(_FeatureExtrude, _feature_sdk_object('ExtrudeFeature', feature))
+        extrude = _geometry_feature_adapter_cast('_FeatureExtrude', _feature_sdk_object('ExtrudeFeature', feature))
         direction = _geometry_feature_adapter_cast(
             _geometry_feature_fusion.ExtentDirections,
             _geometry_feature_fusion.ExtentDirections.PositiveExtentDirection
@@ -1045,7 +1053,7 @@ def _feature_apply_extent(ctx: "CadContext", feature: "adsk.fusion.Feature",
             definition = _geometry_feature_fusion.ToEntityExtentDefinition.create(
                 _feature_plan_target(plan), False)
             if 'offset' in spec:
-                _geometry_feature_adapter_cast(_FeatureToEntityExtent, definition).offset = ctx.value(spec['offset'])
+                _geometry_feature_adapter_cast('_FeatureToEntityExtent', definition).offset = ctx.value(spec['offset'])
             _cad_require_result(extrude.setOneSideExtent(definition, direction, ctx.value(spec.get('taper', '0 deg'))), 'setOneSideExtent')
         elif plan['mode'] == 'symmetric':
             _cad_require_result(extrude.setSymmetricExtent(
@@ -1127,7 +1135,7 @@ def _feature_operation_pose_snapshot(
         transform_value: object | None = getattr(occurrence, 'transform2', None)
         if transform_value is None or not hasattr(transform_value, 'asArray'):
             return None
-        transform = _geometry_feature_adapter_cast(_FeatureOccurrenceMatrix, transform_value)
+        transform = _geometry_feature_adapter_cast('_FeatureOccurrenceMatrix', transform_value)
         rows.append((occurrence, tuple(transform.asArray())))
     return rows
 
@@ -2266,7 +2274,7 @@ def _feature_native_edit(ctx: "CadContext", data: "JsonObject",
             'reason': 'nativeEdits requires confirm:true', 'mutation': False,
             'skippedFields': [], 'unsupportedFields': request['unsupportedProperties']},
             status='blocked', associativity='snapshot')
-    timeline = _geometry_feature_adapter_cast(_FeatureMutableTimeline, ctx.design.timeline)
+    timeline = _geometry_feature_adapter_cast('_FeatureMutableTimeline', ctx.design.timeline)
     marker: int | None = timeline.markerPosition
     if marker != timeline.count:
         raise ValueError('nativeEdits requires the timeline marker at the end')
@@ -2293,7 +2301,7 @@ def _feature_native_edit(ctx: "CadContext", data: "JsonObject",
         if rolled:
             try:
                 timeline = _geometry_feature_adapter_cast(
-                    _FeatureMutableTimeline, ctx.design.timeline)
+                    '_FeatureMutableTimeline', ctx.design.timeline)
                 timeline.markerPosition = marker
                 marker_restored = timeline.markerPosition == marker
                 if not marker_restored:
@@ -2346,7 +2354,7 @@ def _feature_edit(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
     if 'nativeEdits' in data:
         return _feature_native_edit(ctx, data, feature)
     before = _feature_snapshot(ctx, feature)
-    operation_plan: _FeatureOperationPlan | None = None
+    operation_plan: "_FeatureOperationPlan | None" = None
     operation_names: list[tuple[object, str]] = []
     if 'operationChange' in data:
         operation_kind = _cad_type(feature)
@@ -2451,7 +2459,7 @@ def _feature_edit(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
                 unit = unit_value if unit_value not in ('', 'text') else None
             else:
                 raise ValueError('Feature parameter unit must be text')
-            _geometry_feature_adapter_cast(_FeatureExpression, ctx).expression(expression, unit)
+            _geometry_feature_adapter_cast('_FeatureExpression', ctx).expression(expression, unit)
             resolved.append((row, parameter, expression))
     extent_plan: _FeatureExtentPlan | None = None
     extent_spec: JsonObject | None = None
@@ -2493,7 +2501,7 @@ def _feature_edit(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
             'after': dict(before), 'plan': plan, 'reason': 'This native edit requires confirm:true',
             'mutation': False, 'skippedFields': [], 'unsupportedFields': []},
             status='blocked', associativity='snapshot')
-    timeline = _geometry_feature_adapter_cast(_FeatureMutableTimeline, ctx.design.timeline)
+    timeline = _geometry_feature_adapter_cast('_FeatureMutableTimeline', ctx.design.timeline)
     marker: int | None = timeline.markerPosition
     if operation_plan is not None and marker != timeline.count:
         raise ValueError('operationChange requires the timeline marker at the end')
@@ -2511,7 +2519,7 @@ def _feature_edit(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
         if 'name' in data:
             if name is None:
                 raise RuntimeError('Validated feature name was not retained')
-            _geometry_feature_adapter_cast(_FeatureRename, feature).name = name
+            _geometry_feature_adapter_cast('_FeatureRename', feature).name = name
         if extent_plan is not None:
             rolled = True
             _cad_require_result(feature.timelineObject.rollTo(True), 'TimelineObject.rollTo')

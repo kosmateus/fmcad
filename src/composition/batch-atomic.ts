@@ -86,9 +86,7 @@ export function injectTestFault(steps: BatchStep[]): BatchStep[] {
 export function prepareAtomicScript(args: CadData) {
   const wrapper = `
 
-_ATOMIC_REQUEST: "JsonObject"
-
-_ATOMIC_REQUEST = ${pythonLiteral(args)}
+_ATOMIC_REQUEST: "JsonObject" = ${pythonLiteral(args)}
 
 def run(_context: str) -> None:
     import json

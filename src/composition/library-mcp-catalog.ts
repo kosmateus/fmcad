@@ -1,4 +1,8 @@
-import { description, redactDiagnostic } from "@fmcad/core";
+import {
+  description,
+  redactDiagnostic,
+  successfulReferenceComputation,
+} from "@fmcad/core";
 import type {
   CatalogServices,
   CatalogMcpTool,
@@ -44,7 +48,10 @@ export function catalogResult(
   return {
     content: [{ type: "text", text: JSON.stringify(result) }],
     structuredContent: result,
-    isError: failed || invocationFailed(result, operation),
+    isError:
+      failed ||
+      (!successfulReferenceComputation(operation, result) &&
+        invocationFailed(result, operation)),
   };
 }
 

@@ -192,7 +192,7 @@ node --test tests/python-checker.test.js tests/python-checker-completeness.test.
 npm run build
 FMCAD_TEST_CHECKER_TARBALL=1 node --test tests/python-checker-packaging.test.js
 node --test tests/python-admission.test.js tests/python-admission-transport.test.js
-node --test tests/library-api-broker.test.js
+node --test dist/tests/library-api-broker.test.js
 node --test tests/python-admission-packaging.test.js
 ```
 

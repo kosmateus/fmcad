@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Inspect a pinned document's modal UI", "data": {"requestId":"request-001","lease":{"id":"LEASE_TOKEN","requestId":"request-001","operationId":"authorized-operation-1","expiresAt":1893456000000,"target":{"name":"Model","creationId":"CREATION_ID","fileId":"FILE_ID"}},"target":{"name":"Model","creationId":"CREATION_ID","fileId":"FILE_ID"},"intent":"confirmRequestedUpdate"}, "requires": "A coordinator-issued request-bound lease; the pinned Fusion document is open. Same-host Windows UIAutomation via addin.", "output": "result.observationId plus bounded controls/profiles with actual Unicode names, types and qualified matching methods; an observation is not model acceptance."}
     ],
-    "audit": {"sources": ["src/ui.js", "src/addin-client.js", "assets/ui_dialog.ps1"], "verified": ["read-only snapshot with one-use observation tokens", "matching-method priority and locale/build/OS qualification", "observedControl vs qualified profile selection", "native UIA/PS1 qualified only for the documented host; no universal profile"], "tests": ["tests/ui.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["src/ui.js", "src/addin-client.js", "assets/ui_dialog.ps1"], "verified": ["read-only snapshot with one-use observation tokens", "matching-method priority and locale/build/OS qualification", "observedControl vs qualified profile selection", "native UIA/PS1 qualified only for the documented host; no universal profile"], "tests": ["tests/ui.test.ts"], "gaps": [], "bugs": []}
   },
   "ui.respond": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Confirm one qualified update dialog", "data": {"requestId":"request-001","lease":{"id":"LEASE_TOKEN","requestId":"request-001","operationId":"authorized-operation-1","expiresAt":1893456000000,"target":{"name":"Model","creationId":"CREATION_ID","fileId":"FILE_ID"}},"target":{"name":"Model","creationId":"CREATION_ID","fileId":"FILE_ID"},"intent":"confirmRequestedUpdate","action":"confirm","observationId":"00000000-0000-4000-8000-000000000001","selectionMode":"profile","profileId":"update-all-latest"}, "requires": "A fresh, unexpired observation from ui.inspect and a qualified update-all-latest profile for this exact build/OS/locale.", "output": "result.status actionSubmitted with dialogClosed/nativeCommandId; operationOutcome remains notEvaluated until the caller completes domain checks."}
     ],
-    "audit": {"sources": ["src/ui.js", "src/addin-client.js", "assets/ui_dialog.ps1"], "verified": ["single-use observation and lease revalidation", "observedControl exact-name/container scoping and duplicate ambiguity", "terminateActiveCommand guards and model-unchanged measurement", "native cancel/confirm qualified only for the documented host; no universal profile"], "tests": ["tests/ui.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["src/ui.js", "src/addin-client.js", "assets/ui_dialog.ps1"], "verified": ["single-use observation and lease revalidation", "observedControl exact-name/container scoping and duplicate ambiguity", "terminateActiveCommand guards and model-unchanged measurement", "native cancel/confirm qualified only for the documented host; no universal profile"], "tests": ["tests/ui.test.ts"], "gaps": [], "bugs": []}
   },
   "ui.resolve": {
     "sections": [
@@ -27,6 +27,6 @@
     "examples": [
       {"label": "Resolve one qualified update confirmation", "data": {"requestId":"request-001","lease":{"id":"LEASE_TOKEN","requestId":"request-001","operationId":"authorized-operation-1","expiresAt":1893456000000,"target":{"name":"Model","creationId":"CREATION_ID","fileId":"FILE_ID"}},"target":{"name":"Model","creationId":"CREATION_ID","fileId":"FILE_ID"},"intent":"confirmRequestedUpdate","allowedProfiles":["update-all-latest"],"maxActions":3,"timeBudgetMs":10000}, "requires": "A coordinator-issued request-bound lease and a locally qualified update-all-latest profile for this host.", "output": "result.resolutionStatus resolved/nothingToDo/partial/blocked/unknown with action receipts; operationOutcome stays notEvaluated."}
     ],
-    "audit": {"sources": ["src/ui.js", "src/addin-client.js", "assets/ui_dialog.ps1"], "verified": ["bounded loop and fresh revalidation per action", "resolutionStatus and no-routine-click candidate fallback", "no-replay of unknown originals and notEvaluated domain outcome", "native resolution qualified only for the documented host; no universal profile"], "tests": ["tests/ui.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["src/ui.js", "src/addin-client.js", "assets/ui_dialog.ps1"], "verified": ["bounded loop and fresh revalidation per action", "resolutionStatus and no-routine-click candidate fallback", "no-replay of unknown originals and notEvaluated domain outcome", "native resolution qualified only for the documented host; no universal profile"], "tests": ["tests/ui.test.ts"], "gaps": [], "bugs": []}
   }
 }

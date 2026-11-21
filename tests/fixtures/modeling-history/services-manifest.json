@@ -1,0 +1,14 @@
+{
+  "selection-rules": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "path": "src/selection-rules.js",
+    "fixture": "selection-rules-service-main.cjs",
+    "sha256": "9c724b0e6ecde4bfdfe2fef3b7b7d6f223c4a14daa58681bbf7fbf883cfe839e"
+  },
+  "brep-baseline": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "path": "src/brep-baseline.js",
+    "fixture": "brep-baseline-service-main.cjs",
+    "sha256": "975d1be873906af91072d48fca2aeded2d814d947eb1013be16196c5d1f0420a"
+  }
+}

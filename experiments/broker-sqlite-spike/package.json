@@ -1,0 +1,17 @@
+{
+  "name": "fmcad-broker-sqlite-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test spike.test.mjs",
+    "bench": "node bench.mjs",
+    "compare": "node compare.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.2.0"
+  }
+}

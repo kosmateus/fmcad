@@ -1,5 +1,12 @@
 /** Existing v1 snapshot, kept byte-compatible with the broker's durable store. */
 export type SequenceMode = "automatic" | "exclusive";
+export interface QueueDebugTrace {
+  version: 1;
+  traceId: string;
+  rootSpanId: string;
+  source: "cli" | "mcp";
+  requestId: string;
+}
 export interface QueueRequest {
   requestId: string;
   clientId: string;
@@ -10,6 +17,7 @@ export interface QueueRequest {
   clientContext?: McpQueueContext | undefined;
   ownerToken?: string | undefined;
   buildHash?: string | undefined;
+  debugTrace?: QueueDebugTrace | undefined;
   description?: string | undefined;
   argv?: string[] | undefined;
   cwd?: string | undefined;

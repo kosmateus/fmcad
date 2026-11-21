@@ -8,6 +8,9 @@ import * as programs from "./programs";
 
 const root = path.resolve(__dirname, "../../..");
 const load = createRequire(path.join(root, "package.json"));
+const { decodeNativeProgram } = load(
+  "./tests/fixtures/native-source-envelope.cjs",
+) as { decodeNativeProgram(source: string): string };
 test("owned scenario scripts satisfy the public run command's document injection contract", (t) => {
   const directory = fs.mkdtempSync(
     path.join(tmpdir(), "scenario-run-contract-"),
@@ -86,5 +89,5 @@ test("probe prepares receipt paths through the injected physical adapter before 
     },
   });
   assert.ok(mapped >= 1);
-  assert.match(captured, /NATIVE:\/test\/owned\.json/);
+  assert.match(decodeNativeProgram(captured), /NATIVE:\/test\/owned\.json/);
 });

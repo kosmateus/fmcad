@@ -30,14 +30,19 @@ export function cadSequence(
     operation: string;
     data: Record<string, unknown>;
     rejection?: string;
+    /** Epistemic result states of a completed declaration, never SDK settlement. */
+    statuses?: readonly string[];
+    success?: boolean;
   }[],
 ): string {
-  const steps = calls.map(({ operation, data, rejection }) => {
-    const call = `FMCAD.call(${JSON.stringify(operation)}, ${pythonLiteral(data)})`;
-    return rejection
-      ? `try:\n    _ = ${call}\nexcept ValueError as error:\n    assert str(error).startswith(${JSON.stringify(rejection)})\n    rows.append(dict(error=str(error), result=None))\nelse:\n    raise AssertionError('Invalid attribute write was accepted')`
-      : `value = ${call}\nassert isinstance(value, dict) and value.get('success') is True and value.get('status') == 'pass', 'Attribute result is not a known success'\nrows.append(dict(error=None, result=value))`;
-  });
+  const steps = calls.map(
+    ({ operation, data, rejection, statuses, success }) => {
+      const call = `FMCAD.call(${JSON.stringify(operation)}, ${pythonLiteral(data)})`;
+      return rejection
+        ? `try:\n    _ = ${call}\nexcept ValueError as error:\n    assert str(error).startswith(${JSON.stringify(rejection)})\n    rows.append(dict(error=str(error), result=None))\nelse:\n    raise AssertionError('Expected declaration rejection was accepted')`
+        : `value = ${call}\nassert isinstance(value, dict) and value.get('success') is ${success === false ? "False" : "True"} and value.get('status') in ${pythonLiteral(statuses ?? ["pass"])}, 'CAD result is not an expected completed declaration'\nrows.append(dict(error=None, result=value))`;
+    },
+  );
   return program(`${guard(document)}
 rows: list[dict[str, object]] = []
 ${steps.join("\n")}

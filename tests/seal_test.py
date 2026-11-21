@@ -1,12 +1,19 @@
 """GM15 offline tests: O-ring torus volume, glands, profiles and dock sequences."""
 import math
 import unittest
+import sys
+from unittest.mock import patch
 
 import shapes_test as shapes
 
 NAMESPACE = dict(shapes.NAMESPACE)
 NAMESPACE['CAD_HANDLERS'] = dict(shapes.NAMESPACE['CAD_HANDLERS'])
-exec(compile((shapes.ROOT / 'assets/cad/seal.py').read_text(), 'seal.py', 'exec'), NAMESPACE)
+# Earlier isolated suites may have restored sys.modules after importing model_test.
+with patch.dict(sys.modules, {
+    'adsk': shapes.model.adsk, 'adsk.core': shapes.model.adsk.core,
+    'adsk.fusion': shapes.model.adsk.fusion,
+}):
+    exec(compile((shapes.ROOT / 'assets/cad/seal.py').read_text(), 'seal.py', 'exec'), NAMESPACE)
 
 
 class SealTests(unittest.TestCase):

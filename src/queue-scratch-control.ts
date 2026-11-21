@@ -144,6 +144,7 @@ interface Parameters {
     forbiddenIds: string[];
     authority: unknown;
     sourceCommit: string;
+    quarantinedJobIds?: string[];
   };
   additionalPrerequisite?(): Prerequisite | undefined;
   clients(): Record<string, string>;
@@ -429,7 +430,7 @@ function createScratchControl(p: Parameters) {
           sha256: fileHash(receipt).sha256,
         },
         qualificationEvidence,
-        quarantinedJobIds: [prior.key.jobId, prior.key.observationJobId],
+        quarantinedJobIds: p.successor?.quarantinedJobIds || [prior.key.jobId, prior.key.observationJobId],
         historicalOutcome: "unknown",
         originalModelValidation: "not_performed",
         originalRollbackVerification: "not_performed",

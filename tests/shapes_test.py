@@ -212,6 +212,15 @@ class ShapesTests(unittest.TestCase):
         self.ctx = Context()
         model.TRACE.clear()
 
+    def test_borrowed_cad_resolve_accepts_the_existing_minimal_context(self):
+        ctx = Context()
+        profile = ctx.sketch.profiles.item(0)
+        selector = {'kind': 'profile', 'sketch': ctx.ref(ctx.sketch), 'index': 0}
+        self.assertFalse(hasattr(ctx, '_cad_resolve_basic_reference'))
+
+        self.assertIs(ctx.resolve(selector, 'profile'), profile)
+        self.assertIs(ctx.resolve(ctx.ref(profile), 'profile'), profile)
+
     def test_catalog_matches_registered_shapes_and_compiles(self):
         catalog = json.loads((ROOT / 'src/catalog/shapes.json').read_text())
         catalog.update(json.loads((ROOT / 'src/catalog/shapes-library.json').read_text()))
@@ -321,10 +330,52 @@ class ShapesTests(unittest.TestCase):
                  ('tube', {'outerRadius': '5 mm', 'innerRadius': '6 mm', 'height': '5 mm'}),
                  ('cone', {'baseRadius': '5 mm', 'topRadius': '0 mm', 'height': '5 mm'})]
         for mode, data in cases:
-            with self.assertRaises(ValueError):
-                self.ctx.call('shape.' + mode, dict(data, name='Bad'))
+            result = self.ctx.call('shape.' + mode, dict(data, name='Bad'))
+            self.assertEqual(result['status'], 'failed')
+            self.assertEqual(result['error']['code'], 'INVALID_INPUT')
+            self.assertTrue(result['error']['message'])
+            self.assertEqual(result['rejection'], {
+                'kind': 'cad-input-rejection', 'version': 1,
+                'operation': 'shape.' + mode, 'mutationStatus': 'not_started'})
         self.assertEqual(self.ctx.component.sketches.count, 0)
         self.assertEqual(model.TRACE, [])
+
+    def test_named_primitive_execution_preserves_dispatch_and_rejection_order(self):
+        cases = {'box': {'width': '20 mm', 'depth': '10 mm'},
+                 'cylinder': {'radius': '10 mm'},
+                 'tube': {'outerRadius': '10 mm', 'innerRadius': '6 mm'},
+                 'ring': {'outerRadius': '10 mm', 'innerRadius': '6 mm'},
+                 'cone': {'baseRadius': '10 mm', 'topRadius': '5 mm'}}
+
+        def legacy_dispatch(*args):
+            raise AssertionError('Named primitive depends on the multimode dispatcher')
+
+        with patch.dict(NAMESPACE, {'_shapes_recipe': legacy_dispatch,
+                                    '_shapes_primitive': legacy_dispatch}):
+            for mode, sizes in cases.items():
+                with self.subTest(mode=mode):
+                    ctx = Context()
+                    result = ctx.call('shape.' + mode, dict(sizes, name='Part', height='20 mm'))
+                    self.assertEqual(result['recipe'], mode)
+                    self.assertEqual(len(result['helpers']), 3 if mode == 'cone' else 1)
+                    # The public name reservation precedes length rejection.
+                    ctx.component.sketches.values.append(types.SimpleNamespace(name='Taken'))
+                    with self.assertRaisesRegex(ValueError, 'Reserved shape name already exists'):
+                        ctx.call('shape.' + mode, dict(sizes, name='Taken', height='0 mm'))
+                    rejected = ctx.call('shape.' + mode, dict(sizes, name='Invalid', height='0 mm'))
+                    self.assertEqual(rejected['rejection']['operation'], 'shape.' + mode)
+                    self.assertEqual(rejected['rejection']['mutationStatus'], 'not_started')
+
+    def test_primitive_native_failure_is_not_input_rejection(self):
+        def failed_section(*args):
+            model.TRACE.append(('partial-native-mutation',))
+            raise ValueError('Native section failed after mutation')
+
+        with patch.dict(NAMESPACE, {'_shapes_section': failed_section}):
+            with self.assertRaisesRegex(ValueError, 'after mutation'):
+                self.ctx.call('shape.box', {'name': 'Box', 'width': '5 mm',
+                                           'depth': '5 mm', 'height': '5 mm'})
+        self.assertEqual(model.TRACE, [('partial-native-mutation',)])
 
     def test_name_collision_and_proxy_rejected(self):
         self.ctx.component.sketches.values.append(types.SimpleNamespace(name='Part__section'))

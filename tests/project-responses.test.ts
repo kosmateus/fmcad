@@ -1,0 +1,209 @@
+import { createRequire } from "node:module";
+import test from "node:test";
+
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  ChildProcess,
+  type SpawnOptions,
+  type spawn,
+} from "node:child_process";
+import type { QueueJob, WorkerRequest } from "@fmcad/core";
+const load = createRequire(
+  path.join(process.cwd(), "tests/project-responses.test.js"),
+);
+const { responsePath } = load(
+  "../src/queue-response-files",
+) as typeof import("../packages/node-adapters/src/persistence/owned-results");
+const { migrateProjectResponses } = load(
+  "../src/queue-response-migration",
+) as typeof import("../src/queue-response-migration");
+const { openResponse } = load(
+  "../src/console-response",
+) as typeof import("../src/composition/library-console-response");
+function fixture(t: test.TestContext) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "project-responses-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const project = path.join(root, "project"),
+    dir = path.join(root, "queue");
+  fs.mkdirSync(path.join(project, ".cad/recipes"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "jobs/task"), { recursive: true });
+  const job = {
+    id: "task",
+    state: "succeeded",
+    requestId: "request",
+    clientId: "client",
+    kind: "command",
+    hash: "fixture",
+    order: 1,
+    submittedAt: 1,
+    queueDeadline: null,
+    timeoutMs: 5000,
+    sequenceId: null,
+    sequenceState: null,
+    request: {
+      requestId: "request",
+      clientId: "client",
+      kind: "command",
+      timeoutMs: 5000,
+      argv: [],
+      cwd: path.join(project, ".cad/recipes"),
+    },
+  } satisfies QueueJob & { request: WorkerRequest };
+  fs.writeFileSync(
+    path.join(dir, "queue-state.json"),
+    JSON.stringify({ jobs: { task: job } }),
+  );
+  return { root, project, dir, job };
+}
+test("new response writes go to project root even when invoked from a recipe subdirectory", (t) => {
+  const f = fixture(t),
+    file = responsePath(f.dir, f.job, "stdout.txt", true);
+  assert.equal(file, path.join(f.project, ".cad/results/task/stdout.txt"));
+  fs.writeFileSync(file, "result");
+  assert.equal(responsePath(f.dir, f.job, "stdout.txt"), file);
+  assert.equal(fs.existsSync(path.join(f.dir, "jobs/task/stdout.txt")), false);
+  assert.throws(
+    () => responsePath(f.dir, f.job, "../request.json"),
+    /Invalid response/,
+  );
+  assert.throws(
+    () => responsePath(f.dir, { ...f.job, id: "../other" }, "stdout.txt"),
+    /Invalid task/,
+  );
+});
+test("legacy output remains readable until migrated and unscoped RPC has explicit compatibility", (t) => {
+  const f = fixture(t),
+    legacy = path.join(f.dir, "jobs/task/stdout.txt");
+  fs.writeFileSync(legacy, "legacy");
+  assert.equal(responsePath(f.dir, f.job, "stdout.txt"), legacy);
+  assert.equal(
+    responsePath(f.dir, { id: "task", request: {} }, "rpc-result.json", true),
+    path.join(f.dir, "jobs/task/rpc-result.json"),
+  );
+});
+test("project result directories cannot redirect response writes through symlinks", (t) => {
+  const f = fixture(t),
+    outside = path.join(f.root, "outside");
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(f.project, ".cad/results"));
+  assert.throws(
+    () => responsePath(f.dir, f.job, "stdout.txt", true),
+    /regular directories/,
+  );
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+test("verified migration moves only terminal project outputs and does not rewrite queue state", async (t) => {
+  const f = fixture(t),
+    legacy = path.join(f.dir, "jobs/task/stdout.txt");
+  fs.writeFileSync(legacy, '{"count":42}');
+  const unknown = {
+    id: "unknown",
+    state: "needs_reconciliation",
+    request: { cwd: f.project },
+  };
+  fs.mkdirSync(path.join(f.dir, "jobs/unknown"));
+  fs.writeFileSync(path.join(f.dir, "jobs/unknown/stdout.txt"), "pending");
+  const stateFile = path.join(f.dir, "queue-state.json");
+  fs.writeFileSync(
+    stateFile,
+    JSON.stringify({ jobs: { task: f.job, unknown } }),
+  );
+  const before = fs.readFileSync(stateFile);
+  const preview = migrateProjectResponses({ ...f });
+  assert.equal(preview.files.length, 1);
+  assert.equal(preview.skippedNonterminal, 1);
+  assert.equal(fs.existsSync(legacy), true);
+  assert.equal(fs.existsSync(path.join(f.project, ".cad/results")), false);
+  const result = migrateProjectResponses({ ...f, apply: true });
+  assert.equal(result.files.length, 1);
+  assert.equal(result.files[0]!.bytes, 12);
+  assert.equal(fs.existsSync(legacy), false);
+  assert.equal(
+    fs.readFileSync(result.files[0]!.target, "utf8"),
+    '{"count":42}',
+  );
+  assert.equal(
+    fs.readFileSync(path.join(f.dir, "jobs/unknown/stdout.txt"), "utf8"),
+    "pending",
+  );
+  assert.deepEqual(fs.readFileSync(stateFile), before);
+  const response = await openResponse(
+    f.job,
+    { mode: "broker", project: f.project, operations: [f.job] },
+    { dir: f.dir },
+  );
+  assert.equal(response.error, null);
+  assert.equal(response.outputs[0]!.path, result.files[0]!.target);
+  assert.equal(JSON.parse(response.outputs[0]!.text!).count, 42);
+});
+test("migration refuses an online broker and conflicting destination without deleting either copy", (t) => {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.dir, "broker.lock"), "{}");
+  assert.throws(
+    () => migrateProjectResponses({ ...f, apply: true }),
+    /Stop the broker/,
+  );
+  fs.unlinkSync(path.join(f.dir, "broker.lock"));
+  const legacy = path.join(f.dir, "jobs/task/stdout.txt"),
+    target = responsePath(f.dir, f.job, "stdout.txt", true);
+  fs.writeFileSync(legacy, "old");
+  fs.writeFileSync(target, "user copy");
+  assert.throws(
+    () => migrateProjectResponses({ ...f, apply: true }),
+    /Conflicting/,
+  );
+  assert.equal(fs.readFileSync(legacy, "utf8"), "old");
+  assert.equal(fs.readFileSync(target, "utf8"), "user copy");
+});
+test("phased local worker producer writes its actual stdout FD inside the project", async (t) => {
+  const f = fixture(t),
+    { PhasedWorkers } = load(
+      "../src/queue-phased",
+    ) as typeof import("../src/queue-phased");
+  const worker = new PhasedWorkers({
+    dir: f.dir,
+    cfg: {},
+    codeHash: "fixture",
+    properties: () => ({}),
+    state: {
+      status: () => ({ ...f.job, state: "succeeded" }),
+      readyTurn: () => assert.fail("No SDK work expected"),
+      finishLocal: () => assert.fail("Already terminal"),
+    },
+    onFault: (error) => {
+      throw error;
+    },
+    onUnknown: () => assert.fail("No SDK work expected"),
+    // This fixture implements only the three-argument spawn call used by PhasedWorkers.
+    spawnWorker: ((
+      _exe: string,
+      _args: readonly string[],
+      options: SpawnOptions,
+    ) => {
+      assert.ok(Array.isArray(options.stdio));
+      const stdoutFd = options.stdio[1];
+      assert.ok(typeof stdoutFd === "number");
+      fs.writeSync(stdoutFd, '{"local":true}\n');
+      const child = new ChildProcess();
+      queueMicrotask(() => child.emit("close", 0));
+      return child;
+    }) as typeof spawn,
+  });
+  worker.startWorker({
+    ...f.job,
+    timeoutMs: 5000,
+    request: { ...f.job.request, argv: ["run", "--list"] },
+  });
+  await worker.workers.get(f.job.id)!.closed;
+  assert.equal(
+    fs.readFileSync(
+      path.join(f.project, ".cad/results/task/stdout.txt"),
+      "utf8",
+    ),
+    '{"local":true}\n',
+  );
+  assert.equal(fs.existsSync(path.join(f.dir, "jobs/task/stdout.txt")), false);
+});

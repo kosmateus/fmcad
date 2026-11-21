@@ -192,3 +192,48 @@ export function selectConsoleRows(
   }
   return rows;
 }
+
+export function activeFilters(state: {
+  filters?: ConsoleFilters;
+  search?: string;
+}) {
+  return [
+    ...Object.entries(state.filters ?? {})
+      .filter(
+        ([key, value]) =>
+          value &&
+          !(key === "scope" && value === "all") &&
+          (!Array.isArray(value) || value.length),
+      )
+      .map(([key, value]) => ({ key, value: value as unknown })),
+    ...(state.search ? [{ key: "search", value: state.search }] : []),
+  ];
+}
+export function filterSummary(
+  state: { filters?: ConsoleFilters; search?: string },
+  ui: { language: string; L(key: string): string },
+): string {
+  const labels: Record<string, string> = {
+    scope: ui.L("scope"),
+    search: ui.L("search"),
+    state: ui.L("state"),
+    agent: ui.L("client"),
+    document: ui.L("documentOrScript"),
+    level: ui.L("level"),
+    component: ui.L("source"),
+    presence: ui.L("presence"),
+    work: ui.L("work"),
+    clientKind: ui.language === "pl" ? "Rodzaj klienta" : "Client kind",
+    task: "Task ID",
+    request: "Request ID",
+    since: ui.language === "pl" ? "Od" : "Since",
+    until: ui.language === "pl" ? "Do" : "Until",
+  };
+  return activeFilters(state)
+    .map(({ key, value }) =>
+      key === "ids" && Array.isArray(value)
+        ? `${ui.L("records")}: ${value.length}`
+        : `${labels[key] || key}: ${key === "scope" ? ui.L(String(value)) : value}`,
+    )
+    .join(" · ");
+}

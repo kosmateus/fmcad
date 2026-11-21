@@ -67,18 +67,125 @@ def _shapes_handler(mode: str) -> "CadHandler":
     return handler
 
 
+@_cad_scoped_step('shape', native_only=True)
+def shape_box(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_box(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_cylinder(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_cylinder(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_tube(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_tube(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_ring(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_ring(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_cone(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_cone(ctx, data)
+
+
 def _shapes_gm10_handler(mode: str) -> "CadHandler":
     def handler(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
         return _shapes_gm10(ctx, data, mode)
     return handler
 
 
-CAD_HANDLERS.update({'shape.' + mode: _shapes_handler(mode) for mode in (
-    'box', 'cylinder', 'tube', 'ring', 'cone', 'revolved_profile', 'bolt_circle',
-    'slot', 'slot_pattern', 'rib', 'web', 'route', 'helix')})
+CAD_HANDLERS.update({
+    'shape.box': shape_box,
+    'shape.cylinder': shape_cylinder,
+    'shape.tube': shape_tube,
+    'shape.ring': shape_ring,
+    'shape.cone': shape_cone,
+})
 
 
-CAD_HANDLERS.update({'shape.' + mode: _shapes_gm10_handler(mode) for mode in (
-    'annular_segment', 'arc_strip', 'can', 'impeller', 'boss_pattern')})
+def shape_revolved_profile(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'revolved_profile')
+
+
+def shape_bolt_circle(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'bolt_circle')
+
+
+def shape_slot(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'slot')
+
+
+def shape_slot_pattern(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'slot_pattern')
+
+
+def shape_rib(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'rib')
+
+
+def shape_web(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'web')
+
+
+def shape_route(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'route')
+
+
+def _shapes_helix_handler(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_recipe(ctx, data, 'helix')
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_annular_segment(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_annular_segment(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_arc_strip(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_arc_strip(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_can(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_can(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_impeller(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_impeller(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_boss_pattern(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _shapes_boss_pattern(ctx, data)
+
+
+CAD_HANDLERS.update({
+    'shape.revolved_profile': shape_revolved_profile, 'shape.bolt_circle': shape_bolt_circle,
+    'shape.slot': shape_slot, 'shape.slot_pattern': shape_slot_pattern,
+    'shape.rib': shape_rib, 'shape.web': shape_web, 'shape.route': shape_route,
+    'shape.helix': _shapes_helix_handler,
+})
+
+
+CAD_HANDLERS.update({
+    'shape.annular_segment': shape_annular_segment, 'shape.arc_strip': shape_arc_strip,
+    'shape.can': shape_can, 'shape.impeller': shape_impeller,
+    'shape.boss_pattern': shape_boss_pattern,
+})
 
 globals().__setitem__('_FMCAD_GEOMETRY_LOADED', (*globals().get('_FMCAD_GEOMETRY_LOADED', ()), 'shapes'))

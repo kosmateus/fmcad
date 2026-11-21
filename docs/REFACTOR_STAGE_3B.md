@@ -32,8 +32,10 @@ origin axes, identity component placement, nested components and unit selection.
 A 10 mm offset reads back as 1 cm; its midplane is at 0.5 cm. The angle scenario
 checks the absolute normal Z component against cos(30 degrees), with 1e-9 tolerance.
 These geometrical expectations extend the historical command assertions without
-weakening them. Native confirmation of orientation, tolerances and SDK rejection
-behavior is deferred until the refactor is complete.
+weakening them. This stage records no native confirmation of orientation,
+tolerances or SDK rejection behavior. Targeted local Fusion checks may run against
+the matching installed build and shared broker; model results are not native
+evidence.
 
 Stable component identities and conservative content revisions support the broker's
 optimistic document snapshots. A regression test uses the production snapshot code

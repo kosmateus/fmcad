@@ -18,14 +18,35 @@ def _measure_baseline_internal_handler(mode: str) -> "Callable[[CadContext, Json
     return handler
 
 
+def measure_baseline_capture(ctx: "CadContext", data: "JsonObject") -> "JsonRecord":
+    return _brep_baseline_execute('capture', ctx, data, data.get('_trustedBinding'))
+
+
+def measure_baseline_inspect(ctx: "CadContext", data: "JsonObject") -> "JsonRecord":
+    return {'status': 'unsupported', 'passed': False, 'precision': 'exact',
+            'reason': 'Owned artifact inspection is provided by the trusted Node service'}
+
+
+def measure_baseline_compare(ctx: "CadContext", data: "JsonObject") -> "JsonRecord":
+    return _brep_baseline_execute('compare', ctx, data, data.get('_trustedBinding'))
+
+
+def measure_baseline_capture_internal(ctx: "CadContext", data: "JsonObject") -> "JsonRecord":
+    return _brep_baseline_execute('capture', ctx, data, data.get('_trustedBinding'))
+
+
+def measure_baseline_compare_internal(ctx: "CadContext", data: "JsonObject") -> "JsonRecord":
+    return _brep_baseline_execute('compare', ctx, data, data.get('_trustedBinding'))
+
+
 CAD_HANDLERS.update({
-    'measure.baseline.capture': _measure_baseline_handler('capture'),
-    'measure.baseline.inspect': _measure_baseline_handler('inspect'),
-    'measure.baseline.compare': _measure_baseline_handler('compare'),
+    'measure.baseline.capture': measure_baseline_capture,
+    'measure.baseline.inspect': measure_baseline_inspect,
+    'measure.baseline.compare': measure_baseline_compare,
 })
 CAD_HANDLERS.update({
-    'measure.baseline.capture_internal': _measure_baseline_internal_handler('capture'),
-    'measure.baseline.compare_internal': _measure_baseline_internal_handler('compare'),
+    'measure.baseline.capture_internal': measure_baseline_capture_internal,
+    'measure.baseline.compare_internal': measure_baseline_compare_internal,
 })
 
 _FMCAD_BREP_BASELINE_LOADED = True

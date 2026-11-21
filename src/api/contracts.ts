@@ -332,6 +332,8 @@ export interface ExecuteOptions {
     readonly id?: string;
     readonly mode?: "automatic" | "exclusive";
   };
+  /** Per-request active execution deadline; does not alter broker configuration identity. */
+  readonly executionTimeoutMs?: number;
   readonly expectedRevision?: number;
   readonly queueTimeoutMs?: number;
   /** Original CLI input snapshots, retained alongside the typed payload. */

@@ -164,7 +164,7 @@ class _NativeDriveFusionPort:
         return _native_drive_adapter_cast('_NativeDriveSnapshot', {
             'joints': joints, 'transforms': transforms})
 
-    def drive_driver(self, value: int | float) -> None:
+    def drive_driver(self, value: "int | float") -> None:
         # Reuse the native setter's limit, capture and ownership checks, but never
         # accept its echoed result as an observation. This is the sole setter.
         self.ctx.call('joint.drive', {'joint': self.plan['driver'], 'rotation': format(value, '.17g') + ' rad'})

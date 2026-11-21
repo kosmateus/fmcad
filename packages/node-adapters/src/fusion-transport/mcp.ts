@@ -289,6 +289,21 @@ export class BrokerMcpClient extends McpDiscoveryClient {
   ): Promise<ToolResult> {
     return (await this.prepareCallTool(argumentsObj, toolName, origin))();
   }
+  /** Native Fusion MCP calls run(context) itself. Keep the original inventory
+   * and use its advertised script tool, not the add-in's Python wire protocol. */
+  async executeBrokerScript(
+    script: string,
+    origin: PythonArtifactManifest,
+    readOnly = false,
+  ): Promise<ToolResult> {
+    const bound = bindPythonArtifactManifest(script, origin);
+    const send = await this.prepareWireCall(
+      { featureType: "script", object: { script, readOnly } },
+      "fusion_mcp_execute",
+      bound,
+    );
+    return send();
+  }
   async prepareCallTool(
     argumentsObj: ObjectValue,
     toolName?: string,
@@ -336,14 +351,26 @@ export class BrokerMcpClient extends McpDiscoveryClient {
       const sid = await this._openSession();
       prepared.fence();
       const res = await prepared.send(sid);
+      const retainRaw = <T extends Error>(error: T) =>
+        Object.assign(error, { rawResponse: res.raw });
       if (res.status < 200 || res.status >= 300)
-        throw unknownOutcome(`tools/call failed: HTTP ${res.status}`, "EPROTO");
-      const response = object(this._parse(res.raw));
+        throw retainRaw(
+          unknownOutcome(`tools/call failed: HTTP ${res.status}`, "EPROTO"),
+        );
+      let response: ReturnType<typeof object>;
+      try {
+        response = object(res.toolResponse ?? this._parse(res.raw));
+      } catch (error) {
+        if (error instanceof Error) throw retainRaw(error);
+        throw error;
+      }
       if (response["id"] !== 2 || response["jsonrpc"] !== "2.0")
-        throw unknownOutcome("Invalid MCP tool response", "EPROTO");
+        throw retainRaw(unknownOutcome("Invalid MCP tool response", "EPROTO"));
       if (response["error"])
         throw Object.assign(
-          unknownOutcome("MCP_ERROR: native JSON-RPC failure", "MCP_ERROR"),
+          retainRaw(
+            unknownOutcome("MCP_ERROR: native JSON-RPC failure", "MCP_ERROR"),
+          ),
           { nativeError: response["error"] },
         );
       const result = object(response["result"]);
@@ -366,7 +393,8 @@ export class BrokerMcpClient extends McpDiscoveryClient {
         const decoded: unknown = JSON.parse(text);
         const parsed = object(decoded);
         if (parsed["success"] === false || parsed["error"]) failed = true;
-        if (typeof parsed["message"] === "string") text = parsed["message"];
+        if (typeof parsed["message"] === "string" && parsed["message"])
+          text = parsed["message"];
         if (!data && parsed["success"] !== undefined) data = decoded;
       } catch {
         /* Plain text is a valid result. */
@@ -381,8 +409,18 @@ export class BrokerMcpClient extends McpDiscoveryClient {
         structured["isError"]
       )
         failed = true;
-      return { text, failed, data };
+      const toolResult: ToolResult & { rawResponse: string } = {
+        text,
+        failed,
+        data,
+        rawResponse: res.raw,
+      };
+      Object.defineProperty(toolResult, "rawResponse", { enumerable: false });
+      return toolResult;
     };
-    return Object.assign(execute, { fence: () => prepared.fence() });
+    return Object.assign(execute, {
+      dispatchBoundary: "broker-post" as const,
+      fence: () => prepared.fence(),
+    });
   }
 }

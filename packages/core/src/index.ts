@@ -27,6 +27,7 @@ export type * from "./ports/mcp-context-port";
 export * from "./domain/python-artifact";
 export * from "./domain/python-checker";
 export * from "./application/python-admission";
+export * from "./application/cad/source-selection";
 export * from "./application/engineering";
 export type {
   EngineeringRuntime,
@@ -58,3 +59,7 @@ export * from "./application/execution-service";
 export * from "./application/execution-probe";
 export * from "./application/cad";
 export * from "./application/broker-control";
+
+export * from "./application/console-model";
+
+export * from "./application/console-details";

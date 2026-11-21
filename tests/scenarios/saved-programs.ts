@@ -28,6 +28,7 @@ export function save(
   owner: Owner,
   requestId: string,
   receipt: string,
+  transitionReceipt: string,
 ): string {
   return program(`${select(document)}
 assert not doc.isSaved, 'Fixture save must be submitted only once'
@@ -36,23 +37,40 @@ identity: dict[str, object] = dict(creationId=doc.creationId, name=doc.name, pro
 with open(${q(receipt)}, 'x', encoding='utf-8') as stream:
     _ = stream.write(json.dumps(identity))
 assert doc.saveAs(doc.name, folder, 'fmcad isolated scenario', ''), 'Save was not accepted'
-${emit("dict(identity, accepted=True)")}`);
+accepted: dict[str, object] = dict(identity, accepted=True)
+try:
+    post_creation_id = doc.creationId
+    post_name = doc.name
+    accepted.update(postCreationId=post_creation_id, postName=post_name)
+except Exception as error:
+    accepted['postReadbackError'] = str(error)
+with open(${q(transitionReceipt)}, 'x', encoding='utf-8') as stream:
+    _ = stream.write(json.dumps(accepted))
+${emit("accepted")}`);
 }
 
-export function observeSave(document: Document, folder: FixtureFolder): string {
+export function observeSave(
+  document: Document,
+  folder: FixtureFolder,
+  fileName = document.name,
+): string {
   return program(`${select(document)}
 ${folderSource(folder)}
 file = cast('adsk.core.DataFile | None', doc.dataFile)
 if file is None:
     ${emit("dict(creationId=doc.creationId, saved=doc.isSaved, complete=False)")}
 else:
-    assert doc.isSaved and file.name == doc.name
+    assert doc.isSaved and file.name == ${q(fileName)}
     assert file.parentProject.id == project.id and file.parentFolder.id == folder.id, 'Foreign saved fixture'
     assert file.versionNumber > 0
     ${emit("dict(creationId=doc.creationId, saved=True, complete=file.isComplete, fileId=file.id, version=file.versionNumber, projectId=project.id, folderId=folder.id)")}`);
 }
 
-export function fileOperation(document: Document, remove: boolean): string {
+export function fileOperation(
+  document: Document,
+  remove: boolean,
+  fileName = document.name,
+): string {
   if (!document.file) throw new Error("Missing owned file identity");
   const file = document.file;
   return program(`import adsk.core, json
@@ -65,7 +83,7 @@ assert not any(d.dataFile is not None and d.dataFile.id == ${q(file.fileId)} for
 if matches:
     file = matches[0]
     assert file.parentProject.id == ${q(file.projectId)} and file.parentFolder.id == ${q(file.folderId)}
-    assert file.name == ${q(document.name)} and file.versionNumber == ${file.version} and file.latestVersionNumber == ${file.version}, 'Saved fixture version changed'
+    assert file.name == ${q(fileName)} and file.versionNumber == ${file.version} and file.latestVersionNumber == ${file.version}, 'Saved fixture version changed'
     ${remove ? "assert file.isComplete and not file.isReadOnly\n    assert file.deleteMe(), 'Deletion was refused'" : "pass"}
 ${emit(`dict(creationId=${q(document.creationId)}, fileId=${q(file.fileId)}, version=${file.version}, projectId=${q(file.projectId)}, folderId=${q(file.folderId)}, absent=not matches, accepted=${remove ? "True" : "False"})`)}`);
 }
@@ -75,5 +93,12 @@ export function inventory(folder: FixtureFolder): string {
 from typing import cast
 app = adsk.core.Application.get()
 ${folderSource(folder)}
-${emit("dict(projectId=project.id, folderId=folder.id, files=[dict(fileId=f.id, name=f.name, version=f.versionNumber, complete=f.isComplete) for f in folder.dataFiles])")}`);
+collection = folder.dataFiles
+count_before = collection.count
+files = collection.asArray()
+rows = [dict(fileId=f.id, name=f.name, version=f.versionNumber, complete=f.isComplete) for f in files]
+assert len(files) == count_before == collection.count, 'File snapshot is incomplete or changed'
+file_ids = [f.id for f in files]
+assert all(file_ids) and len(set(file_ids)) == len(files), 'Duplicate file identity or missing persistent ID'
+${emit("dict(projectId=project.id, folderId=folder.id, files=rows)")}`);
 }

@@ -4,12 +4,22 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
+const { createRequire } = require('node:module');
+const { resolveQualifiedLiveRuntime } = require('./helpers/qualified-live-runtime');
 const inventory = require('./live-suite-inventory.json');
 const { boundedMap, concurrencyLimit, sourceHash } = require('../dist/tests/scenarios/scheduling');
 
 const suites = ['legacy', 'cad', 'extended', 'definitions', 'data-import', 'backend-adapter',
   'feature-modes', 'style-save', 'motion-animation', 'camera-probe', 'joint-limits-probe', 'mcp-stdio'];
 const scopedSuites = ['gm12-spring', 'data-import-fixed'];
+const ownedSuites = {
+  legacy: 'native-legacy', cad: 'native-cad', extended: 'native-extended',
+  definitions: 'native-definitions', 'data-import': 'native-import',
+  'backend-adapter': 'native-backend-adapter', 'feature-modes': 'native-feature-modes',
+  'style-save': 'native-style-save', 'motion-animation': 'native-motion',
+  'camera-probe': 'native-camera-probe', 'joint-limits-probe': 'native-joint-limits',
+  'mcp-stdio': 'native-mcp-stdio',
+};
 
 const optIns = {
   'data-import': ['--run'], 'feature-modes': ['--run'], 'style-save': ['--run'],
@@ -89,21 +99,29 @@ function runChild(script, env) {
 }
 
 async function prepareBroker() {
-  const { cfg } = require('../src/config').loadConfig({ routing: 'queue' });
-  const { QueueClient } = require('../src/queue-client');
+  const runtime = resolveQualifiedLiveRuntime();
+  const load = createRequire(path.join(runtime.dist, 'package.json'));
+  const { cfg } = load('./src/config').loadConfig({ routing: 'queue' });
+  const { QueueClient } = load('./src/queue-client');
   const client = new QueueClient('live:startup:' + randomUUID(), { cfg });
   try {
     await client.register({ autoStart: false });
     const status = await client.call('status');
-    if (status.buildHash !== require('../src/queue-instance').buildHash()) {
-      throw new Error('Shared broker build differs from this test source; coordinate an explicit owner-managed update before running. No broker was started or reloaded.');
+    if (status.buildHash !== runtime.fingerprint) {
+      throw new Error('Shared broker build differs from the qualified installed runtime; coordinate an explicit owner-managed update before running. No broker was started or reloaded.');
     }
   } finally { client.dispose(); }
+  return runtime;
 }
 
-async function captureBaseline() {
-  const { cfg } = require('../src/config').loadConfig({ routing: 'queue' });
-  const { QueueClient } = require('../src/queue-client');
+async function captureBaseline(runtime) {
+  const qualifiedRuntime = resolveQualifiedLiveRuntime();
+  if (!runtime || runtime.root !== qualifiedRuntime.root ||
+      runtime.fingerprint !== qualifiedRuntime.fingerprint)
+    throw new Error('A verified qualified runtime is required before baseline capture.');
+  const load = createRequire(path.join(qualifiedRuntime.dist, 'package.json'));
+  const { cfg } = load('./src/config').loadConfig({ routing: 'queue' });
+  const { QueueClient } = load('./src/queue-client');
   const client = new QueueClient('live:baseline:' + randomUUID(), { cfg });
   const body = `import adsk.core, json
 a = adsk.core.Application.get()
@@ -113,7 +131,7 @@ print(json.dumps(dict(documents=[dict(creationId=d.creationId,name=d.name,saved=
     : { name: cfg.tool, arguments: { featureType: 'script', object: { readOnly: true,
       script: 'def run(context):\n' + body.split('\n').map(line => '    ' + line).join('\n') } } } };
   const job = await client.submit({ kind: 'rpc', payload, timeoutMs: cfg.timeoutMs, backend: cfg.backend,
-    cwd: path.resolve(__dirname, '..'), buildHash: require('../src/queue-instance').buildHash() });
+    cwd: path.resolve(__dirname, '..'), buildHash: qualifiedRuntime.fingerprint });
   const value = await client.wait(job.id);
   const response = require('./helpers/live-broker').rpcResponse(value, client);
   if (value.job.state !== 'succeeded') throw new Error('Baseline capture failed; inspect job ' + job.id);
@@ -137,17 +155,17 @@ async function run(argv = process.argv.slice(2), settings = {}) {
   if (suite === 'all') {
     const sourceBefore = testSourceHash();
     if (args.length) throw new Error('all accepts only --routing and --concurrency');
-    await prepareBroker();
+    const runtime = await prepareBroker();
     let baselineFile;
     const directory = path.resolve(__dirname, '../.test-artifacts/live-scope', randomUUID());
     fs.mkdirSync(directory, { recursive: true });
     baselineFile = path.join(directory, 'baseline.json');
-    fs.writeFileSync(baselineFile, JSON.stringify(await captureBaseline()));
+    fs.writeFileSync(baselineFile, JSON.stringify(await captureBaseline(runtime)));
     const names = [...suites];
-    const results = await runBatch(names, routing, name => run([name, '--routing', routing, ...(optIns[name] || [])], { baselineFile }), concurrency);
+    const results = await runBatch(names, routing, name => run([name, '--routing', routing, '--concurrency', String(concurrency), ...(optIns[name] || [])], { baselineFile }), concurrency);
     if (baselineFile) {
       const before = JSON.parse(fs.readFileSync(baselineFile, 'utf8'));
-      const after = await captureBaseline();
+      const after = await captureBaseline(runtime);
       fs.writeFileSync(path.join(path.dirname(baselineFile), 'after.json'), JSON.stringify(after));
       const ids = new Set(before.documents.map(doc => doc.creationId));
       const stable = documents => [...documents].sort((a, b) => a.creationId.localeCompare(b.creationId));
@@ -175,6 +193,17 @@ async function run(argv = process.argv.slice(2), settings = {}) {
     FMCAD_LIVE_ROUTING: routing, FMCAD_LIVE_CLIENT: clientId, FMCAD_LIVE_SUITE: suite };
   if (settings.baselineFile) env.FMCAD_LIVE_BASELINE_FILE = settings.baselineFile;
   delete env.FMCAD_LIVE_SEQUENCE_ID;
+  const offlineStyleCheck = suite === 'style-save' && args.length === 1 && args[0] === '--check';
+  if (ownedSuites[suite] && !offlineStyleCheck) {
+    const unsupported = args.filter(arg => arg !== '--run' && !(suite === 'joint-limits-probe' && arg === '--verify'));
+    if (unsupported.length) throw new Error('Unsupported owned suite arguments: ' + unsupported.join(' '));
+    const protocol = settings.protocol || require('../src/config').loadConfig({ routing: 'queue' }).cfg.backend;
+    if (!['mcp', 'addin'].includes(protocol)) throw new Error('Owned native suite requires an explicit supported broker protocol');
+    const script = ['dist/tests/scenarios/cli.js', '--backend', 'fusion', '--profile', 'broker',
+      '--suite', ownedSuites[suite], '--protocol', protocol, '--concurrency', String(concurrency), '--owners', '10', '--run'];
+    process.stderr.write(`LIVE ${suite}: shared owned scenario ${ownedSuites[suite]}, concurrency=${concurrency}\n`);
+    return (settings.launch || runChild)(script, env);
+  }
   // The native import suites were migrated to TypeScript; execute their build
   // output so the runner cannot silently select an abandoned JS implementation.
   const directory = ['data-import', 'data-import-fixed'].includes(suite) ? path.join('dist', 'tests') : 'tests';

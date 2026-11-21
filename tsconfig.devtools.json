@@ -6,7 +6,8 @@
     "types": ["node"],
     "noPropertyAccessFromIndexSignature": false,
     "noEmitOnError": true,
-    "incremental": false
+    "incremental": false,
+    "declaration": true
   },
   "include": ["scripts/devtools/**/*.ts"],
   "references": [

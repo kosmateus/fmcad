@@ -1,0 +1,377 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+import type { ScenarioBackend, Owner } from "./contracts";
+import {
+  awaitCliSettlement,
+  assertLegacyChildExited,
+  finishCliIntent,
+  observeCliIntent,
+  ownedLease,
+  recordCliSettlement,
+  recordCliSettlementFailure,
+  recoverLegacyInvocations,
+  reserveCli,
+  writeHandoff,
+} from "./legacy-handoff";
+import type { TestContext } from "node:test";
+const load = createRequire(__filename),
+  { parseFlags, parseCommand } = load(
+    path.join(process.cwd(), "src/cli"),
+  ) as typeof import("../../src/entrypoints/cli"),
+  { findCommand } = load(
+    path.join(process.cwd(), "src/commands"),
+  ) as typeof import("../../src/composition/library-commands");
+function setup(t: TestContext) {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fmcad-owned-child-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(directory, "legacy/intents"), { recursive: true });
+  const owner: Owner = {
+    runId: randomUUID(),
+    scenarioId: "test",
+    clientId: "",
+  };
+  const identity = { ...owner, clientId: "scenario:" + owner.runId + ":test" };
+  const document = {
+    creationId: "original-document",
+    name: "Exact Name v1",
+    file: {
+      fileId: "original-file",
+      projectId: "project",
+      folderId: "folder",
+      version: 1,
+    },
+  };
+  const scope = path.join(directory, "legacy/lease.json");
+  writeHandoff(path.join(directory, "creation.json"), {
+    ...document,
+    clientId: identity.clientId,
+    requestId: identity.clientId + ":0",
+  });
+  writeHandoff(scope, {
+    version: 1,
+    owner: identity,
+    document,
+    directory,
+    source: "tests/integration/example.test.js",
+    testCase: "one case",
+    protocol: "mcp",
+  });
+  const env = {
+    FMCAD_LIVE_OWNED_SCOPE: scope,
+    FMCAD_LIVE_CLIENT: identity.clientId,
+    FMCAD_TEST_DOC: document.name,
+  };
+  return { directory, owner: identity, document, env };
+}
+test("owned child handoff refuses foreign document/file pins before durable submission intent", (t) => {
+  const f = setup(t);
+  assert.equal(ownedLease(f.env)?.document.creationId, f.document.creationId);
+  assert.throws(
+    () => reserveCli(["document", "status", "--doc", "base-name"], f.env),
+    /Foreign legacy CLI pin/,
+  );
+  assert.throws(
+    () => reserveCli(["document", "status", "--doc-file-id", "foreign"], f.env),
+    /Foreign legacy CLI pin/,
+  );
+  assert.deepEqual(
+    fs.readdirSync(path.join(f.directory, "legacy/intents")),
+    [],
+  );
+  const reserved = reserveCli(["document", "status"], f.env)!;
+  assert.ok(fs.existsSync(reserved.filename));
+  assert.ok(reserved.words.includes(f.document.name));
+  assert.equal(reserved.words.includes(f.document.creationId), false);
+  assert.equal(reserved.words.includes(f.document.file.fileId), false);
+});
+test("owned child doc list stays global while document commands keep exact target pins", (t) => {
+  const f = setup(t),
+    list = reserveCli(["doc", "list"], f.env)!;
+  const parsedList = parseFlags(list.words),
+    listCommand = findCommand(parsedList.rest)!;
+  assert.equal(list.words.includes("--routing"), false);
+  assert.equal(list.words.includes("--client"), false);
+  assert.equal(list.words.includes("--backend"), false);
+  assert.equal(list.words.includes("--request-id"), true);
+  assert.equal(parsedList.rest.includes("--doc"), false);
+  assert.equal(parsedList.opts["doc-id"], undefined);
+  assert.doesNotThrow(() =>
+    parseCommand(
+      listCommand,
+      parsedList.rest.slice(listCommand.key.split(" ").length),
+    ),
+  );
+  assert.throws(
+    () => reserveCli(["doc", "list", "--doc", f.document.name], f.env),
+    /Foreign legacy CLI pin/u,
+  );
+
+  const parameter = reserveCli(["param_list"], f.env)!,
+    parsedParameter = parseFlags(parameter.words),
+    parameterCommand = findCommand(parsedParameter.rest)!;
+  assert.equal(
+    parseCommand(
+      parameterCommand,
+      parsedParameter.rest.slice(parameterCommand.key.split(" ").length),
+    ).flags["--doc"],
+    f.document.name,
+  );
+  assert.equal(parameter.words.includes("--request-id"), true);
+
+  const run = reserveCli(["run", "box"], f.env)!,
+    parsedRun = parseFlags(run.words),
+    runCommand = findCommand(parsedRun.rest)!,
+    runFlags = parseCommand(
+      runCommand,
+      parsedRun.rest.slice(runCommand.key.split(" ").length),
+    ).flags;
+  assert.equal(runFlags["--doc"], f.document.name);
+  assert.equal(runFlags["--doc-id"], f.document.creationId);
+  assert.equal(runFlags["--doc-file-id"], f.document.file.fileId);
+});
+test("owned child handoff requires the exact creation request identity", (t) => {
+  const f = setup(t),
+    filename = path.join(f.directory, "creation.json"),
+    creation = JSON.parse(fs.readFileSync(filename, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  creation["requestId"] = f.owner.clientId + ":0:foreign";
+  writeHandoff(filename, creation);
+  assert.throws(() => ownedLease(f.env), /original creation receipt/u);
+});
+test("owned unsaved import handoff requires an explicit source mode and refuses cloud pins", (t) => {
+  const f = setup(t);
+  const scope = f.env.FMCAD_LIVE_OWNED_SCOPE;
+  const lease = JSON.parse(fs.readFileSync(scope, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  lease["document"] = {
+    name: f.document.name,
+    creationId: f.document.creationId,
+  };
+  writeHandoff(scope, lease);
+  assert.throws(() => ownedLease(f.env), /incomplete/);
+  lease["mode"] = "owned-unsaved-script";
+  writeHandoff(scope, lease);
+  assert.throws(() => ownedLease(f.env), /Invalid owned/);
+  lease["source"] = "tests/live-data-import.ts";
+  writeHandoff(scope, lease);
+  assert.equal(ownedLease(f.env)?.document.file, undefined);
+  assert.throws(
+    () => reserveCli(["param_list", "--doc-file-id", "foreign"], f.env),
+    /cloud file pin/,
+  );
+  assert.throws(
+    () => reserveCli(["param_list", "--doc-id", "foreign"], f.env),
+    /Foreign legacy CLI pin/,
+  );
+  const reserved = reserveCli(["param_list"], f.env)!;
+  assert.ok(reserved.words.includes(f.document.name));
+  assert.equal(reserved.words.includes("--doc-file-id"), false);
+  assert.ok(fs.existsSync(reserved.filename));
+});
+test("before-admission marker persists exact original request and foreign callbacks are refused", (t) => {
+  const f = setup(t),
+    reserved = reserveCli(["document", "status"], f.env)!;
+  const intent = JSON.parse(fs.readFileSync(reserved.filename, "utf8")) as {
+    requestId: string;
+    admissionRequested: boolean;
+  };
+  const env = { ...f.env, FMCAD_LIVE_COMMAND_INTENT: reserved.filename };
+  assert.throws(
+    () =>
+      observeCliIntent(
+        'FMCAD_QUEUE_REQUEST {"requestId":"foreign","clientId":"foreign"}\n',
+        env,
+      ),
+    /Foreign original/,
+  );
+  observeCliIntent(
+    "FMCAD_QUEUE_REQUEST " +
+      JSON.stringify({
+        requestId: intent.requestId,
+        clientId: f.owner.clientId,
+      }) +
+      "\n",
+    env,
+  );
+  assert.equal(
+    JSON.parse(fs.readFileSync(reserved.filename, "utf8")).admissionRequested,
+    true,
+  );
+  finishCliIntent(1, env);
+  assert.equal(
+    JSON.parse(fs.readFileSync(reserved.filename, "utf8")).exitCode,
+    1,
+  );
+});
+test("owned child refuses a successor until the parent settles the exact predecessor", (t) => {
+  const f = setup(t),
+    first = reserveCli(["document", "status"], f.env)!;
+  const value = JSON.parse(fs.readFileSync(first.filename, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  writeHandoff(first.filename, {
+    ...value,
+    admissionRequested: true,
+    completed: true,
+    pid: 2147483647,
+    birth: "test-boot:0",
+  });
+  assert.throws(
+    () => reserveCli(["document", "status"], f.env),
+    /Previous admitted command lacks terminal owner settlement/,
+  );
+  assert.throws(
+    () =>
+      recordCliSettlement(first.filename, f.owner, {
+        requestId: "foreign-request",
+        state: "succeeded",
+        sdkSettled: true,
+        mayHaveMutated: false,
+        stdout: "foreign",
+        brokerReceipt: {
+          requestId: "foreign-request",
+          jobId: "foreign-job",
+          clientId: f.owner.clientId,
+          state: "succeeded",
+          operationResult: null,
+        },
+      }),
+    /exact terminal owner receipt/,
+  );
+  recordCliSettlement(first.filename, f.owner, {
+    requestId: value["requestId"] as string,
+    state: "failed",
+    sdkSettled: true,
+    mayHaveMutated: false,
+    stdout: "original",
+    brokerReceipt: {
+      requestId: value["requestId"] as string,
+      jobId: "original-job",
+      clientId: f.owner.clientId,
+      state: "failed",
+      operationResult: null,
+    },
+  });
+  assert.equal(
+    JSON.parse(fs.readFileSync(first.filename, "utf8")).settlement.state,
+    "failed",
+  );
+  const successor = reserveCli(["document", "status"], f.env)!;
+  assert.ok(fs.existsSync(successor.filename));
+});
+test("an unavailable parent lookup fails the child wait and keeps successors fenced", (t) => {
+  const f = setup(t),
+    first = reserveCli(["document", "status"], f.env)!;
+  const value = JSON.parse(fs.readFileSync(first.filename, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  writeHandoff(first.filename, {
+    ...value,
+    admissionRequested: true,
+    completed: true,
+    pid: 2147483647,
+    birth: "test-boot:0",
+  });
+  recordCliSettlementFailure(first.filename, f.owner, "lookup-unavailable");
+  assert.throws(
+    () => awaitCliSettlement(first.filename, f.env),
+    /Parent could not prove terminal CLI settlement/,
+  );
+  assert.throws(
+    () => reserveCli(["document", "status"], f.env),
+    /Previous admitted command lacks terminal owner settlement/,
+  );
+});
+test("recovery uses original backend evidence once and never resubmits uncertain work", async (t) => {
+  const f = setup(t),
+    reserved = reserveCli(["document", "status"], f.env)!;
+  const raw = JSON.parse(fs.readFileSync(reserved.filename, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  writeHandoff(reserved.filename, {
+    ...raw,
+    admissionRequested: true,
+    completed: true,
+    pid: 2147483647,
+    birth: "test-boot:0",
+  });
+  let lookups = 0,
+    executions = 0,
+    settled = false;
+  const backend: ScenarioBackend = {
+    identity: "test",
+    mode: "simulator",
+    qualification: "broker",
+    protocol: "mcp",
+    capabilities: new Set(),
+    fusionPath: (value) => value,
+    execute: async () => {
+      executions++;
+      throw new Error("Must never replay");
+    },
+    lookup: async (owner, requestId) => {
+      assert.equal(owner.clientId, f.owner.clientId);
+      assert.equal(requestId, raw["requestId"]);
+      lookups++;
+      return {
+        requestId,
+        state: settled ? "succeeded" : "unknown",
+        sdkSettled: settled,
+        mayHaveMutated: true,
+        stdout: "original",
+        brokerReceipt: {
+          requestId,
+          jobId: "original-job",
+          clientId: f.owner.clientId,
+          state: settled ? "succeeded" : "unknown",
+          operationResult: null,
+        },
+      };
+    },
+  };
+  await assert.rejects(
+    recoverLegacyInvocations(backend, f.directory, f.owner),
+    /remains unsettled/,
+  );
+  settled = true;
+  const recovered = await recoverLegacyInvocations(
+    backend,
+    f.directory,
+    f.owner,
+  );
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0]?.result.stdout, "original");
+  assert.equal(lookups, 2);
+  assert.equal(executions, 0);
+});
+test("a possibly active child fences cleanup even if a launch file claims completion", (t) => {
+  const f = setup(t);
+  writeHandoff(path.join(f.directory, "legacy/launch.json"), {
+    state: "completed",
+    pid: 123,
+    birth: "original",
+  });
+  assert.throws(
+    () => assertLegacyChildExited(f.directory, () => true),
+    /may still submit/,
+  );
+  assert.throws(
+    () => assertLegacyChildExited(f.directory, () => null),
+    /may still submit/,
+  );
+  assert.doesNotThrow(() => assertLegacyChildExited(f.directory, () => false));
+});

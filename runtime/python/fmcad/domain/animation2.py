@@ -1,6 +1,11 @@
 """DTO-only rules extracted from assets/cad/animation2.py. No SDK or filesystem access."""
 import math as _anim2_domain_math
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+from fmcad.domain.values import cast as _cad_cast
+
 _ANIM2_EASINGS = ('linear', 'smoothstep', 'easeIn', 'easeOut', 'easeInOut')
 
 _ANIM2_TRACK_TYPES = ('camera', 'visibility', 'section', 'joint', 'occurrence')

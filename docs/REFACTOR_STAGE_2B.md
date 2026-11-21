@@ -62,7 +62,9 @@ change.
 The CLI defaults to `--suite all`; `foundation` and `saved` select either group.
 The model uses a dedicated configured folder. A native saved run requires explicit
 `--project-id` and `--folder-id`; no live folder is selected or created implicitly.
-Native runs are deferred until the refactor is complete.
+At the time of this historical stage, native runs were deferred. Targeted local
+Fusion checks may run during development against the matching installed build and
+shared broker; final qualification remains a separate evidence-backed gate.
 
 CI runs both suites through the real broker over MCP and addin. The foundation
 matrix retains ten parameter owners; the saved matrix uses two parameter owners

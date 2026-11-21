@@ -16,7 +16,7 @@ module.exports = function fixture(base, root) {
     job.details = { code: job.code, exitCode: 0, sdkSettled: true, mayHaveMutated: true, publicationOutcome: 'published' };
     job.dispatch = { rpcState: 'terminal', rpcCount: 1, completedCount: 1 }; job.physicalTurns = 1;
     api.durable(path.join(dir, 'outcome.json'), { state: job.state, ...job.details }, true);
-    api.durable(path.join(dir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic-dead-worker' }, true);
+    api.durable(path.join(dir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic:dead-worker' }, true);
     require('./settled-probes.cjs')(api, dir, job.id, previousBuildHash, f.pointer);
     const binding = { jobId: job.id, rpcId, requestHash: 'b'.repeat(64), sourceHash: 'c'.repeat(64),
       buildHash: previousBuildHash, isolatedEpoch: f.pointer.epochId,
@@ -38,6 +38,7 @@ module.exports = function fixture(base, root) {
   const paused = { ...f.paused, state, identity: { ...f.paused.identity, buildHash: previousBuildHash },
     owner: f.oldOwner, ownerTokenHash: f.pointer.ownerTokenHash, pointerHash: approval.pointerHash, settledEvidence,
     selectedLive: true, historicalDead: true, brokerLive: true,
+    evidenceHash: api.hash(JSON.stringify([f.pointer.qualificationReceipt, ...f.pointer.qualificationEvidence])),
     control: { instanceId: f.oldOwner.nonce, buildHash: previousBuildHash, generation: state.controlGeneration,
       contextEpoch: state.contextEpoch, activeOperations: 0, activeIds: [], gateClosed: true } };
   api.durable(path.join(f.audit, 'paused.json'), paused);

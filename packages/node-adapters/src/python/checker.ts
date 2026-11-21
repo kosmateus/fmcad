@@ -23,6 +23,7 @@ import type {
 import { preparePythonArtifact, verifyPythonArtifact } from "./artifact.js";
 import { cadBundleUnits } from "./bundle.js";
 import { mapPythonOrigin } from "./context-binding.js";
+import { prepareWireArtifact } from "./source-units.js";
 import {
   checkerHash,
   checkerObject,
@@ -66,6 +67,7 @@ interface Unit {
   projectedBodies?: { id: string; unitId: string; startLine: number; endLine: number; sha256: string }[];
   has_run: boolean;
   run_line: number;
+  decodedSource?: { filename: string; sha256: string };
 }
 interface ProjectionBody {
   readonly id: string;
@@ -92,7 +94,23 @@ interface PythonAnalysisPlan {
   }>>;
   readonly sha256: string;
 }
+interface SharedInventory {
+  readonly bindingHash: string;
+  readonly directory: string;
+  readonly metadata: string;
+  readonly metadataHash: string;
+  readonly files: readonly { readonly name: string; readonly sha256: string }[];
+}
+interface SharedProjection {
+  readonly directory: string;
+  readonly sourceFile: string;
+  readonly sourceHash: string;
+  readonly metadataFile: string;
+  readonly metadataHash: string;
+}
 interface AnalysisProjection {
+  readonly inventory: SharedInventory;
+  readonly prepared: SharedProjection;
   readonly plan: PythonAnalysisPlan;
   readonly groupIndex: number;
   readonly selectedUnitIds: readonly string[];
@@ -131,15 +149,17 @@ function aggregateAnalysisReports(
         configHash: null, typingHash: null, analysisHash: null, cache: "disabled",
       },
     };
+  const refusal = (reason: string): PythonCheckReport => {
+    const reasons = new Set([reason]);
+    for (const report of reports) for (const detail of report.reasons) {
+      reasons.add(detail);
+      if (Buffer.byteLength(JSON.stringify([...reasons])) > limits.outputBytes)
+        return {status:"tool_error",diagnostics:[],reasons:[reason,"Aggregate checker failure reasons exceed output limit"],provenance:first.provenance};
+    }
+    return {status:"tool_error",diagnostics:[],reasons:[...reasons],provenance:first.provenance};
+  };
   if (reports.length !== plan.groups.length)
-    return {
-      status: "tool_error",
-      diagnostics: [],
-      reasons: [
-        `Aggregate checker completed ${reports.length} of ${plan.groups.length} required analyses`,
-      ],
-      provenance: first.provenance,
-    };
+    return refusal(`Aggregate checker completed ${reports.length} of ${plan.groups.length} required analyses`);
   const { analysisHash: _firstAnalysisHash, ...identity } = first.provenance;
   void _firstAnalysisHash;
   const sameIdentity = reports.every((report) => {
@@ -148,12 +168,7 @@ function aggregateAnalysisReports(
     return stableJson(current) === stableJson(identity);
   });
   if (!sameIdentity)
-    return {
-      status: "tool_error",
-      diagnostics: [],
-      reasons: ["Aggregate checker provenance changed between analysis passes"],
-      provenance: first.provenance,
-    };
+    return refusal("Aggregate checker provenance changed between analysis passes");
   const diagnostics = new Map<string, PythonCheckDiagnostic>();
   const reasons = new Set<string>();
   for (const report of reports) {
@@ -401,7 +416,7 @@ function recoverCanonicalBundleArtifact(
   }
 
   if (
-    artifact.units.length !== 2 || artifact.sourceMap.length !== 1 ||
+    ![2, 3].includes(artifact.units.length) || artifact.sourceMap.length !== 1 ||
     !artifact.context || typeof artifact.context !== "object" || Array.isArray(artifact.context)
   )
     return null;
@@ -412,14 +427,25 @@ function recoverCanonicalBundleArtifact(
   const mappedIds = new Set(artifact.sourceMap.map((entry) => entry.unitId));
   const mapped = artifact.units.filter((unit) => mappedIds.has(unit.id));
   const embedded = artifact.units.filter((unit) => !mappedIds.has(unit.id));
+  const queue = embedded.find((unit) => unit.filename === "<fmcad-queue>");
+  const codec = embedded.find((unit) => unit.filename === "<fmcad-native-source>");
   if (
-    mapped.length !== 1 || embedded.length !== 1 ||
+    mapped.length !== 1 || embedded.length !== (codec ? 2 : 1) ||
     mapped[0]!.id !== "wire" || mapped[0]!.filename !== "<fmcad-wire>" || mapped[0]!.role !== "wrapper" ||
-    embedded[0]!.id !== "embedded:0" || embedded[0]!.filename !== "<fmcad-queue>" || embedded[0]!.role !== "user"
+    !queue || queue.id !== (codec ? "embedded:1" : "embedded:0") || queue.role !== "user" ||
+    (codec && (codec.id !== "embedded:0" || codec.role !== "user"))
   )
     return null;
-  const original = recoveredCanonicalSource(embedded[0]!.source, typingRoot);
-  if (!original || original.sha256 !== embedded[0]!.sha256)
+  if (codec) {
+    if (!artifact.script.startsWith("# FMCAD native source envelope v1\n")) return null;
+    // Re-inventory the exact known envelope with the shared bounded AST decoder.
+    // An extra unit claim alone cannot establish a canonical source origin.
+    const decoded = prepareWireArtifact(resolve(typingRoot, ".."), artifact.script,
+      { context: artifact.context, request: artifact.request });
+    if (decoded.artifactHash !== artifact.artifactHash) return null;
+  }
+  const original = recoveredCanonicalSource(queue.source, typingRoot);
+  if (!original || original.sha256 !== queue.sha256)
     return null;
 
   const origin = {
@@ -429,9 +455,9 @@ function recoverCanonicalBundleArtifact(
     request: original.request,
     sourceMap: original.sourceMap,
     segments: [{
-      sha256: embedded[0]!.sha256,
+      sha256: queue.sha256,
       startLine: 1,
-      endLine: embedded[0]!.source.split("\n").length,
+      endLine: queue.source.split("\n").length,
     }],
     units: original.units.map(({ id, filename, role, sha256 }) => ({ id, filename, role, sha256 })),
   };
@@ -443,7 +469,7 @@ function recoverCanonicalBundleArtifact(
     return null;
   return {
     artifact: normalized,
-    binding: recoveryBinding(original, "queue-literal", embedded[0]!.id),
+    binding: recoveryBinding(original, "queue-literal", queue.id),
   };
 }
 
@@ -774,12 +800,16 @@ export function createPythonChecker(
         const helper = await readFile(
           join(options.typingRoot, "checker-project.py"),
         );
+        const sourceCodec = await readFile(
+          join(options.typingRoot, "source_codec.py"),
+        );
         const injected =
           "import adsk.core\nfrom fmcad_context import Facade\napp: adsk.core.Application\nui: adsk.core.UserInterface\nFMCAD: Facade\n";
         provenance.typingHash = checkerHash(
           Buffer.concat([
             typing,
             helper,
+            sourceCodec,
             Buffer.from(injected),
             Buffer.from(entrypointImport + "\n" + entrypointDeclaration),
           ]),
@@ -788,6 +818,7 @@ export function createPythonChecker(
         await writeFile(join(stubs, "fmcad_injected.pyi"), injected);
         const helperPath = join(inventoryDirectory, "project.py");
         await writeFile(helperPath, helper);
+        await writeFile(join(inventoryDirectory, "source_codec.py"), sourceCodec);
         const seeds = [
           {
             id: "wire",
@@ -805,16 +836,42 @@ export function createPythonChecker(
               },
             })),
         ];
-        const inventory = await runCheckerProcess(
+        // Reuse only this check() invocation's already inventoried exact bytes.
+        // Every child still verifies the final artifact, input binding, namespace
+        // inventory and file hashes; no analysis result crosses requests.
+        const inventoryBinding = checkerHash(stableJson({
+          artifactHash: artifact.artifactHash,
+          seeds,
+          projectionUnitIds: [...projectionUnitIds],
+          typingHash: provenance.typingHash,
+          contextHash: provenance.contextHash,
+        }));
+        if (projection) {
+          const shared = projection.inventory;
+          if (shared.bindingHash !== inventoryBinding || checkerHash(shared.metadata) !== shared.metadataHash)
+            throw new Error("Shared AST inventory is not bound to this exact artifact and producer");
+          let copiedBytes = 0;
+          for (const file of shared.files) {
+            throwIfAborted(signal);
+            if (!/^(?:original-)?source-\d+\.txt$/.test(file.name))
+              throw new Error("Invalid shared inventory filename");
+            const bytes = await readFile(join(shared.directory, file.name));
+            copiedBytes += bytes.length;
+            if (copiedBytes > 32 * 1024 * 1024 || checkerHash(bytes) !== file.sha256)
+              throw new Error("Shared AST inventory bytes changed");
+            await writeFile(join(inventoryDirectory, file.name), bytes, { flag: "wx" });
+          }
+        }
+        const inventory = projection
+          ? { code: 0, stdout: projection.inventory.metadata, stderr: "", problem: null }
+          : await runCheckerProcess(
           options.pythonExecutable ?? "python3",
           ["-I", "-S", helperPath],
           inventoryDirectory,
           limits,
           JSON.stringify({
             units: seeds,
-            ...(projection
-              ? { skipAnalysisPlan: true }
-              : originalOrigin
+            ...(originalOrigin
                 ? {}
                 : {
                     sourceUnits: artifact.units.map((unit) => ({
@@ -874,6 +931,21 @@ export function createPythonChecker(
           }
         }
         let analysisBytes = 0;
+        const decodedEntrypoints = new Map<number, number>();
+        const decodedTargets = new Set<number>();
+        for (const [index, unit] of units.entries()) {
+          if (unit.decodedSource === undefined) continue;
+          const decoded = unit.decodedSource;
+          const targets = units.map((target, targetIndex) => ({ target, targetIndex })).filter(
+            ({ target }) => target.filename === decoded.filename &&
+              target.sha256 === decoded.sha256 && target.originalSourceHash === decoded.sha256,
+          );
+          if (decoded.filename !== "<fmcad-native-source>" || targets.length !== 1 ||
+              targets[0]!.targetIndex === index)
+            throw new Error("Decoded entrypoint is not bound to one exact checked source namespace");
+          decodedEntrypoints.set(index, targets[0]!.targetIndex);
+          decodedTargets.add(targets[0]!.targetIndex);
+        }
         for (const [index, unit] of units.entries()) {
           throwIfAborted(signal);
           const source = await readFile(
@@ -1012,13 +1084,61 @@ export function createPythonChecker(
           );
         }
         if (!projection && analysisPlan.groups.length > 1) {
-          if (temporaryDirectory) {
-            await rm(temporaryDirectory, {
-              recursive: true, force: true, maxRetries: 3, retryDelay: 50,
-            });
-            temporaryDirectory = undefined;
-            directory = undefined;
+          const inventoryFiles: {name:string;sha256:string}[] = [];
+          let inventoryBytes = 0;
+          for (const [index, unit] of units.entries()) {
+            if (unit.originalSourceFile !== `original-source-${index}.txt` || !unit.originalSourceHash)
+              throw new Error("Original inventory file is not bound to its namespace");
+            for (const [name, expected] of [
+              [`source-${index}.txt`, unit.analysisSourceHash],
+              [unit.originalSourceFile, unit.originalSourceHash],
+            ] as const) {
+              throwIfAborted(signal);
+              const bytes = await readFile(join(inventoryDirectory, name));
+              inventoryBytes += bytes.length;
+              if (inventoryBytes > 32 * 1024 * 1024 || checkerHash(bytes) !== expected)
+                throw new Error("Shared inventory source identity/size mismatch");
+              inventoryFiles.push({ name, sha256: expected });
+            }
           }
+          const sharedInventory: SharedInventory = {
+            bindingHash: inventoryBinding, directory: inventoryDirectory,
+            metadata: inventory.stdout, metadataHash: checkerHash(inventory.stdout), files: inventoryFiles,
+          };
+          const wireIndex = units.findIndex((unit) => unit.id === projectionCheckerUnitId);
+          if (wireIndex < 0) throw new Error("Aggregate checker has no mapped helper source unit");
+          const sourcePath = `source-${wireIndex}.txt`;
+          const sourceBytes = await readFile(join(inventoryDirectory, sourcePath));
+          const batch = await runCheckerProcess(
+            options.pythonExecutable ?? "python3", ["-I", "-S", helperPath],
+            inventoryDirectory, limits, JSON.stringify({
+              projectionSourcePath: sourcePath,
+              sourceMap: projectionSourceMap,
+              sourceRoles: Object.fromEntries(analysisPlan.unitHashes.map((unit) => [unit.id, unit.role])),
+              projectionGroups: analysisPlan.groups.map((selectedUnitIds, index) => ({
+                selectedUnitIds, projectionOutputPath: `projection-${index}.txt`,
+                metadataOutputPath: `projection-${index}.json`,
+              })),
+            }), signal,
+          );
+          if (batch.problem || batch.code !== 0 || batch.stderr.trim())
+            throw new Error("Checker body projections: " + (batch.problem ?? (batch.stderr || "invalid projection exit")));
+          const batchMetadata = checkerObject(JSON.parse(batch.stdout) as unknown);
+          const outputs = batchMetadata["projections"];
+          if (batchMetadata["sourceSha256"] !== checkerHash(sourceBytes) ||
+              batchMetadata["pythonVersion"] !== provenance.pythonInterpreterVersion ||
+              !Array.isArray(outputs) || outputs.length !== analysisPlan.groups.length)
+            throw new Error("Aggregate projections changed source, interpreter or complete group inventory");
+          const projections: SharedProjection[] = outputs.map((value, index) => {
+            const output = checkerObject(value);
+            if (output["index"] !== index || output["sourceFile"] !== `projection-${index}.txt` ||
+                output["metadataFile"] !== `projection-${index}.json` ||
+                typeof output["sourceHash"] !== "string" || !/^[a-f0-9]{64}$/.test(output["sourceHash"]) ||
+                typeof output["metadataHash"] !== "string" || !/^[a-f0-9]{64}$/.test(output["metadataHash"]))
+              throw new Error("Invalid aggregate projection output identity");
+            return {directory:inventoryDirectory,sourceFile:output["sourceFile"] as string,
+              metadataFile:output["metadataFile"] as string,sourceHash:output["sourceHash"],metadataHash:output["metadataHash"]};
+          });
           const reports: PythonCheckReport[] = [];
           for (const [groupIndex, selectedUnitIds] of analysisPlan.groups.entries()) {
             throwIfAborted(signal);
@@ -1029,6 +1149,8 @@ export function createPythonChecker(
               sourceMap: projectionSourceMap,
               sourceHash: projectionSourceHash,
               checkerUnitId: projectionCheckerUnitId,
+              inventory: sharedInventory,
+              prepared: projections[groupIndex]!,
             });
             reports.push(childReport);
             if (childReport.status === "tool_error") break;
@@ -1112,26 +1234,12 @@ export function createPythonChecker(
           const wireIndex = units.findIndex((unit) => unit.id === projection.checkerUnitId);
           if (wireIndex < 0) throw new Error("Aggregate checker has no mapped helper source unit");
           const sourcePath = `source-${wireIndex}.txt`;
-          const projectedPath = `projection-${projection.groupIndex}.txt`;
           const sourceBytes = await readFile(join(inventoryDirectory, sourcePath));
-          const projected = await runCheckerProcess(
-            options.pythonExecutable ?? "python3",
-            ["-I", "-S", helperPath],
-            inventoryDirectory,
-            limits,
-            JSON.stringify({
-              projectionSourcePath: sourcePath,
-              projectionOutputPath: projectedPath,
-              sourceMap: projection.sourceMap,
-              sourceRoles: Object.fromEntries(projection.plan.unitHashes.map((unit) => [unit.id, unit.role])),
-              selectedUnitIds: projection.selectedUnitIds,
-            }),
-            signal,
-          );
-          if (projected.problem || projected.code !== 0 || projected.stderr.trim())
-            throw new Error("Checker body projection: " +
-              (projected.problem ?? (projected.stderr || "invalid projection exit")));
-          const projectedMetadata = checkerObject(JSON.parse(projected.stdout) as unknown);
+          const shared = projection.prepared;
+          const metadataBytes = await readFile(join(shared.directory, shared.metadataFile));
+          if (metadataBytes.length > limits.outputBytes || checkerHash(metadataBytes) !== shared.metadataHash)
+            throw new Error("Prepared projection metadata changed or exceeded output limit");
+          const projectedMetadata = checkerObject(JSON.parse(metadataBytes.toString("utf8")) as unknown);
           if (
             projectedMetadata["sourceSha256"] !== checkerHash(sourceBytes) ||
             typeof projectedMetadata["analysisSourceHash"] !== "string" ||
@@ -1141,7 +1249,9 @@ export function createPythonChecker(
           const projectedBodies = projectedMetadata["projectedBodies"];
           if (!Array.isArray(projectedBodies))
             throw new Error("Malformed projected body inventory");
-          const projectedSource = await readFile(join(inventoryDirectory, projectedPath));
+          const projectedSource = await readFile(join(shared.directory, shared.sourceFile));
+          if (checkerHash(projectedSource) !== shared.sourceHash)
+            throw new Error("Prepared projection source changed");
           const originalLineOffsets = sourceLineOffsets(sourceBytes);
           const projectedLineOffsets = sourceLineOffsets(projectedSource);
           if (
@@ -1260,11 +1370,16 @@ export function createPythonChecker(
             prelude.push("    from fmcad_injected import ui");
           if (unit.context.deferredFacade)
             prelude.push("    from fmcad_injected import FMCAD");
-          if (checksEntrypoint(unit)) prelude.push(entrypointImport);
+          if (checksEntrypoint(unit)) {
+            const decodedIndex = decodedEntrypoints.get(index);
+            if (decodedIndex !== undefined)
+              prelude.push(`from unit_${decodedIndex} import run`);
+            prelude.push(entrypointImport);
+          }
           const lines = unit.source.split("\n");
           lines.splice(unit.insert, 0, ...prelude);
           if (checksEntrypoint(unit)) lines.push(entrypointDeclaration);
-          const name = `unit-${index}.py`;
+          const name = decodedTargets.has(index) ? `unit_${index}.py` : `unit-${index}.py`;
           await writeFile(join(directory, name), lines.join("\n"));
           locations.set(name, { unit, preludeLines: prelude.length });
         }

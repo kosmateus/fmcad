@@ -35,6 +35,34 @@ const reject = (message: string): never => {
   });
 };
 
+// NativeMCP's HTTP ingress rejects bodies above 1 MiB, independently of the
+// public MCP input limit. Measure the final RPC JSON, not Python characters.
+const nativeMcpBodyLimit = 1_048_576;
+function requireNativeBodyLimit(payload: Rpc, serialized: string): void {
+  const name = object(payload["params"])["name"];
+  if (
+    payload["method"] !== "tools/call" ||
+    (name !== "fusion_mcp_execute" && name !== "fusion_mcp_read")
+  )
+    return;
+  const requestBytes = Buffer.byteLength(serialized, "utf8");
+  if (requestBytes <= nativeMcpBodyLimit) return;
+  throw Object.assign(
+    new Error(
+      `Final native MCP request is ${requestBytes} bytes; limit is ${nativeMcpBodyLimit} bytes`,
+    ),
+    {
+      code: "NATIVE_MCP_PAYLOAD_TOO_LARGE",
+      requestBytes,
+      maxRequestBytes: nativeMcpBodyLimit,
+      notStarted: true,
+      executionOutcome: "not_started",
+      userScriptSubmitted: false,
+      mayHaveMutated: false,
+    },
+  );
+}
+
 /** Closed classification. An unknown tool is not proof that it carries no code. */
 export function classifyPythonRpc(
   payload: Rpc,
@@ -49,9 +77,7 @@ export function classifyPythonRpc(
       "tools/list",
       "resources/list",
       "resources/templates/list",
-    ].includes(
-      String(payload["method"]),
-    )
+    ].includes(String(payload["method"]))
   )
     return { kind: "non-python" };
   const params = object(payload["params"]);
@@ -138,6 +164,7 @@ export function createPythonRpcAdmission(options: PythonRpcAdmissionOptions) {
     ): Promise<PythonRpcCertificate> {
       // Snapshot before any await; caller mutations cannot become checked bytes.
       const identity = JSON.stringify(payload);
+      requireNativeBodyLimit(payload, identity);
       const classification = classifyPythonRpc(payload);
       if (classification.kind === "non-python") {
         return Object.freeze({

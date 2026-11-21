@@ -8,7 +8,7 @@
       {"label": "Cylinder Boundary And Inside", "data": {"schemaVersion": 1, "region": {"type": "cylinder", "origin": ["0 mm", "0 mm", "0 mm"], "direction": [0, 0, 1], "radius": "5 mm", "height": "10 mm"}, "points": [["0 mm", "0 mm", "5 mm"], ["6 mm", "0 mm", "5 mm"], ["4.99 mm", "0 mm", "5 mm"]], "boundaryTolerance": "0.01 mm"}, "requires": "Open Design document; the three points intentionally sample inside, outside and within-tolerance-of-boundary.", "output": "result.counts is {inside:1,outside:1,boundary:1,error:0,unknown:0}; result.results.N.classification labels each point."},
       {"label": "Ring Keeps Its Open Channel", "data": {"schemaVersion": 1, "region": {"type": "ring", "origin": ["0 mm", "0 mm", "0 mm"], "direction": [0, 0, 1], "outerRadius": "8 mm", "innerRadius": "3 mm", "height": "5 mm"}, "points": [["1 mm", "0 mm", "2.5 mm"], ["5 mm", "0 mm", "2.5 mm"]]}, "requires": "Open Design document; the hole point and the annulus point distinguish the open channel from the solid ring.", "output": "result.results[0].classification is outside (hole) and result.results[1].classification is inside (annulus)."}
     ],
-    "audit": {"sources": ["assets/cad/containment.py: _measure_contains, _native_contains, _native_face_distance, _region_signed_distance, _classify, _signed_cylinder, _signed_box, _signed_sphere"], "verified": ["analytic and native signed-distance classification with boundary tolerance", "native BRepBody.pointContainment with explicit unknown results", "temporary-copy face-distance refinement and occurrence transform", "ring open-channel exclusion", "union/box/sphere distance fields", "read-only envelope"], "tests": ["tests/containment_test.py", "tests/containment.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/containment.py: _measure_contains, _native_contains, _native_face_distance, _region_signed_distance, _classify, _signed_cylinder, _signed_box, _signed_sphere"], "verified": ["analytic and native signed-distance classification with boundary tolerance", "native BRepBody.pointContainment with explicit unknown results", "temporary-copy face-distance refinement and occurrence transform", "ring open-channel exclusion", "union/box/sphere distance fields", "read-only envelope"], "tests": ["tests/containment_test.py", "tests/containment.test.ts"], "gaps": [], "bugs": []}
   },
   "measure.corridor": {
     "sections": [
@@ -18,7 +18,7 @@
     "examples": [
       {"label": "Blade Channel Clearance", "data": {"schemaVersion": 1, "path": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "0 mm"], ["0 mm", "20 mm", "0 mm"]], "radius": "2 mm", "obstacles": [{"point": ["3 mm", "5 mm", "0 mm"]}], "minimumClearance": "0.5 mm"}, "requires": "Open Design document; the obstacle sits 3 mm from the centerline, within the corridor radius of 2 mm plus 0.5 mm minimum.", "output": "result.occupancy[0].clearance is 1 mm and intrudes is false; result.minClearance is 1 mm."}
     ],
-    "audit": {"sources": ["assets/cad/containment.py: _measure_corridor, _polyline_distance, _point_at_station"], "verified": ["swept-circle clearance along a polyline", "minimum-clearance intrusion flag", "arc-length station normal sections", "geometric-only limitation wording"], "tests": ["tests/containment_test.py", "tests/containment.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/containment.py: _measure_corridor, _polyline_distance, _point_at_station"], "verified": ["swept-circle clearance along a polyline", "minimum-clearance intrusion flag", "arc-length station normal sections", "geometric-only limitation wording"], "tests": ["tests/containment_test.py", "tests/containment.test.ts"], "gaps": [], "bugs": []}
   },
   "measure.region": {
     "sections": [
@@ -28,6 +28,6 @@
     "examples": [
       {"label": "Box Region Occupancy", "data": {"schemaVersion": 1, "region": {"type": "box", "min": ["0 mm", "0 mm", "0 mm"], "max": ["10 mm", "10 mm", "10 mm"]}, "occupants": [{"point": ["5 mm", "5 mm", "5 mm"], "radius": "2 mm"}], "sections": [{"z": "5 mm"}]}, "requires": "Open Design document; one occupant centered inside the box, sectioned at its mid height.", "output": "result.occupiedCount is 1 and result.sections[0].occupantCount is 1."}
     ],
-    "audit": {"sources": ["assets/cad/containment.py: _measure_region, _circle_union_area"], "verified": ["occupant inside classification with radius", "per-plane occupied-union area", "deterministic grid estimator", "read-only envelope"], "tests": ["tests/containment_test.py", "tests/containment.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/containment.py: _measure_region, _circle_union_area"], "verified": ["occupant inside classification with radius", "per-plane occupied-union area", "deterministic grid estimator", "read-only envelope"], "tests": ["tests/containment_test.py", "tests/containment.test.ts"], "gaps": [], "bugs": []}
   }
 }

@@ -8,6 +8,8 @@ export interface QueueConfiguration {
   readonly startupTimeoutMs?: number;
   readonly waitTimeoutMs?: number;
   readonly client?: string;
+  /** Offline preparations; SDK mutations still use one lane. Omitted selects the CPU-aware default. */
+  readonly preparationConcurrency?: number;
 }
 
 export interface FmcadConfiguration {
@@ -103,6 +105,7 @@ const QUEUE_KEYS = new Set([
   "startupTimeoutMs",
   "waitTimeoutMs",
   "client",
+  "preparationConcurrency",
 ]);
 
 const ADAPTER_KEYS = new Set([
@@ -591,6 +594,18 @@ function mergeQueue(sources: readonly ConfigLayer[]): QueueConfiguration {
       );
     }
   }
+  const preparationConcurrency = merged["preparationConcurrency"];
+  if (
+    preparationConcurrency !== undefined &&
+    (typeof preparationConcurrency !== "number" ||
+      !Number.isSafeInteger(preparationConcurrency) ||
+      preparationConcurrency < 1 ||
+      preparationConcurrency > 10)
+  ) {
+    throw new Error(
+      "queue.preparationConcurrency must be an integer from 1 to 10",
+    );
+  }
   if (merged["client"] !== undefined)
     merged["client"] = readString(merged["client"], "queue.client");
   return merged as QueueConfiguration;
@@ -734,7 +749,9 @@ export function resolveFmcadConfiguration(
     DEFAULTS.routing;
   if (routing !== "queue") {
     throw Object.assign(
-      new Error('routing is fixed to "queue"; routing=direct is no longer supported. Use the shared fmcad broker.'),
+      new Error(
+        'routing is fixed to "queue"; routing=direct is no longer supported. Use the shared fmcad broker.',
+      ),
       { code: "UNSUPPORTED_ROUTING" },
     );
   }

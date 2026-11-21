@@ -11,8 +11,8 @@ interface QueueInstanceModule {
 }
 
 interface InstallerModule {
-  RUNTIME_FILES: string[];
-  TEST_FILES: string[];
+  candidateFiles(root: string): { runtime: string[]; tests: string[] };
+  testEntrypoints(root: string): string[];
 }
 
 interface VerifyDependencies {
@@ -36,7 +36,7 @@ interface VerifyDependencies {
 const { buildHash, durable } = runtimeRequire(
   "../../src/queue-instance.js",
 ) as QueueInstanceModule;
-const { RUNTIME_FILES, TEST_FILES } = runtimeRequire(
+const { candidateFiles, testEntrypoints } = runtimeRequire(
   "./install-queue-phases.js",
 ) as InstallerModule;
 
@@ -105,7 +105,12 @@ export function verifyQueuePhases(
     fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-verify-"));
   const executableBefore = executableFiles(options.runtime);
   const before = currentBuildHash(options.runtime);
-  const args = ["--test", "--test-reporter=spec", ...TEST_FILES];
+  const manifest = candidateFiles(options.runtime);
+  const args = [
+    "--test",
+    "--test-reporter=spec",
+    ...testEntrypoints(options.runtime),
+  ];
   const result = (
     dependencies.spawn ??
     ((spawnArgs, spawnOptions) =>
@@ -154,17 +159,21 @@ export function verifyQueuePhases(
     counts,
     verified:
       result.status === 0 &&
-      counts.fail === 0 &&
-      counts.tests !== null &&
+      counts["fail"] === 0 &&
+      typeof counts["tests"] === "number" &&
+      counts["tests"] > 0 &&
+      counts["pass"] === counts["tests"] &&
+      counts["cancelled"] === 0 &&
+      counts["skipped"] === 0 &&
       before === after,
     beforeBuildHash: before,
     afterBuildHash: after,
     executableFiles: executableBefore,
-    runtimeFiles: RUNTIME_FILES.map((file) => ({
+    runtimeFiles: manifest.runtime.map((file) => ({
       path: file,
       sha256: sha(path.join(options.runtime, file)),
     })),
-    testFiles: TEST_FILES.map((file) => ({
+    testFiles: manifest.tests.map((file) => ({
       path: file,
       sha256: sha(path.join(options.runtime, file)),
     })),
@@ -195,7 +204,7 @@ export function main(args: string[]): void {
   }
   const report = verifyQueuePhases(options);
   console.log(JSON.stringify(report, null, 2));
-  process.exitCode = report.verified ? 0 : 1;
+  process.exitCode = report["verified"] ? 0 : 1;
 }
 
 function errorCode(error: Error): string | undefined {

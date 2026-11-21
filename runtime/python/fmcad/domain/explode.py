@@ -1,5 +1,9 @@
 """DTO-only rules extracted from assets/cad/explode.py. No SDK or filesystem access."""
 import math as _explode_domain_math
+from typing import cast as _explode_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
 
 _EXPLODE_EASINGS = ('linear', 'smoothstep', 'easeIn', 'easeOut', 'easeInOut')
 
@@ -39,12 +43,12 @@ def _explode_seconds(value: object) -> float:
 def _explode_direction(value: object) -> "list[float]":
     if not isinstance(value, (list, tuple)):
         raise ValueError('axis must be three finite unitless numbers')
-    components = _cad_cast("Sequence[object]", value)
+    components = _explode_cast("Sequence[object]", value)
     if len(components) != 3 or any(isinstance(component, bool) or not isinstance(component, (int, float)) or
            not _explode_domain_math.isfinite(component)
            for component in components):
         raise ValueError('axis must be three finite unitless numbers')
-    numeric_components = [_cad_cast("int | float", component) for component in components]
+    numeric_components = [_explode_cast("int | float", component) for component in components]
     norm = _explode_domain_math.hypot(*numeric_components)
     if norm == 0:
         raise ValueError('axis cannot be zero')
@@ -69,7 +73,7 @@ def _explode_version(data: "JsonObject") -> None:
 
 def _explode_ref_key(ref: object) -> "JsonValue":
     if isinstance(ref, dict):
-        reference = _cad_cast("JsonObject", ref)
+        reference = _explode_cast("JsonObject", ref)
         token = reference.get('token')
         name = reference.get('name')
         return token or name or str(reference)

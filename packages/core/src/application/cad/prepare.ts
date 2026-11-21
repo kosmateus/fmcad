@@ -37,7 +37,7 @@ if _FMCAD_TYPE_CHECKING:
         operation: str
         data: JsonObject
         doc: str
-        component: _FMCADNotRequired[str | None]
+        component: _FMCADNotRequired[${context.component !== null && typeof context.component === "object" ? "str | JsonObject | None" : "str | None"}]
         projectId: _FMCADNotRequired[str | None]
         docId: _FMCADNotRequired[str | None]
         docFileId: _FMCADNotRequired[str | None]
@@ -67,7 +67,7 @@ def run(_context: str):
         ctx.activate_target()
     ctx.assert_identity()
     print('FMCAD_PROGRESS ' + json.dumps({'operation': request['operation'], 'document': ctx.doc.name, 'state': 'started'}))
-    result = ctx.call(request['operation'], request['data'])
+    result = ctx.call(${pythonLiteral(operation)}, request['data'])
     success = not (isinstance(result, dict) and (result.get('passed') is False or (result.get('restored') is False and result.get('leftRequestedState') is not True and result.get('status') != 'pass') or result.get('sampledPassed') is False or result.get('checkOutcome') == 'fail' or result.get('status') in ('fail', 'failed', 'blocked', 'unknown', 'missing', 'stale')))
     print('FMCAD_RESULT ' + json.dumps(_cad_json({'success': success, 'operation': request['operation'], 'document': ctx.doc.name, 'result': result, 'created': ctx.created}), allow_nan=False))
 `;

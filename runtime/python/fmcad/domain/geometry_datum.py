@@ -2,6 +2,8 @@
 import math as _geometry_datum_math
 from typing import cast as _geometry_datum_cast
 
+from fmcad.domain.values import JsonObject
+
 
 def _datum_version(data: "JsonObject") -> None:
     if 'schemaVersion' in data and (type(data['schemaVersion']) is not int or data['schemaVersion'] != 1):

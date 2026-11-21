@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Fold A Declared Bend", "data": {"schemaVersion": 1, "chain": [{"type": "line", "length": "10 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y"}, {"type": "line", "length": "10 mm"}]}, "requires": "Open Design document; a rigid 10 mm lead, a 2 mm-radius 90-degree bend, then a 10 mm tail.", "output": "result.flatNeutralLength equals result.foldedNeutralLength (10 + 2*pi/2 + 10 in cm) and result.scaled is false."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: fpc_fold, _chain_geometry, _fold_walk, _rotate"], "verified": ["neutral-axis length preservation through bends", "only declared bend zones bend", "no scaling", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: fpc_fold, _chain_geometry, _fold_walk, _rotate"], "verified": ["neutral-axis length preservation through bends", "only declared bend zones bend", "no scaling", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "fpc.flatten": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Flatten A Folded Bend", "data": {"schemaVersion": 1, "chain": [{"type": "line", "length": "10 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y"}]}, "requires": "Open Design document; a folded 90-degree bend of radius 2 mm.", "output": "result.flatNeutralLength is 1 cm + pi*2mm/2 in cm and equals result.foldedNeutralLength."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: fpc_flatten, _chain_geometry, _flatten_walk"], "verified": ["flat equals folded neutral length", "no scaling", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: fpc_flatten, _chain_geometry, _flatten_walk"], "verified": ["flat equals folded neutral length", "no scaling", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "pcb.mechanical-exchange": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "Step Center Versus Lens Datum", "data": {"schemaVersion": 1, "source": {"datum": {"name": "step-center", "type": "step-center", "origin": ["0 mm", "0 mm", "0 mm"]}}, "target": {"datum": {"name": "lens-datum", "type": "lens", "origin": ["2 mm", "1 mm", "0 mm"]}}}, "requires": "Open Design document; two PCB descriptions with different datum types.", "output": "result.datumOffset is [0.2,0.1,0] cm and result.compatibleDatum is false; result.warnings notes the STEP-center datum."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: pcb_mechanical_exchange"], "verified": ["explicit datum offset", "step-center vs lens/pad distinction", "outline area diff", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: pcb_mechanical_exchange"], "verified": ["explicit datum offset", "step-center vs lens/pad distinction", "outline area diff", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "pcb.check": {
     "sections": [
@@ -37,7 +37,7 @@
     "examples": [
       {"label": "Valid Board With Both Height Zones", "data": {"schemaVersion": 1, "board": {"thickness": "1.6 mm", "outline": [["0 mm", "0 mm"], ["20 mm", "0 mm"], ["20 mm", "20 mm"], ["0 mm", "20 mm"]], "holes": [{"center": ["5 mm", "5 mm", "0 mm"], "type": "round", "diameter": "2 mm"}], "heightZones": [{"side": "top"}, {"side": "bottom"}]}}, "requires": "Open Design document; a rectangular board with one in-board hole and both height zones.", "output": "result.passed is true and result.heightZones contains both top and bottom."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: pcb_check, _polygon, _point_in_polygon"], "verified": ["thickness positivity", "hole/slot inside-outline", "both-side height zones", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: pcb_check, _polygon, _point_in_polygon"], "verified": ["thickness positivity", "hole/slot inside-outline", "both-side height zones", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "port.define": {
     "sections": [
@@ -47,7 +47,7 @@
     "examples": [
       {"label": "Define A Power Port", "data": {"schemaVersion": 1, "name": "PWR", "frame": {"origin": ["0 mm", "0 mm", "0 mm"], "normal": [0, 0, 1], "pin1": ["1 mm", "0 mm", "0 mm"]}, "matingStroke": "5 mm"}, "requires": "Open Design document; a port whose normal is +Z with pin1 offset along +X.", "output": "result.name is PWR, result.normal is [0,0,1] and result.matingStroke is 0.5 cm."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: port_define"], "verified": ["frame normal/pin1 validation", "mating stroke nonnegativity", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: port_define"], "verified": ["frame normal/pin1 validation", "mating stroke nonnegativity", "read-only envelope"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "connector.mate-check": {
     "sections": [
@@ -57,7 +57,7 @@
     "examples": [
       {"label": "Shared-Key Power And Data Hazard", "data": {"schemaVersion": 1, "connectors": [{"name": "POWER_M", "gender": "male", "pinCount": 4, "key": "4pin-k"}, {"name": "POWER_F", "gender": "female", "pinCount": 4, "key": "4pin-k"}, {"name": "DATA_F", "gender": "female", "pinCount": 4, "key": "4pin-k"}], "intendedPairs": [["POWER_M", "POWER_F"]], "forbiddenPairs": [["POWER_M", "DATA_F"]]}, "requires": "Open Design document; three 4-pin connectors sharing one key signature, so the wrong pair is physically possible.", "output": "result.intended[0].mates is true but result.forbidden[0].canReachSeating is true; result.status is fail."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: connector_mate_check, _connector"], "verified": ["intended pair mating", "forbidden pair physical seating (poka-yoke)", "shared 4-pin hazard detection", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: connector_mate_check, _connector"], "verified": ["intended pair mating", "forbidden pair physical seating (poka-yoke)", "shared 4-pin hazard detection", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "pack.cross-section": {
     "sections": [
@@ -67,7 +67,7 @@
     "examples": [
       {"label": "Circle Fits With Reserve", "data": {"schemaVersion": 1, "cavity": [["0 mm", "0 mm"], ["10 mm", "0 mm"], ["10 mm", "10 mm"], ["0 mm", "10 mm"]], "items": [{"center": ["5 mm", "5 mm", "0 mm"], "radius": "2 mm"}], "reserve": 0.3}, "requires": "Open Design document; one 2 mm-radius circle centered in a 10x10 mm cavity.", "output": "result.reserve.actual is close to 1 - pi*4/100 and result.passed is true."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: pack_cross_section, _circle_union_area, _point_in_polygon"], "verified": ["occupied-union area", "reserve denominator", "shape fit violations", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: pack_cross_section, _circle_union_area, _point_in_polygon"], "verified": ["occupied-union area", "reserve denominator", "shape fit violations", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   },
   "keepout.check": {
     "sections": [
@@ -77,6 +77,6 @@
     "examples": [
       {"label": "In-Board Copper Keepout", "data": {"schemaVersion": 1, "board": {"outline": [["0 mm", "0 mm"], ["20 mm", "0 mm"], ["20 mm", "20 mm"], ["0 mm", "20 mm"]]}, "keepouts": [{"name": "K1", "outline": [["2 mm", "2 mm"], ["8 mm", "2 mm"], ["8 mm", "8 mm"], ["2 mm", "8 mm"]]}]}, "requires": "Open Design document; a keepout fully inside the board.", "output": "result.passed is true and result.keepouts[0].insideBoard is true."}
     ],
-    "audit": {"sources": ["assets/cad/fpc_pcb.py: keepout_check, _point_in_polygon"], "verified": ["keepout inside-board outline", "violation reporting", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/fpc_pcb.py: keepout_check, _point_in_polygon"], "verified": ["keepout inside-board outline", "violation reporting", "pass/fail status"], "tests": ["tests/fpc_pcb_test.py", "tests/fpc-pcb.test.ts"], "gaps": [], "bugs": []}
   }
 }

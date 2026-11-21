@@ -21,16 +21,13 @@ def _assembly_fusion_expression(ctx: "CadContext", expression: object,
     return evaluate(expression, units, unitless)
 
 
-class _AssemblyLimitValues(_assembly_fusion_TypedDict):
+class _AssemblyLimitRead(_assembly_fusion_TypedDict):
     minimumValue: float
     maximumValue: float
     restValue: float
     isMinimumValueEnabled: bool
     isMaximumValueEnabled: bool
     isRestValueEnabled: bool
-
-
-class _AssemblyLimitRead(_AssemblyLimitValues, total=False):
     units: str
 
 
@@ -42,22 +39,6 @@ class _AssemblyRotationLimits(_assembly_fusion_Protocol):
 class _AssemblySlideLimits(_assembly_fusion_Protocol):
     @property
     def slideLimits(self) -> 'adsk.fusion.JointLimits': ...
-
-
-class _AssemblyRotationValue(_assembly_fusion_Protocol):
-    @property
-    def rotationValue(self) -> float: ...
-
-    @rotationValue.setter
-    def rotationValue(self, value: float) -> None: ...
-
-
-class _AssemblySlideValue(_assembly_fusion_Protocol):
-    @property
-    def slideValue(self) -> float: ...
-
-    @slideValue.setter
-    def slideValue(self, value: float) -> None: ...
 
 
 class _AssemblyOccurrenceProxyFactory(_assembly_fusion_Protocol):
@@ -362,7 +343,7 @@ def _assembly_joint_direction(axis: str) -> 'adsk.fusion.JointDirections':
     return _assembly_fusion_cast('adsk.fusion.JointDirections', adsk.fusion.JointDirections.ZAxisJointDirection)
 
 
-def _assembly_limits_read(motion: 'adsk.fusion.JointMotion') -> dict[str, _AssemblyLimitRead]:
+def _assembly_limits_read(motion: 'adsk.fusion.JointMotion') -> 'dict[str, _AssemblyLimitRead]':
     result: dict[str, _AssemblyLimitRead] = {}
     for axis, units in (('rotation', 'rad'), ('slide', 'cm')):
         if axis == 'rotation':
@@ -435,7 +416,7 @@ def _assembly_limits_plan(ctx: "CadContext", motion: 'adsk.fusion.JointMotion',
 
 
 def _assembly_limits_write(limits: 'adsk.fusion.JointLimits',
-                           state: dict[str, float | bool]) -> None:
+                           state: 'dict[str, float | bool]') -> None:
     # Temporarily disable constraints to avoid invalid intermediate ranges; restore every flag.
     limits.isMinimumValueEnabled = False
     limits.isMaximumValueEnabled = False
@@ -524,7 +505,7 @@ def _assembly_limits_apply(motion: 'adsk.fusion.JointMotion',
 
 
 def _assembly_joint_line(ctx: "CadContext", name: str, component: 'adsk.fusion.Component',
-                         point: list[int | float], axis: list[float]) -> 'tuple[adsk.fusion.SketchLine, "JsonObject"]':
+                         point: 'list[int | float]', axis: 'list[float]') -> 'tuple[adsk.fusion.SketchLine, JsonObject]':
     # A sketch line along the requested axis is the carrier for a JointOrigin Z
     # axis. Fusion silently drops both ConstructionAxis and SketchLine handed to
     # an AsBuiltJoint custom direction entity, so a full (non-as-built) Joint's
@@ -571,7 +552,7 @@ def _assembly_joint_line(ctx: "CadContext", name: str, component: 'adsk.fusion.C
 
 
 def _assembly_joint_origin(ctx: "CadContext", name: str, occurrence: 'adsk.fusion.Occurrence',
-                           point_root: list[int | float], axis_root: list[int | float]) -> 'tuple[adsk.fusion.JointOrigin, "JsonObject"]':
+                           point_root: 'list[int | float]', axis_root: 'list[int | float]') -> 'tuple[adsk.fusion.JointOrigin, JsonObject]':
     # Build one JointOrigin in the occurrence's component whose primary (Z) axis
     # is pinned to the requested root-frame direction. The origin sits on the
     # axis line and its Z axis is a sketch line along the axis. This is the only
@@ -636,7 +617,7 @@ def _assembly_regular_joint_origin_context(
         ctx.ref(source['point']), ctx.ref(source['xAxis']), ctx.ref(source['zAxis']), ctx.ref(origin)]
 
 
-def _assembly_pose_snapshot(ctx: "CadContext") -> dict[str, list[int | float]]:
+def _assembly_pose_snapshot(ctx: "CadContext") -> 'dict[str, list[int | float]]':
     rows: dict[str, list[int | float]] = {}
     for occurrence in _cad_items(ctx.root.allOccurrences):
         path = occurrence.fullPathName
@@ -830,10 +811,10 @@ def _assembly_joint(ctx: "CadContext", data: "JsonObject",
                            'native component definition; affects all instances'})
         if hasattr(motion, 'rotationValue'):
             result['rotationValue'] = _assembly_fusion_cast(
-                _AssemblyRotationValue, motion).rotationValue
+                float, getattr(motion, 'rotationValue'))
         if hasattr(motion, 'slideValue'):
             result['slideValue'] = _assembly_fusion_cast(
-                _AssemblySlideValue, motion).slideValue
+                float, getattr(motion, 'slideValue'))
         if mode == 'drive':
             result.update(snapshot=snapshot, units='cm/rad', parametricExpressions=False,
                           coordinateReadback=coordinate_readback)
@@ -1197,6 +1178,8 @@ def _assembly_history_check(ctx: "CadContext", data: "JsonObject",
                          'unvisitedChildren': unvisited}}
 
 
+# feature.inspect/edit still use this compatibility bridge from geometry_feature.py.
+# Assembly-owned operation registration below binds named handlers directly.
 def _assembly_handler(
         function: "_assembly_fusion_Callable[[CadContext, JsonObject, str], JsonValue]",
         mode: str) -> "CadHandler":
@@ -1205,16 +1188,148 @@ def _assembly_handler(
     return handler
 
 
-for _family, _function, _modes in (
-        ('component', _assembly_component, ('inspect', 'create', 'rename', 'reparent', 'from_bodies')),
-        ('occurrence', _assembly_occurrence, ('add', 'duplicate', 'transform', 'align')),
-        ('joint', _assembly_joint, ('rigid', 'revolute', 'slider', 'cylindrical', 'inspect', 'edit', 'drive', 'limits')),
-        ('assembly', _assembly_misc, ('parts', 'ground', 'unground', 'rigid_group')),
-        # feature.inspect/feature.edit are registered once by feature.py (GM09 v1)
-        # with a payload-shape dispatch back to the legacy handlers below.
-        ('feature', _assembly_history, ('list', 'suppress', 'unsuppress', 'dependencies')),
-        ('history', _assembly_history, ('check', 'recompute')),
-        ('change', _assembly_history, ('preview',))):
-    CAD_HANDLERS.update({_family + '.' + mode: _assembly_handler(_function, mode) for mode in _modes})
+def _assembly_component_inspect(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_component(ctx, data, 'inspect')
+
+
+def _assembly_component_create(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_component(ctx, data, 'create')
+
+
+def _assembly_component_rename(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_component(ctx, data, 'rename')
+
+
+def _assembly_component_reparent(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_component(ctx, data, 'reparent')
+
+
+def _assembly_component_from_bodies(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_component(ctx, data, 'from_bodies')
+
+
+def _assembly_occurrence_add(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_occurrence(ctx, data, 'add')
+
+
+def _assembly_occurrence_duplicate(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_occurrence(ctx, data, 'duplicate')
+
+
+def _assembly_occurrence_transform(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_occurrence(ctx, data, 'transform')
+
+
+def _assembly_occurrence_align(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_occurrence(ctx, data, 'align')
+
+
+def _assembly_joint_rigid(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'rigid')
+
+
+def _assembly_joint_revolute(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'revolute')
+
+
+def _assembly_joint_slider(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'slider')
+
+
+def _assembly_joint_cylindrical(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'cylindrical')
+
+
+def _assembly_joint_inspect(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'inspect')
+
+
+def _assembly_joint_edit(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'edit')
+
+
+def _assembly_joint_drive(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'drive')
+
+
+def _assembly_joint_limits(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_joint(ctx, data, 'limits')
+
+
+def _assembly_misc_parts(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_misc(ctx, data, 'parts')
+
+
+def _assembly_misc_ground(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_misc(ctx, data, 'ground')
+
+
+def _assembly_misc_unground(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_misc(ctx, data, 'unground')
+
+
+def _assembly_misc_rigid_group(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_misc(ctx, data, 'rigid_group')
+
+
+def _assembly_feature_list(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'list')
+
+
+def _assembly_feature_suppress(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'suppress')
+
+
+def _assembly_feature_unsuppress(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'unsuppress')
+
+
+def _assembly_feature_dependencies(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'dependencies')
+
+
+def _assembly_history_check_handler(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'check')
+
+
+def _assembly_history_recompute(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'recompute')
+
+
+def _assembly_change_preview(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _assembly_history(ctx, data, 'preview')
+
+
+# Keep feature.inspect/edit registered by feature.py; these are assembly-owned operations.
+CAD_HANDLERS.update({
+    'component.inspect': _assembly_component_inspect,
+    'component.create': _assembly_component_create,
+    'component.rename': _assembly_component_rename,
+    'component.reparent': _assembly_component_reparent,
+    'component.from_bodies': _assembly_component_from_bodies,
+    'occurrence.add': _assembly_occurrence_add,
+    'occurrence.duplicate': _assembly_occurrence_duplicate,
+    'occurrence.transform': _assembly_occurrence_transform,
+    'occurrence.align': _assembly_occurrence_align,
+    'joint.rigid': _assembly_joint_rigid,
+    'joint.revolute': _assembly_joint_revolute,
+    'joint.slider': _assembly_joint_slider,
+    'joint.cylindrical': _assembly_joint_cylindrical,
+    'joint.inspect': _assembly_joint_inspect,
+    'joint.edit': _assembly_joint_edit,
+    'joint.drive': _assembly_joint_drive,
+    'joint.limits': _assembly_joint_limits,
+    'assembly.parts': _assembly_misc_parts,
+    'assembly.ground': _assembly_misc_ground,
+    'assembly.unground': _assembly_misc_unground,
+    'assembly.rigid_group': _assembly_misc_rigid_group,
+    'feature.list': _assembly_feature_list,
+    'feature.suppress': _assembly_feature_suppress,
+    'feature.unsuppress': _assembly_feature_unsuppress,
+    'feature.dependencies': _assembly_feature_dependencies,
+    'history.check': _assembly_history_check_handler,
+    'history.recompute': _assembly_history_recompute,
+    'change.preview': _assembly_change_preview,
+})
 
 _fmcad_assembly_runtime_loaded = True

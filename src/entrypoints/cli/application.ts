@@ -1,3 +1,8 @@
+import {
+  successfulReferenceComputation,
+  successfulImportComputation,
+  successfulDrawingComputation,
+} from "../../composition/library-local-outcome";
 import { randomUUID } from "node:crypto";
 import { createFmcad, createCatalogServices } from "../../api";
 import type {
@@ -89,7 +94,11 @@ export async function execute(
     await services.dispose();
   }
 }
-export function receiptExitCode(receipt: ExecutionReceipt): number {
+export function receiptExitCode(
+  receipt: ExecutionReceipt,
+  operation?: string,
+  preview = false,
+): number {
   if (receipt.state !== "local") {
     if (
       receipt.state !== "succeeded" ||
@@ -102,11 +111,31 @@ export function receiptExitCode(receipt: ExecutionReceipt): number {
       return 1;
   }
   const result = receipt.result;
+  if (
+    receipt.state === "local" &&
+    (successfulReferenceComputation(operation, result) ||
+      successfulImportComputation(operation, result) ||
+      successfulDrawingComputation(operation, result))
+  )
+    return 0;
   if (result && typeof result === "object" && !Array.isArray(result)) {
     const record = result as Readonly<Record<string, JsonValue>>;
+    // A completed offline preview describes a plan, including unresolved data.
+    // Its exit status does not certify the plan or a native model outcome.
+    if (
+      preview &&
+      receipt.state === "local" &&
+      record["success"] === true &&
+      !["fail", "failed", "blocked"].includes(String(record["status"])) &&
+      record["outcome"] !== "unknown" &&
+      record["executionOutcome"] !== "unknown"
+    )
+      return 0;
     if (
       record["success"] === false ||
-      ["failed", "unknown"].includes(String(record["status"])) ||
+      ["fail", "failed", "blocked", "unknown"].includes(
+        String(record["status"]),
+      ) ||
       record["outcome"] === "unknown"
     )
       return 1;

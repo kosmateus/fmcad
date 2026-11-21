@@ -43,7 +43,7 @@ the owner must wire that dispatcher to the new module in its final integration.
 npm run build:code
 npm run typecheck:tests
 npm run lint
-node --test tests/review-application.test.js tests/review.test.js tests/shot.test.js
+node --test tests/review-application.test.js tests/review.test.js dist/tests/shot.test.js
 python3 -B -m unittest discover -s tests -p review_test.py
 ```
 

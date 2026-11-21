@@ -19,7 +19,10 @@ const turn: CadExecutionRequest = {
 };
 const execution: CadExecutionPort = {
   // @ts-expect-error no raw argv/script-string execution port
-  execute: async (_argv: readonly string[]) => ({ text: "" }),
+  execute: async (argv: readonly string[]) => {
+    void argv;
+    return { text: "" };
+  },
 };
 const request: RunRequest = {
   name: "trusted.py",

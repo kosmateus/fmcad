@@ -26,7 +26,10 @@ export interface RunUnit extends RunSource {
 }
 export interface RunPreparationPort {
   pythonValue(value: unknown): string;
-  runtime(helperVersion: string | undefined): readonly RunUnit[];
+  runtime(
+    helperVersion: string | undefined,
+    source: RunSource,
+  ): readonly RunUnit[];
   prepare(
     units: readonly RunUnit[],
     metadata: {
@@ -166,7 +169,7 @@ export function prepareRun(
     !helperVersion
   )
     return port.prepare([userUnit], metadata);
-  const units = port.runtime(helperVersion);
+  const units = port.runtime(helperVersion, userUnit);
   const wrapper = `
 def run(_context: str) -> ${runValueType}:
     from typing import Callable as _FMCAD_CALLABLE, cast as _FMCAD_CAST

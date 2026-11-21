@@ -3,6 +3,9 @@ import math as _native_drive_math
 from typing import TYPE_CHECKING as _NATIVE_DRIVE_TYPE_CHECKING, Literal as _NativeDriveLiteral
 from typing import TypedDict as _NativeDriveTypedDict, cast as _native_drive_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
 
 if _NATIVE_DRIVE_TYPE_CHECKING:
     class _NativeDriveFollower(_NativeDriveTypedDict):

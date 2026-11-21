@@ -4,6 +4,50 @@
 complete `passed` result bound to the prepared artifact and exact wire hash.
 Rejection is local `not_started` evidence, not a CAD execution result.
 
+## Automatic helper source selection
+
+`run --helpers cad-v1` analyses the actual argument-substituted Python source
+offline. A Python AST/symbol-table adapter supplies facts; the host-independent
+application selects source units and facade methods, including transitive symbol,
+initialization and operation-dispatch dependencies. Registry ownership transfers
+retain their predecessors and original execution order. Callers do not maintain
+helper dependency lists.
+
+Selection is conservative, not a claim of globally minimal Python programs.
+Whole retained source units remain available to the real checker, including
+definitions that are not reachable from this invocation. Reachability of dynamic
+dispatch is analysed separately from those typing dependencies. The closed
+statically understood user subset supports direct facade calls and finite literal
+dispatch alternatives. Unresolved dispatch, facade escapes, imported code or
+reflection retain the complete runtime and facade rather than changing their
+semantics. Every resulting source artifact still passes the ordinary checker and
+exact-request admission fences before SDK execution.
+
+## Lossless native receipt encoding
+
+Large official native receipt scripts may use a zlib/base64 envelope after source
+selection. This preserves the entire selected program, including the full runtime
+when dynamic dependencies require it; encoding is not dependency selection.
+Ordinary `prepareWireArtifact` remains input-identical. Receipt encoding starts at
+512 KiB and is used only when it reduces the wire size.
+
+The shared decoder verifies canonical base64, a complete zlib stream with no
+trailing data, UTF-8 byte length and SHA-256. Decoded sources are bounded at
+16 MiB and encoded input at 24 MiB. The checker inventories the decoded source,
+checks its actual entrypoint and binds it to the wire entrypoint and source hash;
+the envelope does not replace checking with a synthetic entrypoint. Admission
+still measures and certifies the complete final JSON request after encoding.
+
+## Exact request admission
+
+Native `fusion_mcp_execute` and `fusion_mcp_read` requests must fit the native
+HTTP ingress limit of 1,048,576 bytes. Admission measures the complete final JSON
+as UTF-8 before checker work or SDK dispatch. Oversized requests fail locally with
+`NATIVE_MCP_PAYLOAD_TOO_LARGE` and `not_started`; they are not unknown SDK results.
+The same immutable-request certificate rejects later payload changes. This
+transport constraint is independent of the public MCP input limit and does not
+apply to the add-in's separate `execute_python` protocol.
+
 `node-adapters/python/admission.ts` closes RPC classification: known protocol,
 discovery and native non-Python tools are explicit; unknown tools are refused.
 `execute_python` and script `fusion_mcp_execute` are always Python. Literal
@@ -137,7 +181,7 @@ Public queue acceptance and physical transport fences were verified separately:
 the exact candidate `document.status` artifact reaches the mocked public broker
 once, a controlled type error reaches it zero times, and raw receipt transport
 tests cover MCP/add-in positive-once and negative-zero behavior. `document.status`
-is the six-unit light profile; it is not misreported as the full helper test.
+is the seven-unit light profile; it is not misreported as the full helper test.
 
 The first exploratory public `document.save_as` attempt remained `preparing`
 without `pythonChecks`; instrumented follow-up showed why: for each of five
@@ -172,7 +216,7 @@ unchanged.
 ```sh
 npm run build:code
 node --test tests/python-admission.test.js tests/python-admission-transport.test.js
-node --test tests/library-api-broker.test.js
+node --test dist/tests/library-api-broker.test.js
 node --test tests/python-admission-packaging.test.js
 node --test tests/python-checker.test.js tests/python-checker-completeness.test.js
 node --test tests/run-identity.test.js tests/queue-cloud-save.test.js
@@ -185,3 +229,14 @@ runs offline outside checkout with lifecycle scripts disabled and includes one
 real complete-helper check. Transport/SDK activity is synthetic. No submitted
 source is executed by the checker, and no live Fusion, geometry or physical
 correctness is claimed.
+
+The retained `document-status-admission-6bb.json` keeps its historical candidate
+identity and pinned hashes unchanged. Its source commit is unavailable in this
+checkout, so tests do not reconstruct its source or attribute current bytes to
+that candidate. The public output is pinned separately in
+`document-status-admission-current.json`, including its current wire/artifact
+hashes, seven unit hashes, and real checker provenance. Tests require the current
+artifact to match that manifest and explicitly reject it as a substitute for the
+historical `6bb` evidence. Admission tests also retain real-checker, source-unit,
+final-byte stale-artifact, and single-send assertions; behavior or target-identity
+changes fail the current-candidate comparison.

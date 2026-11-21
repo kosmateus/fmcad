@@ -45,11 +45,11 @@ export function stageOpenCode(root: string): void {
       target,
       fs
         .readFileSync(path.join(built, "src/composition/opencode.js"), "utf8")
-        .replaceAll('require("../config")', 'require("../../config")')
-        .replaceAll(
-          'require("../opencode/presence.cjs")',
-          'require("../../opencode/presence.cjs")',
-        ),
+        .replaceAll('require("../config")', 'require("../../config")'),
     );
   }
+}
+
+if (require.main === module) {
+  stageOpenCode(path.resolve(__dirname, "../../.."));
 }

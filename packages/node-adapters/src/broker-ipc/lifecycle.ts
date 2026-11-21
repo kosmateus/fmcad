@@ -2,6 +2,7 @@ import { validateBrokerFence } from "@fmcad/core";
 import type { BrokerControlFence } from "@fmcad/core";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { durable, readJson } from "../persistence/records";
 
 interface ControlGate {
@@ -43,6 +44,7 @@ export function createLifecycleDispatcher({
   admin,
   dir,
   buildHash,
+  beforeNewResume,
   canResume,
   authorizeResetResume,
   resumeCheck,
@@ -52,6 +54,7 @@ export function createLifecycleDispatcher({
   admin: AdminPort;
   dir: string;
   buildHash: string;
+  beforeNewResume?(): void;
   canResume(): void;
   authorizeResetResume?(
     nonce: string | undefined,
@@ -98,13 +101,32 @@ export function createLifecycleDispatcher({
       const fence = message.control;
       if (!fence) deny("INVALID_REQUEST", "Control fence is required");
       validateBrokerFence(fence);
+      // Control Center also sends its action echo. Accept only a matching
+      // echo and never use a caller field to populate server-owned binding.
+      if (
+        Object.keys(fence).some(
+          (key) =>
+            ![
+              "requestId",
+              "instanceId",
+              "expectedGeneration",
+              "action",
+            ].includes(key),
+        ) ||
+        ("action" in fence && fence.action !== message.action)
+      )
+        deny("INVALID_REQUEST", "Unexpected fields in the control fence");
+      const { requestId, instanceId, expectedGeneration } = fence;
+      const control = { requestId, instanceId, expectedGeneration };
       const current = gate.snapshot();
-      if (current.instanceId !== fence.instanceId)
+      if (current.instanceId !== instanceId)
         deny("INSTANCE_CHANGED", "Read the current broker instance");
       const binding = {
         action: message.action,
         clientId,
-        ...fence,
+        requestId,
+        instanceId,
+        expectedGeneration,
         ...(message.resetOwnerNonce === undefined
           ? {}
           : {
@@ -117,7 +139,7 @@ export function createLifecycleDispatcher({
       const file = join(
         dir,
         "lifecycle-control-" +
-          createHash("sha256").update(fence.requestId).digest("hex") +
+          createHash("sha256").update(requestId).digest("hex") +
           ".json",
       );
       let prior: unknown;
@@ -137,7 +159,7 @@ export function createLifecycleDispatcher({
           !prior ||
           typeof prior !== "object" ||
           !("binding" in prior) ||
-          JSON.stringify(prior.binding) !== JSON.stringify(binding)
+          !isDeepStrictEqual(prior.binding, binding)
         )
           deny(
             "REQUEST_CONFLICT",
@@ -151,6 +173,8 @@ export function createLifecycleDispatcher({
           "Observe the original control receipt; the action will not be replayed",
         );
       }
+      // Stop fences a new intent, never an authenticated immutable readback.
+      if (message.action === "resume") beforeNewResume?.();
       if (message.resetOwnerNonce !== undefined && !authorizeResetResume)
         deny(
           "FUSION_RESET_IN_PROGRESS",
@@ -159,7 +183,7 @@ export function createLifecycleDispatcher({
       const resetAuthorization =
         message.action !== "resume"
           ? undefined
-          : authorizeResetResume?.(message.resetOwnerNonce, clientId, fence);
+          : authorizeResetResume?.(message.resetOwnerNonce, clientId, control);
       if (
         message.resetOwnerNonce !== undefined &&
         resetAuthorization === undefined
@@ -168,14 +192,14 @@ export function createLifecycleDispatcher({
           "FUSION_RESET_IN_PROGRESS",
           "Reset-owner authorization is unavailable; the reset fence remains closed",
         );
-      if (current.generation !== fence.expectedGeneration)
+      if (current.generation !== expectedGeneration)
         deny("STATE_CONFLICT", "Read the current broker control generation");
       durable(file, { binding, status: "prepared" }, true);
       try {
         if (message.action === "resume") canResume();
         const result = await gate.control(
           message.action !== "resume",
-          fence,
+          control,
           () => resumeCheck(resetAuthorization),
         );
         durable(file, { binding, status: "completed", result });

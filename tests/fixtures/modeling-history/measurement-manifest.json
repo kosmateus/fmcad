@@ -1,0 +1,16 @@
+[
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "path": "assets/cad/measure.py",
+    "sourceSha256": "9dd6c9cfddc5551956f45c86928e7a91e74c250d9c9fe97443e408c82d2b0c9c",
+    "fixture": "measurement-units-a26222f.py",
+    "sha256": "d2fecb127c45cfbb048338fbf4487f1b761cf751c7d708c056a8be46a367761a"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "path": "runtime/python/fmcad/adapters/fusion/measure.py",
+    "sourceSha256": "69e8c72865d85f85cbcb3aae87e1e1aba4e9c102836bf7742a1819c7299ae688",
+    "fixture": "measurement-units-0b84454.py",
+    "sha256": "d54353eb248ac920a9bb469a79712b34d718f920d476d1096818916d6bdc35fe"
+  }
+]

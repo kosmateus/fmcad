@@ -3,6 +3,9 @@ import math as _sheetmetal_domain_math
 from collections.abc import Sequence as _sheetmetal_Sequence
 from typing import cast as _sheetmetal_cast
 
+from fmcad.domain.values import JsonObject
+
+
 def _sheetmetal_vsub(a: _sheetmetal_Sequence[float], b: _sheetmetal_Sequence[float]) -> list[float]:
     return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 

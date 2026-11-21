@@ -25,6 +25,14 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
+function isSnapshotCapacityRefusal(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "SNAPSHOT_TOO_LARGE"
+  );
+}
 const identifier = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= 256;
 const integer = (value: unknown): value is number =>
@@ -250,6 +258,7 @@ export class QueueDomain {
       ["running", "sending", "needs_reconciliation"].includes(j.state),
     );
     const activeObservation = d.active ? workflowObservationFor(d, d.active) : null;
+    let recoveryChanged = false;
     if (activeObservation) {
       const observer = d.jobs[d.active!]!;
       const original = d.jobs[activeObservation.targetJobId]!;
@@ -266,6 +275,12 @@ export class QueueDomain {
     }
     if (uncertain.length && !activeObservation) {
       const job = uncertain[0]!;
+      recoveryChanged =
+        job.state !== "needs_reconciliation" ||
+        job.sequenceState !==
+          (job.sequenceId ? "needs_reconciliation" : null) ||
+        d.active !== job.id ||
+        !d.blocked;
       job.state = "needs_reconciliation";
       job.sequenceState = job.sequenceId ? "needs_reconciliation" : null;
       d.active = job.id;
@@ -275,6 +290,7 @@ export class QueueDomain {
         at: this._time(),
       };
     } else if (activeObservation && ["running", "sending"].includes(d.jobs[d.active!]!.state)) {
+      recoveryChanged = true;
       const observer = d.jobs[d.active!]!;
       observer.state = "needs_reconciliation";
       observer.code = "ATOMIC_OBSERVATION_INTERRUPTED";
@@ -292,6 +308,7 @@ export class QueueDomain {
         job.id !== d.localUnknown?.id &&
         ["preparing", "processing", "queued"].includes(job.state)
       ) {
+        recoveryChanged = true;
         Object.assign(job, {
           state: "failed",
           code: "LOCAL_WORKER_INTERRUPTED",
@@ -301,8 +318,19 @@ export class QueueDomain {
         if (d.lease?.clientId === job.clientId) d.lease = null;
       }
     }
+    if (d.localUnknown && !d.active && !d.blocked) recoveryChanged = true;
     this._promoteLocalUnknown(d);
-    this._commit(() => null);
+    try {
+      this._commit(() => null);
+    } catch (error) {
+      if (!isSnapshotCapacityRefusal(error) || !recoveryChanged) throw error;
+      // The durable snapshot retains the pre-recovery states. Derive local
+      // failures without replay and keep physically unfinished jobs blocked
+      // as UNKNOWN, without claiming this projection was persisted.
+      this._waiting = Object.values(this.data.jobs).filter(
+        (job) => job.state === "queued",
+      );
+    }
   }
 
   _time() {
@@ -330,7 +358,7 @@ export class QueueDomain {
       try {
         this.commit?.(draft);
       } catch (error) {
-        this._fault = error;
+        if (!isSnapshotCapacityRefusal(error)) this._fault = error;
         throw error;
       }
       this.data = draft;
@@ -562,6 +590,28 @@ export class QueueDomain {
         "requestId, clientId and kind (command or rpc) are required",
       );
     }
+    if (r.debugTrace !== undefined) {
+      const trace = r.debugTrace as unknown;
+      if (
+        !trace ||
+        typeof trace !== "object" ||
+        Array.isArray(trace) ||
+        Object.keys(trace).sort().join(",") !==
+          "requestId,rootSpanId,source,traceId,version" ||
+        (trace as Record<string, unknown>)["version"] !== 1 ||
+        (trace as Record<string, unknown>)["requestId"] !== r.requestId ||
+        !["cli", "mcp"].includes(
+          String((trace as Record<string, unknown>)["source"]),
+        ) ||
+        !/^[a-f0-9]{32}$/.test(
+          String((trace as Record<string, unknown>)["traceId"]),
+        ) ||
+        !/^[a-f0-9]{16}$/.test(
+          String((trace as Record<string, unknown>)["rootSpanId"]),
+        )
+      )
+        fail("INVALID_DEBUG_TRACE", "Debug trace identity is invalid");
+    }
     if (r.description !== undefined)
       r.description = normalizeDescription(r.description);
     if (
@@ -746,7 +796,8 @@ export class QueueDomain {
     });
   }
 
-  next() {
+  /** Run the same deadline maintenance without granting any physical turn. */
+  next({ grant = true }: { grant?: boolean } = {}) {
     if (this._fault)
       fail(
         "STORAGE_UNAVAILABLE",
@@ -758,9 +809,12 @@ export class QueueDomain {
       time = this._time();
     if (d.controlBlocked || d.localUnknown) return null;
     if (d.blocked) {
-      const observers = Object.values(d.jobs).filter(
-        (job) => job.state === "queued" && workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
-      );
+      const observers = grant
+        ? this._waiting.filter(
+            (job) =>
+              workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
+          )
+        : [];
       if (observers.length > 1)
         fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job");
       if (observers.length === 1) {
@@ -804,7 +858,7 @@ export class QueueDomain {
       !d.active &&
       !d.blocked &&
       (time >= d.lease.idleUntil || time >= d.lease.holdUntil);
-    const canGrant = !d.blocked && !d.paused && !d.active;
+    const canGrant = grant && !d.blocked && !d.paused && !d.active;
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
@@ -833,7 +887,7 @@ export class QueueDomain {
     return this._commit((d) => {
       const time = this._time();
       this._expire(d, time);
-      if (d.blocked || d.paused || d.active) return null;
+      if (!grant || d.blocked || d.paused || d.active) return null;
       const eligible = Object.values(d.jobs).filter(
         (j) =>
           j.state === "queued" &&

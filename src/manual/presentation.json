@@ -8,7 +8,7 @@
     "examples": [
       {"label": "Inspect a section", "data": {"name": "Inspection section"}, "requires": "Exactly one section with this name exists in the Analyses browser.", "output": "result.frame.cutDirection is the normalized Z axis; result.transform is the full matrix."}
     ],
-    "audit": {"sources": ["assets/cad/presentation.py:section_inspect,_section_find,_section_state,_mat_frame", "assets/cad/core.py:_cad_fields,_cad_unique,_cad_items"], "verified": ["transform/orientation/hatch/color readback", "unavailable-section blocked path"], "tests": ["tests/presentation_test.py", "tests/presentation.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/presentation.py:section_inspect,_section_find,_section_state,_mat_frame", "assets/cad/core.py:_cad_fields,_cad_unique,_cad_items"], "verified": ["transform/orientation/hatch/color readback", "unavailable-section blocked path"], "tests": ["tests/presentation_test.py", "tests/presentation.test.ts"], "gaps": [], "bugs": []}
   },
   "section.edit": {
     "sections": [
@@ -20,7 +20,7 @@
       {"label": "Set absolute orientation and hatch", "data": {"name": "Inspection section", "transform": {"origin": ["0 mm", "0 mm", "5 mm"], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "zAxis": [0, 0, 1]}, "hatch": true}, "requires": "Exactly one section with this name exists.", "output": "result.orientationMatch.zAxisAligned=true when the applied Z axis matches the requested frame; result.after.isHatchShown=true."},
       {"label": "Flip the cut direction", "data": {"name": "Inspection section", "flip": true}, "requires": "Exactly one section with this name exists.", "output": "result.changed includes flip; result.after.frame.cutDirection is negated."}
     ],
-    "audit": {"sources": ["assets/cad/presentation.py:section_edit,_matrix_from_descriptor,_mat_frame,_dot_close", "assets/cad/core.py:_cad_fields,_cad_direction,_cad_require_result"], "verified": ["absolute transform/orientation and documented-frame comparison", "flip() as an operation, hatch and color", "blocked path for unavailable API"], "tests": ["tests/presentation_test.py", "tests/presentation.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/presentation.py:section_edit,_matrix_from_descriptor,_mat_frame,_dot_close", "assets/cad/core.py:_cad_fields,_cad_direction,_cad_require_result"], "verified": ["absolute transform/orientation and documented-frame comparison", "flip() as an operation, hatch and color", "blocked path for unavailable API"], "tests": ["tests/presentation_test.py", "tests/presentation.test.ts"], "gaps": [], "bugs": []}
   },
   "visibility.finalize": {
     "sections": [
@@ -31,6 +31,6 @@
     "examples": [
       {"label": "Hide sketch and show a body, then verify health", "data": {"hide": ["Sketch1"], "show": ["Housing"], "recompute": true, "checkHealth": true}, "requires": "Sketch1 and Housing resolve to unique entities in the scoped component.", "output": "result.leftRequestedState=true and result.health has no unhealthy items on success; on an unhealthy timeline result.status=fail and the bulbs are restored."}
     ],
-    "audit": {"sources": ["assets/cad/presentation.py:visibility_finalize,_vis_snapshot,_vis_restore,_vis_chain,_health_check,_UnhealthyHistory", "assets/cad/core.py:_cad_fields,_cad_require_result,CadContext.resolve,ref"], "verified": ["hide/show composition with recompute and checkHealth", "leave-state on success and restore-on-error with separate restoreErrors", "unhealthy history fails without silent pass"], "tests": ["tests/presentation_test.py", "tests/presentation.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/presentation.py:visibility_finalize,_vis_snapshot,_vis_restore,_vis_chain,_health_check,_UnhealthyHistory", "assets/cad/core.py:_cad_fields,_cad_require_result,CadContext.resolve,ref"], "verified": ["hide/show composition with recompute and checkHealth", "leave-state on success and restore-on-error with separate restoreErrors", "unhealthy history fails without silent pass"], "tests": ["tests/presentation_test.py", "tests/presentation.test.ts"], "gaps": [], "bugs": []}
   }
 }

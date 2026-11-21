@@ -1,7 +1,58 @@
 """Document identity policy shared by CAD and trusted run script builders."""
+from typing import TYPE_CHECKING as _Identity_TYPE_CHECKING, Protocol as _IdentityProtocol
 
 
-def _document_data_file(doc):
+if _Identity_TYPE_CHECKING:
+    class _IdentityDataProject(_IdentityProtocol):
+        @property
+        def id(self) -> str: ...
+
+
+    class _IdentityDataFile(_IdentityProtocol):
+        @property
+        def id(self) -> str: ...
+
+        @property
+        def parentProject(self) -> _IdentityDataProject: ...
+
+
+    class _IdentityDocumentReferences(_IdentityProtocol):
+        @property
+        def count(self) -> int: ...
+
+
+    class _IdentityDocument(_IdentityProtocol):
+        @property
+        def name(self) -> str: ...
+
+        @property
+        def creationId(self) -> str: ...
+
+        @property
+        def dataFile(self) -> _IdentityDataFile | None: ...
+
+        @property
+        def allDocumentReferences(self) -> _IdentityDocumentReferences: ...
+
+        def activate(self) -> bool: ...
+
+
+    class _IdentityDocuments(_IdentityProtocol):
+        @property
+        def count(self) -> int: ...
+
+        def item(self, index: int, /) -> _IdentityDocument: ...
+
+
+    class _IdentityApplication(_IdentityProtocol):
+        @property
+        def documents(self) -> _IdentityDocuments | list[_IdentityDocument] | tuple[_IdentityDocument, ...]: ...
+
+        @property
+        def activeDocument(self) -> _IdentityDocument | None: ...
+
+
+def _document_data_file(doc: '_IdentityDocument') -> 'tuple[_IdentityDataFile | None, None] | tuple[None, dict[str, str]]':
     """Keep local document identity observable when Fusion has no temporary file.
 
     This is not an unsaved/cloud identity assertion. Unexpected SDK failures still
@@ -15,13 +66,13 @@ def _document_data_file(doc):
         return None, {'type': type(error).__name__, 'message': str(error)}
 
 
-def _document_target(app, doc_name, project_id=None):
+def _document_target(app: '_IdentityApplication', doc_name: object, project_id: object=None) -> '_IdentityDocument':
     if not isinstance(doc_name, str) or not doc_name.strip():
         raise ValueError('doc_name must be an explicit document name')
     collection = app.documents
-    documents = (collection if isinstance(collection, (list, tuple)) else
+    documents: list['_IdentityDocument'] | tuple['_IdentityDocument', ...] = (collection if isinstance(collection, (list, tuple)) else
                  [collection.item(i) for i in range(collection.count)])
-    docs = []
+    docs: list['_IdentityDocument'] = []
     for doc in documents:
         if doc.name != doc_name:
             continue
@@ -44,7 +95,7 @@ def _document_target(app, doc_name, project_id=None):
     return docs[0]
 
 
-def _document_assert_identity(doc, doc_id=None, doc_file_id=None):
+def _document_assert_identity(doc: '_IdentityDocument', doc_id: object=None, doc_file_id: object=None) -> None:
     import re
     # Assertions on the unique named target, never selectors or active-doc checks.
     for label, expected in (('doc-id', doc_id), ('doc-file-id', doc_file_id)):
@@ -65,7 +116,7 @@ def _document_assert_identity(doc, doc_id=None, doc_file_id=None):
                              (label, doc.name, expected, actual))
 
 
-def _document_activate_target(app, doc, doc_id=None, doc_file_id=None):
+def _document_activate_target(app: '_IdentityApplication', doc: '_IdentityDocument', doc_id: object=None, doc_file_id: object=None) -> None:
     _document_assert_identity(doc, doc_id, doc_file_id)
     if app.activeDocument != doc:
         if not doc.activate():

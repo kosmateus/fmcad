@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import * as net from "node:net";
 import * as fs from "node:fs";
@@ -7,7 +8,6 @@ import type {
   ConsoleQueryPrincipal,
   ConsoleQueryHandler,
   ConsoleQueryRequest,
-  ConsoleQueryRecord,
   ConsoleRevision,
 } from "../packages/control-center/dist/contracts/query.js";
 import type {
@@ -38,9 +38,10 @@ import {
   type ProjectFixture,
 } from "./control-center-test-support.js";
 
+const load = createRequire(__filename);
 const repositoryRoot = process.cwd();
 const loadModule = <T>(relativePath: string): T =>
-  require(path.join(repositoryRoot, relativePath)) as T;
+  load(path.join(repositoryRoot, relativePath)) as T;
 const projectActions = loadModule<
   typeof import("../packages/control-center/dist/server/project-actions.js")
 >("packages/control-center/dist/server/project-actions.js");
@@ -660,9 +661,7 @@ test("agents/projects feature emits exact scoped requests and renders lifecycle-
         sources: {},
       };
     },
-    async query<Row extends ConsoleQueryRecord = ConsoleQueryRecord>(
-      request: ConsoleQueryRequest,
-    ) {
+    async query(request: ConsoleQueryRequest) {
       return {
         version: 1,
         revision,

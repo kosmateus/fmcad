@@ -106,7 +106,7 @@ executed by these local planners.
 ```sh
 npm run build:code
 npm run typecheck:tests
-node --test tests/engineering-*.test.js tests/batch-local.test.js tests/data_import.test.js
+node --test tests/engineering-*.test.js dist/tests/batch-local.test.js tests/data_import.test.js
 FMCAD_LOCAL_TEST_PYTHON=/path/to/existing/venv/bin/python node --test tests/local-pipelines.test.js
 FMCAD_LOCAL_TEST_PYTHON=/path/to/existing/venv/bin/python node --test tests/local-pipeline-installed.test.js
 ```

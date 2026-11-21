@@ -2,6 +2,15 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 
+export interface PublishHandle {
+  writeFile(contents: string | Uint8Array): Promise<void>;
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}
+export interface PublishFileSystem extends Pick<typeof fs, "link" | "unlink"> {
+  open(name: string, flags: string, mode?: number): Promise<PublishHandle>;
+}
+
 export async function withCleanup<T>(
   action: () => Promise<T>,
   cleanup: () => Promise<unknown>,
@@ -43,7 +52,7 @@ export async function checkPublishTarget(
 export async function publishComplete(
   target: string,
   contents: string | Uint8Array,
-  io = fs,
+  io: PublishFileSystem = fs,
 ): Promise<void> {
   const parent = path.dirname(target);
   const temporary = path.join(parent, `.snapshot-${randomUUID()}`);

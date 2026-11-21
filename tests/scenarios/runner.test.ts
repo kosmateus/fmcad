@@ -4,12 +4,18 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { fork } from "node:child_process";
 import type { createBrokerTransport } from "../../packages/node-adapters/src/fusion-transport/broker";
 import type { ScenarioBackend, Document } from "./contracts";
 import { simulatorEndpoint } from "./simulator";
 import { runScenarios, resumeCleanup, type Scenario } from "./runner";
+import { queueExecution } from "./queue-backend";
 import { foundationScenarios, lifecycle, parameterScenario } from "./cases";
 import * as programs from "./programs";
+import {
+  liveScenarioArtifactRootEnv,
+  scenarioArtifactRoot,
+} from "./artifact-root";
 
 const root = path.resolve(__dirname, "../../..");
 const runtimeRequire = createRequire(path.join(root, "package.json"));
@@ -89,6 +95,375 @@ doc.name = 'USER_SENTINEL'`),
     assert.deepEqual(await remaining(model), before);
   },
 );
+for (const mode of ["fusion", "simulator"] as const) {
+  test(`${mode} cleanup rejects a successful close without its inventory fence`, async (t) => {
+    const { directory, backend } = await fixture(t);
+    const missingFenceBackend: ScenarioBackend = {
+      ...backend,
+      mode,
+      async execute(request) {
+        const execution = await backend.execute(request);
+        if (!request.source.includes("doc.close(False)")) return execution;
+        const lines = execution.stdout
+          .split(/\r?\n/u)
+          .filter((line) => line.startsWith(programs.marker));
+        assert.equal(lines.length, 1);
+        const result = JSON.parse(
+          lines[0]!.slice(programs.marker.length),
+        ) as Record<string, unknown>;
+        delete result["inventoryFence"];
+        return {
+          ...execution,
+          stdout: programs.marker + JSON.stringify(result) + "\n",
+        };
+      },
+    };
+    const reports = await runScenarios(
+      missingFenceBackend,
+      [
+        {
+          id: "missing-close-inventory-fence",
+          scope: "exclusive-instance",
+          requires: ["documents"],
+          async run() {},
+        },
+      ],
+      directory,
+      1,
+    );
+    assert.equal(reports[0]?.status, "failed");
+    assert.equal(reports[0]?.cleanup, "failed");
+    assert.match(reports[0]?.cleanupError ?? "", /Expected an object/u);
+  });
+}
+test("separate worktree processes share explicit receipts and clean only their fixtures", async (t) => {
+  const parent = path.join(root, ".test-artifacts/scenario-unit");
+  fs.mkdirSync(parent, { recursive: true });
+  const directory = fs.mkdtempSync(path.join(parent, "parallel-processes-")),
+    firstWorktree = path.join(directory, "worktree-a"),
+    secondWorktree = path.join(directory, "worktree-b"),
+    campaignRoot = path.join(directory, "campaign-artifacts"),
+    ready = path.join(directory, "ready"),
+    release = path.join(directory, "release"),
+    state = path.join(directory, "inventory.json"),
+    sentinel = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    foreignFixture = {
+      creationId: "foreign-owned-fixture",
+      name: "Peer-owned unsaved fixture",
+      saved: false,
+      modified: false,
+      fileId: null,
+    };
+  fs.mkdirSync(firstWorktree, { mode: 0o700 });
+  fs.mkdirSync(secondWorktree, { mode: 0o700 });
+  fs.mkdirSync(campaignRoot, { mode: 0o700 });
+  for (const worktree of [firstWorktree, secondWorktree]) {
+    fs.symlinkSync(
+      path.join(root, "package.json"),
+      path.join(worktree, "package.json"),
+    );
+    fs.symlinkSync(path.join(root, "src"), path.join(worktree, "src"), "dir");
+    fs.symlinkSync(
+      path.join(root, "packages"),
+      path.join(worktree, "packages"),
+      "dir",
+    );
+    fs.symlinkSync(
+      path.join(root, "node_modules"),
+      path.join(worktree, "node_modules"),
+      "dir",
+    );
+  }
+  fs.mkdirSync(ready);
+  const firstOutput = scenarioArtifactRoot(firstWorktree, "fusion", {
+      [liveScenarioArtifactRootEnv]: campaignRoot,
+    }),
+    secondOutput = scenarioArtifactRoot(secondWorktree, "fusion", {
+      [liveScenarioArtifactRootEnv]: campaignRoot,
+    });
+  assert.equal(firstOutput, secondOutput);
+  fs.writeFileSync(
+    state,
+    JSON.stringify({
+      active: sentinel.creationId,
+      documents: [sentinel, foreignFixture],
+    }),
+    { mode: 0o600 },
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  const start = (tag: string, peer: string, worktree: string) => {
+    const child = fork(path.join(__dirname, "parallel-runner-worker.js"), [], {
+      cwd: worktree,
+      execArgv: [],
+      env: {
+        ...process.env,
+        [liveScenarioArtifactRootEnv]: campaignRoot,
+        PARALLEL_SOURCE_ROOT: worktree,
+        PARALLEL_READY_ROOT: ready,
+        PARALLEL_RELEASE_FILE: release,
+        PARALLEL_STATE: state,
+        PARALLEL_TAG: tag,
+        PARALLEL_PEER: peer,
+      },
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
+    let stderr = "";
+    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    let resolveReady!: () => void,
+      rejectReady!: (error: Error) => void,
+      resolveDone!: (message: Record<string, unknown>) => void,
+      rejectDone!: (error: Error) => void,
+      resolveObserved!: () => void,
+      hasReady = false,
+      hasObserved = false,
+      hasDone = false;
+    const readyMessage = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    const done = new Promise<Record<string, unknown>>((resolve, reject) => {
+      resolveDone = resolve;
+      rejectDone = reject;
+    });
+    const observed = new Promise<void>((resolve) => {
+      resolveObserved = resolve;
+    });
+    void done.catch(() => {});
+    const exited = new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolve) => {
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    child.on("message", (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      const message = value as Record<string, unknown>;
+      if (message["type"] === "ready" && message["tag"] === tag) {
+        hasReady = true;
+        resolveReady();
+      }
+      if (message["type"] === "observed" && message["tag"] === tag) {
+        hasObserved = true;
+        resolveObserved();
+      }
+      if (message["type"] === "done" && message["tag"] === tag) {
+        hasDone = true;
+        if (!hasObserved) resolveObserved();
+        resolveDone(message);
+      }
+    });
+    child.once("error", (error) => {
+      rejectReady(error);
+      rejectDone(error);
+    });
+    child.once("exit", (code, signal) => {
+      const error = new Error(
+        `${tag} worker exited (${code ?? signal})${stderr ? `: ${stderr}` : ""}`,
+      );
+      if (!hasReady) rejectReady(error);
+      if (!hasDone) rejectDone(error);
+    });
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
+    });
+    return { child, readyMessage, observed, done, exited };
+  };
+
+  const first = start("first", "second", firstWorktree);
+  await first.readyMessage;
+  const second = start("second", "first", secondWorktree);
+  await second.readyMessage;
+  const overlapCreationIds = ["first", "second"].map((tag) => {
+    const readyReport = JSON.parse(
+      fs.readFileSync(path.join(ready, tag), "utf8"),
+    ) as { creationId: string };
+    return readyReport.creationId;
+  });
+  const overlap = JSON.parse(fs.readFileSync(state, "utf8")) as {
+      active: string | null;
+      documents: { creationId: string; name: string }[];
+    },
+    overlappingFixtures = overlap.documents.filter((document) =>
+      overlapCreationIds.includes(document.creationId),
+    );
+  assert.equal(overlap.documents.length, 4);
+  assert.ok(
+    overlap.documents.some(
+      (document) => document.creationId === sentinel.creationId,
+    ),
+  );
+  assert.ok(
+    overlap.documents.some(
+      (document) => document.creationId === foreignFixture.creationId,
+    ),
+  );
+  assert.equal(overlappingFixtures.length, 2);
+  assert.notEqual(
+    overlappingFixtures[0]?.creationId,
+    overlappingFixtures[1]?.creationId,
+  );
+  fs.writeFileSync(release, "continue", { flag: "wx", mode: 0o600 });
+  await Promise.all([first.observed, second.observed]);
+  fs.writeFileSync(release + "-first", "continue", {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const firstReport = await first.done,
+    firstExit = await first.exited;
+  assert.equal(firstExit.code, 0);
+  fs.writeFileSync(release + "-second", "continue", {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const secondReport = await second.done,
+    secondExit = await second.exited;
+  assert.equal(secondExit.code, 0);
+  const reports = [firstReport, secondReport];
+
+  assert.deepEqual(
+    reports.map(({ status, cleanup }) => ({ status, cleanup })),
+    [
+      { status: "passed", cleanup: "complete" },
+      { status: "passed", cleanup: "complete" },
+    ],
+    JSON.stringify(reports),
+  );
+  assert.deepEqual(
+    reports.map(({ sourceRoot, artifactRoot }) => ({
+      sourceRoot,
+      artifactRoot,
+    })),
+    [
+      { sourceRoot: firstWorktree, artifactRoot: firstOutput },
+      { sourceRoot: secondWorktree, artifactRoot: firstOutput },
+    ],
+  );
+  assert.notEqual(firstWorktree, secondWorktree);
+  assert.notEqual(firstWorktree, firstOutput);
+  assert.notEqual(secondWorktree, firstOutput);
+
+  for (const result of reports) {
+    const runId = result["runId"] as string,
+      scenarioId = result["tag"] as string,
+      scenarioDirectory = result["directory"] as string,
+      owner = result["owner"] as {
+        clientId: string;
+        runId: string;
+        scenarioId: string;
+      },
+      document = result["document"] as { creationId: string; name: string },
+      report = JSON.parse(
+        fs.readFileSync(path.join(scenarioDirectory, "report.json"), "utf8"),
+      ) as {
+        cleanup: string;
+        mode: string;
+        qualification: string;
+        protocol: string;
+        backendIdentity: string;
+        document: { creationId: string; name: string };
+        owner: { clientId: string; runId: string; scenarioId: string };
+        requests: {
+          phase: string;
+          requestId: string;
+          result?: {
+            requestId: string;
+            state: string;
+            sdkSettled: boolean;
+            mayHaveMutated: boolean;
+            brokerReceipt?: {
+              requestId: string;
+              clientId: string;
+              state: string;
+              jobId: string;
+            };
+          };
+        }[];
+      },
+      creation = JSON.parse(
+        fs.readFileSync(path.join(scenarioDirectory, "creation.json"), "utf8"),
+      ) as {
+        creationId: string;
+        name: string;
+        requestId: string;
+        clientId: string;
+      },
+      index = JSON.parse(
+        fs.readFileSync(path.join(firstOutput, runId, "index.json"), "utf8"),
+      ) as {
+        runId: string;
+        mode: string;
+        qualification: string;
+        protocol: string;
+        backendIdentity: string;
+        processIdentity: { pid: number; birth: string };
+        scenarioIds: string[];
+      },
+      create = report.requests.find((request) => request.phase === "create");
+    assert.equal(
+      path.resolve(scenarioDirectory),
+      path.join(firstOutput, runId, scenarioId),
+    );
+    assert.ok(overlapCreationIds.includes(document.creationId));
+    assert.equal(owner.scenarioId, scenarioId);
+    assert.equal(owner.runId, runId);
+    assert.equal(index.runId, runId);
+    assert.equal(report.owner.runId, runId);
+    assert.equal(report.owner.scenarioId, scenarioId);
+    assert.equal(report.owner.clientId, owner.clientId);
+    assert.equal(report.mode, "simulator");
+    assert.equal(report.qualification, "broker");
+    assert.equal(report.protocol, "mcp");
+    assert.equal(report.backendIdentity, "independent-process-fixture-test:v1");
+    assert.equal(index.mode, report.mode);
+    assert.equal(index.qualification, report.qualification);
+    assert.equal(index.protocol, report.protocol);
+    assert.equal(index.backendIdentity, report.backendIdentity);
+    assert.equal(report.document.creationId, document.creationId);
+    assert.equal(creation.creationId, document.creationId);
+    assert.equal(creation.name, document.name);
+    assert.equal(creation.clientId, owner.clientId);
+    assert.ok(index.scenarioIds.includes(scenarioId));
+    assert.equal(index.processIdentity.pid, result["pid"]);
+    assert.ok(Number.isSafeInteger(index.processIdentity.pid));
+    assert.ok(index.processIdentity.birth);
+    assert.equal(report.cleanup, "complete");
+    assert.ok(create?.result);
+    assert.equal(create.result.state, "succeeded");
+    assert.equal(create.result.sdkSettled, true);
+    assert.equal(create.result.mayHaveMutated, true);
+    assert.equal(create.result.requestId, create.requestId);
+    assert.equal(create.requestId, owner.clientId + ":0");
+    assert.equal(creation.requestId, create.requestId);
+    assert.equal(create.result.brokerReceipt?.requestId, create.requestId);
+    assert.equal(create.result.brokerReceipt?.clientId, owner.clientId);
+    assert.equal(create.result.brokerReceipt?.state, "succeeded");
+    assert.ok(create.result.brokerReceipt?.jobId);
+  }
+  const finalState = JSON.parse(fs.readFileSync(state, "utf8")) as {
+    active: string | null;
+    documents: { creationId: string }[];
+  };
+  assert.deepEqual(finalState, {
+    active: sentinel.creationId,
+    documents: [sentinel, foreignFixture],
+  });
+  for (const creationId of overlapCreationIds)
+    assert.ok(
+      !finalState.documents.some(
+        (document) => document.creationId === creationId,
+      ),
+    );
+});
+
 test("settled operation failure and assertion failure both close documents and remove files", async (t) => {
   const { directory, model, backend } = await fixture(t);
   const scenarios: Scenario[] = [
@@ -120,6 +495,76 @@ test("settled operation failure and assertion failure both close documents and r
   assert.match(reports[1]?.error ?? "", /intentional assertion failure/);
   assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });
+test("generic cleanup rereads a missing no-dispatch result without a case-specific hold", async (t) => {
+  const { directory, model, backend } = await fixture(t);
+  let requests = 0;
+  let missingRequest = "";
+  const losing: ScenarioBackend = {
+    ...backend,
+    async execute(request) {
+      if (request.owner.scenarioId !== "coordinator" && ++requests === 3) {
+        missingRequest = request.requestId;
+        throw new Error("Local worker lost before dispatch");
+      }
+      return backend.execute(request);
+    },
+    async lookup(owner, requestId) {
+      if (requestId !== missingRequest)
+        return backend.lookup!(owner, requestId);
+      return queueExecution(
+        {
+          job: {
+            id: "undispatched-job",
+            clientId: owner.clientId,
+            requestId,
+            state: "failed",
+            code: "NOT_DISPATCHED",
+            operationResult: {
+              version: 1,
+              jobId: "undispatched-job",
+              requestId,
+              acceptance: "accepted",
+              executionOutcome: "not_started",
+              mayHaveMutated: false,
+              code: "NOT_DISPATCHED",
+            },
+          },
+          execution: {
+            state: "failed",
+            code: "NOT_DISPATCHED",
+            executionOutcome: "not_started",
+            userScriptSubmitted: false,
+            mayHaveMutated: false,
+            preflightCompleted: true,
+            source: "durable-preflight-evidence",
+          },
+        },
+        owner,
+        requestId,
+      );
+    },
+  };
+  const [report] = await runScenarios(
+    losing,
+    [parameterScenario(0)],
+    directory,
+    1,
+  );
+  assert.ok(report);
+  assert.equal(report.cleanup, "deferred");
+  assert.equal(report.cleanupHold, undefined);
+  assert.equal(report.requests.at(-1)?.result, undefined);
+  const previousExecutions = model.executions;
+  const restored = await resumeCleanup(
+    losing,
+    path.join(report.directory, "report.json"),
+  );
+  assert.equal(restored.cleanup, "complete");
+  assert.equal(restored.status, "failed");
+  assert.equal(model.executions, previousExecutions + 2);
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
+
 test("lost response remains unknown, persists original request and never dispatches cleanup or replay", async (t) => {
   const { directory, model, backend } = await fixture(t);
   let requests = 0;

@@ -17,9 +17,9 @@ export function documentCommandPorts(
     call,
     newDocument(name) {
       return script(
-        "import adsk.core\n\nNAME: str = " +
+        "import adsk.core\nfrom typing import cast as _doc_cast\n\nNAME: str = " +
           pythonLiteral(name) +
-          '\n\ndef run(_context: str) -> None:\n    app = adsk.core.Application.get()\n    doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)\n    if NAME:\n        doc.name = NAME\n    print("CREATED_DOC name=" + doc.name)\n',
+          '\n\ndef run(_context: str) -> None:\n    app = adsk.core.Application.get()\n    doc = app.documents.add(_doc_cast("adsk.core.DocumentTypes", adsk.core.DocumentTypes.FusionDesignDocumentType))\n    if NAME:\n        doc.name = NAME\n    print("CREATED_DOC name=" + doc.name)\n',
       );
     },
     download(file, output) {

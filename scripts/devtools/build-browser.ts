@@ -17,6 +17,9 @@ export function buildBrowserAssets(
   const defaultOutputRoot = path.join(repository, "dist/assets/control-center");
   const entrypoint = "/assets/control-center/web/index.js";
   const fonts = [
+    "DejaVu-LICENSE.txt",
+    "dejavu-sans.woff2",
+    "dejavu-sans-bold.woff2",
     "DM-Sans-OFL.txt",
     "IBM-Plex-Mono-OFL.txt",
     "dm-sans-latin-ext.woff2",
@@ -28,6 +31,7 @@ export function buildBrowserAssets(
   ];
   const notices = [
     "ASSET-NOTICES.md",
+    "assets/fonts/DejaVu-LICENSE.txt",
     "assets/fonts/DM-Sans-OFL.txt",
     "assets/fonts/IBM-Plex-Mono-OFL.txt",
     "assets/vendor/highlight-LICENSE.txt",

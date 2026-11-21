@@ -1,5 +1,9 @@
 """Cloud-copy request validation and result projection, using JSON values only."""
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
 
 def document_copy_request(data: "JsonObject") -> "JsonRecord":
     name, project_ref, path = data['name'], data['project'], data['folder']

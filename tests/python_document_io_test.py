@@ -62,6 +62,14 @@ PRIVATE_HELPER_RENAMES = {
         '_ZONE_KINDS': '_MARKING_ZONE_KINDS',
     },
 }
+RUNTIME_IDENTITY_CASTS = {
+    '_cad_cast', '_measure_cast', '_checking_cast', '_interference_cast', '_references_cast',
+}
+DIRECT_MEASURE_HANDLER_NAMES = {
+    'measure.diameter': 'measure_diameter', 'measure.radius': 'measure_radius',
+    'measure.length': 'measure_length', 'measure.area': 'measure_area',
+    'measure.volume': 'measure_volume', 'measure.mass': 'measure_mass',
+}
 
 
 def family_source(family):
@@ -98,7 +106,11 @@ class RuntimeInventoryTests(unittest.TestCase):
         self.assertEqual(set(migrated), set(baseline))
         self.assertEqual(migrated_owners, baseline_owners)
         for operation in baseline:
-            self.assertEqual(migrated[operation].__name__, baseline[operation].__name__, operation)
+            expected_name = DIRECT_MEASURE_HANDLER_NAMES.get(operation, baseline[operation].__name__)
+            self.assertEqual(migrated[operation].__name__, expected_name, operation)
+            if operation in DIRECT_MEASURE_HANDLER_NAMES:
+                self.assertEqual(baseline_owners[operation], 'measure', operation)
+                self.assertIsNone(migrated[operation].__closure__, operation)
 
     def test_every_retained_definition_has_exactly_its_previous_count(self):
         for family, entry in FAMILIES.items():
@@ -125,6 +137,21 @@ class RuntimeInventoryTests(unittest.TestCase):
             # retained function's executable definition and decorator structure.
             def behavior_dump(node):
                 node = copy.deepcopy(node)
+                if node.name == '_references_refresh_internal' and node.args.args[-1].arg == 'payload':
+                    # D's wire admission intentionally adds these exact guards.
+                    # Paired runtime tests cover their errors and zero SDK effects;
+                    # continue comparing the entire retained operation body below.
+                    prefix = ast.parse("""
+if not isinstance(action, str) or action not in ('graph', 'preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'):
+    raise ValueError('Unknown private references.refresh SDK action')
+if not isinstance(payload, dict):
+    raise ValueError('references.refresh data must be an object')
+data = _cad_cast("_ReferencesInput", payload)
+""").body
+                    self.assertEqual([ast.dump(statement) for statement in node.body[:3]],
+                                     [ast.dump(statement) for statement in prefix])
+                    node.body = node.body[3:]
+                    node.args.args[-1].arg = 'data'
                 node.returns = None
                 node.type_comment = None
                 arguments = node.args
@@ -150,12 +177,15 @@ class RuntimeInventoryTests(unittest.TestCase):
                             '_fpc_domain_math': 'math', '_fpc_adapter_math': 'math',
                             '_seal_rules_math': 'math', '_seal_adapter_math': 'math',
                             '_presentation_math': 'math',
+                            '_measurement_rules_math': 'math',
                             '_optics_domain_math': 'math', '_optics_adapter_math': 'math',
                             '_explode_domain_math': 'math', '_explode_adapter_math': 'math',
                             '_anim2_domain_math': 'math', '_anim2_adapter_math': 'math',
                             '_anim2_os': 'os', '_anim2_shutil': 'shutil',
                             '_anim2_subprocess': 'subprocess', '_anim2_tempfile': 'tempfile',
                             '_marking_domain_math': 'math', '_marking_adapter_math': 'math',
+                            '_containment_math': 'math', '_dfm_math': 'math',
+                            '_interference_json': 'json', '_interference_math': 'math',
                             '_cam_domain_math': 'math', '_cam_adapter_math': 'math',
                             '_texture_domain_math': 'math', '_texture_math': 'math',
                             '_texture_hashlib': 'hashlib', '_texture_struct': 'struct',
@@ -209,7 +239,7 @@ class RuntimeInventoryTests(unittest.TestCase):
                             call.func = ast.Attribute(value=ast.Name(id='ctx', ctx=ast.Load()),
                                                       attr='_proxy', ctx=ast.Load())
                         self.generic_visit(call)
-                        if isinstance(call.func, ast.Name) and call.func.id == '_cad_cast':
+                        if isinstance(call.func, ast.Name) and call.func.id in RUNTIME_IDENTITY_CASTS:
                             return call.args[1]
                         if isinstance(call.func, ast.Name) and call.func.id == '_measure_expression':
                             return ast.copy_location(ast.Call(
@@ -227,7 +257,7 @@ class RuntimeInventoryTests(unittest.TestCase):
                     def visit_Assign(self, statement):
                         if (isinstance(statement.value, ast.Call) and
                                 isinstance(statement.value.func, ast.Name) and
-                                statement.value.func.id == '_cad_cast'):
+                                statement.value.func.id in RUNTIME_IDENTITY_CASTS):
                             statement.value = self.visit(statement.value.args[1])
                             if (len(statement.targets) == 1 and
                                     isinstance(statement.targets[0], ast.Name) and
@@ -426,9 +456,11 @@ class RuntimeInventoryTests(unittest.TestCase):
                     # Metadata-only SDK discovery now types the optional imported
                     # module/classes; simulation_test.py remains its behavior oracle.
                     continue
-                if family == 'measure' and name in {'_measure_compare_bodies', '_measure_frame_context'}:
+                if family == 'measure' and name in {
+                        '_measure_compare_bodies', '_measure_frame_context', '_measure_scalar'}:
                     # Master requires explicit frame validation for temporary
-                    # baselines and reconciles serialized space-only frames.
+                    # baselines and reconciles serialized space-only frames;
+                    # scalar dimensions retain their mapping with static narrowing.
                     continue
                 if family == 'legacy-queue_document' and name == '_qd_design_state':
                     # Master now sorts retained component/parameter/reference
@@ -448,7 +480,10 @@ class RuntimeInventoryTests(unittest.TestCase):
     def test_clean_rules_import_without_sdk_filesystem_or_processes(self):
         paths = {unit['path'] for family in FAMILIES.values() for unit in family['units']
                  if '/domain/' in unit['path'] or '/application/' in unit['path']}
-        allowed = {'math', 'json', 'hashlib', 'binascii', 'struct', 'zlib', 're', 'typing', 'collections.abc'}
+        allowed = {
+            'math', 'json', 'hashlib', 'binascii', 'struct', 'zlib', 're', 'enum', 'typing',
+            'collections.abc', 'fmcad.domain.values',
+        }
         for module in allowed:
             __import__(module)
         original_import = builtins.__import__
@@ -464,6 +499,52 @@ class RuntimeInventoryTests(unittest.TestCase):
                     self.assertNotIn(node.id, {'adsk', 'ctx', 'open', 'Path', 'os', 'subprocess', 'tempfile'}, path)
             with patch('builtins.__import__', guarded_import):
                 exec(compile(source, path, 'exec'), {'TYPE_CHECKING': False})
+
+    def test_file_policy_rules_execute_without_native_context(self):
+        import math
+        from typing import cast
+        # Use the production field validator, without importing the SDK core.
+        core = ast.parse((ROOT / 'assets/cad/core.py').read_text())
+        fields = next(node for node in core.body
+                      if isinstance(node, ast.FunctionDef) and node.name == '_cad_fields')
+        namespace = {'_cad_cast': cast, '_external_cast': cast, 'math': math,
+                     'json': json, 'TYPE_CHECKING': False}
+        exec(compile(ast.Module(body=[fields], type_ignores=[]), 'fields', 'exec'), namespace)
+        for family in ('io', 'data_import', 'externalization'):
+            path = ROOT / 'runtime/python/fmcad/domain' / (family + '.py')
+            exec(compile(path.read_text(), str(path), 'exec'), namespace)
+        state = {'document': {'fileId': 'owned'}, 'eye': [0, 0, 10],
+                 'target': [0, 0, 0], 'up': [0, 1, 0], 'units': 'cm',
+                 'cameraType': 'OrthographicCameraType', 'extents': [2, 3]}
+        self.assertEqual(namespace['_io_camera_snapshot'](state)['extents'], [2., 3.])
+        with self.assertRaisesRegex(ValueError, 'positive finite'):
+            namespace['_io_camera_snapshot'](dict(state, extents=[0, 3]))
+        with self.assertRaisesRegex(ValueError, 'isLightBulbOn:boolean'):
+            namespace['_io_visibility_row']({'ref': 'body', 'isLightBulbOn': 1})
+        with self.assertRaisesRegex(RuntimeError, 'restore failed'):
+            namespace['_io_restore_raise']([{'status': 'failed'}], 'restore')
+        old = {'owner': 'ours', 'revision': 'r1', 'digest': 'digest'}
+        plan = dict(old, onExisting='reuse', expectedRevision='r1')
+        namespace['_di_existing'](old, plan, 'item')
+        with self.assertRaisesRegex(ValueError, 'ownership conflict'):
+            namespace['_di_existing'](dict(old, owner='foreign'), plan, 'item')
+        with self.assertRaisesRegex(ValueError, 'expectedRevision conflict'):
+            namespace['_di_existing'](old, dict(plan, onExisting='update', expectedRevision='r2'), 'item')
+        self.assertEqual(old, {'owner': 'ours', 'revision': 'r1', 'digest': 'digest'})
+        pin = {'projectId': 'project', 'fileId': 'file', 'version': 3}
+        runtime = {'items': {'source': {'targetPin': pin}}}
+        actual = namespace['_external_source_pin'](runtime, {'itemId': 'source'})
+        self.assertEqual(actual, pin)
+        self.assertIsNot(actual, pin)
+        with self.assertRaisesRegex(ValueError, 'not yet complete'):
+            namespace['_external_source_pin']({'items': {'source': {'targetPin': None}}},
+                                              {'itemId': 'source'})
+        endpoint = namespace['_external_boundary_endpoint_preflight']
+        endpoint({'rootDatum': 'datum'}, {'item'}, set(), {'datum'})
+        with self.assertRaisesRegex(ValueError, 'exactly one'):
+            endpoint({'rootDatum': 'datum', 'itemId': 'item'}, {'item'}, set(), {'datum'})
+        self.assertIsNone(namespace['_external_probe_local_budget'](1000, 1000))
+        self.assertEqual(namespace['_external_probe_local_budget'](3000, 1000), 2000)
 
     def test_retained_fake_suites_execute_migrated_sources_not_compatibility_copies(self):
         # Existing effect/failure fixtures now exercise the runtime implementations.
@@ -482,7 +563,7 @@ pathlib.Path.read_text = migrated
 sys.path.insert(0, str(root / 'tests'))
 names = ['document_save_test', 'document_save_publication_test', 'document_identity_test',
          'document_clear_test', 'references_native_test', 'externalization_native_test',
-         'data_import_native_test', 'io_test', 'measure_test', 'checking_test',
+         'data_import_test', 'io_test', 'measure_test', 'checking_test',
          'containment_test', 'interference_test', 'dfm_test', 'appearance_test',
          'attributes_test', 'presentation_test', 'animation_test', 'animation2_test',
          'explode_test', 'cam_test', 'optics_test', 'seal_test', 'fpc_pcb_test',

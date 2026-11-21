@@ -94,100 +94,10 @@ if _CAD_TYPE_CHECKING:
         def isLightBulbOn(self, value: bool) -> None: ...
 
 
-def _io_json_object(value: "JsonValue", label: str) -> "JsonObject":
-    if not isinstance(value, dict):
-        raise ValueError(label + ' must be an object')
-    entries = _cad_cast("dict[object, JsonValue]", value)
-    if any(not isinstance(key, str) for key in entries):
-        raise ValueError(label + ' keys must be strings')
-    return _cad_cast("JsonObject", entries)
-
-
-def _io_camera_vector(value: "JsonValue", label: str, count: int) -> "list[float]":
-    if not isinstance(value, list) or len(value) != count:
-        raise ValueError(label + ' must contain ' + str(count) + ' finite numbers')
-    result: list[float] = []
-    for coordinate in value:
-        if type(coordinate) not in (int, float):
-            raise ValueError(label + ' must contain ' + str(count) + ' finite numbers')
-        number = _cad_cast("int | float", coordinate)
-        if not math.isfinite(number):
-            raise ValueError(label + ' must contain ' + str(count) + ' finite numbers')
-        result.append(float(number))
-    return result
-
-
-def _io_camera_snapshot(value: "JsonValue | _IoCameraState") -> "_IoCameraState":
-    state = _io_json_object(_cad_cast("JsonValue", value), 'Camera state')
-    _cad_fields(state, ('document', 'eye', 'target', 'up', 'cameraType', 'units'),
-                ('extents', 'perspectiveAngle'))
-    document = _io_json_object(state['document'], 'Camera state document')
-    eye = _io_camera_vector(state['eye'], 'Snapshot points', 3)
-    target = _io_camera_vector(state['target'], 'Snapshot points', 3)
-    up = _io_camera_vector(state['up'], 'Snapshot up vector', 3)
-    camera_type = state['cameraType']
-    names = ('OrthographicCameraType', 'PerspectiveCameraType', 'PerspectiveWithOrthoFacesCameraType')
-    if not isinstance(camera_type, str) or camera_type not in names:
-        raise ValueError('Unsupported snapshot cameraType')
-    if state['units'] != 'cm':
-        raise ValueError('Camera snapshot units must be cm')
-    if camera_type == 'OrthographicCameraType':
-        extents_value = state.get('extents')
-        if extents_value is None:
-            raise ValueError('Camera extents must be two positive finite cm values')
-        extents = _io_camera_vector(extents_value, 'Camera extents', 2)
-        if any(extent <= 0 for extent in extents):
-            raise ValueError('Camera extents must be two positive finite cm values')
-        state['extents'] = extents
-    else:
-        angle = state.get('perspectiveAngle')
-        if angle is None or type(angle) not in (int, float):
-            raise ValueError('Perspective angle must be between zero and pi radians')
-        angle_value = _cad_cast("int | float", angle)
-        if not math.isfinite(angle_value) or not 0 < angle_value < math.pi:
-            raise ValueError('Perspective angle must be between zero and pi radians')
-        state['perspectiveAngle'] = float(angle_value)
-    state.update(document=document, eye=eye, target=target, up=up, units='cm')
-    return _cad_cast("_IoCameraState", state)
-
-
-def _io_visibility_row(value: "JsonValue") -> "_IoVisibilityRow":
-    row = _io_json_object(value, 'Visibility row')
-    _cad_fields(row, ('ref', 'isLightBulbOn'))
-    if type(row['isLightBulbOn']) is not bool:
-        raise ValueError('Visibility rows require isLightBulbOn:boolean')
-    return _cad_cast("_IoVisibilityRow", row)
-
-
-def _io_section_row(value: "JsonValue") -> "_IoSectionRow":
-    row = _io_json_object(value, 'Section row')
-    _cad_fields(row, ('name', 'isLightBulbOn'))
-    name, visible = row['name'], row['isLightBulbOn']
-    if not isinstance(name, str) or type(visible) is not bool:
-        raise ValueError('Section rows require {name, isLightBulbOn:boolean}')
-    return {'name': name, 'isLightBulbOn': visible}
-
-
 def _io_pair_lengths(ctx: "CadContext", value: "JsonValue", label: str) -> "list[float]":
     if not isinstance(value, list) or len(value) != 2:
         raise ValueError(label + ' must contain two length expressions')
     return [ctx.length(coordinate) for coordinate in value]
-
-
-def _io_shot(value: "JsonValue") -> "_IoShot":
-    shot = _io_json_object(value, 'shot')
-    _cad_fields(shot, ('path',), ('camera', 'width', 'height', 'visibility', 'sections', 'activeComponent'))
-    return _cad_cast("_IoShot", shot)
-
-
-def _io_visibility_state(value: "JsonValue") -> "_IoVisibilityState":
-    state = _io_json_object(value, 'Visibility state')
-    _cad_fields(state, ('document', 'items'))
-    document = _io_json_object(state['document'], 'Visibility state document')
-    if not isinstance(state['items'], list):
-        raise ValueError('Visibility state items must be an array')
-    rows = [_io_visibility_row(item) for item in state['items']]
-    return _cad_cast("_IoVisibilityState", {'document': document, 'items': rows})
 
 
 def _io_style_value(value: "_CadStyle | None") -> "_IoStyleRef | None":
@@ -557,11 +467,6 @@ def _io_restore_bulbs(rows: "Iterable[tuple[CadEntity, bool | None, bool, bool]]
 def _io_section_by_name(ctx: "CadContext", name: str) -> "adsk.fusion.SectionAnalysis":
     sections = ctx.design.analyses.sectionAnalyses
     return _cad_unique([s for s in _cad_items(sections) if s.name == name], 'Section name')
-
-
-def _io_restore_raise(errors: "Sequence[_IoMapping[str, object]]", label: str) -> None:
-    if any(row.get('status') == 'failed' for row in errors):
-        raise RuntimeError(label + ' failed: ' + json.dumps(errors, default=str))
 
 
 def _io_activate_component(ctx: "CadContext", entity: "CadEntity") -> bool:
@@ -1381,31 +1286,159 @@ def _io_checkpoint(ctx: "CadContext", data: "JsonObject", action: str) -> "JsonR
     return _io_import(ctx, {'path': str(path), 'mode': 'new'})
 
 
-_IO_HANDLERS: dict[str, "CadHandler"] = {
-    'visibility.show': lambda c, d: _io_visibility(c, d, 'show'),
-    'visibility.hide': lambda c, d: _io_visibility(c, d, 'hide'),
-    'visibility.restore': lambda c, d: _io_visibility(c, d, 'restore'),
-    'visibility.isolate': lambda c, d: _io_visibility(c, d, 'isolate'),
-    'camera.save': lambda c, d: _io_camera(c, d, 'save'),
-    'camera.restore': lambda c, d: _io_camera(c, d, 'restore'),
-    'camera.set': lambda c, d: _io_camera(c, d, 'set'),
+def _io_legacy_callable(execute: "CadHandler") -> "CadHandler":
+    def handler(c: "CadContext", d: "JsonObject") -> "JsonValue":
+        return execute(c, d)
+    setattr(handler, '__name__', '<lambda>')
+    return handler
+
+
+@_io_legacy_callable
+def _io_visibility_show(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'show')
+
+
+@_io_legacy_callable
+def _io_visibility_hide(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'hide')
+
+
+@_io_legacy_callable
+def _io_visibility_restore(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'restore')
+
+
+@_io_legacy_callable
+def _io_visibility_isolate(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'isolate')
+
+
+@_io_legacy_callable
+def _io_camera_save(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_camera(c, d, 'save')
+
+
+@_io_legacy_callable
+def _io_camera_restore(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_camera(c, d, 'restore')
+
+
+@_io_legacy_callable
+def _io_camera_set(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_camera(c, d, 'set')
+
+
+@_io_legacy_callable
+def _io_appearance_list(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'list')
+
+
+@_io_legacy_callable
+def _io_appearance_assign(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'assign')
+
+
+@_io_legacy_callable
+def _io_appearance_inspect(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'inspect')
+
+
+@_io_legacy_callable
+def _io_appearance_clear(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'clear')
+
+
+@_io_legacy_callable
+def _io_material_list(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'material', 'list')
+
+
+@_io_legacy_callable
+def _io_material_assign(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'material', 'assign')
+
+
+@_io_legacy_callable
+def _io_material_inspect(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'material', 'inspect')
+
+
+@_io_legacy_callable
+def _io_checkpoint_create(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'create')
+
+
+@_io_legacy_callable
+def _io_checkpoint_list(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'list')
+
+
+@_io_legacy_callable
+def _io_checkpoint_inspect(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'inspect')
+
+
+@_io_legacy_callable
+def _io_checkpoint_open(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'open')
+
+
+@_io_legacy_callable
+def _io_export_native(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_export(c, d, 'native')
+
+
+@_io_legacy_callable
+def _io_export_step(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_export(c, d, 'step')
+
+
+@_io_legacy_callable
+def _io_export_mesh(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_export(c, d, 'mesh')
+
+# Retain the compatibility table and its callable identities for dynamic callers.
+_IO_HANDLERS: "dict[str, CadHandler]" = {
+    'visibility.show': _io_visibility_show,
+    'visibility.hide': _io_visibility_hide,
+    'visibility.restore': _io_visibility_restore,
+    'visibility.isolate': _io_visibility_isolate,
+    'camera.save': _io_camera_save,
+    'camera.restore': _io_camera_restore,
+    'camera.set': _io_camera_set,
     'shot.pack': _io_shots, 'view.compare': _io_compare, 'section.view': _io_section,
     'reference.image': _io_reference_image,
-    'appearance.list': lambda c, d: _io_style(c, d, 'appearance', 'list'),
-    'appearance.assign': lambda c, d: _io_style(c, d, 'appearance', 'assign'),
-    'appearance.inspect': lambda c, d: _io_style(c, d, 'appearance', 'inspect'),
-    'appearance.clear': lambda c, d: _io_style(c, d, 'appearance', 'clear'),
-    'material.list': lambda c, d: _io_style(c, d, 'material', 'list'),
-    'material.assign': lambda c, d: _io_style(c, d, 'material', 'assign'),
-    'material.inspect': lambda c, d: _io_style(c, d, 'material', 'inspect'),
+    'appearance.list': _io_appearance_list,
+    'appearance.assign': _io_appearance_assign,
+    'appearance.inspect': _io_appearance_inspect,
+    'appearance.clear': _io_appearance_clear,
+    'material.list': _io_material_list,
+    'material.assign': _io_material_assign,
+    'material.inspect': _io_material_inspect,
     'import.file': _io_import,
-    'checkpoint.create': lambda c, d: _io_checkpoint(c, d, 'create'),
-    'checkpoint.list': lambda c, d: _io_checkpoint(c, d, 'list'),
-    'checkpoint.inspect': lambda c, d: _io_checkpoint(c, d, 'inspect'),
-    'checkpoint.open': lambda c, d: _io_checkpoint(c, d, 'open'),
-    'export.native': lambda c, d: _io_export(c, d, 'native'),
-    'export.step': lambda c, d: _io_export(c, d, 'step'),
-    'export.mesh': lambda c, d: _io_export(c, d, 'mesh'),
+    'checkpoint.create': _io_checkpoint_create,
+    'checkpoint.list': _io_checkpoint_list,
+    'checkpoint.inspect': _io_checkpoint_inspect,
+    'checkpoint.open': _io_checkpoint_open,
+    'export.native': _io_export_native,
+    'export.step': _io_export_step,
+    'export.mesh': _io_export_mesh,
     'export.parts': _io_parts, 'export.verify': _io_verify,
 }
-CAD_HANDLERS.update(_IO_HANDLERS)
+# Register each callable independently of the optional compatibility table.
+CAD_HANDLERS.update({
+    'visibility.show': _io_visibility_show, 'visibility.hide': _io_visibility_hide,
+    'visibility.restore': _io_visibility_restore, 'visibility.isolate': _io_visibility_isolate,
+    'camera.save': _io_camera_save, 'camera.restore': _io_camera_restore,
+    'camera.set': _io_camera_set,
+    'shot.pack': _io_shots, 'view.compare': _io_compare, 'section.view': _io_section,
+    'reference.image': _io_reference_image,
+    'appearance.list': _io_appearance_list, 'appearance.assign': _io_appearance_assign,
+    'appearance.inspect': _io_appearance_inspect, 'appearance.clear': _io_appearance_clear,
+    'material.list': _io_material_list, 'material.assign': _io_material_assign,
+    'material.inspect': _io_material_inspect, 'import.file': _io_import,
+    'checkpoint.create': _io_checkpoint_create, 'checkpoint.list': _io_checkpoint_list,
+    'checkpoint.inspect': _io_checkpoint_inspect, 'checkpoint.open': _io_checkpoint_open,
+    'export.native': _io_export_native, 'export.step': _io_export_step,
+    'export.mesh': _io_export_mesh, 'export.parts': _io_parts, 'export.verify': _io_verify,
+})

@@ -15,8 +15,9 @@ Shell examples use POSIX quoting. Windows PowerShell/cmd have different quoting 
     },
     {
       title: "Global Flags",
-      text: `--config <path>: explicit local fmcad JSON/JSONC configuration file. --url <HTTP(S) endpoint>: connection override for the selected backend. --header 'Name:Value': repeatable header, split at first colon (empty value allowed; nonempty name required). Do not expose credentials in examples or shell history. --timeout <milliseconds>: finite positive number when connecting, default 180000; represents a timeout, not a mutation cancellation guarantee.
---backend <mcp|addin>: exact lower-case selector, default addin. --transport <node|windows-curl>: exact selector. --curl-path <executable>: path used only by windows-curl. --routing accepts only queue; direct transport is not a client option. There is no --tool or --protocol-version CLI flag; those are config-only fields. Timeout applies to each HTTP request, not the whole batch; a timeout does not cancel work already started in Fusion.
+      text: `--config <path>: explicit local fmcad JSON/JSONC configuration file. --url <HTTP(S) endpoint>: connection override for the selected backend. --header 'Name:Value': repeatable header, split at first colon (empty value allowed; nonempty name required). Do not expose credentials in examples or shell history. --timeout <milliseconds>: positive integer active execution deadline, default 180000; it is per request and does not change the broker's physical configuration or guarantee mutation cancellation.
+--backend <mcp|addin>: exact lower-case selector, default addin. --transport <node|windows-curl>: exact selector. --curl-path <executable>: path used only by windows-curl. --routing accepts only queue; direct transport is not a client option. There is no --tool or --protocol-version CLI flag; those are config-only fields. The configured physical timeoutMs remains part of the broker's identity; --timeout is per-request and does not reconfigure it.
+For queued commands, --timeout bounds that request's active execution and excludes queue waiting. It does not reconfigure the broker's physical transport or cancel work already started in Fusion.
 Unknown global options are not silently supported. Config/backend validity is checked when loaded; help, run --list, and CAD offline previews do not load connection config. A syntactically invalid known global flag (e.g. missing --url value) still fails before help. No automatic retry, backend fallback, saved session reuse between CLI processes or model rollback.`,
     },
     {
@@ -49,7 +50,7 @@ Cloud save-as requires an explicit existing project/folder and confirm:true, for
     {
       title: "Secondary Entry Point: fmcad-mcp.js",
       text: `node <installed-package>/bin/fmcad-mcp.js (also installed as fmcad-mcp) is the local application-catalog MCP entry point, not a registered fmcad subcommand. It accepts --backend mcp|addin and offline --help; backend uses the shared config default and is checked against the broker. FMCAD_CONFIG/XDG config paths and the selected backend's connection/transport settings still apply; routing is always queue. Send one JSON-RPC 2.0 object per stdin line; method string required, id optional for notifications. Initialize explicitly through the client. tools/list publishes the bundled fmcad_cad_* catalog locally, without an SDK probe; queue helpers remain available in queue mode. Catalog tools take data, doc/document pins, component, projectId, purpose and preview; they use shared CAD validation and typed application execution. SDK execution uses the existing phased broker worker, not CLI parsing or raw tool forwarding. Read-only hints are requested, never an enforced sandbox. Capability availability does not prove geometry correctness or cloud access. For installed raw backend schemas use fmcad tools --json; explicitly named raw tools/resources still retain transport/session forwarding without fallback, retries or a second initialization.
-Output is newline-delimited JSON-RPC. Invalid JSON -> -32700, invalid request -> -32600, connection/missing matching response -> -32000 with uncertain-execution warning. Notifications log failures to stderr. Session and negotiated protocol header are retained within the process; concurrent input requests are not serialized into modeling transactions. EOF waits for pending requests. Do not manually stream mutations concurrently. This interface is tested offline in tests/mcp-stdio.test.js, not a guarantee of every upstream tool's behavior.`,
+Output is newline-delimited JSON-RPC. Invalid JSON -> -32700, invalid request -> -32600, connection/missing matching response -> -32000 with uncertain-execution warning. Notifications log failures to stderr. Session and negotiated protocol header are retained within the process; concurrent input requests are not serialized into modeling transactions. EOF waits for pending requests. Do not manually stream mutations concurrently. This interface is tested offline in tests/mcp-stdio.test.ts, not a guarantee of every upstream tool's behavior.`,
     },
   ],
   examples: [
@@ -86,11 +87,11 @@ Output is newline-delimited JSON-RPC. Invalid JSON -> -32700, invalid request ->
       "path mapping and secondary stdio entry point",
     ],
     tests: [
-      "tests/backend-config.test.js",
-      "tests/backend-cli.test.js",
-      "tests/curl-transport.test.js",
-      "tests/mcp-stdio.test.js",
-      "tests/manual-legacy.test.js",
+      "tests/backend-config.test.ts",
+      "tests/backend-cli.test.ts",
+      "tests/curl-transport.test.ts",
+      "tests/mcp-stdio.test.ts",
+      "tests/manual-legacy.test.ts",
     ],
     gaps: [],
     bugs: [

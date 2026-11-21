@@ -106,15 +106,17 @@ node tests/live-rpc-recovery.js --run
 ```
 
 This is an isolated live integration check, not a mocked-kernel test. Run it only
-when the shared broker owner explicitly authorizes the test. It uses the normal
-user-global broker and wraps the real addin transport
-to discard exactly one already executed read-only response. It verifies automatic
-receipt-bound recovery and a second client completing without replay. A separate
-case closes a client socket before its admission acknowledgement and verifies
-that the accepted original job and another client's job still complete.
+against the matching installed build and already-running shared broker. It wraps
+the real addin transport to discard exactly one already executed read-only
+response. It verifies automatic receipt-bound recovery and a second client
+completing without replay. A separate case closes a client socket before its
+admission acknowledgement and verifies that the accepted original job and
+another client's job still complete. It shares the broker queue with other
+clients and does not require a manual Fusion reservation.
 
 The test records broker job IDs and before/after document state in
-`tests/live-rpc-recovery-report.json`. It never kills Fusion or requests model
-mutations. Unknown execution prevents broker ownership release rather than
-pretending the test safely finished. Normal parallel suites use the ordinary
-broker; this physical fault injector must not be started as a competing broker.
+`tests/live-rpc-recovery-report.json`; do not run duplicate copies that write the
+same report path. It never kills Fusion or requests model mutations. Unknown
+execution prevents broker ownership release rather than pretending the test
+safely finished. Normal parallel suites use the ordinary broker; do not start a
+competing broker.

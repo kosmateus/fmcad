@@ -1,5 +1,6 @@
 import type { CadContext, CadData, CadOutput } from "./contracts";
 import { record } from "./contracts";
+import { nativeInputRejection } from "./native-result";
 import { clone, hash, resolveReferences } from "./json";
 import {
   ATOMIC_BACKENDS,
@@ -415,10 +416,17 @@ export async function runBatch(
             results[step.id] = progress.output;
           } else {
             progress.status = "failed";
-            progress.error = {
-              message:
-                "Executor returned an unsuccessful or unrecognized result",
-            };
+            const rejection = nativeInputRejection(step.operation, output);
+            if (rejection) progress.mutationStatus = "not_started";
+            progress.error = rejection
+              ? {
+                  code: rejection.code,
+                  message: services.redact(rejection.message),
+                }
+              : {
+                  message:
+                    "Executor returned an unsuccessful or unrecognized result",
+                };
           }
         } catch (error) {
           const code = record(error) ? error["code"] : undefined;

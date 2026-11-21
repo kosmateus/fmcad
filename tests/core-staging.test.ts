@@ -98,8 +98,10 @@ function fixture(root: string): void {
     "scripts/console-source-requirements.txt",
   ])
     write(root, file, "preserve\n");
-  for (const name of ["fmcad.js", "fmcad-mcp.js"])
-    write(root, `bin/${name}`, "#!/usr/bin/env node\r\n");
+  for (const name of ["fmcad.js", "fmcad-mcp.js"]) {
+    write(root, `bin/${name}`, "// stale launcher\n");
+    write(root, `dist/launchers/${name}`, "#!/usr/bin/env node\r\n");
+  }
 }
 
 test("incremental staging removes renamed modules from compiler output and both runtime copies", (t) => {
@@ -129,6 +131,18 @@ test("incremental staging removes renamed modules from compiler output and both 
     "dist/src/dist/entrypoints/opencode.d.mts",
   ];
   for (const file of preserved) write(root, file, "preserve\n");
+  const retired = [
+    "console-app.js",
+    "console-source-view.js",
+    "console-tabs/tasks.js",
+  ];
+  for (const file of retired) {
+    // A stale source overlay must not restore an explicitly retired runtime.
+    write(root, `src/${file}`, "// retired terminal renderer\n");
+    for (const destination of ["src/dist", "dist/src", "dist/src/dist"])
+      write(root, `${destination}/${file}`, "// stale staged renderer\n");
+  }
+  write(root, "src/console-source.js", "// retained domain reader\n");
   stageCore(root);
   stageCore(root); // Repeating staging must not restore the orphan outputs.
   for (const scope of scopes)
@@ -152,6 +166,13 @@ test("incremental staging removes renamed modules from compiler output and both 
     }
   for (const file of preserved)
     assert.equal(fs.readFileSync(path.join(root, file), "utf8"), "preserve\n");
+  for (const file of retired)
+    for (const destination of ["src/dist", "dist/src", "dist/src/dist"])
+      assert.equal(fs.existsSync(path.join(root, destination, file)), false);
+  assert.equal(
+    fs.readFileSync(path.join(root, "dist/src/console-source.js"), "utf8"),
+    "// retained domain reader\n",
+  );
   const packed = JSON.parse(
     execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
       cwd: root,
@@ -162,7 +183,11 @@ test("incremental staging removes renamed modules from compiler output and both 
   const paths = packed.flatMap((item) => item.files.map((file) => file.path));
   assert.ok(paths.includes("dist/src/dist/core/application/cad/summary.js"));
   assert.deepEqual(
-    paths.filter((file) => /old-report|removed/.test(file)),
+    paths.filter((file) =>
+      /old-report|removed|console-app\.js|console-source-view\.js|console-tabs\/tasks\.js/.test(
+        file,
+      ),
+    ),
     [],
   );
 });

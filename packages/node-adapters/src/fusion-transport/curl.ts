@@ -12,6 +12,40 @@ import { requestSettings } from "./http.js";
 const quote = (value: string) =>
   '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 
+type TransportPhase =
+  "spawn" | "process" | "stdin" | "output" | "response" | "observation";
+const CAUSE_CODES = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "EINVAL",
+  "EMFILE",
+  "ENFILE",
+  "EAGAIN",
+  "ENOMEM",
+  "ENOSYS",
+  "ENOEXEC",
+  "EPIPE",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ABORT_ERR",
+  "EINTR",
+  "ENOBUFS",
+  "EIO",
+  "ESRCH",
+]);
+function safeCauseCode(cause: unknown): string | undefined {
+  if (cause === null || typeof cause !== "object") return undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(cause, "code");
+    const code: unknown =
+      descriptor && "value" in descriptor ? descriptor.value : undefined;
+    return typeof code === "string" && CAUSE_CODES.has(code) ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseCurlResponse(
   output: Buffer | string,
   options: RequestOptions = {},
@@ -130,7 +164,7 @@ export async function postCurl(
   return new Promise((resolve, reject) => {
     let child: ReturnType<Spawn> | undefined;
     const timer = setTimeout(
-      () => fail(`timeout after ${timeoutMs} ms`, "ETIMEDOUT"),
+      () => fail(`timeout after ${timeoutMs} ms`, "ETIMEDOUT", "observation"),
       timeoutMs,
     );
     let settled = false;
@@ -138,22 +172,35 @@ export async function postCurl(
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", abort);
     };
-    const fail = (message: string, code: string) => {
+    const fail = (
+      message: string,
+      code: string,
+      transportPhase: TransportPhase,
+      cause?: unknown,
+    ) => {
       if (settled) return;
       settled = true;
       cleanup();
       child?.kill("SIGKILL");
-      reject(unknownOutcome(`windows-curl ${message}`, code));
+      // Local observation failures never establish remote SDK settlement.
+      // Keep only bounded metadata, never native messages or request material.
+      const causeCode = safeCauseCode(cause);
+      reject(
+        Object.assign(unknownOutcome(`windows-curl ${message}`, code), {
+          transportPhase,
+          ...(causeCode === undefined ? {} : { causeCode }),
+        }),
+      );
     };
-    const abort = () => fail("observation aborted", "ABORT_ERR");
+    const abort = () => fail("observation aborted", "ABORT_ERR", "observation");
     try {
       child = spawnImpl(
         server.curlPath ?? "/mnt/c/Windows/System32/curl.exe",
         args,
         { shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
       );
-    } catch {
-      fail("spawn failed", "ECHILD");
+    } catch (error) {
+      fail("spawn failed", "ECHILD", "spawn", error);
       return;
     }
     options.signal?.addEventListener("abort", abort, { once: true });
@@ -166,19 +213,27 @@ export async function postCurl(
       stream.on("data", (chunk: Buffer) => {
         if (settled) return;
         bytes += chunk.length;
-        if (bytes > maxBuffer) fail("output exceeds maxBuffer", "ENOBUFS");
+        if (bytes > maxBuffer)
+          fail("output exceeds maxBuffer", "ENOBUFS", "output");
         else if (keep) chunks.push(chunk);
       });
-      stream.on("error", () => fail("output stream failed", "EIO"));
+      stream.on("error", (error) =>
+        fail("output stream failed", "EIO", "output", error),
+      );
     }
-    child.on("error", () => fail("process failed", "ECHILD"));
-    child.stdin.on("error", () => fail("stdin failed", "EPIPE"));
+    child.on("error", (error) =>
+      fail("process failed", "ECHILD", "process", error),
+    );
+    child.stdin.on("error", (error) =>
+      fail("stdin failed", "EPIPE", "stdin", error),
+    );
     child.on("close", (code, signal) => {
       if (settled) return;
       if (code !== 0) {
         fail(
           `failed (exit ${code}, signal ${signal ?? "none"})`,
           code === 28 ? "ETIMEDOUT" : "ECHILD",
+          "process",
         );
         return;
       }
@@ -194,7 +249,7 @@ export async function postCurl(
         cleanup();
         resolve(response);
       } catch {
-        fail("invalid HTTP response or session mismatch", "EPROTO");
+        fail("invalid HTTP response or session mismatch", "EPROTO", "response");
       }
     });
     child.stdin.end(Buffer.from(config));

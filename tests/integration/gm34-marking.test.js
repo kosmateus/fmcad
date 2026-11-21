@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm34-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-34 (markings and labels). Markings are
 // declared-geometry evaluations: annotation descriptors, gated emboss/engrave
 // recipes, and checks that MIN/MAX derive from a liquid level, arrows derive

@@ -11,7 +11,144 @@ import { createHash } from "node:crypto";
 import type { AsyncLocalStorage } from "node:async_hooks";
 type RunApi = typeof import("../src/composition/run.js");
 type RunArguments = Parameters<RunApi["prepareRunScript"]>;
+type SourceUnit = ReturnType<RunApi["prepareRunScript"]>["units"][number];
+// Reviewed source pairs for these two fixed helper fixtures only. Both variants
+// select identical runtime units; user source and wrappers stay byte-exact.
+const selectedPairs: Record<string, readonly [string, string]> = {
+  values: [
+    "b8af1e0f987a3e0bec9c8cbefbc5a21249d04f0ea287f974fd6a41cc56201f7e",
+    "65e8a7bcefcdfa2430d23e31ac1516bd6699701853736cc31eb297e48f2ddfff",
+  ],
+  core: [
+    "3ee5c107b94c3e1746b573d0c379721b6ee9df7e3227b324fc453f3e60d9eb43",
+    "3559c16984edf97acc7121a6c46d4092627afce9184255b4881648202ca17789",
+  ],
+  "docio-animation2-rules": [
+    "234b631d17f50cddc5ffa85033512d2994254ee296657da2aa19636adac85c8f",
+    "898ced6f15d1761d41a2085f77af9f225203a2a752868372bf06eb283aa66821",
+  ],
+  "assembly-domain": [
+    "eb8520886cea23d756c9993aa8cc4ce14ffed1aabb796cfd6545335a6a6103ec",
+    "d3558ee068a09094bf9abc01362d411d3c6d9b67bbcffc0af944efa47d395320",
+  ],
+  "geometry-datum-fusion": [
+    "f3842af32f1dc49559190a2fb918749c2136f860b02ef3f2f666fb27d594f495",
+    "495abe551e6d2c95d433721363c55009ba65da0e77e679d27d4bbeb9af8c27a4",
+  ],
+  entity: [
+    "75287b46431c82087166c6124d51174cf5371050c8bb834608f981477fb7c409",
+    "43daed2a98ac49891e320583b82daf5a4f716a574cf7277e9658cce501d04f78",
+  ],
+  helpers: [
+    "e7aeb35837f88ecea965a00c9d82125943d31247d76d12f0156a7c265b8786a7",
+    "2448e562551e48d96a82eff9817b302e23072d14612547149ffe6823a049c03f",
+  ],
+  "capture-integrity": [
+    "70483acd925b65e9b7dcf667ab320be2129ea2ed13d46e96f82f75e0d1ea4685",
+    "3416dfcef09695506640f10e2039e22f6ec779b6af950092a963adb6a7ef3ad5",
+  ],
+  "docio-io-rules": [
+    "ec42eea8a100ff86791ee60ec6e0bb8243d7e8dbef79a3be9aa1bf8c816b135e",
+    "be54d3c6b103a38d84ba6b1638e5d9c172e6f1c53b8d22e09968441619a39d4c",
+  ],
+  io: [
+    "2ce4bf447517276b2f1663a72d9e31461cc1c29eeb66bc4ca8efd689d74c308b",
+    "38c9d08b81942f1a0f544fd77417df22a10e9eb0fe14e17833ece6b3655e9921",
+  ],
+};
+const helperUnitOrder = [
+  "values",
+  "fusion-values",
+  "fusion-typing",
+  "core",
+  "inspection-domain",
+  "inspection",
+  "docio-animation2-rules",
+  "assembly-domain",
+  "geometry-datum-domain",
+  "geometry-datum-fusion",
+  "entity",
+  "helpers",
+  "identity",
+  "capture-integrity",
+  "docio-io-rules",
+  "io",
+  "user-script",
+  "wrapper",
+];
+function assertSelectedProvenance(unit: SourceUnit, original: SourceUnit) {
+  assert.equal(unit.id, original.id);
+  assert.equal(unit.filename, original.filename);
+  assert.equal(unit.role, original.role);
+  assert.equal(
+    unit.sha256,
+    createHash("sha256").update(unit.source).digest("hex"),
+  );
+  const pair = selectedPairs[unit.id];
+  if (!pair || unit.role !== "runtime") {
+    assert.deepEqual(unit, original);
+    return;
+  }
+  const originalHash = createHash("sha256")
+    .update(original.source)
+    .digest("hex");
+  assert.equal(original.sha256, originalHash);
+  assert.deepEqual(
+    [originalHash, unit.sha256],
+    pair,
+    `${unit.id}: unreviewed source pair`,
+  );
+  const marker = `\n# Automatic source selection; original-sha256=${originalHash}\n`;
+  assert.ok(
+    unit.source.endsWith(marker),
+    `${unit.id}: original source binding`,
+  );
+}
 const current = load("./src/run.js") as RunApi;
+test("selected provenance rejects removed function guards and partial registry keys", () => {
+  const values = fs.readFileSync(
+    path.join(root, "runtime/python/fmcad/domain/values.py"),
+    "utf8",
+  );
+  const withoutGuard = values.replace(
+    "        if not _value_math.isfinite(value):\n            raise ValueError('Non-finite value cannot be serialized')\n",
+    "",
+  );
+  assert.notEqual(withoutGuard, values);
+  for (const [source, changed] of [
+    [values, withoutGuard],
+    [
+      "CAD_HANDLERS.update({'body.list': _body_list})\n",
+      "CAD_HANDLERS.update({' ody.list': _body_list})\n",
+    ],
+    ["CAD_HANDLERS.owner = 'owner'\n", "pass\n"],
+    ["removed = CAD_HANDLERS.pop('body.list')\n", "pass\n"],
+    ["class SideEffect:\n    CAD_HANDLERS.owner = 'ops'\n", "pass\n"],
+  ]) {
+    const original: SourceUnit = {
+      id: "values",
+      filename: "review.py",
+      role: "runtime",
+      source: source!,
+      sha256: createHash("sha256").update(source!).digest("hex"),
+    };
+    const selected =
+      changed +
+      `\n# Automatic source selection; original-sha256=${original.sha256}\n`;
+    assert.throws(
+      () =>
+        assertSelectedProvenance(
+          {
+            ...original,
+            source: selected,
+            sha256: createHash("sha256").update(selected).digest("hex"),
+          },
+          original,
+        ),
+      /unreviewed source pair/,
+    );
+  }
+});
 const historical = load("./tests/fixtures/historical-module.cjs") as (
   revision: string,
   source: string,
@@ -51,7 +188,7 @@ const cases: [string, RunArguments[4], RunArguments[5], RunArguments[6]][] = [
   ],
 ];
 for (const [label, identity, helper, operations] of cases) {
-  test(`run migration preserves complete ${label} artifacts and raw provenance`, (t) => {
+  test(`run migration preserves ${label} source, guards and raw provenance`, (t) => {
     const f = fixture(t);
     const args: RunArguments = [
       f.file,
@@ -74,13 +211,53 @@ for (const [label, identity, helper, operations] of cases) {
     const migrated = context.run(after, () =>
       current.prepareRunScript(...args),
     );
-    assert.deepEqual(migrated, historical);
+    if (helper) {
+      assert.ok(migrated.units.length < historical.units.length);
+      assert.deepEqual(
+        migrated.units.map((unit) => unit.id),
+        helperUnitOrder,
+      );
+      assert.deepEqual(migrated.context, historical.context);
+      assert.deepEqual(migrated.request, historical.request);
+      for (const unit of migrated.units) {
+        const original = historical.units.find((entry) => entry.id === unit.id);
+        assert.ok(original, `Unknown source unit ${unit.id}`);
+        assertSelectedProvenance(unit, original);
+        if (unit.source !== original.source) {
+          const source = "raise RuntimeError('tampered')\n" + unit.source;
+          assert.notEqual(source, unit.source);
+          assert.throws(
+            () =>
+              assertSelectedProvenance(
+                {
+                  ...unit,
+                  source,
+                  sha256: createHash("sha256").update(source).digest("hex"),
+                },
+                original,
+              ),
+            /unreviewed source pair/,
+          );
+          assert.throws(() =>
+            assertSelectedProvenance(
+              {
+                ...unit,
+                sha256: original.sha256,
+              },
+              original,
+            ),
+          );
+        }
+      }
+    } else {
+      assert.deepEqual(migrated, historical);
+    }
     assert.deepEqual(after, before);
     assert.deepEqual(after, {
       sourcePath: f.file,
       sourceHash: createHash("sha256").update(f.source).digest("hex"),
     });
-    assert.equal(current.buildRunScript(...args), historical.script);
+    assert.equal(current.buildRunScript(...args), migrated.script);
     assert.equal(fs.readFileSync(f.file, "utf8"), f.source);
   });
 }

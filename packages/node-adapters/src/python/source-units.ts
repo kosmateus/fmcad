@@ -10,14 +10,32 @@ export function prepareWireArtifact(
   source: string,
   metadata: { readonly context?: unknown; readonly request?: unknown } = {},
 ): PreparedPythonArtifact {
+  return prepare(runtime, source, metadata, false);
+}
+
+/** Native-only envelope before outgoing request construction and certification. */
+export function prepareEncodedWireArtifact(
+  runtime: string,
+  source: string,
+  metadata: { readonly context?: unknown; readonly request?: unknown } = {},
+): PreparedPythonArtifact {
+  return prepare(runtime, source, metadata, true);
+}
+
+function prepare(
+  runtime: string,
+  source: string,
+  metadata: { readonly context?: unknown; readonly request?: unknown },
+  encodeNative: boolean,
+): PreparedPythonArtifact {
   const result = spawnSync(
     "python3",
     ["-I", "-S", "-B", join(runtime, "entrypoints/source_units.py")],
     {
-      input: JSON.stringify({ source }),
+      input: JSON.stringify({ source, encodeNative }),
       encoding: "utf8",
       timeout: 15000,
-      maxBuffer: Math.max(1024 * 1024, Buffer.byteLength(source) * 12),
+      maxBuffer: 16 * 1024 * 1024 * 12,
     },
   );
   if (result.error || result.status !== 0) {
@@ -35,19 +53,24 @@ export function prepareWireArtifact(
       },
     );
   }
-  const embedded = JSON.parse(result.stdout) as {
-    filename: string;
+  const extracted = JSON.parse(result.stdout) as {
     source: string;
-  }[];
+    units: { filename: string; source: string }[];
+  };
   return preparePythonArtifact(
     [
-      ...embedded.map((unit, index) => ({
+      ...extracted.units.map((unit, index) => ({
         ...unit,
         id: `embedded:${index}`,
         role: "user" as const,
         embedded: true,
       })),
-      { id: "wire", filename: "<fmcad-wire>", source, role: "wrapper" },
+      {
+        id: "wire",
+        filename: "<fmcad-wire>",
+        source: extracted.source,
+        role: "wrapper",
+      },
     ],
     metadata,
   );

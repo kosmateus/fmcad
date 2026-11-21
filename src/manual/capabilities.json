@@ -40,7 +40,7 @@
         "native SDK probe requires a distinct broker-bound port",
         "unknown, partial, unsupported, missing, stale and blocked evidence cannot satisfy require_pass"
       ],
-      "tests": ["tests/capabilities.test.js", "tests/helpers_test.py"],
+      "tests": ["tests/capabilities.test.ts", "tests/helpers_test.py"],
       "gaps": [],
       "bugs": []
     }
@@ -80,7 +80,7 @@
         "direct transport without the broker probe port is rejected",
         "help, tool listing and inspect never invoke the probe port"
       ],
-      "tests": ["tests/capabilities.test.js", "tests/cad.test.js", "tests/mcp-catalog.test.js"],
+      "tests": ["tests/capabilities.test.ts", "tests/cad.test.ts", "tests/mcp-catalog.test.ts"],
       "gaps": [],
       "bugs": []
     }
