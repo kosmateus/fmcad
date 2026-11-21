@@ -207,7 +207,11 @@ export function inspectFrozenMetadataWork(
     ) as {
       jobs: Record<
         string,
-        FrozenWork & { startedAt?: unknown; dispatch?: unknown }
+        FrozenWork & {
+          startedAt?: unknown;
+          dispatch?: unknown;
+          request?: unknown;
+        }
       >;
       active: string | null;
       lease: { jobId?: string; id?: string } | null;
@@ -220,6 +224,22 @@ export function inspectFrozenMetadataWork(
         !["queued", "needs_reconciliation"].includes(job.state)
       )
         fail();
+      // Historical records may predate the request build pin. When it exists,
+      // it must identify this worker's build, not merely look like a hash.
+      let buildPin: string | undefined;
+      const request = job.request;
+      if (request !== undefined) {
+        if (!request || typeof request !== "object" || Array.isArray(request))
+          fail();
+        if ("buildHash" in request) {
+          if (
+            typeof request.buildHash !== "string" ||
+            !/^[a-f0-9]{64}$/.test(request.buildHash)
+          )
+            fail();
+          buildPin = request.buildHash;
+        }
+      }
       unresolved.push({
         store,
         id,
@@ -288,6 +308,7 @@ export function inspectFrozenMetadataWork(
             (phased && start["phase"] !== "offline_prepare") ||
             typeof start["buildHash"] !== "string" ||
             !/^[a-f0-9]{64}$/.test(start["buildHash"]) ||
+            (buildPin !== undefined && start["buildHash"] !== buildPin) ||
             !Number.isSafeInteger(start["at"]) ||
             (start["at"] as number) <= 0
           )

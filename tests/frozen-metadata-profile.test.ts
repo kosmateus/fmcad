@@ -226,6 +226,40 @@ test("phased worker start accepts only the actual offline_prepare emitter schema
   assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
 });
 
+test("ledger build pin must match worker-start before preflight or repeated claim", (t) => {
+  for (const id of ["root-unknown", "export-unknown"]) {
+    const f = inspectionFixture(t);
+    const file = f.ledgers[id === "root-unknown" ? 0 : 1]!;
+    const ledger = JSON.parse(fs.readFileSync(file, "utf8"));
+    ledger.jobs[id].request = { kind: "command" };
+    fs.writeFileSync(file, JSON.stringify(ledger));
+    assert.doesNotThrow(
+      f.qualify,
+      "historical request without a pin remains supported",
+    );
+    ledger.jobs[id].request.buildHash = "a".repeat(64);
+    fs.writeFileSync(file, JSON.stringify(ledger));
+    assert.doesNotThrow(f.qualify);
+    // Both values are valid hashes, but they identify different worker builds.
+    ledger.jobs[id].request.buildHash = "b".repeat(64);
+    fs.writeFileSync(file, JSON.stringify(ledger));
+    let claims = 0;
+    let sdk = 0;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.throws(
+        () => {
+          f.qualify();
+          claims++;
+          sdk++;
+        },
+        { code: "FROZEN_METADATA_FENCE_CHANGED" },
+      );
+    }
+    assert.equal(claims, 0);
+    assert.equal(sdk, 0);
+  }
+});
+
 test("legacy epoch evidence cannot hide or contradict the canonical job namespace", (t) => {
   const f = inspectionFixture(t);
   f.worker("export-unknown", f.epoch, 202);
