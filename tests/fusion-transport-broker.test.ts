@@ -150,7 +150,7 @@ const { serve } = runtimeRequire(
 ) as {
   serve(
     config: {
-      backend: string;
+      backend?: string;
       routing: string;
       url: string;
       timeoutMs: number;
@@ -191,11 +191,19 @@ function writeFakeReceipts(
 // Native MCP success paths are retired. autodesk-fusion-only.test above requires
 // their refusal before constructing a transport or claiming a queue instead.
 // Keep receipt binding and UNKNOWN/no-replay coverage on the supported backend.
-for (const { backend, externalSession } of ["addin"].flatMap((backend) =>
-  [true, false].map((externalSession) => ({ backend, externalSession })),
+for (const { backend, externalSession, defaultBackend } of ["addin"].flatMap(
+  (backend) =>
+    [true, false].flatMap((externalSession) =>
+      [false, true].map((defaultBackend) => ({
+        backend,
+        externalSession,
+        defaultBackend,
+      })),
+    ),
 ))
   for (const disconnect of [false, true]) {
-    test(`production broker transport selects ${backend}: ${externalSession ? "external session" : "broker session"}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`, async (t) => {
+    const backendLabel = defaultBackend ? "default-addin" : backend;
+    test(`production broker transport selects ${backendLabel}: ${externalSession ? "external session" : "broker session"}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`, async (t) => {
       if (disconnect && !process.env["FMCAD_TRANSPORT_BROKER_CHILD"]) {
         // Unknown ownership deliberately refuses shutdown. Keep that behavior in
         // a disposable child rather than weakening the production close contract.
@@ -210,7 +218,7 @@ for (const { backend, externalSession } of ["addin"].flatMap((backend) =>
             "--test",
             "--test-force-exit",
             "--test-name-pattern",
-            `production broker transport selects ${backend}: ${externalSession ? "external session" : "broker session"}: unknown`,
+            `production broker transport selects ${backendLabel}: ${externalSession ? "external session" : "broker session"}: unknown`,
             __filename,
           ],
           {
@@ -427,7 +435,7 @@ for (const { backend, externalSession } of ["addin"].flatMap((backend) =>
       if (!address || typeof address === "string")
         assert.fail("Fake HTTP endpoint did not receive a TCP address");
       const cfg = {
-        backend,
+        ...(defaultBackend ? {} : { backend }),
         routing: "queue",
         url: `http://127.0.0.1:${address.port}/fake`,
         timeoutMs: 3000,

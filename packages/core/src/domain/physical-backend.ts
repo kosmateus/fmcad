@@ -11,6 +11,16 @@ export function assertAutodeskFusionBackend(server: {
       { code: "UNSUPPORTED_BACKEND" },
     );
   if (typeof server.url === "string") {
+    if (
+      /[\u0000-\u0020\u007f\\]/.test(server.url) ||
+      !/^https?:\/\/[^/?#]+/i.test(server.url)
+    )
+      throw Object.assign(
+        new Error(
+          "Unsupported endpoint spelling; configure an explicit autodesk-fusion-mcp HTTP(S) URL without whitespace or backslashes",
+        ),
+        { code: "UNSUPPORTED_BACKEND" },
+      );
     // Inspect only the HTTP authority; paths and query values are not ports.
     // Keep this domain rule independent of host URL implementations.
     const authority = /^https?:\/\/([^/?#]*)/i.exec(server.url)?.[1];

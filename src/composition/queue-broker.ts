@@ -152,11 +152,8 @@ function errorInfo(value: unknown): P.BrokerError {
   // Reading metadata must not mutate a frozen Error or alias a new dispatch error.
   return value as P.BrokerError;
 }
-const {
-  retainPythonOrigin,
-  prepareWireArtifact,
-  classifyPythonRpc,
-} = load("./python");
+const { retainPythonOrigin, prepareWireArtifact, classifyPythonRpc } =
+  load("./python");
 const { createProductionQueueAdmission } = load("./queue-admission");
 const { atomicObservationIdentityHash, assertAtomicObservationWire } = load(
   "./atomic-observation-binding",
@@ -656,6 +653,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "routing=direct is no longer supported; start the shared fmcad broker with routing=queue",
     );
   assertAutodeskFusionBackend(cfg);
+  cfg = { ...cfg, backend: cfg.backend ?? "addin" };
   const metadataAdmission = provisionAddinMetadata(
     options.addinMetadataAdmission,
     cfg.backend,
@@ -1321,7 +1319,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   type Flights = { preflight: P.Flight; postflight: P.Flight };
   type OwnedTurn = PreparedTurn<P.PreparedCall>;
   type PostPreparation =
-    | { kind: "owned"; turn: OwnedTurn; metadataObservation?: P.Instance | undefined }
+    | {
+        kind: "owned";
+        turn: OwnedTurn;
+        metadataObservation?: P.Instance | undefined;
+      }
     | { kind: "unowned"; checked: P.PreparedPost };
   type LocalPlan = { flights: Flights | null } & (
     | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
@@ -1367,7 +1369,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const ready: PostPreparation = owned
         ? {
             kind: "owned",
-            turn: await prepareOwnedTurn(outgoing, owned.job, owned.turn, origin),
+            turn: await prepareOwnedTurn(
+              outgoing,
+              owned.job,
+              owned.turn,
+              origin,
+            ),
           }
         : {
             kind: "unowned",
@@ -1524,13 +1531,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ) {
     if (!client.prepareCallTool) return null; // Explicit physical test port has no transport preparation.
     const raw = job.kind === "rpc" ? rpcPayload(job.request.payload) : null;
-    const selector = raw && isAddinMetadata(raw)
-      ? addinMetadataSelector(raw)
-      : job.request.phased ||
-        job.sequenceMode === "automatic" ||
-        job.contextRefreshRequired
-        ? documentSelector(job)
-        : undefined;
+    const selector =
+      raw && isAddinMetadata(raw)
+        ? addinMetadataSelector(raw)
+        : job.request.phased ||
+            job.sequenceMode === "automatic" ||
+            job.contextRefreshRequired
+          ? documentSelector(job)
+          : undefined;
     return prepareBrokerFlights<P.Send<P.Instance>>({
       jobId: job.id,
       directory: jobDir(job.id),
@@ -1596,14 +1604,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       persistClients: (hashes) => durable(clientsFile, hashes),
       processUnavailable: () => epochProcessUnavailable,
       hasSuccessor: (): boolean => !!successorControl,
-      ownsSuccessorCreation: (requestId): boolean => !!successorControl?.ownsCreation(requestId),
+      ownsSuccessorCreation: (requestId): boolean =>
+        !!successorControl?.ownsCreation(requestId),
       assertMigrationAdmission,
       readEpochOwner: () => {
         const epoch = state.epoch;
-        return epoch ? {
-          ownerClientId: epoch.ownerClientId,
-          ownerTokenHash: epoch.ownerTokenHash,
-        } : undefined;
+        return epoch
+          ? {
+              ownerClientId: epoch.ownerClientId,
+              ownerTokenHash: epoch.ownerTokenHash,
+            }
+          : undefined;
       },
       isHistorical: (jobId) => state.isHistorical(jobId),
       acceptsLifecycle: (action) => lifecycleControl.accepts(action),
@@ -1987,7 +1998,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "WORKER_CLOSED",
             "Local worker closed during final artifact preparation",
           );
-        localPlans.set(job.id, { kind: "worker", turn, message, send, flights });
+        localPlans.set(job.id, {
+          kind: "worker",
+          turn,
+          message,
+          send,
+          flights,
+        });
         return;
       }
       // Injected test clients have no native prepare methods. Snapshot once for
@@ -2191,7 +2208,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         start() {
           assertCurrent();
           if (sent)
-            fail("PREPARED_RPC_CONSUMED", "An instance probe cannot be replayed");
+            fail(
+              "PREPARED_RPC_CONSUMED",
+              "An instance probe cannot be replayed",
+            );
           sent = true;
           writeIntent();
         },
@@ -2911,7 +2931,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           record.receipt = path.join(jobDir(job.id), `remote-${rpcId}.json`);
           binding.sourceHash = hash(source);
           if (nativePublicPython)
-            binding["publicPythonResultSchema"] = "fmcad-public-python-result-v1";
+            binding["publicPythonResultSchema"] =
+              "fmcad-public-python-result-v1";
         },
         wrap(executable, official, nativePublicPython) {
           const prepared = prepareReceiptScript(
@@ -2921,7 +2942,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             binding,
             {
               ...nativePaths,
-              ...(nativePublicPython ? { capturePublicPythonResult: true } : {}),
+              ...(nativePublicPython
+                ? { capturePublicPythonResult: true }
+                : {}),
             },
           );
           return origin ? retainPythonOrigin(prepared, origin) : prepared;
@@ -2951,7 +2974,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     let prepared: P.PreparedCall;
     if (rawMetadata) {
       if (!metadataAdmission)
-        fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned");
+        fail(
+          "unsupported_queue_route",
+          "ADDIN metadata admission is not provisioned",
+        );
       const metadataProof = prepareMetadataWire(outgoing);
       record.dispatchClass = "addin-metadata";
       prepared = {
@@ -2968,15 +2994,24 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         pythonArtifact,
         localCheckOptions(),
       );
-      if (pythonCertificate.report) record.pythonCheck = pythonCertificate.report;
+      if (pythonCertificate.report)
+        record.pythonCheck = pythonCertificate.report;
       record.dispatchClass = pythonCertificate.kind;
       prepared = {
-        outgoing, record, rpcId, pythonArtifact, contextEpoch, metadataOnly, pythonCertificate,
+        outgoing,
+        record,
+        rpcId,
+        pythonArtifact,
+        contextEpoch,
+        metadataOnly,
+        pythonCertificate,
       };
     }
     // Test observer may suspend local preparation, never replace checking.
     if (!prepared.metadataProof) await options.testCheckPrepared?.(prepared);
-    (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
+    (prepared.metadataProof ?? prepared.pythonCertificate).fence(
+      prepared.outgoing,
+    );
     verifyPreparedJob(job, prepared.contextEpoch);
     return prepared;
   }
@@ -3127,11 +3162,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ready?.kind === "owned" ||
         (!administrative && activeContext()?.productTurn)
       )
-        fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
+        fail(
+          "PREPARED_RPC_UNAVAILABLE",
+          "No active grant for the prepared RPC",
+        );
       return unownedPost(payload, sessionId, requestOptions, ready?.checked);
     }
     const context = required(grant.context.worker);
-    let admission: ReturnType<NonNullable<typeof metadataAdmission>["bind"]> | undefined;
+    let admission:
+      ReturnType<NonNullable<typeof metadataAdmission>["bind"]> | undefined;
     let receivedAdmission: P.Response | undefined;
     const tracePreflight = context.job.kind === "rpc";
     const startedAt = Date.now();
@@ -3193,7 +3232,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       check(prepared) {
         try {
-          (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
+          (prepared.metadataProof ?? prepared.pythonCertificate).fence(
+            prepared.outgoing,
+          );
         } catch (error) {
           if (context.job.kind === "rpc")
             writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3227,7 +3268,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       fence(prepared) {
         try {
           assertResetSubmissionOpen(dir);
-          if (state.epoch) epochAdmission(state, context.job.request, clientHashes());
+          if (state.epoch)
+            epochAdmission(state, context.job.request, clientHashes());
           if (
             prepared.record.binding.jobId !== context.job.id ||
             !sameInstance(prepared.record.instance, instance)
@@ -3277,14 +3319,24 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "Active execution budget expired during Python preparation; no RPC sent",
             );
           if (prepared.metadataProof) {
-            if (!metadataAdmission || ready?.kind !== "owned" || context.job.kind !== "rpc")
-              fail("PREPARED_RPC_UNAVAILABLE", "Missing owned ADDIN metadata route");
+            if (
+              !metadataAdmission ||
+              ready?.kind !== "owned" ||
+              context.job.kind !== "rpc"
+            )
+              fail(
+                "PREPARED_RPC_UNAVAILABLE",
+                "Missing owned ADDIN metadata route",
+              );
             if (
               record.binding.rpcId !== rpcId ||
               record.wireRequest?.id !== `fmcad:${rpcId}` ||
               prepared.metadataProof.wire.id !== record.wireRequest.id
             )
-              fail("PREPARED_RPC_UNAVAILABLE", "ADDIN metadata identity changed before send");
+              fail(
+                "PREPARED_RPC_UNAVAILABLE",
+                "ADDIN metadata identity changed before send",
+              );
             admission = metadataAdmission.bind(
               prepared.metadataProof.wire,
               ready.metadataObservation,
@@ -3298,7 +3350,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           const before = state.status(context.job.id).dispatch;
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
-          const journal = executionRecords.createRpcIntent(context.job.id, record);
+          const journal = executionRecords.createRpcIntent(
+            context.job.id,
+            record,
+          );
           context.turnRpcs.push({ record, journal });
           state.markDispatch(context.job.id, {
             rpcCount: count,
@@ -3356,7 +3411,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               )
             : await withRequest(
                 { timeoutMs: required(prepared.dispatchRemaining) },
-                () => originalPost(prepared.outgoing, sessionId, requestOptions),
+                () =>
+                  originalPost(prepared.outgoing, sessionId, requestOptions),
               );
           if (prepared.metadataProof) receivedAdmission = response;
           writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3397,9 +3453,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           context.job.request,
           context.job.clientId,
         );
-        const rawSummary = trace
-          ? summarizeBrokerRaw(response.raw)
-          : undefined;
+        const rawSummary = trace ? summarizeBrokerRaw(response.raw) : undefined;
         if (trace) debugRawReceived.add(prepared);
         // A returned HTTP response is transport evidence, not SDK settlement.
         // Persist it before matching/receipt validation can throw; otherwise a
@@ -3456,7 +3510,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         let reply: P.Reply | null;
         try {
           reply = prepared.metadataProof
-            ? matchMetadataEvidence(response, required(admission).binding, record.binding.rpcId, outgoing.id, decodeAdmissionJson)
+            ? matchMetadataEvidence(
+                response,
+                required(admission).binding,
+                record.binding.rpcId,
+                outgoing.id,
+                decodeAdmissionJson,
+              )
             : matching(client, response, outgoing);
         } catch (error) {
           if (trace)
@@ -3543,7 +3603,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ? boundPublicPythonValue(record, receipt, payload, reply)
             : undefined;
         const returned = responseForCaller(
-          prepared.metadataProof ? { status: response.status, raw: "" } : response,
+          prepared.metadataProof
+            ? { status: response.status, raw: "" }
+            : response,
           payload,
           reply,
           publicValue,
@@ -3597,13 +3659,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           try {
             const rejected = object(error);
             const raw = rejected["rawResponse"];
-            const response = receivedAdmission ??
-              (typeof raw === "string" && same(rejected["admissionBinding"], admission.binding)
+            const response =
+              receivedAdmission ??
+              (typeof raw === "string" &&
+              same(rejected["admissionBinding"], admission.binding)
                 ? { status: 200, raw }
                 : undefined);
             if (
               response &&
-              !executionRecords.evidence.readReceivedResponse(context.job.id, prepared.rpcId)
+              !executionRecords.evidence.readReceivedResponse(
+                context.job.id,
+                prepared.rpcId,
+              )
             )
               executionRecords.recordReceivedResponse(context.job.id, {
                 version: 1,
@@ -4558,7 +4625,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (error.code !== "ENOENT") throw error;
     }
     if (priorAcceptance) {
-      atomicAcceptance.requirePersistedOwnerAcceptance(priorAcceptance, ownerRequest);
+      atomicAcceptance.requirePersistedOwnerAcceptance(
+        priorAcceptance,
+        ownerRequest,
+      );
       const priorObserver = state.data.jobs[priorAcceptance.observerJobId];
       const expectedProofPath = priorObserver
         ? path.join(jobDir(priorObserver.id), "atomic-observation-proof.json")
@@ -4573,7 +4643,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         },
       );
       const persistedProof = readAtomicProofRecord(expectedProofPath);
-      atomicAcceptance.requirePersistedAtomicProof(priorAcceptance, persistedProof);
+      atomicAcceptance.requirePersistedAtomicProof(
+        priorAcceptance,
+        persistedProof,
+      );
       const priorProof = persistedProof.value;
       const priorRemote = remoteReceipt(
         {
@@ -4587,7 +4660,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const persistedFacts = () => ({
         ...queueFacts(),
         otherNonterminal: atomicAcceptance.hasOtherNonterminal(
-          Object.values(state.data.jobs).map(({ id, state }) => ({ id, state })),
+          Object.values(state.data.jobs).map(({ id, state }) => ({
+            id,
+            state,
+          })),
           target.id,
           priorObserverId,
         ),
@@ -4607,7 +4683,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (decision === "already-settled") return priorAcceptance;
       const currentIdentity = readJson<P.Identity>(identityFile);
       atomicAcceptance.requirePersistedAtomicInstance(
-        priorAcceptance, currentIdentity, target.request.buildHash,
+        priorAcceptance,
+        currentIdentity,
+        target.request.buildHash,
         () => originalFusionProcessAlive(currentIdentity.instance),
       );
       validateAtomicOriginalReceipts(
@@ -4643,7 +4721,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return { ...priorAcceptance, job: result };
     }
     atomicAcceptance.requireFreshAtomicAdmission(target.id, {
-      candidate: isAtomicObservationCandidate(target, target.request.buildHash, observationScopeConfig),
+      candidate: isAtomicObservationCandidate(
+        target,
+        target.request.buildHash,
+        observationScopeConfig,
+      ),
       fence: queueFacts(),
       active: active && {
         jobId: active.job?.id,
@@ -4651,11 +4733,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         pending: !!active.pending.size,
         childRunning: !!active.child && !active.workerClosed,
       },
-      otherActivity: [...gate.active.keys()].some((key) => key !== active?.nativeActivityId),
+      otherActivity: [...gate.active.keys()].some(
+        (key) => key !== active?.nativeActivityId,
+      ),
     });
     const identity = readJson<P.Identity>(identityFile);
     atomicAcceptance.requireFreshAtomicInstance(
-      identity, instance, target.request.buildHash,
+      identity,
+      instance,
+      target.request.buildHash,
       () => originalFusionProcessAlive(identity.instance),
     );
 
@@ -4699,7 +4785,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
     atomicAcceptance.requireFreshAtomicRemoteBinding(proof, {
       instance: identity.instance,
-      receiptPath: path.join(jobDir(observer.id), `atomic-observation-${proof.rpcId}.receipt.json`),
+      receiptPath: path.join(
+        jobDir(observer.id),
+        `atomic-observation-${proof.rpcId}.receipt.json`,
+      ),
       observerId: observer.id,
       targetId: target.id,
       build: codeHash,
@@ -4713,19 +4802,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       false,
     );
-    const { acceptance, resolution } = atomicAcceptance.completeFreshAtomicAcceptance({
-      ...ownerRequest,
-      proof,
-      summary,
-      marker,
-      remoteOutcome: remote.outcome,
-      proofPath: path.relative(dir, proofFile),
-      proofSha256: proofHash,
-      acceptancePath: relativeAcceptancePath,
-      acceptedAt: new Date().toISOString(),
-      reportCurrent: () => snapshotStillCurrent(report.snapshot),
-      fence: queueFacts(),
-    });
+    const { acceptance, resolution } =
+      atomicAcceptance.completeFreshAtomicAcceptance({
+        ...ownerRequest,
+        proof,
+        summary,
+        marker,
+        remoteOutcome: remote.outcome,
+        proofPath: path.relative(dir, proofFile),
+        proofSha256: proofHash,
+        acceptancePath: relativeAcceptancePath,
+        acceptedAt: new Date().toISOString(),
+        reportCurrent: () => snapshotStillCurrent(report.snapshot),
+        fence: queueFacts(),
+      });
     assertResetSubmissionOpen(dir);
     hold.assertCurrent();
     durable(acceptancePath, acceptance, true);
@@ -4805,8 +4895,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const wire = record.wireRequest || record.request;
     if (usesRetainedMetadataEvidence(record)) {
       const { jobId, rpcId } = record.binding;
-      const original = executionRecords.evidence.readReceivedResponse(jobId, rpcId);
-      return matchRetainedMetadataEvidence(record, original, decodeAdmissionJson);
+      const original = executionRecords.evidence.readReceivedResponse(
+        jobId,
+        rpcId,
+      );
+      return matchRetainedMetadataEvidence(
+        record,
+        original,
+        decodeAdmissionJson,
+      );
     }
     return matching(client, record.response, wire);
   }
@@ -4870,46 +4967,54 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       settleDispatched(decision, assertCurrent) {
         const { responsePath } = load("./queue-response-files");
-        return publishBrokerRecoveredDispatch(directory, decision, assertCurrent, {
-          rpc: job.kind === "rpc",
-          readOutput() {
-            const file = responsePath(dir, job, "rpc-result.json");
-            return fs.existsSync(file) ? readJson<P.Response>(file) : null;
+        return publishBrokerRecoveredDispatch(
+          directory,
+          decision,
+          assertCurrent,
+          {
+            rpc: job.kind === "rpc",
+            readOutput() {
+              const file = responsePath(dir, job, "rpc-result.json");
+              return fs.existsSync(file) ? readJson<P.Response>(file) : null;
+            },
+            restoreOutput(record) {
+              const response = required(record.response);
+              return record.wireRequest
+                ? responseForCaller(
+                    record.binding["addinAdmission"] === undefined
+                      ? response
+                      : { status: response.status, raw: "" },
+                    required(record.request),
+                    matchRecordedResponse(record),
+                  )
+                : response;
+            },
+            publishOutput(response) {
+              durable(
+                responsePath(dir, job, "rpc-result.json", true),
+                response,
+              );
+            },
+            successfulOutput(response) {
+              const reply = object(client._parse(response.raw));
+              return !reply["error"] && !object(reply["result"])["isError"];
+            },
+            describeNativeEnd(proof) {
+              return {
+                kind: proof.native.kind,
+                commandId: proof.native.identity.commandId,
+                ...proof.native.state,
+              };
+            },
+            write: durable,
+            resolve(details) {
+              const result = hold.settle(() => state.resolve(id, details));
+              endNativeActivity(context);
+              diagnostics();
+              return result;
+            },
           },
-          restoreOutput(record) {
-            const response = required(record.response);
-            return record.wireRequest
-              ? responseForCaller(
-                  record.binding["addinAdmission"] === undefined
-                    ? response
-                    : { status: response.status, raw: "" },
-                  required(record.request),
-                  matchRecordedResponse(record),
-                )
-              : response;
-          },
-          publishOutput(response) {
-            durable(responsePath(dir, job, "rpc-result.json", true), response);
-          },
-          successfulOutput(response) {
-            const reply = object(client._parse(response.raw));
-            return !reply["error"] && !object(reply["result"])["isError"];
-          },
-          describeNativeEnd(proof) {
-            return {
-              kind: proof.native.kind,
-              commandId: proof.native.identity.commandId,
-              ...proof.native.state,
-            };
-          },
-          write: durable,
-          resolve(details) {
-            const result = hold.settle(() => state.resolve(id, details));
-            endNativeActivity(context);
-            diagnostics();
-            return result;
-          },
-        });
+        );
       },
     });
   }
@@ -4963,52 +5068,56 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   function dispatchWorkerStatus(message: P.Message) {
-      const active = activeContext();
-      if (
-        !active ||
-        message.jobId !== active.job.id ||
-        !equal(message.workerToken, active.token)
-      ) {
-        phased.authorize({
-          jobId: required(message.jobId),
-          workerToken: required(message.workerToken),
-        });
-        const snapshotHash =
-          message.snapshotFence === true ? workerSnapshotHash() : undefined;
-        const job = state.status(required(message.jobId));
-        // The admitted worker also waits here during preflight/postflight, when
-        // the physical probe is owned by the broker rather than active.context.
-        if (
-          !["preparing", "processing", "queued", "running", "sending"].includes(
-            job.state,
-          )
-        )
-          fail(
-            job.code || "RECONCILIATION_REQUIRED",
-            "SDK turn is not available for local work",
-          );
-        ipcObserver.accept(message);
-        return {
-          remainingMs: job.sdkRemainingMs ?? job.timeoutMs,
-          phase: job.state,
-          ...(snapshotHash === undefined ? {} : { snapshotHash }),
-          control: gate.snapshot(),
-        };
-      }
-      if (active.unknown || state.summary().blocked)
-        fail("RECONCILIATION_REQUIRED", "SDK outcome remains unresolved");
-      ipcObserver.accept(message);
+    const active = activeContext();
+    if (
+      !active ||
+      message.jobId !== active.job.id ||
+      !equal(message.workerToken, active.token)
+    ) {
+      phased.authorize({
+        jobId: required(message.jobId),
+        workerToken: required(message.workerToken),
+      });
       const snapshotHash =
         message.snapshotFence === true ? workerSnapshotHash() : undefined;
+      const job = state.status(required(message.jobId));
+      // The admitted worker also waits here during preflight/postflight, when
+      // the physical probe is owned by the broker rather than active.context.
+      if (
+        !["preparing", "processing", "queued", "running", "sending"].includes(
+          job.state,
+        )
+      )
+        fail(
+          job.code || "RECONCILIATION_REQUIRED",
+          "SDK turn is not available for local work",
+        );
+      ipcObserver.accept(message);
       return {
-        remainingMs: required(active.budget).remaining(),
-        waitingForPause: !!active.waitingForPause,
+        remainingMs: job.sdkRemainingMs ?? job.timeoutMs,
+        phase: job.state,
         ...(snapshotHash === undefined ? {} : { snapshotHash }),
         control: gate.snapshot(),
       };
+    }
+    if (active.unknown || state.summary().blocked)
+      fail("RECONCILIATION_REQUIRED", "SDK outcome remains unresolved");
+    ipcObserver.accept(message);
+    const snapshotHash =
+      message.snapshotFence === true ? workerSnapshotHash() : undefined;
+    return {
+      remainingMs: required(active.budget).remaining(),
+      waitingForPause: !!active.waitingForPause,
+      ...(snapshotHash === undefined ? {} : { snapshotHash }),
+      control: gate.snapshot(),
+    };
   }
 
-  async function dispatchCommand(message: P.Message, clientId: string, successorAction: boolean) {
+  async function dispatchCommand(
+    message: P.Message,
+    clientId: string,
+    successorAction: boolean,
+  ) {
     switch (message.action) {
       case "probe-saved-destination":
         return savedFixtureControl.probe(message, clientId);
@@ -5061,7 +5170,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             state,
             marker,
             buildHash: codeHash,
-            runtime: resolveRuntimePaths({ anchor: runtimeAnchor }).installation,
+            runtime: resolveRuntimePaths({ anchor: runtimeAnchor })
+              .installation,
             clients: clientHashes,
             assertControl: assertScratchControl,
             fence() {
@@ -5137,7 +5247,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "workflowObservation is broker-authored and cannot be supplied by a client",
           );
         decodeRequest(r);
-        const request = { ...r, clientId, ownerToken: clientHashes()[clientId] };
+        const request = {
+          ...r,
+          clientId,
+          ownerToken: clientHashes()[clientId],
+        };
         if (state.epoch) {
           if (own(r, "isolatedEpoch"))
             fail(
@@ -5198,7 +5312,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             request.sequence ||
             request.inputFiles?.length ||
             request.buildHash !== codeHash ||
-            request.backend !== (pinned.backend || "mcp") ||
+            request.backend !== (pinned.backend || "addin") ||
             request.cwd !== blockedJob.request.cwd
           ) {
             fail(
@@ -5422,7 +5536,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           const raw = rpcPayload(request.payload);
           if (isAddinMetadata(raw)) {
             if (!metadataAdmission)
-              fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned");
+              fail(
+                "unsupported_queue_route",
+                "ADDIN metadata admission is not provisioned",
+              );
             addinMetadataSelector(raw);
           } else validateRaw(raw);
         }
@@ -5452,7 +5569,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ),
             { code: "BUILD_CHANGED", notStarted: true },
           );
-        if (request.backend && request.backend !== (pinned.backend || "mcp"))
+        if (request.backend && request.backend !== (pinned.backend || "addin"))
           fail(
             "BACKEND_MISMATCH",
             "Job backend differs from the broker; no fallback",
@@ -5778,75 +5895,78 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
 
-  function dispatchResult(clientId: string, publicJob: ReturnType<typeof owned> | undefined) {
-        if (!publicJob)
-          return {
-            ...state.status(),
-            held: heldReason(),
-            stopping: lifetime.stopping,
-            recovery,
-            buildHash: codeHash,
-          };
-        if (
-          [
-            "succeeded",
-            "failed",
-            "cancelled",
-            "expired",
-            "needs_reconciliation",
-          ].includes(publicJob.state) &&
-          !debugResultPublished.has(publicJob.id)
-        ) {
-          const job = state.lookup(publicJob.id);
-          const trace = debugTraceContext(job.request, clientId);
-          if (trace) {
-            const artifactName =
-              job.kind === "rpc" ? "rpc-result.json" : "stdout.txt";
-            let artifactRef: string | undefined;
-            let stdoutObservation:
-              "not_observed" | "observed_empty" | "observed_nonempty" =
-              "not_observed";
-            let stdoutBytes: number | undefined;
-            try {
-              const file = load("./queue-response-files").responsePath(
-                dir,
-                job,
-                artifactName,
-              );
-              const stat = fs.lstatSync(file);
-              if (stat.isFile() && !stat.isSymbolicLink()) {
-                artifactRef = artifactName;
-                if (job.kind === "command") {
-                  stdoutBytes = stat.size;
-                  stdoutObservation =
-                    stat.size === 0 ? "observed_empty" : "observed_nonempty";
-                }
-              }
-            } catch {
-              // Trace metadata never gates retrieval of the owned result.
+  function dispatchResult(
+    clientId: string,
+    publicJob: ReturnType<typeof owned> | undefined,
+  ) {
+    if (!publicJob)
+      return {
+        ...state.status(),
+        held: heldReason(),
+        stopping: lifetime.stopping,
+        recovery,
+        buildHash: codeHash,
+      };
+    if (
+      [
+        "succeeded",
+        "failed",
+        "cancelled",
+        "expired",
+        "needs_reconciliation",
+      ].includes(publicJob.state) &&
+      !debugResultPublished.has(publicJob.id)
+    ) {
+      const job = state.lookup(publicJob.id);
+      const trace = debugTraceContext(job.request, clientId);
+      if (trace) {
+        const artifactName =
+          job.kind === "rpc" ? "rpc-result.json" : "stdout.txt";
+        let artifactRef: string | undefined;
+        let stdoutObservation:
+          "not_observed" | "observed_empty" | "observed_nonempty" =
+          "not_observed";
+        let stdoutBytes: number | undefined;
+        try {
+          const file = load("./queue-response-files").responsePath(
+            dir,
+            job,
+            artifactName,
+          );
+          const stat = fs.lstatSync(file);
+          if (stat.isFile() && !stat.isSymbolicLink()) {
+            artifactRef = artifactName;
+            if (job.kind === "command") {
+              stdoutBytes = stat.size;
+              stdoutObservation =
+                stat.size === 0 ? "observed_empty" : "observed_nonempty";
             }
-            writeRequestTrace(job.request, clientId, {
-              stage: "result-published",
-              status:
-                publicJob.state === "succeeded"
-                  ? "published"
-                  : publicJob.state === "needs_reconciliation"
-                    ? "unknown"
-                    : "failed",
-              jobId: job.id,
-              buildHash: codeHash,
-              code: publicJob.code,
-              artifactRef,
-              stdoutBytes,
-              stdoutObservation,
-            });
-            debugResultPublished.add(publicJob.id);
           }
+        } catch {
+          // Trace metadata never gates retrieval of the owned result.
         }
-        return {
-          job: publicJob,
-          ...outputs(publicJob.id),
-        };
+        writeRequestTrace(job.request, clientId, {
+          stage: "result-published",
+          status:
+            publicJob.state === "succeeded"
+              ? "published"
+              : publicJob.state === "needs_reconciliation"
+                ? "unknown"
+                : "failed",
+          jobId: job.id,
+          buildHash: codeHash,
+          code: publicJob.code,
+          artifactRef,
+          stdoutBytes,
+          stdoutObservation,
+        });
+        debugResultPublished.add(publicJob.id);
+      }
+    }
+    return {
+      job: publicJob,
+      ...outputs(publicJob.id),
+    };
   }
 
   async function executeAtomicObservation(
@@ -6198,7 +6318,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             plan?.kind !== "worker" ||
             phased.pending(job.id)?.message !== plan.message
           )
-            fail("PREPARED_RPC_UNAVAILABLE", "The prepared worker turn is gone");
+            fail(
+              "PREPARED_RPC_UNAVAILABLE",
+              "The prepared worker turn is gone",
+            );
           plan.send.fence();
         }
         if (job.kind === "rpc") {
@@ -6208,7 +6331,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "The original checked RPC is unavailable; it is never reconstructed for replay",
             );
           plan.turn.inspect((prepared) => {
-            (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
+            (prepared.metadataProof ?? prepared.pythonCertificate).fence(
+              prepared.outgoing,
+            );
             localContextChanged =
               !prepared.metadataOnly &&
               prepared.contextEpoch !== (state.data.contextEpoch || 0);
@@ -6238,8 +6363,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         : undefined,
       verifyLocalInputs() {
         if (job.request.phased && job.physicalTurns) {
-          previousTurn = readJson<P.Instance>(path.join(directory, "postflight.json"))
-            .documentState;
+          previousTurn = readJson<P.Instance>(
+            path.join(directory, "postflight.json"),
+          ).documentState;
           archiveCompletedBrokerTurn(directory, job.physicalTurns, {
             privateDirectory,
             read: readJson,
@@ -6268,7 +6394,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertCurrent: () => lane.assertCurrent(grant),
       preflight() {
         const entry =
-          job.kind === "command" ? commandEntry(required(job.request.argv)) : null;
+          job.kind === "command"
+            ? commandEntry(required(job.request.argv))
+            : null;
         const raw = job.kind === "rpc" ? rpcPayload(job.request.payload) : null;
         const protocolOnly =
           job.kind === "rpc"
@@ -6281,18 +6409,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             : ["tools", "doctor"].includes(entry?.kind ?? "");
         const allowsBusy =
           protocolOnly ||
-          ["ui.inspect", "ui.respond", "ui.resolve"].includes(entry?.target ?? "");
+          ["ui.inspect", "ui.respond", "ui.resolve"].includes(
+            entry?.target ?? "",
+          );
         allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
-        guardSelector = raw && isAddinMetadata(raw)
-          ? addinMetadataSelector(raw)
-          : job.request.phased ||
-            job.sequenceMode === "automatic" ||
-            job.contextRefreshRequired ||
-            load("./composition/stage-dependencies").requiresPhysicalStageOwner(
-              job.request.payload,
-            )
-            ? documentSelector(job)
-            : undefined;
+        guardSelector =
+          raw && isAddinMetadata(raw)
+            ? addinMetadataSelector(raw)
+            : job.request.phased ||
+                job.sequenceMode === "automatic" ||
+                job.contextRefreshRequired ||
+                load(
+                  "./composition/stage-dependencies",
+                ).requiresPhysicalStageOwner(job.request.payload)
+              ? documentSelector(job)
+              : undefined;
         // Record completion before applying idle policy. A lost response
         // retains the bound remote receipt for later observation.
         const rpcId = flights?.preflight.binding.rpcId || randomUUID();
@@ -6306,149 +6437,158 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           flights?.preflight.receipt ||
           path.join(directory, "preflight-" + rpcId + ".receipt.json");
         return checkTurnInstance(
-        grant,
-        {
-          prepared: flights?.preflight,
-          receiptPath: receipt,
-          binding,
-          requireIdle: !allowsBusy,
-          diagnosticPath: path.join(directory, "preflight-result.json"),
-          documentSelector: guardSelector,
-          onObservation: (observation) => {
-            lane.assertCurrent(grant);
-            observed = observation;
-            executionRecords.recordProbeTerminal(job.id, "preflight", {
+          grant,
+          {
+            prepared: flights?.preflight,
+            receiptPath: receipt,
+            binding,
+            requireIdle: !allowsBusy,
+            diagnosticPath: path.join(directory, "preflight-result.json"),
+            documentSelector: guardSelector,
+            onObservation: (observation) => {
+              lane.assertCurrent(grant);
+              observed = observation;
+              executionRecords.recordProbeTerminal(job.id, "preflight", {
+                version: 2,
+                jobId: job.id,
+                buildHash: codeHash,
+                completed: true,
+                instance: observation,
+                idle: idle(observation),
+                requiresIdle: !allowsBusy,
+              });
+            },
+          },
+          () =>
+            executionRecords.createProbeIntent(job.id, "preflight", {
               version: 2,
               jobId: job.id,
               buildHash: codeHash,
-              completed: true,
-              instance: observation,
-              idle: idle(observation),
-              requiresIdle: !allowsBusy,
-            });
-          },
-        },
-        () =>
-          executionRecords.createProbeIntent(job.id, "preflight", {
-            version: 2,
-            jobId: job.id,
-            buildHash: codeHash,
-            instance,
-            at: Date.now(),
-            binding,
-            receipt,
-          }),
-      );
+              instance,
+              at: Date.now(),
+              binding,
+              receipt,
+            }),
+        );
       },
-      sameObservedInstance: (error) => sameInstance(error.observation, instance),
+      sameObservedInstance: (error) =>
+        sameInstance(error.observation, instance),
       refusePreflight(refusal, error) {
-      const outcome = {
-        state: "failed",
-        ...notStartedDetails,
-        ...refusal,
-        ...(refusal.preflightCompleted
-          ? { activeCommand: required(error.observation).activeCommand }
-          : {}),
-      };
-      durable(path.join(directory, "outcome.json"), outcome);
-      finishTurn(grant, outcome);
-      if (job.request.phased)
-        phased.reject(
-          job.id,
-          Object.assign(new Error(error.message), {
-            code: refusal.code,
-            notStarted: true,
-          }),
-        );
-      },
-      verifyDocument(localContextChanged) {
-    if (
-      localContextChanged ||
-      (job.request.phased && job.physicalTurns) ||
-      (job.sequenceMode === "automatic" && job.sequenceParentId) ||
-      (job.contextRefreshRequired && !guardSelector?.metadataOnly)
-    ) {
-      const baselineFile = job.sequenceParentId
-        ? path.join(jobDir(job.sequenceParentId), "postflight.json")
-        : null;
-      const baseline =
-        previousTurn ||
-        (baselineFile && fs.existsSync(baselineFile)
-          ? readJson<P.Instance>(baselineFile).documentState
-          : null);
-      const code = localContextChanged
-        ? "DOCUMENT_CHANGED"
-        : compareDocumentState(baseline, observed?.documentState);
-      if (code) {
-        const refreshedStatePath = path.join(
-          directory,
-          "refreshed-document-state.json",
-        );
-        const refresh = {
-          success: false,
-          status:
-            code === "DOCUMENT_CHANGED"
-              ? "document_changed"
-              : "document_guard_rejected",
-          code,
-          operationSubmitted: false,
-          mayHaveMutated: false,
-          ...(job.physicalTurns
-            ? {
-                scope: "current SDK turn",
-                priorSdkTurns: job.physicalTurns,
-                priorSdkMayHaveMutated: !!job.dispatch?.rpcCount,
-              }
+        const outcome = {
+          state: "failed",
+          ...notStartedDetails,
+          ...refusal,
+          ...(refusal.preflightCompleted
+            ? { activeCommand: required(error.observation).activeCommand }
             : {}),
-          automaticallyRefreshed:
-            observed?.documentState?.status === "complete",
-          previousFingerprint: baseline?.fingerprint || null,
-          currentState: observed?.documentState || null,
-          refreshedStatePath,
-          openDocuments: observed?.documents || [],
-          message:
-            observed?.documentState?.status === "complete"
-              ? "The original operation was not executed. Current document state was collected in this same queue turn; no second queued read is needed to inspect it."
-              : "The original operation was not executed. The response includes the observed target-state availability and open documents; no unchanged-state claim is made.",
         };
-        durable(refreshedStatePath, refresh);
-        durable(path.join(directory, "outcome.json"), {
-          state: "failed",
-          code,
-          ...notStartedDetails,
-          refreshedStatePath,
-        });
-        fs.writeFileSync(
-          load("./queue-response-files").responsePath(
-            dir,
-            job,
-            "stdout.txt",
-            true,
-          ),
-          JSON.stringify(refresh) + "\n",
-          { flag: job.request.phased ? "a" : "wx", mode: 0o600 },
-        );
-        finishTurn(grant, {
-          state: "failed",
-          code,
-          ...notStartedDetails,
-          refreshedStatePath,
-        });
+        durable(path.join(directory, "outcome.json"), outcome);
+        finishTurn(grant, outcome);
         if (job.request.phased)
           phased.reject(
             job.id,
-            Object.assign(new Error(refresh.message), {
-              code,
+            Object.assign(new Error(error.message), {
+              code: refusal.code,
               notStarted: true,
             }),
           );
-        return false;
-      }
-    }
+      },
+      verifyDocument(localContextChanged) {
+        if (
+          localContextChanged ||
+          (job.request.phased && job.physicalTurns) ||
+          (job.sequenceMode === "automatic" && job.sequenceParentId) ||
+          (job.contextRefreshRequired && !guardSelector?.metadataOnly)
+        ) {
+          const baselineFile = job.sequenceParentId
+            ? path.join(jobDir(job.sequenceParentId), "postflight.json")
+            : null;
+          const baseline =
+            previousTurn ||
+            (baselineFile && fs.existsSync(baselineFile)
+              ? readJson<P.Instance>(baselineFile).documentState
+              : null);
+          const code = localContextChanged
+            ? "DOCUMENT_CHANGED"
+            : compareDocumentState(baseline, observed?.documentState);
+          if (code) {
+            const refreshedStatePath = path.join(
+              directory,
+              "refreshed-document-state.json",
+            );
+            const refresh = {
+              success: false,
+              status:
+                code === "DOCUMENT_CHANGED"
+                  ? "document_changed"
+                  : "document_guard_rejected",
+              code,
+              operationSubmitted: false,
+              mayHaveMutated: false,
+              ...(job.physicalTurns
+                ? {
+                    scope: "current SDK turn",
+                    priorSdkTurns: job.physicalTurns,
+                    priorSdkMayHaveMutated: !!job.dispatch?.rpcCount,
+                  }
+                : {}),
+              automaticallyRefreshed:
+                observed?.documentState?.status === "complete",
+              previousFingerprint: baseline?.fingerprint || null,
+              currentState: observed?.documentState || null,
+              refreshedStatePath,
+              openDocuments: observed?.documents || [],
+              message:
+                observed?.documentState?.status === "complete"
+                  ? "The original operation was not executed. Current document state was collected in this same queue turn; no second queued read is needed to inspect it."
+                  : "The original operation was not executed. The response includes the observed target-state availability and open documents; no unchanged-state claim is made.",
+            };
+            durable(refreshedStatePath, refresh);
+            durable(path.join(directory, "outcome.json"), {
+              state: "failed",
+              code,
+              ...notStartedDetails,
+              refreshedStatePath,
+            });
+            fs.writeFileSync(
+              load("./queue-response-files").responsePath(
+                dir,
+                job,
+                "stdout.txt",
+                true,
+              ),
+              JSON.stringify(refresh) + "\n",
+              { flag: job.request.phased ? "a" : "wx", mode: 0o600 },
+            );
+            finishTurn(grant, {
+              state: "failed",
+              code,
+              ...notStartedDetails,
+              refreshedStatePath,
+            });
+            if (job.request.phased)
+              phased.reject(
+                job.id,
+                Object.assign(new Error(refresh.message), {
+                  code,
+                  notStarted: true,
+                }),
+              );
+            return false;
+          }
+        }
         return true;
       },
       executeAndComplete: () =>
-        executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter, observed),
+        executePreparedProduct(
+          job,
+          grant,
+          plan,
+          directory,
+          guardSelector,
+          allowsBusyAfter,
+          observed,
+        ),
     });
   }
 
@@ -6508,7 +6648,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         { value: unknown; properties: Record<string, unknown> } | undefined;
     if (job.request.phased) {
       const pending = phased.pending(job.id);
-      if (!pending || plan?.kind !== "worker" || pending.message !== plan.message)
+      if (
+        !pending ||
+        plan?.kind !== "worker" ||
+        pending.message !== plan.message
+      )
         fail(
           "WORKER_CLOSED",
           "No prepared SDK request exists for the admitted turn",
@@ -6536,7 +6680,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // logical caller payload without changing its original receipt hash
         // or the checked transport bytes.
         if (hash(canonical(rawPayload)) !== plan.callerPayloadHash)
-          fail("PREPARED_RPC_UNAVAILABLE", "Prepared raw input no longer matches");
+          fail(
+            "PREPARED_RPC_UNAVAILABLE",
+            "Prepared raw input no longer matches",
+          );
         const physicalCatalogRead = [
           "resources/list",
           "resources/templates/list",
@@ -6545,37 +6692,35 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // Raw calls without an explicit upstream session must negotiate their
         // own, just like broker-owned catalog reads and prepared tool calls.
         const admissionRoute = isAddinMetadata(rawPayload);
-        const openSession = !admissionRoute && (
-          physicalCatalogRead ||
-          (rawPayload.method === "tools/call" && job.request.sessionId === undefined)
-        );
+        const openSession =
+          !admissionRoute &&
+          (physicalCatalogRead ||
+            (rawPayload.method === "tools/call" &&
+              job.request.sessionId === undefined));
         const headers = Object.fromEntries(
           Object.entries(client.server.headers || {}).filter(
             ([name]) => name.toLowerCase() !== "mcp-protocol-version",
           ),
         );
-        const operation = physicalGrant.run(
-          grant,
-          async () => {
-            const sessionId = openSession
-              ? await client._openSession()
-              : job.request.sessionId;
-            const protocolVersion = openSession
-              ? client.negotiatedProtocolVersion
-              : job.request.protocolVersion;
-            if (protocolVersion)
-              headers["MCP-Protocol-Version"] = protocolVersion;
-            return withRequest(
-              { headers, timeoutMs: job.timeoutMs, protocolVersion },
-              () =>
-                postPrepared(rawPayload, sessionId, undefined, {
-                  kind: "owned",
-                  turn: plan.turn,
-                  ...(admissionRoute ? { metadataObservation: observed } : {}),
-                }),
-            );
-          },
-        );
+        const operation = physicalGrant.run(grant, async () => {
+          const sessionId = openSession
+            ? await client._openSession()
+            : job.request.sessionId;
+          const protocolVersion = openSession
+            ? client.negotiatedProtocolVersion
+            : job.request.protocolVersion;
+          if (protocolVersion)
+            headers["MCP-Protocol-Version"] = protocolVersion;
+          return withRequest(
+            { headers, timeoutMs: job.timeoutMs, protocolVersion },
+            () =>
+              postPrepared(rawPayload, sessionId, undefined, {
+                kind: "owned",
+                turn: plan.turn,
+                ...(admissionRoute ? { metadataObservation: observed } : {}),
+              }),
+          );
+        });
         context.pending.add(operation);
         operation.then(
           () => context.pending.delete(operation),
@@ -6608,7 +6753,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       context.workerClosed = true;
     } else {
       const safeCfg = {
-        backend: pinned.backend || "mcp",
+        backend: pinned.backend || "addin",
         tool: pinned.tool,
         transport: pinned.transport,
         timeoutMs: job.timeoutMs,
@@ -6755,7 +6900,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           {
             worker() {
               const file = path.join(directory, "worker-result.json");
-              return fs.existsSync(file) ? readJson<P.WorkerResult>(file) : null;
+              return fs.existsSync(file)
+                ? readJson<P.WorkerResult>(file)
+                : null;
             },
             workflowNonterminal,
             blocked: () => !!state.summary().blocked,
@@ -6815,7 +6962,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }),
           );
           lane.assertCurrent(grant);
-          executionRecords.recordProbeTerminal(job.id, "postflight", observation);
+          executionRecords.recordProbeTerminal(
+            job.id,
+            "postflight",
+            observation,
+          );
         } catch (cause) {
           lane.assertCurrent(grant);
           const error = errorInfo(cause);
@@ -6979,77 +7130,77 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "./dist/core/application/broker-scheduler",
     ) as typeof import("../../packages/core/src/application/broker-scheduler")
   ).createBrokerScheduler<P.Job>({
-      maintain() {
-        if (!schedulingOpen()) return;
-        if (!canSelect()) state.next({ grant: false });
-        // Only outstanding prepared plans, never retained terminal history.
-        for (const id of localPlans.keys()) {
-          const job = state.data.jobs[id];
-          if (
-            !job ||
-            ["succeeded", "failed", "cancelled", "expired"].includes(job.state)
-          )
-            localPlans.delete(id);
-        }
-      },
-      canSelect,
-      select() {
-        const blocked = state.data.blocked;
-        if (blocked && !lane.hasHold())
-          setHold(heldReason() || "Original work requires reconciliation");
-        const job = state.next();
-        if (!job && blocked) void maybeRecover(blocked.id);
-        return job;
-      },
-      async start(job) {
-        const plan = localPlans.get(job.id);
-        const turn =
-          plan?.kind === "raw"
-            ? plan.turn.turn
-            : plan?.turn ?? brokerExecution.createTurnIdentity(job.id);
-        const grant = lane.begin(job, turn, !!job.workflowObservation);
-        try {
-          await execute(job, grant);
-        } catch (cause) {
-          const error = errorInfo(cause);
-          if (lane.currentGrant() !== grant) return; // Never affect a successor.
-          if (
-            job.workflowObservation &&
-            (state.status(job.id).dispatch?.rpcCount || 0) === 0 &&
-            state.status(job.id).state === "running"
-          ) {
-            finishTurn(grant, {
-              state: "failed",
-              code: error.code || "ATOMIC_OBSERVATION_NOT_STARTED",
-              executionOutcome: "not_started",
-              mayHaveMutated: false,
-              reason: error.message,
-            });
-          } else {
-            hold(grant, error.code || "BROKER_EXECUTION_FAILED");
-            if (job.request.phased) phased.reject(job.id, error);
-          }
-          diagnostics();
-        } finally {
-          grant.context.executing = false;
-          lifetime.progress();
-        }
-      },
-      defer: setImmediate,
-      onFailure(cause, job) {
-        const reason = errorInfo(cause).code || "BROKER_STORAGE_FAILED";
-        const turnGrant = lane.currentGrant();
-        if (!job || (!turnGrant && !lane.hasHold())) lane.recordFault(reason);
-        else if (turnGrant?.context.job === job) {
-          try {
-            hold(turnGrant, reason);
-          } catch {
-            // An uncertain store stays held in the runtime session.
-          }
+    maintain() {
+      if (!schedulingOpen()) return;
+      if (!canSelect()) state.next({ grant: false });
+      // Only outstanding prepared plans, never retained terminal history.
+      for (const id of localPlans.keys()) {
+        const job = state.data.jobs[id];
+        if (
+          !job ||
+          ["succeeded", "failed", "cancelled", "expired"].includes(job.state)
+        )
+          localPlans.delete(id);
+      }
+    },
+    canSelect,
+    select() {
+      const blocked = state.data.blocked;
+      if (blocked && !lane.hasHold())
+        setHold(heldReason() || "Original work requires reconciliation");
+      const job = state.next();
+      if (!job && blocked) void maybeRecover(blocked.id);
+      return job;
+    },
+    async start(job) {
+      const plan = localPlans.get(job.id);
+      const turn =
+        plan?.kind === "raw"
+          ? plan.turn.turn
+          : (plan?.turn ?? brokerExecution.createTurnIdentity(job.id));
+      const grant = lane.begin(job, turn, !!job.workflowObservation);
+      try {
+        await execute(job, grant);
+      } catch (cause) {
+        const error = errorInfo(cause);
+        if (lane.currentGrant() !== grant) return; // Never affect a successor.
+        if (
+          job.workflowObservation &&
+          (state.status(job.id).dispatch?.rpcCount || 0) === 0 &&
+          state.status(job.id).state === "running"
+        ) {
+          finishTurn(grant, {
+            state: "failed",
+            code: error.code || "ATOMIC_OBSERVATION_NOT_STARTED",
+            executionOutcome: "not_started",
+            mayHaveMutated: false,
+            reason: error.message,
+          });
+        } else {
+          hold(grant, error.code || "BROKER_EXECUTION_FAILED");
+          if (job.request.phased) phased.reject(job.id, error);
         }
         diagnostics();
-      },
-    });
+      } finally {
+        grant.context.executing = false;
+        lifetime.progress();
+      }
+    },
+    defer: setImmediate,
+    onFailure(cause, job) {
+      const reason = errorInfo(cause).code || "BROKER_STORAGE_FAILED";
+      const turnGrant = lane.currentGrant();
+      if (!job || (!turnGrant && !lane.hasHold())) lane.recordFault(reason);
+      else if (turnGrant?.context.job === job) {
+        try {
+          hold(turnGrant, reason);
+        } catch {
+          // An uncertain store stays held in the runtime session.
+        }
+      }
+      diagnostics();
+    },
+  });
 
   await lifetime.listen({
     dispatch(message) {

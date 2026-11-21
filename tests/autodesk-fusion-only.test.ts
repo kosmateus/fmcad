@@ -27,6 +27,9 @@ test("new physical clients reject native MCP before constructing any transport",
     { backend: "addin", url: "http://127.0.0.1:27182" },
     { backend: "addin", url: "http://[::1]:27182/mcp" },
     { backend: "addin", url: "http://localhost:027182/mcp" },
+    { backend: "addin", url: " http://127.0.0.1:27182/mcp" },
+    { backend: "addin", url: "http://127.0.0.1:27\t182/mcp" },
+    { backend: "addin", url: "http:\\\\127.0.0.1:27182\\mcp" },
     { url: "http://127.0.0.1:27182" },
   ]) {
     assert.throws(
@@ -80,6 +83,7 @@ test("broker refuses a retired physical endpoint before claiming a queue", async
   for (const config of [
     { backend: "mcp", url: "http://127.0.0.1:8765" },
     { backend: "addin", url: "http://127.0.0.1:27182/mcp" },
+    { backend: "addin", url: " http://127.0.0.1:27182/mcp" },
   ]) {
     const dir = path.join(os.tmpdir(), `fmcad-native-refused-${randomUUID()}`);
     await assert.rejects(
