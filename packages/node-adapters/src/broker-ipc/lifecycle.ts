@@ -101,7 +101,20 @@ export function createLifecycleDispatcher({
       const fence = message.control;
       if (!fence) deny("INVALID_REQUEST", "Control fence is required");
       validateBrokerFence(fence);
-      if (Object.keys(fence).length !== 3)
+      // Control Center also sends its action echo. Accept only a matching
+      // echo and never use a caller field to populate server-owned binding.
+      if (
+        Object.keys(fence).some(
+          (key) =>
+            ![
+              "requestId",
+              "instanceId",
+              "expectedGeneration",
+              "action",
+            ].includes(key),
+        ) ||
+        ("action" in fence && fence.action !== message.action)
+      )
         deny("INVALID_REQUEST", "Unexpected fields in the control fence");
       const { requestId, instanceId, expectedGeneration } = fence;
       const control = { requestId, instanceId, expectedGeneration };

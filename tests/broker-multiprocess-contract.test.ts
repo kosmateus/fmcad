@@ -429,6 +429,10 @@ test(
       );
     }
     await assert.rejects(
+      a.call("resume", { control: { ...control, action: "pause" } }),
+      { code: "INVALID_REQUEST" },
+    );
+    await assert.rejects(
       a.call("resume", { control, resetOwnerNonce: "different-owner-binding" }),
       {
         code: "REQUEST_CONFLICT",
@@ -440,6 +444,7 @@ test(
           requestId,
           expectedGeneration: control.expectedGeneration,
           instanceId: control.instanceId,
+          action: "resume",
         },
       }),
       original,
