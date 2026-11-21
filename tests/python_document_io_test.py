@@ -120,6 +120,9 @@ class RuntimeInventoryTests(unittest.TestCase):
             ('if not _qd_has_creation_id(creation_id):', 'if False:'),
             ('if not _qd_has_creation_id(creation_id):',
              'if _qd_has_creation_id(creation_id):'),
+            ('def _qd_capture(',
+             'def _qd_has_creation_id(value):\n    return True\n\n\ndef _qd_capture('),
+            ("'state': metadata_state}", "'state': state}"),
         )
         for before, after in mutations:
             with self.subTest(mutation=after):
@@ -154,7 +157,7 @@ class RuntimeInventoryTests(unittest.TestCase):
                 self.assertEqual(current.get(name), count, (family, name))
             # Type annotations are the intended migration change; preserve each
             # retained function's executable definition and decorator structure.
-            def behavior_dump(node):
+            def behavior_dump(node, *, current=False):
                 node = copy.deepcopy(node)
                 if node.name == '_references_refresh_internal' and node.args.args[-1].arg == 'payload':
                     # D's wire admission intentionally adds these exact guards.
@@ -305,25 +308,37 @@ data = _cad_cast("_ReferencesInput", payload)
                     # d34b59f extracted the nonempty-string predicate for typing.
                     # Verify its full implementation before normalizing only this
                     # exact call site; keep the frozen body and every guard intact.
-                    helper = next(n for n in ast.parse(family_source(family)).body
-                                  if isinstance(n, ast.FunctionDef) and
-                                  n.name == '_qd_has_creation_id')
+                    helpers = [n for n in ast.parse(family_source(family)).body
+                               if isinstance(n, ast.FunctionDef) and
+                               n.name == '_qd_has_creation_id']
+                    self.assertEqual(len(helpers), 1)
                     expected = ast.parse(
                         'def _qd_has_creation_id(value):\n'
                         '    return isinstance(value, str) and bool(value)\n').body[0]
                     self.assertEqual(
-                        ast.dump(RemoveTypeOnlySyntax().visit(helper)), ast.dump(expected))
+                        ast.dump(RemoveTypeOnlySyntax().visit(helpers[0])), ast.dump(expected))
                     extracted = ast.dump(ast.parse(
                         'not _qd_has_creation_id(creation_id)', mode='eval').body)
 
-                    class RestoreCreationIdPredicate(ast.NodeTransformer):
+                    class RenameFrozenMetadataLocals(ast.NodeTransformer):
                         def visit_Name(self, name):
-                            # The metadata branch uses a separate typed local;
-                            # its retained counterpart reused the later state name.
-                            name.id = {'metadata_state': 'state',
-                                       'metadata_json': 'canonical'}.get(name.id, name.id)
+                            name.id = {'state': 'metadata_state',
+                                       'canonical': 'metadata_json'}.get(name.id, name.id)
                             return name
 
+                    if not current:
+                        # Rename only the frozen metadata branch into the runtime
+                        # vocabulary. Never normalize incorrect runtime reads of
+                        # the later (not yet initialized) state/canonical locals.
+                        branch_test = ast.dump(ast.parse(
+                            "selector.get('kind') == 'saved-document-metadata'",
+                            mode='eval').body)
+                        branches = [n for n in ast.walk(node) if isinstance(n, ast.If)
+                                    and ast.dump(n.test) == branch_test]
+                        self.assertEqual(len(branches), 1)
+                        RenameFrozenMetadataLocals().visit(branches[0])
+
+                    class RestoreCreationIdPredicate(ast.NodeTransformer):
                         def visit_UnaryOp(self, expression):
                             if ast.dump(expression) == extracted:
                                 return ast.parse(
@@ -336,7 +351,7 @@ data = _cad_cast("_ReferencesInput", payload)
             original_nodes = {n.name: behavior_dump(n)
                               for n in ast.parse((ROOT / entry['compatibility']).read_text()).body
                               if isinstance(n, ast.FunctionDef)}
-            current_nodes = {canonical_name.get(n.name, n.name): behavior_dump(n)
+            current_nodes = {canonical_name.get(n.name, n.name): behavior_dump(n, current=True)
                              for n in ast.parse(family_source(family)).body
                              if isinstance(n, ast.FunctionDef)}
             for name in original_nodes:
