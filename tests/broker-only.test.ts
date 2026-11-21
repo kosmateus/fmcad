@@ -23,7 +23,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 const physicalTransport =
-  /createBrokerTransport|BrokerMcpClient|BrokerAddinClient|fusion-transport\/(?:broker|http|curl|mcp|addin)(?![\w-])/;
+  /createBrokerTransport|BrokerMcpClient|BrokerAddinClient|fusion-transport\/(?:broker|http|curl|mcp|addin(?!-capabilities(?:\.js)?["']))/;
 const physicalFactory =
   /^[ \t]*return load\(["']\.\/dist\/fusion-transport\/broker["']\)\.createBrokerTransport\(/gm;
 const brokerBootstraps = [
@@ -114,6 +114,19 @@ test("transport boundary detects a missing owner, duplicate construction and for
     "mcp-stdio.js",
   ]) {
     assert.throws(() => assertPhysicalTransportBoundary(consumer, factory));
+  }
+  for (const module of [
+    "broker-client",
+    "http-client",
+    "curl-client",
+    "addin-capabilities-client",
+  ]) {
+    assert.throws(() =>
+      assertPhysicalTransportBoundary(
+        "composition/library-addin-client.js",
+        `require("../fusion-transport/${module}.js");`,
+      ),
+    );
   }
   assert.throws(() =>
     assertPhysicalTransportBoundary(
