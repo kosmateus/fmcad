@@ -23,7 +23,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 const physicalTransport =
-  /createBrokerTransport|BrokerMcpClient|BrokerAddinClient|fusion-transport\/(?:broker|http|curl|mcp|addin)\b/;
+  /createBrokerTransport|BrokerMcpClient|BrokerAddinClient|fusion-transport\/(?:broker|http|curl|mcp|addin)(?![\w-])/;
 const physicalFactory =
   /^[ \t]*return load\(["']\.\/dist\/fusion-transport\/broker["']\)\.createBrokerTransport\(/gm;
 const brokerBootstraps = [
@@ -99,6 +99,12 @@ test("transport boundary detects a missing owner, duplicate construction and for
   const factory = `return load("./dist/fusion-transport/broker").createBrokerTransport(config, deps);\n`;
   const owner = "composition/queue-broker.js";
   assert.doesNotThrow(() => assertPhysicalTransportBoundary(owner, factory));
+  assert.doesNotThrow(() =>
+    assertPhysicalTransportBoundary(
+      "composition/library-addin-client.js",
+      `require("../fusion-transport/addin-capabilities");`,
+    ),
+  );
   assert.throws(() => assertPhysicalTransportBoundary(owner, ""));
   assert.throws(() => assertPhysicalTransportBoundary(owner, factory.repeat(2)));
   for (const consumer of [
