@@ -240,13 +240,12 @@ export function stageCore(root: string, identityOnly = false): void {
       if (!/\.(js|d\.ts)$/.test(file)) continue;
       const emitted = fs.readFileSync(path.join(source, file), "utf8");
       // These modules are copied one level deeper; the broker DTO stays at src/.
-      const relocated =
-        file.endsWith(".d.ts")
-          ? emitted.replace(
-              /"\.\.\/(queue-broker-ports|queue-backend-transition)(\.js)?"/g,
-              '"../../$1$2"',
-            )
-          : emitted;
+      const relocated = file.endsWith(".d.ts")
+        ? emitted.replace(
+            /"\.\.\/(queue-broker-ports|queue-backend-transition)(\.js)?"/g,
+            '"../../$1$2"',
+          )
+        : emitted;
       fs.writeFileSync(
         path.join(target, file),
         relocated
