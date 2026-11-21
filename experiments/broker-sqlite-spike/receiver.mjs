@@ -70,6 +70,11 @@ export function receiver(config, gate, notify) {
   });
 
   return async ({ op, secret, call, epoch }) => {
+    // The process-crash witness counts wire arrivals, not merely accepted/effectful calls.
+    if (op === "dispatch")
+      appendFileSync(config.attempts, `${JSON.stringify(call ?? null)}\n`, {
+        flush: true,
+      });
     if (op === "fence" || op === "metrics") {
       if (secret !== config.admin) fail("UNAUTHORIZED");
       return op === "fence" ? fence(epoch) : { settings, transactions };

@@ -125,8 +125,14 @@ export async function broker(config, gate, notify) {
   return async ({ op, token, request, requestId, bytes }, signal) => {
     if (op === "metrics" || op === "reset-metrics" || op === "copy-history") {
       if (token !== config.admin) fail("UNAUTHORIZED");
-      if (op === "copy-history")
-        return view(db.importCopy(Buffer.from(bytes, "base64")));
+      if (op === "copy-history") {
+        if (typeof bytes !== "string") fail("INVALID_HISTORY");
+        const row = db.importCopy(Buffer.from(bytes, "base64"));
+        return {
+          ...view(row),
+          archivedBytes: Buffer.from(row.historical).toString("base64"),
+        };
+      }
       if (op === "reset-metrics") {
         utilizationStart = performance.eventLoopUtilization();
         loopDelay.reset();

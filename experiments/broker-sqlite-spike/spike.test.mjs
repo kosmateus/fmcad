@@ -16,6 +16,8 @@ const status = (client, id) => get(client, "status", id);
 const result = (client, id) => get(client, "result", id);
 const effects = async (f) =>
   (await f.effects()).map((call) => `${call.requestId}:${call.phase}`);
+const attempts = async (f) =>
+  (await f.attempts()).map((call) => `${call.requestId}:${call.phase}`);
 const noProof = (state) => state.state === "UNKNOWN" && state.holdsTurn;
 const expectError = (promise, code) => assert.rejects(promise, { code });
 const waitStarted = (receiver, id) =>
@@ -135,6 +137,7 @@ test("SIGKILL inside SQLite admission before COMMIT rolls back without an ACK", 
   const fresh = await submit(alice, request("fresh"));
   assert.equal((await result(alice, fresh.requestId)).state, "succeeded");
   assert.deepEqual(await effects(f), ["fresh:main"]);
+  assert.deepEqual(await attempts(f), ["fresh:main"]);
 });
 
 test("crash after COMMIT before ACK preserves admission and restart processes only undispatched work", async (t) => {
@@ -155,6 +158,7 @@ test("crash after COMMIT before ACK preserves admission and restart processes on
   assert.equal((await recover(alice, req)).id, id);
   assert.equal((await result(alice, req.requestId)).id, id);
   assert.deepEqual(await effects(f), ["unanswered:main"]);
+  assert.deepEqual(await attempts(f), ["unanswered:main"]);
 });
 
 test("crash after ACK preserves the acknowledged job and does not create another identity", async (t) => {
@@ -174,6 +178,7 @@ test("crash after ACK preserves the acknowledged job and does not create another
   assert.equal(terminal.id, receipt.id);
   assert.equal(terminal.state, "succeeded");
   assert.deepEqual(await effects(f), ["acknowledged:main"]);
+  assert.deepEqual(await attempts(f), ["acknowledged:main"]);
 });
 
 test("lost ACK is recovered by lookup without a second submit", async (t) => {
@@ -192,6 +197,7 @@ test("lost ACK is recovered by lookup without a second submit", async (t) => {
   assert.equal((await result(alice, req.requestId)).state, "succeeded");
   assert.equal((await f.admin("metrics")).transactions.admit.commits, 1);
   assert.deepEqual(await effects(f), ["lost:main"]);
+  assert.deepEqual(await attempts(f), ["lost:main"]);
 });
 
 test("receiver crash after the effect but before receipt yields UNKNOWN, preserves the turn and never replays", async (t) => {
@@ -203,6 +209,7 @@ test("receiver crash after the effect but before receipt yields UNKNOWN, preserv
   const admitted = await submit(alice, req);
   const { value: call } = await receiver.at("after-effect:effect-gap");
   assert.deepEqual(await effects(f), ["effect-gap:main"]);
+  assert.deepEqual(await f.attempts(), [call]);
   assert.equal((await receiver.kill()).signal, "SIGKILL");
   assert.ok(noProof(await result(alice, req.requestId)));
   await broker.kill();
@@ -212,15 +219,19 @@ test("receiver crash after the effect but before receipt yields UNKNOWN, preserv
   assert.ok(noProof(restarted));
   assert.equal(restarted.id, admitted.id);
   assert.deepEqual(restarted.receipts, {});
+  assert.deepEqual(await get(alice, "reconcile", req.requestId), restarted);
+  assert.deepEqual(await f.attempts(), [call]);
   assert.deepEqual(await f.sendReceiver("lookup", call), {
     state: "active",
     receipt: null,
   });
   await expectError(f.sendReceiver("dispatch", call), "STALE_EPOCH");
+  assert.deepEqual(await f.attempts(), [call, call]); // Exactly one manual stale attempt.
   await submit(bob, request("blocked"));
   await waitPrepared(newBroker, "blocked");
   assert.equal((await status(bob, "blocked")).state, "ready");
   assert.deepEqual(await effects(f), ["effect-gap:main"]);
+  assert.deepEqual(await f.attempts(), [call, call]);
   assert.ok(!successor.events.some(({ kind }) => kind === "physical-start"));
 });
 
@@ -232,17 +243,21 @@ test("receiver crash after its admission but before any effect is also UNKNOWN r
   const req = request("before-effect");
   await submit(alice, req);
   const { value: call } = await receiver.at("before-effect:before-effect");
+  assert.deepEqual(await f.attempts(), [call]);
   await receiver.kill();
   assert.ok(noProof(await result(alice, req.requestId)));
   await broker.kill();
   await f.receiver();
   await f.broker();
-  assert.ok(noProof(await get(alice, "reconcile", req.requestId)));
+  const unresolved = await get(alice, "reconcile", req.requestId);
+  assert.ok(noProof(unresolved));
+  assert.deepEqual(await get(alice, "reconcile", req.requestId), unresolved);
   assert.deepEqual(await f.sendReceiver("lookup", call), {
     state: "active",
     receipt: null,
   });
   assert.deepEqual(await f.effects(), []);
+  assert.deepEqual(await f.attempts(), [call]);
 });
 
 test("missing receiver reply after a committed receipt is reconciled using the original identity", async (t) => {
@@ -256,6 +271,7 @@ test("missing receiver reply after a committed receipt is reconciled using the o
   const { value: call } = await receiver.at(
     "before-receiver-reply:receipt-gap",
   );
+  assert.deepEqual(await f.attempts(), [call]);
   await receiver.kill();
   assert.ok(noProof(await result(alice, "receipt-gap")));
   await f.receiver();
@@ -264,7 +280,33 @@ test("missing receiver reply after a committed receipt is reconciled using the o
   assert.equal(settled.state, "succeeded");
   assert.equal(settled.id, admitted.id);
   assert.deepEqual(settled.receipts.main.call, call);
+  assert.deepEqual(await get(alice, "reconcile", "receipt-gap"), settled);
+  assert.deepEqual(await f.attempts(), [call]);
   assert.deepEqual(await effects(f), ["receipt-gap:main"]);
+});
+
+test("broker dies after main receipt before its reply; repeated reconciliation does not dispatch a replacement postflight", async (t) => {
+  const f = await fixture(t.after.bind(t));
+  const receiver = await f.receiver({
+    gates: ["before-receiver-reply:gap:main"],
+  });
+  const broker = await f.broker();
+  const [alice] = await f.clients();
+  await submit(alice, request("gap", { postflight: true }));
+  const { value: main } = await receiver.at("before-receiver-reply:gap:main");
+  assert.deepEqual(await f.attempts(), [main]);
+  assert.deepEqual((await status(alice, "gap")).receipts, {});
+  assert.equal((await broker.kill()).signal, "SIGKILL");
+  receiver.release("before-receiver-reply:gap:main");
+  await f.broker();
+  assert.equal((await f.admin("metrics")).epoch, main.epoch + 1);
+  const held = await get(alice, "reconcile", "gap");
+  assert.ok(noProof(held));
+  assert.deepEqual(Object.keys(held.receipts), ["main"]);
+  assert.deepEqual(held.receipts.main.call, main);
+  assert.deepEqual(await get(alice, "reconcile", "gap"), held);
+  assert.deepEqual(await f.attempts(), [main]);
+  assert.deepEqual(await effects(f), ["gap:main"]);
 });
 
 test("a missing postflight after the durable main receipt holds the turn and rejects a delayed old epoch at the receiver", async (t) => {
@@ -277,18 +319,24 @@ test("a missing postflight after the durable main receipt holds the turn and rej
   const before = await status(alice, "missing");
   assert.equal(before.receipts.main.outcome, "complete");
   assert.equal(before.receipts.postflight, undefined);
+  const main = before.receipts.main.call;
+  assert.deepEqual(await f.attempts(), [main]);
   assert.equal(await f.sendReceiver("lookup", late), null);
   await broker.kill();
   const next = await f.broker();
   const unknown = await get(alice, "reconcile", "missing");
   assert.ok(noProof(unknown));
   assert.deepEqual(unknown.receipts, before.receipts);
+  assert.deepEqual(await get(alice, "reconcile", "missing"), unknown);
+  assert.deepEqual(await f.attempts(), [main]);
   assert.equal(late.epoch + 1, (await f.admin("metrics")).epoch);
   await expectError(f.sendReceiver("dispatch", late), "STALE_EPOCH");
+  assert.deepEqual(await f.attempts(), [main, late]); // Manual delivery, not replay.
   assert.equal(await f.sendReceiver("lookup", late), null);
   await submit(bob, request("no-turn"));
   await waitPrepared(next, "no-turn");
   assert.deepEqual(await effects(f), ["missing:main"]);
+  assert.deepEqual(await f.attempts(), [main, late]);
   assert.equal((await status(bob, "no-turn")).state, "ready");
 });
 
@@ -308,6 +356,7 @@ test("cancel before local dispatch and durable withdrawal after intent reject de
   await submit(alice, request("withdraw"));
   const { value: delayed } = await broker.at("before-dispatch:withdraw");
   assert.equal(await f.sendReceiver("lookup", delayed), null);
+  assert.deepEqual(await f.attempts(), []);
   const canceled = await get(alice, "cancel", "withdraw");
   assert.equal(canceled.holdsTurn, false);
   assert.equal(canceled.state, "not_started");
@@ -320,9 +369,19 @@ test("cancel before local dispatch and durable withdrawal after intent reject de
   const withdrawn = { state: "withdrawn", receipt: canceled.receipts.main };
   assert.deepEqual(await f.sendReceiver("lookup", delayed), withdrawn);
   assert.deepEqual(await f.sendReceiver("dispatch", delayed), withdrawn);
+  assert.deepEqual(await f.attempts(), [delayed]);
   await submit(bob, request("next"));
   assert.equal((await result(bob, "next")).state, "succeeded");
   broker.release("before-dispatch:withdraw");
+  await until(
+    () => attempts(f),
+    (seen) => seen.length >= 3,
+  );
+  assert.deepEqual(await attempts(f), [
+    "withdraw:main",
+    "next:main",
+    "withdraw:main",
+  ]);
   assert.deepEqual(await status(alice, "withdraw"), canceled);
   assert.deepEqual(await effects(f), ["next:main"]);
 });
@@ -338,6 +397,7 @@ test("a committed withdrawal survives a crash before the broker could acknowledg
   const { value: call } = await broker.at("before-dispatch:withdrawn");
   const reply = expectError(get(alice, "cancel", "withdrawn"), "REPLY_LOST");
   await receiver.at("before-withdraw-reply:withdrawn");
+  assert.deepEqual(await f.attempts(), []);
   await broker.kill();
   await reply;
   await receiver.kill();
@@ -346,10 +406,15 @@ test("a committed withdrawal survives a crash before the broker could acknowledg
   const terminal = await result(alice, "withdrawn");
   assert.equal(terminal.state, "not_started");
   assert.deepEqual(terminal.receipts.main, { call, outcome: "not_started" });
+  assert.deepEqual(await get(alice, "reconcile", "withdrawn"), terminal);
+  assert.deepEqual(await get(alice, "reconcile", "withdrawn"), terminal);
+  assert.deepEqual(await f.attempts(), []);
   await expectError(f.sendReceiver("dispatch", call), "STALE_EPOCH");
+  assert.deepEqual(await f.attempts(), [call]);
   await submit(bob, request("freed"));
   assert.equal((await result(bob, "freed")).state, "succeeded");
   assert.deepEqual(await effects(f), ["freed:main"]);
+  assert.deepEqual(await attempts(f), ["withdrawn:main", "freed:main"]);
 });
 
 test("independent clients prepare concurrently; cancellation and a wait timeout do not free an admitted physical turn", async (t) => {
@@ -400,6 +465,12 @@ test("independent clients prepare concurrently; cancellation and a wait timeout 
   await waitPrepared(broker, "bob-op");
   assert.equal((await status(bob, "bob-op")).state, "ready");
   assert.deepEqual(await f.effects(), []);
+  assert.deepEqual(await attempts(f), [
+    "alice-op:main",
+    "alice-op:main",
+    "alice-op:main",
+    "alice-op:main",
+  ]);
   assert.equal(
     receiver.events.filter(({ kind }) => kind === "physical-start").length,
     1,
@@ -455,17 +526,102 @@ test("foreign receipt cannot release the turn; a bound stored receipt can settle
   const verified = await get(alice, "reconcile", "receipt");
   assert.equal(verified.state, "succeeded");
   assert.equal(verified.receipts.main.call.owner, "alice");
+  assert.deepEqual(await get(alice, "reconcile", "receipt"), verified);
+  assert.deepEqual(await f.attempts(), [verified.receipts.main.call]);
   assert.deepEqual(await effects(f), ["receipt:main"]);
 });
 
-test("legacy UNKNOWN copy preserves raw snapshot and receipt evidence, does not execute or clean up", async (t) => {
+const legacyCopy = new URL("./fixtures/legacy-unknown.json", import.meta.url);
+const encodeCopy = (value) =>
+  Buffer.from(JSON.stringify(value)).toString("base64");
+
+test("legacy fixture has a canonical SHA-256 reference hash", async () => {
+  const { snapshot, receipts } = JSON.parse(await readFile(legacyCopy));
+  const job = snapshot.jobs[snapshot.active];
+  // Reference QueueDomain hashes the lexically ordered JSON request including clientId.
+  const referenceInput =
+    '{"clientId":"alice","kind":"rpc","payload":{"document":"fixture-document-5","file":"fixture-file-2","version":"fixture-version-3"},"requestId":"legacy-request-19","timeoutMs":5000}';
+  assert.deepEqual(job.request, JSON.parse(referenceInput));
+  assert.match(job.hash, /^[0-9a-f]{64}$/);
+  assert.equal(
+    job.hash,
+    createHash("sha256").update(referenceInput).digest("hex"),
+  );
+  assert.equal(receipts[0].hash, job.hash);
+});
+
+test("out-of-scope or inconsistent legacy copies are refused atomically over IPC", async (t) => {
   const f = await fixture(t.after.bind(t));
   await f.receiver();
   const broker = await f.broker();
   const [alice, bob] = await f.clients();
-  const original = await readFile(
-    new URL("./fixtures/legacy-unknown.json", import.meta.url),
-  );
+  const source = JSON.parse(await readFile(legacyCopy));
+  const job = source.snapshot.jobs[source.snapshot.active];
+  const requestId = job.requestId;
+  const foreign = {
+    id: "foreign-job",
+    requestId: "foreign-request",
+    clientId: "bob",
+  };
+  const checks = [
+    (copy) => {
+      copy.snapshot.jobs[foreign.id] = { ...job, ...foreign };
+    },
+    (copy) => {
+      copy.receipts[0].owner = "bob";
+    },
+    (copy) => {
+      copy.receipts[0].requestId = foreign.requestId;
+    },
+    (copy) => {
+      copy.receipts[0].jobId = foreign.id;
+    },
+    (copy) => {
+      copy.receipts[0].hash = "f".repeat(64);
+    },
+    (copy) => {
+      copy.snapshot.jobs[job.id].request.clientId = "bob";
+    },
+    (copy) => {
+      copy.snapshot.jobs[job.id].request.requestId = foreign.requestId;
+    },
+    (copy) => {
+      copy.snapshot.jobs[job.id].hash = "f".repeat(64);
+      copy.receipts[0].hash = "f".repeat(64);
+    },
+    (copy) => {
+      copy.snapshot.jobs[job.id].hash = "f".repeat(65);
+      copy.receipts[0].hash = "f".repeat(65);
+    },
+  ];
+  for (const corrupt of checks) {
+    const copy = structuredClone(source);
+    corrupt(copy);
+    await expectError(
+      f.admin("copy-history", { bytes: encodeCopy(copy) }),
+      "INVALID_HISTORY",
+    );
+    await expectError(status(alice, requestId), "NOT_FOUND");
+    await expectError(status(bob, foreign.requestId), "NOT_FOUND");
+  }
+  assert.equal((await f.admin("metrics")).transactions.importCopy.commits, 0);
+  await broker.kill();
+  await f.broker();
+  await expectError(status(alice, requestId), "NOT_FOUND");
+  assert.deepEqual(await f.attempts(), []);
+  // No ghost key or turn survives the rejected copies.
+  await submit(alice, request(requestId, job.request.payload));
+  assert.equal((await result(alice, requestId)).state, "succeeded");
+  await submit(bob, request(foreign.requestId));
+  assert.equal((await result(bob, foreign.requestId)).state, "succeeded");
+});
+
+test("legacy UNKNOWN copy retains raw admin evidence, exposes only owner metadata, and never executes or cleans up", async (t) => {
+  const f = await fixture(t.after.bind(t));
+  await f.receiver();
+  const broker = await f.broker();
+  const [alice, bob] = await f.clients();
+  const original = await readFile(legacyCopy);
   const copied = join(f.dir, "legacy-source-copy.json");
   const retained = join(f.dir, "fixture-document-5");
   await writeFile(copied, original);
@@ -479,19 +635,36 @@ test("legacy UNKNOWN copy preserves raw snapshot and receipt evidence, does not 
   assert.equal(imported.requestId, job.requestId);
   assert.equal(imported.hash, job.hash);
   assert.ok(noProof(imported));
-  assert.deepEqual(Buffer.from(imported.historical, "base64"), original);
+  assert.deepEqual(Buffer.from(imported.archivedBytes, "base64"), original);
   assert.deepEqual(await f.admin("copy-history", { bytes }), imported);
+  const publicView = {
+    id: job.id,
+    owner: job.clientId,
+    requestId: job.requestId,
+    hash: job.hash,
+    state: "UNKNOWN",
+    holdsTurn: true,
+    cancelRequested: false,
+    receipts: {},
+    historical: true,
+  };
+  assert.deepEqual(await status(alice, job.requestId), publicView);
+  assert.deepEqual(await result(alice, job.requestId), publicView);
+  await expectError(alice.call("copy-history", { bytes }), "UNAUTHORIZED");
   await expectError(recover(alice, request(job.requestId)), "NOT_FOUND");
   await expectError(submit(alice, request(job.requestId)), "REQUEST_CONFLICT");
   await expectError(status(bob, job.requestId), "NOT_FOUND");
+  await expectError(result(bob, job.requestId), "NOT_FOUND");
   await broker.kill();
   const next = await f.broker();
-  assert.deepEqual(await get(alice, "reconcile", job.requestId), imported);
-  assert.deepEqual(await get(alice, "cancel", job.requestId), imported);
+  assert.deepEqual(await get(alice, "reconcile", job.requestId), publicView);
+  assert.deepEqual(await get(alice, "cancel", job.requestId), publicView);
+  assert.deepEqual(await f.admin("copy-history", { bytes }), imported);
   await submit(bob, request("after-import"));
   await waitPrepared(next, "after-import");
   assert.equal((await status(bob, "after-import")).state, "ready");
   assert.deepEqual(await readFile(copied), original);
   assert.equal(await readFile(retained, "utf8"), "retained");
   assert.deepEqual(await f.effects(), []);
+  assert.deepEqual(await f.attempts(), []);
 });

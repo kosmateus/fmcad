@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { open } from "./sqlite.mjs";
 import { canonical, fail, hash } from "./wire.mjs";
+import { validateHistoryCopy } from "./history.mjs";
 
 export function store(path, afterInsert) {
   const { sql, write, settings, transactions } = open(
@@ -140,25 +141,7 @@ export function store(path, afterInsert) {
     },
   );
   const importCopy = write("importCopy", (bytes) => {
-    const { snapshot, receipts } = JSON.parse(bytes.toString("utf8"));
-    const job =
-      snapshot?.jobs &&
-      Object.hasOwn(snapshot.jobs, snapshot.active) &&
-      snapshot.jobs[snapshot.active];
-    if (
-      snapshot?.version !== 1 ||
-      !job ||
-      job.id !== snapshot.active ||
-      job.id !== snapshot.blocked?.id ||
-      job.state !== "needs_reconciliation" ||
-      !job.request ||
-      !Array.isArray(receipts) ||
-      ![job.id, job.requestId, job.clientId, job.hash].every(
-        (part) => typeof part === "string" && part,
-      )
-    ) {
-      fail("INVALID_HISTORY");
-    }
+    const job = validateHistoryCopy(bytes);
     const previous = byRequest(job.requestId);
     if (previous?.historical && Buffer.from(previous.historical).equals(bytes))
       return previous;
@@ -210,8 +193,6 @@ export function view(row) {
     holdsTurn: Boolean(row.holds_turn),
     cancelRequested: Boolean(row.cancel_requested),
     receipts: JSON.parse(row.receipts),
-    ...(row.historical && {
-      historical: Buffer.from(row.historical).toString("base64"),
-    }),
+    ...(row.historical && { historical: true }),
   };
 }

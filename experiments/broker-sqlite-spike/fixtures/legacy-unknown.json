@@ -28,7 +28,7 @@
             "version": "fixture-version-3"
           }
         },
-        "hash": "214732731ec0fd04664f97c2c6de81a174afbe710400633352cc924f8909a1378",
+        "hash": "dcc808a0104bd7ddb159e564e53443fd759b4d84c1a8769919ea3503296e18d1",
         "order": 16,
         "state": "needs_reconciliation",
         "submittedAt": 1720000000000,
@@ -62,7 +62,7 @@
       "build": "legacy-build-11",
       "source": "legacy-source-12",
       "instance": "historical-fixture-7",
-      "hash": "214732731ec0fd04664f97c2c6de81a174afbe710400633352cc924f8909a1378",
+      "hash": "dcc808a0104bd7ddb159e564e53443fd759b4d84c1a8769919ea3503296e18d1",
       "outcome": "complete"
     }
   ]

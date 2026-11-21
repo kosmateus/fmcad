@@ -44,9 +44,13 @@ retained in a production comparison.
   transactions. An admitted call without a bound terminal receipt remains
   `UNKNOWN`, including when the effect happened. Lookup never dispatches. A
   missing postflight holds the turn even if the original main receipt exists.
-- The history importer accepts a copy of a single blocked v1 snapshot with
-  receipt evidence, keeps its raw bytes, and retains the block. It is not a
-  cutover, a general legacy parser, or a cleanup tool.
+  The receiver records each incoming dispatch before rejection or deduplication
+  in a separate test trace; the effect log remains independent.
+- The history importer accepts a v1 copy with one blocked RPC and only matching
+  receipt evidence. It validates the canonical SHA-256 and retains both the
+  original bytes (administrator only) and the block. The owner sees job
+  metadata, not the archive. It is not a cutover, a general legacy parser, or
+  a cleanup tool.
 
 ## What the prototype replaces — and what it does not
 

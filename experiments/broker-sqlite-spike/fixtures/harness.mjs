@@ -99,7 +99,14 @@ export async function fixture(after) {
   }
   const dir = await mkdtemp(join(base, "queue-"));
   const effectsFile = join(dir, "effects.jsonl");
-  await writeFile(effectsFile, "");
+  const attemptsFile = join(dir, "dispatch-attempts.jsonl");
+  await Promise.all([writeFile(effectsFile, ""), writeFile(attemptsFile, "")]);
+  const readTrace = async (file) =>
+    (await readFile(file, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map(JSON.parse);
   const brokerPath = `\0sqlite-broker-${randomUUID()}`;
   const receiverPath = `\0sqlite-receiver-${randomUUID()}`;
   const admin = randomUUID();
@@ -150,6 +157,7 @@ export async function fixture(after) {
           socket: receiverPath,
           database: join(dir, "receiver.sqlite"),
           effects: effectsFile,
+          attempts: attemptsFile,
           ...extra,
         }),
       ),
@@ -167,12 +175,8 @@ export async function fixture(after) {
       ask(receiverPath, { op, secret: admin, ...args }),
     sendReceiver: (op, call) =>
       ask(receiverPath, { op, secret: dispatch, call }),
-    effects: async () =>
-      (await readFile(effectsFile, "utf8"))
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map(JSON.parse),
+    effects: () => readTrace(effectsFile),
+    attempts: () => readTrace(attemptsFile),
     fsType: type >>> 0,
   };
 }
