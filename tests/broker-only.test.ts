@@ -22,6 +22,33 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+const physicalTransport =
+  /createBrokerTransport|BrokerMcpClient|BrokerAddinClient|fusion-transport\/(?:broker|http|curl|mcp|addin(?!-capabilities(?:\.js)?["']))/;
+const physicalFactory =
+  /^[ \t]*return load\(["']\.\/dist\/fusion-transport\/broker["']\)\.createBrokerTransport\(/gm;
+const brokerBootstraps = [
+  "composition/queue-broker.js",
+  "dist/composition/queue-broker.js",
+];
+
+function assertPhysicalTransportBoundary(name: string, source: string) {
+  if (brokerBootstraps.includes(name)) {
+    assert.equal(
+      source.match(physicalFactory)?.length ?? 0,
+      1,
+      `${name} must construct the private transport exactly once`,
+    );
+    source = source.replace(physicalFactory, "");
+  } else if (name === "curl-transport.js") {
+    // This compatibility wrapper only parses captured responses locally.
+    source = source.replace(
+      /const \{ parseCurlResponse \} = require\(["']\.\/dist\/fusion-transport\/curl["']\);/,
+      "",
+    );
+  }
+  assert.doesNotMatch(source, physicalTransport, name);
+}
+
 test("only the broker bootstrap imports the private physical transport", () => {
   const publicFiles = [
     "src/client.js",
@@ -34,26 +61,78 @@ test("only the broker bootstrap imports the private physical transport", () => {
   ];
   for (const name of publicFiles) {
     const source = fs.readFileSync(path.join(root, name), "utf8");
-    assert.doesNotMatch(
-      source,
-      /createBrokerTransport|BrokerMcpClient|BrokerAddinClient|fusion-transport\/(broker|http|curl)/,
-      name,
+    assert.doesNotMatch(source, physicalTransport, name);
+  }
+  const runtime = path.join(root, "dist/src");
+  const files = fs.readdirSync(runtime, { recursive: true, encoding: "utf8" }).filter(
+    (name) =>
+      name.endsWith(".js") &&
+      !name.startsWith(path.join("dist", "fusion-transport") + path.sep),
+  );
+  for (const bootstrap of brokerBootstraps) {
+    assert.ok(files.includes(path.normalize(bootstrap)), `Missing ${bootstrap}`);
+  }
+  // Check the emitted consumers, not just the facade or known public sources.
+  // Staging mirrors the same composition owner in both locations above.
+  for (const name of files) {
+    assertPhysicalTransportBoundary(
+      name.split(path.sep).join("/"),
+      fs.readFileSync(path.join(runtime, name), "utf8"),
     );
   }
-  const broker = fs.readFileSync(
-    path.join(root, "src/queue-broker.js"),
-    "utf8",
-  );
-  assert.equal((broker.match(/createBrokerTransport/g) || []).length, 1);
   assert.equal(
     record(load("./src/queue-client"))["assertDirectAccess"],
     undefined,
   );
+  assert.deepEqual(Object.keys(record(load("./dist/src/curl-transport"))), [
+    "parseCurlResponse",
+  ]);
 
   const manifest = record(load("./package.json"));
   assert.doesNotMatch(
     JSON.stringify(manifest["exports"]),
     /fusion-transport|queue-broker|src\/client/,
+  );
+});
+
+test("transport boundary detects a missing owner, duplicate construction and forbidden consumers", () => {
+  const factory = `return load("./dist/fusion-transport/broker").createBrokerTransport(config, deps);\n`;
+  const owner = "composition/queue-broker.js";
+  assert.doesNotThrow(() => assertPhysicalTransportBoundary(owner, factory));
+  assert.doesNotThrow(() =>
+    assertPhysicalTransportBoundary(
+      "composition/library-addin-client.js",
+      `require("../fusion-transport/addin-capabilities");`,
+    ),
+  );
+  assert.throws(() => assertPhysicalTransportBoundary(owner, ""));
+  assert.throws(() => assertPhysicalTransportBoundary(owner, factory.repeat(2)));
+  for (const consumer of [
+    "queue-broker.js",
+    "entrypoints/cli.js",
+    "composition/library.js",
+    "mcp-stdio.js",
+  ]) {
+    assert.throws(() => assertPhysicalTransportBoundary(consumer, factory));
+  }
+  for (const module of [
+    "broker-client",
+    "http-client",
+    "curl-client",
+    "addin-capabilities-client",
+  ]) {
+    assert.throws(() =>
+      assertPhysicalTransportBoundary(
+        "composition/library-addin-client.js",
+        `require("../fusion-transport/${module}.js");`,
+      ),
+    );
+  }
+  assert.throws(() =>
+    assertPhysicalTransportBoundary(
+      "curl-transport.js",
+      `const { postCurl } = require("./dist/fusion-transport/curl");`,
+    ),
   );
 });
 
