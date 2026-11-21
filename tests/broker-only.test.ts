@@ -64,7 +64,7 @@ test("only the broker bootstrap imports the private physical transport", () => {
     assert.doesNotMatch(source, physicalTransport, name);
   }
   const runtime = path.join(root, "dist/src");
-  const files = fs.readdirSync(runtime, { recursive: true }).filter(
+  const files = fs.readdirSync(runtime, { recursive: true, encoding: "utf8" }).filter(
     (name) =>
       name.endsWith(".js") &&
       !name.startsWith(path.join("dist", "fusion-transport") + path.sep),
