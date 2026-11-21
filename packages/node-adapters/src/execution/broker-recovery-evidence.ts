@@ -1,8 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { lstatSync } from "node:fs";
+import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { reconciledExecution } from "../../../core/src/application/execution";
 import type {
   RecoveryDispatch,
   RecoveryEvidence,
   RecoveryNativeEnd,
+  RecoveryInstance,
+  RecoveryObservationGrant,
+  RecoveredDispatch,
   RecoveryProbe,
   RecoveryProbeStage,
 } from "../../../core/src/application/broker-recovery";
@@ -59,6 +66,119 @@ interface RecoveryRuntime<
 
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
+}
+
+/** Host IO for the recovery observation selected by the core policy.
+ * An offline or unsent probe must not publish an intent. */
+export function observeBrokerRecovery(
+  job: { id: string; directory: string; instance: RecoveryInstance; buildHash: string },
+  previous: RecoveryProbe | null,
+  grant: RecoveryObservationGrant,
+  ports: {
+    read(file: string): unknown;
+    write(file: string, value: unknown, fresh?: boolean): void;
+    send(
+      options: {
+        binding: Pick<RecoveryProbe["binding"], "jobId" | "rpcId" | "requestHash" | "buildHash">;
+        receiptPath: string;
+        diagnosticPath: string;
+      },
+      fence: { assertCurrent(): void; start(): void },
+    ): Promise<unknown>;
+  },
+) {
+  const rpcId = randomUUID();
+  const binding = {
+    jobId: job.id,
+    rpcId,
+    requestHash: createHash("sha256").update(`reconcile:${job.id}:${rpcId}`).digest("hex"),
+    buildHash: job.buildHash,
+  };
+  const receipt = path.join(job.directory, `reconcile-${rpcId}.receipt.json`);
+  return ports.send(
+    {
+      binding,
+      receiptPath: receipt,
+      diagnosticPath: path.join(job.directory, `reconcile-${rpcId}.result.json`),
+    },
+    {
+      assertCurrent: grant.assertCurrent,
+      start() {
+        grant.beforeSend();
+        if (previous) {
+          const archived = path.join(job.directory, `reconcile-probe-${previous.binding.rpcId}.json`);
+          grant.assertCurrent();
+          if (lstatSync(archived, { throwIfNoEntry: false })) {
+            if (!isDeepStrictEqual(ports.read(archived), previous))
+              fail("RECEIPT_MISMATCH", "Archived recovery intent differs");
+          } else ports.write(archived, previous, true);
+        }
+        grant.assertCurrent();
+        ports.write(
+          path.join(job.directory, "reconcile-probe.json"),
+          { binding, instance: job.instance, receipt },
+          !previous,
+        );
+      },
+    },
+  );
+}
+
+/** Publish only the original, bound output; this port never sends more SDK work. */
+export function publishBrokerRecoveredDispatch<
+  Dispatch extends RecoveryDispatch,
+  Native extends RecoveryNativeEnd,
+  Response,
+  Result,
+>(
+  directory: string,
+  decision: RecoveredDispatch<Dispatch, Native>,
+  assertCurrent: () => void,
+  ports: {
+    rpc: boolean;
+    readOutput(): Response | null;
+    restoreOutput(record: Dispatch): Response;
+    publishOutput(response: Response): void;
+    successfulOutput(response: Response): boolean;
+    describeNativeEnd(proof: Native): unknown;
+    write(file: string, value: unknown): void;
+    resolve(details: unknown): Result;
+  },
+) {
+  assertCurrent();
+  ports.write(path.join(directory, "reconcile-postflight.json"), decision.observation);
+  let output = ports.rpc ? ports.readOutput() : null;
+  const onlyRecord = decision.records.length === 1 ? decision.records[0] : undefined;
+  if (!output && ports.rpc && onlyRecord?.terminal) {
+    output = ports.restoreOutput(onlyRecord);
+    assertCurrent();
+    ports.publishOutput(output);
+  }
+  const available =
+    !decision.adapterUnknown &&
+    (ports.rpc ? !!output && ports.successfulOutput(output) : decision.workerSucceeded);
+  const details = {
+    state: reconciledExecution({
+      outputAvailable: available,
+      adapterUnknown: decision.adapterUnknown,
+      receipts: decision.receipts,
+      records: decision.records,
+      nativeEnds: decision.nativeEnds,
+    }),
+    code: decision.workerTerminal || output ? "RECONCILED" : "RESULT_UNAVAILABLE",
+    mayHaveMutated: true,
+    sdkSettled: true,
+    publicationOutcome: available ? "published" : "unavailable",
+    limitations:
+      "Synchronous receipts alone do not prove native background completion or model/physical validation.",
+    ...(decision.nativeEnds.length
+      ? { nativeCompletion: decision.nativeEnds.map(ports.describeNativeEnd) }
+      : {}),
+  };
+  assertCurrent();
+  ports.write(path.join(directory, "outcome.json"), details);
+  assertCurrent();
+  return ports.resolve(details);
 }
 
 function validBirth(value: unknown): value is string {

@@ -2,12 +2,74 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import net from "node:net";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createBrokerIpcDispatch } from "../packages/node-adapters/src/broker-ipc/dispatch";
+import type { TrustedAddinMetadataAdmission } from "../src/queue-broker-ports";
 
 type Auth = { clientId: string; clientToken: string };
+
+test("broker dispatch never publishes another owner's output or grants new authority for a lost epoch", async () => {
+  let unavailable = false;
+  let published = 0;
+  let committed: Record<string, string> = {};
+  const owner = { clientId: "owner", clientToken: "owner-token" };
+  const observer = { clientId: "observer", clientToken: "observer-token" };
+  const never = () => assert.fail("unexpected routing");
+  const broker = createBrokerIpcDispatch({}, {
+    persistClients: hashes => { committed = hashes; },
+    processUnavailable: () => unavailable,
+    hasSuccessor: () => false,
+    ownsSuccessorCreation: never,
+    assertMigrationAdmission: () => {},
+    readEpochOwner: () => undefined,
+    isHistorical: () => false,
+    acceptsLifecycle: () => false,
+    lifecycle: never,
+    backend: never,
+    workerStatus: never,
+    command: never,
+    readJob: id => ({ id, clientId: owner.clientId }),
+    result(caller, job) {
+      assert.equal(caller, owner.clientId);
+      published++;
+      return job?.id;
+    },
+  });
+  await broker.dispatch({ action: "register", ...owner });
+  await broker.dispatch({ action: "register", ...observer });
+  const detached = broker.clientHashes();
+  detached[observer.clientId] = detached[owner.clientId]!;
+  const snapshot = committed;
+  unavailable = true;
+  await assert.rejects(
+    broker.dispatch({ action: "submit", clientId: 7 }),
+    { code: "EPOCH_PROCESS_UNAVAILABLE" },
+  );
+  await assert.rejects(
+    broker.dispatch({ action: "register", clientId: "new", clientToken: "secret" }),
+    { code: "EPOCH_PROCESS_UNAVAILABLE" },
+  );
+  await broker.dispatch({ action: "register", ...owner });
+  assert.equal(committed, snapshot);
+  await assert.rejects(
+    broker.dispatch({ action: "result", auth: observer, jobId: "original" }),
+    { code: "NOT_OWNER" },
+  );
+  assert.equal(published, 0);
+  assert.equal(
+    await broker.dispatch({ action: "result", auth: owner, jobId: "original" }),
+    "original",
+  );
+  assert.equal(published, 1);
+});
+
 type Broker = { close(): Promise<void> };
 type IpcTransport = {
   close(): Promise<void>;
@@ -64,6 +126,12 @@ const other: Auth = { clientId: "ipc-owner-b", clientToken: "ipc-token-b" };
 const createFakeBackend = load(
   "./tests/fixtures/broker-ipc/fake-backend.cjs",
 ) as () => FakeBackend;
+const { matchRetainedMetadataEvidence, usesRetainedMetadataEvidence } = load("./src/queue-broker-modules") as Pick<
+  typeof import("../src/queue-broker-modules"),
+  "matchRetainedMetadataEvidence" | "usesRetainedMetadataEvidence"
+>;
+const { decodeAdmissionJson } = load("./src/dist/node-adapters/execution/admission-json") as
+  typeof import("../packages/node-adapters/src/execution/admission-json");
 const { serve } = load("./src/queue-broker") as {
   serve(
     config: { backend: string; timeoutMs: number },
@@ -74,6 +142,7 @@ const { serve } = load("./src/queue-broker") as {
       nativePath(file: string): string;
       pollMs: number;
       startPaused?: boolean;
+      addinMetadataAdmission?: TrustedAddinMetadataAdmission;
     },
   ): Promise<Broker>;
 };
@@ -366,7 +435,7 @@ async function fixture(
 ): Promise<Fixture> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-broker-ipc-"));
   const fake = createFakeBackend();
-  let broker: Broker | undefined;
+  const running: { broker?: Broker } = {};
   const {
     historyJobs = 0,
     serverDataChunks,
@@ -437,13 +506,13 @@ async function fixture(
   }
   t.after(async () => {
     try {
-      if (broker) await broker.close();
+      await running.broker?.close();
     } finally {
       socketHarness?.restore();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-  broker = await serve(
+  const broker = await serve(
     { backend: "mcp", timeoutMs: 5000 },
     {
       dir,
@@ -454,6 +523,7 @@ async function fixture(
       ...serveOptions,
     },
   );
+  running.broker = broker;
   for (const client of [owner, other])
     assert.deepEqual(await exchange(dir, { action: "register", ...client }), {
       ok: true,
@@ -519,6 +589,298 @@ async function ownedResult(
     return null;
   }, "terminal result for " + jobId);
 }
+
+test("retained ADDIN metadata rejects a copied original response or another admission request", () => {
+  const make = (rpcId: string, request = rpcId) => {
+    const wireRequest = { jsonrpc: "2.0", method: "tools/call", id: `fmcad:${rpcId}` };
+    const addinAdmission = { request };
+    const binding = { jobId: `job-${rpcId}`, rpcId, buildHash: "build", requestHash: "hash", addinAdmission };
+    const result = { content: [] };
+    const response = {
+      status: 200,
+      raw: JSON.stringify({ version: 1, binding: addinAdmission, record: { state: "terminal", result } }),
+      toolResponse: { jsonrpc: "2.0", id: wireRequest.id, result },
+    };
+    const original = { version: 1, kind: "owned-rpc-received-response-v1", binding, wireId: wireRequest.id, response };
+    return { record: { binding, wireRequest, response }, original };
+  };
+  const a = make("a");
+  const b = make("b");
+  const { addinAdmission: omitted, ...unbound } = b.record.binding;
+  const legacyLooking = {
+    ...b.record,
+    dispatchClass: "addin-metadata",
+    binding: unbound,
+    response: {
+      status: 200,
+      raw: JSON.stringify({ jsonrpc: "2.0", id: "fmcad:b", result: {} }),
+    },
+  };
+  assert.ok(omitted);
+  assert.throws(() => usesRetainedMetadataEvidence(legacyLooking), { code: "RECEIPT_MISMATCH" });
+  assert.throws(() => usesRetainedMetadataEvidence(b.record), { code: "RECEIPT_MISMATCH" });
+  for (const candidate of [a, b])
+    assert.equal(
+      matchRetainedMetadataEvidence(candidate.record, candidate.original, decodeAdmissionJson).id,
+      candidate.original.wireId,
+    );
+  assert.throws(
+    () => matchRetainedMetadataEvidence({ ...b.record, response: a.record.response }, b.original, decodeAdmissionJson),
+    { code: "RECEIPT_MISMATCH" },
+  );
+  const relabelled = make("b", "a");
+  assert.throws(
+    () => matchRetainedMetadataEvidence(relabelled.record, relabelled.original, decodeAdmissionJson),
+    { code: "RECEIPT_MISMATCH" },
+  );
+});
+
+test("raw ADDIN metadata uses only the provisioned port and retains the bound original response", async (t) => {
+  const childDir = process.env["FMCAD_METADATA_OFFLINE_CHILD_DIR"];
+  if (!childDir) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmc-meta-"));
+    t.diagnostic(`Retained offline metadata evidence: ${dir}`);
+    // Unknown work refuses orderly close. Exit the isolated test process only
+    // after verifying the retained evidence and that expected refusal.
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, FMCAD_METADATA_OFFLINE_CHILD_DIR: dir };
+    // Nested Node 22 must start a test runner, not inherit the outer worker's
+    // binary message mode (which does not emit terminal TAP on stdout).
+    delete childEnv["NODE_TEST_CONTEXT"];
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "--test-name-pattern=raw ADDIN metadata",
+        __filename,
+      ],
+      { env: childEnv, timeout: 30000 },
+    );
+    assert.match(stdout, /^1\.\.1$/m);
+    assert.match(stdout, /^# pass 1$/m);
+    assert.match(stdout, /^# fail 0$/m);
+    assert.match(stdout, /# METADATA_UNKNOWN_CLOSE_REFUSED_AND_RECEIPT_RETAINED\b/);
+    const evidence = record(JSON.parse(fs.readFileSync(path.join(dir, "verified-unknown.json"), "utf8")));
+    const job = String(evidence["job"]);
+    const key = String(evidence["request"]);
+    const workerPid = Number(evidence["pid"]);
+    assert.match(job, /^[0-9a-f-]{36}$/);
+    assert.match(key, /^[0-9a-f-]{36}$/);
+    assert.ok(Number.isSafeInteger(workerPid) && workerPid > 0);
+    assert.throws(() => process.kill(workerPid, 0), { code: "ESRCH" });
+    const saved = path.join(dir, "jobs", job, `received-response-${key}.json`);
+    const response = record(record(JSON.parse(fs.readFileSync(saved, "utf8")))["response"]);
+    assert.equal(record(record(JSON.parse(String(response["raw"])))["record"])["state"], "accepted");
+    return;
+  }
+  const dir = childDir;
+  const token = "metadata-offline-only-" + randomUUID();
+  const sent: Record<string, unknown>[] = [];
+  const raws: string[] = [];
+  const metadata = { creationId: "opaque-creation", fileId: "file-ą", version: 2 };
+  const result = { content: [{ type: "text", text: JSON.stringify(metadata) }] };
+  let observedVersion = 2;
+  let saved = true;
+  let inventory = true;
+  let duplicate = false;
+  let missingVersion = false;
+  let mode: "terminal" | "accepted" = "terminal";
+  let broker: Broker | undefined;
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    assert.equal(req.url, "/admission/v1");
+    assert.equal(req.headers.authorization, `Bearer ${token}`);
+    const body = record(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    sent.push(body);
+    const reply = JSON.stringify({
+      version: 1,
+      binding: body["binding"],
+      record: mode === "terminal" ? { state: mode, result } : { state: mode },
+    });
+    raws.push(reply);
+    res.setHeader("Content-Type", "application/json");
+    res.end(reply);
+  });
+  t.after(async () => {
+    try {
+      await broker?.close();
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  const { decodeNativeProgram, nativeReceipts } = load("./tests/fixtures/native-source-envelope.cjs") as {
+    decodeNativeProgram(script: string): string;
+    nativeReceipts(script: string, dir: string, observation: unknown): Array<{
+      file: string;
+      value: unknown;
+    }>;
+  };
+  const cfg = { backend: "addin", timeoutMs: 5000 };
+  const instance = {
+    pid: 4242,
+    birth: "offline-admission:4242",
+    version: "offline-contract",
+    activeCommand: "SelectCommand",
+    documents: [],
+  };
+  const noLegacy = () => assert.fail("Metadata must not open or send on legacy MCP");
+  const opts = {
+    dir,
+    confirmOwnership: true,
+    nativePath: (file: string) => file,
+    pollMs: 5,
+    createBackend: () => ({
+      server: cfg,
+      _parse: JSON.parse,
+      _post: noLegacy,
+      _openSession: noLegacy,
+      async callTool(args: { object: { script: string } }) {
+        const observation = {
+          ...instance,
+          documents: inventory
+            ? [
+                { id: metadata.creationId, fileId: metadata.fileId, isSaved: saved, isModified: false,
+                  ...(missingVersion ? {} : { version: observedVersion }) },
+                { id: metadata.creationId, fileId: "other-file", version: 2, isSaved: true, isModified: false },
+                { id: metadata.creationId, fileId: metadata.fileId, version: duplicate ? 2 : 1, isSaved: true, isModified: false },
+              ]
+            : [],
+          documentState: {
+            status: "complete",
+            state: { identity: { ...metadata, version: observedVersion, isSaved: saved } },
+          },
+        };
+        const receipts = nativeReceipts(args.object.script, dir, observation);
+        const envelope = decodeNativeProgram(args.object.script);
+        const embedded = envelope.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
+        const source = embedded?.[1] ? String(JSON.parse(embedded[1])) : envelope;
+        const withVersion = /_row\['version'\] = _data\.versionNumber/;
+        if (receipts.some(({ file }) => /(?:preflight|postflight)-/.test(path.basename(file))))
+          assert.match(source, withVersion);
+        else assert.doesNotMatch(source, withVersion);
+        for (const entry of receipts)
+          fs.writeFileSync(entry.file, JSON.stringify(entry.value), { flag: "wx" });
+        return { failed: false, text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observation) };
+      },
+    }),
+  };
+  function request(args: Record<string, unknown> = { fileId: metadata.fileId, version: 2 }) {
+    return {
+      action: "submit",
+      auth: owner,
+      request: {
+        kind: "rpc",
+        requestId: randomUUID(),
+        timeoutMs: 5000,
+        payload: {
+          jsonrpc: "2.0",
+          method: "tools/call",
+          id: "caller",
+          params: { name: "get_open_document_metadata", arguments: args },
+        },
+      },
+    };
+  }
+  const readResult = (jobId: string, state: string) => waitFor(async () => {
+    const output = successful(await exchange(dir, { action: "result", auth: owner, jobId }));
+    const job = record(output["job"]);
+    if (job["state"] === state) return output;
+    assert.ok(!["failed", "expired", "needs_reconciliation", "succeeded"].includes(String(job["state"])), JSON.stringify(job));
+    return null;
+  }, `${state} metadata result`);
+  const provision = {
+    capability: "get_open_document_metadata",
+    endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+    token,
+    pid: instance.pid,
+    birth: instance.birth,
+    instance: "opaque-addin",
+    epoch: "addin-epoch",
+    source: "trusted-source",
+    build: "trusted-build",
+  } as const;
+
+  broker = await serve(cfg, opts);
+  successful(await exchange(dir, { action: "register", ...owner }));
+  const disabled = await exchange(dir, request());
+  assert.equal(disabled.ok ? "unexpected success" : disabled.error.code, "unsupported_queue_route");
+  assert.equal(sent.length, 0);
+  await broker.close();
+  broker = await serve(cfg, { ...opts, addinMetadataAdmission: provision });
+  const malformed = await exchange(dir, request({ fileId: metadata.fileId, version: 2, code: "extra" }));
+  assert.equal(malformed.ok ? "unexpected success" : malformed.error.code, "INVALID_RPC");
+  assert.equal(sent.length, 0);
+
+  for (const missing of [
+    { version: 3, saved: true, documents: true },
+    { version: 2, saved: false, documents: false },
+    { version: 2, saved: true, documents: false },
+    { version: 2, saved: true, documents: true, duplicate: true },
+    { version: 2, saved: true, documents: true, missingVersion: true },
+  ]) {
+    observedVersion = missing.version;
+    saved = missing.saved;
+    inventory = missing.documents;
+    duplicate = !!missing.duplicate;
+    missingVersion = !!missing.missingVersion;
+    const wrong = String(successful(await exchange(dir, request()))["id"]);
+    const refused = record((await readResult(wrong, "failed"))["job"]);
+    assert.equal(refused["code"], "DOCUMENT_ADMISSION_UNPROVEN");
+    assert.equal(sent.length, 0);
+    assert.ok(!fs.readdirSync(path.join(dir, "jobs", wrong)).some(name => name.startsWith("rpc-")));
+  }
+  observedVersion = 2;
+  saved = true;
+  inventory = true;
+  duplicate = false;
+  missingVersion = false;
+  const valid = String(successful(await exchange(dir, request()))["id"]);
+  const output = await readResult(valid, "succeeded");
+  const caller = record(JSON.parse(String(record(output["rpc"])["raw"])));
+  assert.deepEqual(caller, { jsonrpc: "2.0", id: "caller", result });
+  assert.equal(sent.length, 1);
+  const first = record(sent[0]);
+  const binding = record(first["binding"]);
+  assert.equal(binding["owner"], owner.clientId);
+  assert.equal(binding["instance"], provision.instance);
+  assert.equal(binding["epoch"], provision.epoch);
+  assert.equal(binding["source"], provision.source);
+  assert.equal(binding["build"], provision.build);
+  assert.equal(binding["document"], JSON.stringify(metadata));
+  const wire = record(JSON.parse(String(first["payloadJson"])));
+  assert.equal(wire["id"], `fmcad:${String(binding["request"])}`);
+  const received = path.join(dir, "jobs", valid, `received-response-${String(binding["request"])}.json`);
+  const original = fs.readFileSync(received, "utf8");
+  assert.equal(record(record(JSON.parse(original))["response"])["raw"], raws[0]);
+  assert.ok(!original.includes(token));
+  assert.ok(!fs.readFileSync(path.join(dir, "queue-state.json"), "utf8").includes(token));
+
+  mode = "accepted";
+  const lost = request();
+  const uncertain = String(successful(await exchange(dir, lost))["id"]);
+  await readResult(uncertain, "needs_reconciliation");
+  assert.equal(successful(await exchange(dir, lost))["id"], uncertain);
+  assert.equal(sent.length, 2, "an uncertain result must not be replayed");
+  const uncertainKey = String(record(record(sent[1])["binding"])["request"]);
+  const uncertainResponse = path.join(dir, "jobs", uncertain, `received-response-${uncertainKey}.json`);
+  assert.equal(record(record(JSON.parse(fs.readFileSync(uncertainResponse, "utf8")))["response"])["raw"], raws[1]);
+  await assert.rejects(broker.close(), { code: "RECONCILIATION_REQUIRED" });
+  broker = undefined;
+  fs.writeFileSync(path.join(dir, "verified-unknown.json"), JSON.stringify({
+    job: uncertain,
+    request: uncertainKey,
+    pid: process.pid,
+  }), { flag: "wx" });
+  t.diagnostic("METADATA_UNKNOWN_CLOSE_REFUSED_AND_RECEIPT_RETAINED");
+});
 
 test("real serve frames fragmented UTF-8 and keeps lookup owner-scoped without replay", async (t) => {
   const marker = "zażółć 🧪";
@@ -976,7 +1338,7 @@ test("partial-frame timeout expires after parsing", async (t) => {
   }
 });
 
-test("a complete frame disables the timeout before its async handler replies", async (t) => {
+test("a complete frame disables the timeout before its async handler replies", async () => {
   const dir = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-broker-ipc-handler-"),
   );

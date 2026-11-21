@@ -21,8 +21,11 @@ test("queue staging publishes exact compiler bytes and preserves unrelated files
   fs.mkdirSync(compiled, { recursive: true });
   const names = queueRuntimeModules;
   assert.ok(names.includes("atomic-runtime-abi"));
+  assert.ok(names.includes("composition/queue-broker"));
+  assert.ok(names.includes("queue-broker-modules"));
   for (const name of names)
     for (const extension of [".js", ".d.ts"]) {
+      fs.mkdirSync(path.dirname(path.join(compiled, name)), { recursive: true });
       fs.writeFileSync(
         path.join(compiled, name + extension),
         "compiler output: " + name + extension,
@@ -104,6 +107,9 @@ test("legacy fixture consumers receive emitted CJS and runtime CJS fixtures are 
 test("queue declarations resolve against the installed runtime providers", () => {
   const root = path.resolve(__dirname, "../..");
   const files = [
+    "queue-broker",
+    "composition/queue-broker",
+    "queue-broker-ports",
     "queue-admission",
     "queue-fixed-fixture-admission",
     "queue-instance-liveness",

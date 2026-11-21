@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   createTurnIdentity as turn,
+  decideBrokerPostflightFailure,
   executeTurn,
   prepare,
+  runBrokerProductTurn,
 } from "../packages/core/src/application/broker-execution";
 import { createBrokerScheduler } from "../packages/core/src/application/broker-scheduler";
 import { createBrokerSession } from "../packages/core/src/application/broker-session";
@@ -20,6 +22,32 @@ const publish = () => undefined;
 const stale = { code: "RECONCILIATION_REQUIRED" };
 const busy = { code: "BROKER_SESSION_BUSY" };
 
+test("unsubmitted postflight after a build change settles only with original dispatch evidence", () => {
+  const error = { code: "BUILD_CHANGED", probeNotSubmitted: true };
+  const settled = { unknown: false, pending: false };
+  const fence = { jobId: "original" };
+  const unsupported = { kind: "hold", reason: "BUILD_CHANGED" };
+  assert.deepEqual(decideBrokerPostflightFailure(error, settled, () => undefined), unsupported);
+  for (const [failure, context] of [
+    [{ ...error, probeNotSubmitted: false }, settled],
+    [error, { ...settled, unknown: true }],
+    [error, { ...settled, pending: true }],
+  ] as const) {
+    assert.deepEqual(
+      decideBrokerPostflightFailure(failure, context, () =>
+        assert.fail("Cannot settle when the postflight or original dispatch may be pending"),
+      ),
+      unsupported,
+    );
+  }
+  const decision = decideBrokerPostflightFailure(error, settled, () => fence);
+  assert.equal(decision.kind, "settle");
+  assert.equal(decision.fence, fence);
+  assert.equal(decision.details.sdkSettled, true);
+  assert.equal(decision.details.postflightSubmitted, false);
+  assert.equal(decision.details.modelValidated, false);
+});
+
 function latch() {
   let release!: () => void;
   const promise = new Promise<void>((resolve) => {
@@ -27,6 +55,34 @@ function latch() {
   });
   return { promise, release };
 }
+
+test("a late product preflight cannot execute or publish after its grant is revoked", async () => {
+  const started = latch();
+  const returned = latch();
+  let current = true;
+  const never = () => assert.fail("revoked grant reached a later phase");
+  const result = runBrokerProductTurn({
+    inspectPrepared: () => false,
+    errorInfo: never,
+    refusePreparation: never,
+    verifyLocalInputs: () => true,
+    assertCurrent() {
+      if (!current) throw Object.assign(new Error("Revoked"), stale);
+    },
+    async preflight() {
+      started.release();
+      await returned.promise;
+    },
+    sameObservedInstance: never,
+    refusePreflight: never,
+    verifyDocument: never,
+    executeAndComplete: never,
+  });
+  await started.promise;
+  current = false;
+  returned.release();
+  await assert.rejects(result, stale);
+});
 
 test("an active snapshot cannot reveal or mutate live execution context", () => {
   const session = createBrokerSession<ReturnType<typeof context>>();

@@ -39,6 +39,30 @@ def document(name):
 
 
 class DocumentSnapshots(unittest.TestCase):
+    def test_saved_metadata_selects_exact_version_without_loading_design(self):
+        root = pathlib.Path(__file__).parents[1]
+        runtime = root / 'runtime/python/fmcad/adapters/fusion/legacy_queue_document.py'
+        namespace = dict(identity)
+        exec(compile(runtime.read_text(), str(runtime), 'exec'), namespace)
+        for capture in (qd._qd_capture, namespace['_qd_capture']):
+            older = NS(creationId='older', isSaved=True, dataFile=NS(id='lineage', versionNumber=1))
+            newer = NS(creationId='newer', isSaved=True, dataFile=NS(id='lineage', versionNumber=2))
+            app = NS(documents=Collection(older, newer))
+            selector = {'kind': 'saved-document-metadata', 'fileId': 'lineage', 'version': 2}
+            with self.subTest(capture=capture.__module__):
+                result = capture(app, selector)
+                self.assertEqual(result['status'], 'complete')
+                self.assertEqual(result['state']['identity'],
+                                 {'creationId': 'newer', 'fileId': 'lineage', 'version': 2, 'isSaved': True})
+                duplicate = NS(creationId='duplicate', isSaved=True, dataFile=newer.dataFile)
+                app.documents.values.append(duplicate)
+                self.assertEqual(capture(app, selector)['matches'], 2)
+                app.documents.values.pop()
+                newer.isSaved = False
+                self.assertEqual(capture(app, selector)['matches'], 0)
+                app.documents.values.clear()
+                self.assertEqual(capture(app, selector)['matches'], 0)
+
     def test_other_file_changes_do_not_invalidate_target(self):
         a, _, _, _ = document('A')
         b, _, bc, bp = document('B')
