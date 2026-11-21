@@ -1,4 +1,5 @@
 import type { QueueJob } from "../domain/queue-model";
+import { canonical } from "../domain/queue";
 
 export interface RecoveryInstance {
   pid: number;
@@ -217,6 +218,30 @@ export type RecoveryDecision<Dispatch, Native> =
       adapterUnknown: boolean;
     };
 
+export type RecoveredDispatch<Dispatch, Native> = Extract<
+  RecoveryDecision<Dispatch, Native>,
+  { dispatched: true }
+>;
+
+export interface RecoveryObservationGrant {
+  assertCurrent(): void;
+  beforeSend(): void;
+}
+
+export interface ReconcilePorts<Dispatch, Native, Result> {
+  assertHold(): void;
+  observe(previous: RecoveryProbe | null, grant: RecoveryObservationGrant): Promise<unknown>;
+  settleUndispatched(details: {
+    state: "failed";
+    code: "FUSION_BUSY" | "NOT_DISPATCHED";
+    executionOutcome: "not_started";
+    userScriptSubmitted: false;
+    mayHaveMutated: false;
+    preflightCompleted: boolean;
+    source: "durable-preflight-evidence";
+  }, assertCurrent: () => void): Result;
+  settleDispatched(decision: RecoveredDispatch<Dispatch, Native>, assertCurrent: () => void): Result;
+}
 /** Read original evidence in place. Neither a waiting decision nor a settled
  * decision starts work or writes state. Consume synchronously against the same
  * fence; after an await call reconcile again, never apply a cached decision. */
@@ -475,11 +500,7 @@ export function createBrokerRecovery<
     throw error;
   }
 
-  return {
-    /** Call immediately before using a decision in the existing broker's
-     * synchronous state transition. Never carry the authorization over an await. */
-    assertCurrentFence: assertFence,
-    reconcile(
+  function reconcile(
       job: RecoveryJob,
       expectedFence: RecoveryFence,
     ): RecoveryDecision<Dispatch, Native> {
@@ -585,6 +606,70 @@ export function createBrokerRecovery<
       } catch (error) {
         return waiting(error);
       }
+  }
+
+  return {
+    assertCurrentFence: assertFence,
+    reconcile,
+    /** Send at most one observation, then decide again from durable evidence.
+     * Neither a successful wire reply nor an old decision grants settlement. */
+    async settleOwned<Result>(
+      job: RecoveryJob,
+      expected: RecoveryFence,
+      ports: ReconcilePorts<Dispatch, Native, Result>,
+    ): Promise<Result> {
+      const assertCurrent = () => {
+        ports.assertHold();
+        assertFence(expected);
+      };
+      assertCurrent();
+      let decision = reconcile(job, expected);
+      if (decision.kind === "settled" && !decision.dispatched) {
+        assertCurrent();
+        return ports.settleUndispatched({
+          state: "failed",
+          code: decision.preflight && !idle(decision.preflight)
+            ? "FUSION_BUSY"
+            : "NOT_DISPATCHED",
+          executionOutcome: "not_started",
+          userScriptSubmitted: false,
+          mayHaveMutated: false,
+          preflightCompleted: !!decision.preflight,
+          source: "durable-preflight-evidence",
+        }, assertCurrent);
+      }
+      if (decision.kind === "waitingForEvidence") {
+        if (!decision.observation) deny(decision.code, decision.message);
+        const previous = decision.observation.priorFailed;
+        const previousBytes = canonical(previous);
+        let entered = false;
+        await ports.observe(previous, {
+          assertCurrent,
+          beforeSend() {
+            if (entered)
+              deny("PREPARED_RPC_CONSUMED", "Recovery probe cannot be replayed");
+            entered = true;
+            assertCurrent();
+            const current = reconcile(job, expected);
+            if (current.kind === "waitingForEvidence" && !current.observation)
+              deny(current.code, current.message);
+            if (
+              current.kind !== "waitingForEvidence" ||
+              !current.observation ||
+              canonical(current.observation.priorFailed) !== previousBytes
+            )
+              deny("STATE_CONFLICT", "Recovery evidence changed before send");
+          },
+        });
+        assertCurrent();
+        decision = reconcile(job, expected);
+      }
+      if (decision.kind === "waitingForEvidence")
+        deny(decision.code, decision.message);
+      if (!decision.dispatched)
+        deny("STATE_CONFLICT", "Original dispatch changed during recovery");
+      assertCurrent();
+      return ports.settleDispatched(decision, assertCurrent);
     },
     /** A known pre-send local postflight guard is not a remote receipt. Only the
      * original dispatch journals are relevant here, with the stricter old rules. */

@@ -69,7 +69,7 @@ const { createBrokerRecords } = runtimeRequire(
 const { createBrokerRecovery } = runtimeRequire(
   "./dist/core/application/broker-recovery",
 ) as typeof import("../../packages/core/src/application/broker-recovery");
-const { createBrokerRecoveryEvidence } = runtimeRequire(
+const { createBrokerRecoveryEvidence, observeBrokerRecovery, publishBrokerRecoveredDispatch } = runtimeRequire(
   "./dist/node-adapters/execution/broker-recovery-evidence",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-recovery-evidence");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
@@ -5056,180 +5056,71 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       fail("STATE_CONFLICT", "Recovery owner or local fence is unavailable");
     const job = state.lookup(id);
     const directory = privateDirectory(jobDir(id));
-    const assertCurrentFence = () => {
-      hold.assertCurrent();
-      recoveryEvaluator.assertCurrentFence(expected);
-    };
-    let decision = recoveryEvaluator.reconcile(job, expected);
-    if (decision.kind === "settled" && !decision.dispatched) {
-      const observation = decision.preflight;
-      const outcome = {
-        state: "failed",
-        code:
-          observation && !idle(observation) ? "FUSION_BUSY" : "NOT_DISPATCHED",
-        executionOutcome: "not_started",
-        userScriptSubmitted: false,
-        mayHaveMutated: false,
-        preflightCompleted: !!observation,
-        source: "durable-preflight-evidence",
-      };
-      assertCurrentFence();
-      durable(path.join(directory, "outcome.json"), outcome);
-      assertCurrentFence();
-      const result = hold.settle(() => state.resolve(id, outcome));
-      diagnostics();
-      return result; // No new probe is needed to settle a product request never sent.
-    }
     const context = activeContext();
-    if (decision.kind === "waitingForEvidence") {
-      if (!decision.observation) fail(decision.code, decision.message);
-      const previous = decision.observation.priorFailed;
-      const rpcId = randomUUID();
-      const binding = {
-        jobId: id,
-        rpcId,
-        requestHash: hash("reconcile:" + id + ":" + rpcId),
-        buildHash: codeHash,
-      };
-      const receipt = path.join(directory, `reconcile-${rpcId}.receipt.json`);
-      let entered = false;
-      await probeSendScope.run(
-        {
-          assertCurrent: assertCurrentFence,
-          start() {
-            if (entered)
-              fail("PREPARED_RPC_CONSUMED", "Recovery probe cannot be replayed");
-            entered = true;
-            const current = recoveryEvaluator.reconcile(job, expected);
-            if (current.kind === "waitingForEvidence" && !current.observation)
-              fail(current.code, current.message);
-            if (
-              current.kind !== "waitingForEvidence" ||
-              !current.observation ||
-              !same(current.observation.priorFailed, previous)
-            )
-              fail("STATE_CONFLICT", "Recovery evidence changed before send");
-            if (previous) {
-              const archived = path.join(
-                directory,
-                `reconcile-probe-${previous.binding.rpcId}.json`,
-              );
-              assertCurrentFence();
-              if (fs.lstatSync(archived, { throwIfNoEntry: false })) {
-                if (!same(readJson(archived), previous))
-                  fail("RECEIPT_MISMATCH", "Archived recovery intent differs");
-              } else durable(archived, previous, true);
-            }
-            assertCurrentFence();
-            // Preparation (including session setup) alone must not leave a
-            // journal that would imply an uncertain send. Once durable here,
-            // a lost reply can only be resolved from this attempt's evidence.
-            durable(
-              path.join(directory, "reconcile-probe.json"),
-              { binding, instance, receipt },
-              !previous,
-            );
+    return recoveryEvaluator.settleOwned(job, expected, {
+      assertHold: hold.assertCurrent,
+      observe: (previous, grant) =>
+        observeBrokerRecovery(
+          { id, directory, instance, buildHash: codeHash },
+          previous,
+          grant,
+          {
+            read: readJson,
+            write: durable,
+            send: (probe, fence) =>
+              probeSendScope.run(fence, () => checkInstance(probe)),
           },
-        },
-        () =>
-          checkInstance({
-            receiptPath: receipt,
-            binding,
-            diagnosticPath: path.join(
-              directory,
-              `reconcile-${rpcId}.result.json`,
-            ),
-          }),
-      );
-      // An awaited observation cannot authorize settlement. Recheck both the
-      // original authority and the original durable evidence, without a send.
-      assertCurrentFence();
-      decision = recoveryEvaluator.reconcile(job, expected);
-    }
-    if (decision.kind === "waitingForEvidence")
-      fail(decision.code, decision.message);
-    if (!decision.dispatched)
-      fail("STATE_CONFLICT", "Original dispatch changed during recovery");
-    const {
-      adapterUnknown,
-      nativeEnds,
-      records,
-      receipts,
-      workerSucceeded,
-      workerTerminal,
-    } = decision;
-    assertCurrentFence();
-    durable(
-      path.join(directory, "reconcile-postflight.json"),
-      decision.observation,
-    );
-    let rawFile = load("./queue-response-files").responsePath(
-      dir,
-      job,
-      "rpc-result.json",
-    );
-    let raw =
-      job.kind === "rpc" && fs.existsSync(rawFile)
-        ? readJson<P.Response>(rawFile)
-        : null;
-    const soleRecord = records.length === 1 ? records[0] : undefined;
-    if (!raw && job.kind === "rpc" && soleRecord?.terminal) {
-      const response = required(soleRecord.response);
-      raw = soleRecord.wireRequest
-        ? responseForCaller(
-            response,
-            required(soleRecord.request),
-            matching(client, response, soleRecord.wireRequest),
-          )
-        : response;
-      rawFile = load("./queue-response-files").responsePath(
-        dir,
-        job,
-        "rpc-result.json",
-        true,
-      );
-      assertCurrentFence();
-      durable(rawFile, raw);
-    }
-    const rawReply = raw && object(client._parse(raw.raw));
-    const successfulOutput =
-      !adapterUnknown &&
-      (job.kind === "rpc"
-        ? rawReply &&
-          !rawReply["error"] &&
-          !object(rawReply["result"])["isError"]
-        : workerSucceeded);
-    const details = {
-      state: load("./dist/core/application/execution").reconciledExecution({
-        outputAvailable: !!successfulOutput,
-        adapterUnknown,
-        receipts,
-        records,
-        nativeEnds,
-      }),
-      code: workerTerminal || raw ? "RECONCILED" : "RESULT_UNAVAILABLE",
-      mayHaveMutated: true,
-      sdkSettled: true,
-      publicationOutcome: successfulOutput ? "published" : "unavailable",
-      limitations:
-        "Synchronous receipts alone do not prove native background completion or model/physical validation.",
-      ...(nativeEnds.length
-        ? {
-            nativeCompletion: nativeEnds.map((proof) => ({
+        ),
+      settleUndispatched(outcome, assertCurrent) {
+        assertCurrent();
+        durable(path.join(directory, "outcome.json"), outcome);
+        assertCurrent();
+        const result = hold.settle(() => state.resolve(id, outcome));
+        diagnostics();
+        return result;
+      },
+      settleDispatched(decision, assertCurrent) {
+        const { responsePath } = load("./queue-response-files");
+        return publishBrokerRecoveredDispatch(directory, decision, assertCurrent, {
+          rpc: job.kind === "rpc",
+          readOutput() {
+            const file = responsePath(dir, job, "rpc-result.json");
+            return fs.existsSync(file) ? readJson<P.Response>(file) : null;
+          },
+          restoreOutput(record) {
+            const response = required(record.response);
+            return record.wireRequest
+              ? responseForCaller(
+                  response,
+                  required(record.request),
+                  matching(client, response, record.wireRequest),
+                )
+              : response;
+          },
+          publishOutput(response) {
+            durable(responsePath(dir, job, "rpc-result.json", true), response);
+          },
+          successfulOutput(response) {
+            const reply = object(client._parse(response.raw));
+            return !reply["error"] && !object(reply["result"])["isError"];
+          },
+          describeNativeEnd(proof) {
+            return {
               kind: proof.native.kind,
               commandId: proof.native.identity.commandId,
               ...proof.native.state,
-            })),
-          }
-        : {}),
-    };
-    assertCurrentFence();
-    durable(path.join(directory, "outcome.json"), details);
-    assertCurrentFence();
-    const result = hold.settle(() => state.resolve(id, details));
-    endNativeActivity(context);
-    diagnostics();
-    return result;
+            };
+          },
+          write: durable,
+          resolve(details) {
+            const result = hold.settle(() => state.resolve(id, details));
+            endNativeActivity(context);
+            diagnostics();
+            return result;
+          },
+        });
+      },
+    });
   }
 
   function workerSnapshotHash(): string {
