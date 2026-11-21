@@ -169,6 +169,35 @@ export function inspectFrozenMetadataWork(
   const unresolved: FrozenWork[] = [];
   const workers: Process[] = [];
   let queuedNeverStarted = true;
+  const namespaces = [...new Set([root, epochRoot])].map((directory) =>
+    path.join(directory, "jobs"),
+  );
+  function entries(directory: string): string[] {
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(directory);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        return [];
+      throw error;
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) fail();
+    return fs.readdirSync(directory);
+  }
+  function read(file: string): Record<string, unknown> {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) fail();
+    const value: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) fail();
+    return value as Record<string, unknown>;
+  }
+  function missingWorker(store: string, id: string): never {
+    throw Object.assign(
+      new Error(`Unproven frozen worker identity for ${store}:${id}`),
+      { code: "FROZEN_METADATA_FENCE_CHANGED" },
+    );
+  }
+  for (const namespace of namespaces) entries(namespace);
   for (const [store, directory] of [
     ["root", root],
     ["epoch", epochRoot],
@@ -176,7 +205,10 @@ export function inspectFrozenMetadataWork(
     const snapshot = JSON.parse(
       fs.readFileSync(path.join(directory, "queue-state.json"), "utf8"),
     ) as {
-      jobs: Record<string, FrozenWork & { startedAt?: unknown }>;
+      jobs: Record<
+        string,
+        FrozenWork & { startedAt?: unknown; dispatch?: unknown }
+      >;
       active: string | null;
       lease: { jobId?: string; id?: string } | null;
     };
@@ -196,52 +228,94 @@ export function inspectFrozenMetadataWork(
         clientId: job.clientId,
         hash: job.hash,
       });
-      const jobDirectory = path.join(directory, "jobs", id);
       // IDs are used as filenames only after the component has been checked.
       if (!/^[A-Za-z0-9_-]+$/.test(id)) fail();
-      const exists = fs.existsSync(jobDirectory);
-      if (exists) {
-        const stat = fs.lstatSync(jobDirectory);
-        if (!stat.isDirectory() || stat.isSymbolicLink()) fail();
-      }
-      const files = exists ? fs.readdirSync(jobDirectory) : [];
       if (job.state === "queued") {
         if (
           job.startedAt !== undefined ||
+          job.dispatch !== undefined ||
           snapshot.active === id ||
           snapshot.lease?.jobId === id ||
-          snapshot.lease?.id === id ||
+          snapshot.lease?.id === id
+        )
+          queuedNeverStarted = false;
+      }
+      let canonicalWorker:
+        { worker: Process; start: Record<string, unknown> } | undefined;
+      for (const namespace of namespaces) {
+        // The broker emits all jobs in root/jobs, even for the epoch ledger.
+        // Retained epoch/jobs traces are additional evidence, never a fallback.
+        const jobDirectory = path.join(namespace, id);
+        const files = entries(jobDirectory);
+        const canonical = namespace === path.join(root, "jobs");
+        if (
+          job.state === "queued" &&
           files.some((name) => name !== "phase-timings.json")
         )
           queuedNeverStarted = false;
         if (files.includes("phase-timings.json")) {
-          const timingFile = path.join(jobDirectory, "phase-timings.json");
-          if (fs.lstatSync(timingFile).isSymbolicLink()) fail();
-          const timing = JSON.parse(fs.readFileSync(timingFile, "utf8")) as {
-            jobId: string;
-            jobHash: string;
-            totals: Record<string, unknown>;
-            active?: { local?: unknown };
-          };
+          const timing = read(path.join(jobDirectory, "phase-timings.json"));
+          if (timing["jobId"] !== id || timing["jobHash"] !== job.hash) fail();
+          const totals = timing["totals"];
+          const active = timing["active"];
           if (
-            timing.jobId !== id ||
-            timing.jobHash !== job.hash ||
-            Object.keys(timing.totals).some((name) => name !== "queueWait") ||
-            timing.active?.local != null
+            job.state === "queued" &&
+            (!totals ||
+              typeof totals !== "object" ||
+              Array.isArray(totals) ||
+              Object.keys(totals).some((name) => name !== "queueWait") ||
+              (active !== undefined &&
+                (!active ||
+                  typeof active !== "object" ||
+                  Array.isArray(active) ||
+                  ("local" in active && active.local != null))))
           )
             queuedNeverStarted = false;
         }
-      }
-      if (files.includes("worker-identity.json")) {
-        const file = path.join(jobDirectory, "worker-identity.json");
-        if (fs.lstatSync(file).isSymbolicLink()) fail();
-        const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Process;
-        const worker = { pid: raw.pid, birth: raw.birth };
-        process(worker);
-        workers.push(worker);
+        let start: Record<string, unknown> | undefined;
+        if (files.includes("worker-start.json")) {
+          start = read(path.join(jobDirectory, "worker-start.json"));
+          keys(start, ["jobId", "buildHash", "at"]);
+          if (
+            start["jobId"] !== id ||
+            typeof start["buildHash"] !== "string" ||
+            !/^[a-f0-9]{64}$/.test(start["buildHash"]) ||
+            !Number.isSafeInteger(start["at"]) ||
+            (start["at"] as number) <= 0
+          )
+            fail();
+        }
+        if (files.includes("worker-identity.json")) {
+          if (!start) missingWorker(store, id);
+          // Actual immutable emitter schema is only pid/birth. The paired
+          // start record, not an invented identity.jobId field, binds the job.
+          const raw = read(path.join(jobDirectory, "worker-identity.json"));
+          keys(raw, ["pid", "birth"]);
+          if (
+            typeof raw["pid"] !== "number" ||
+            typeof raw["birth"] !== "string"
+          )
+            fail();
+          const worker = { pid: raw["pid"], birth: raw["birth"] };
+          process(worker);
+          const evidence = { worker, start };
+          if (canonical) canonicalWorker = evidence;
+          else if (
+            !canonicalWorker ||
+            !isDeepStrictEqual(canonicalWorker, evidence)
+          )
+            fail();
+          if (!workers.some((prior) => isDeepStrictEqual(prior, worker)))
+            workers.push(worker);
+        } else if (
+          job.state === "needs_reconciliation" &&
+          (canonical || files.length > 0)
+        )
+          missingWorker(store, id);
       }
     }
   }
+  if (workers.length === 0) fail();
   return { unresolved: work(unresolved), queuedNeverStarted, workers };
 }
 

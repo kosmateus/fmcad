@@ -81,6 +81,157 @@ function fixture() {
   return { profile, facts };
 }
 
+function inspectionFixture(t: { after(fn: () => void): void }) {
+  const { profile, facts } = fixture();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-worker-evidence-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const epoch = path.join(root, "admission-epochs", "fixture");
+  fs.mkdirSync(epoch, { recursive: true });
+  const ledgers = [root, epoch].map((directory, index) => {
+    const file = path.join(directory, "queue-state.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        jobs: Object.fromEntries(
+          profile.unresolved
+            .filter((row) => row.store === (index === 0 ? "root" : "epoch"))
+            .map((row) => [row.id, row]),
+        ),
+        active: null,
+        lease: null,
+      }),
+    );
+    return file;
+  });
+  function worker(id: string, directory = root, pid = 201) {
+    const job = path.join(directory, "jobs", id);
+    fs.mkdirSync(job, { recursive: true });
+    fs.writeFileSync(
+      path.join(job, "worker-start.json"),
+      JSON.stringify({
+        jobId: id,
+        buildHash: "a".repeat(64),
+        at: 100,
+      }),
+    );
+    fs.writeFileSync(
+      path.join(job, "worker-identity.json"),
+      JSON.stringify({
+        pid,
+        birth: `worker-${pid}`,
+      }),
+    );
+    return job;
+  }
+  for (const row of profile.unresolved.filter(
+    (row) => row.state === "needs_reconciliation",
+  ))
+    worker(row.id);
+  function qualify() {
+    const observed = inspectFrozenMetadataWork(root, epoch);
+    assertFrozenMetadataProfile(profile, {
+      ...facts,
+      unresolved: observed.unresolved,
+      queuedNeverStarted: observed.queuedNeverStarted,
+      // Fixture processes are dead. An empty result must not manufacture proof.
+      producersDead: observed.workers.every(() => true),
+    });
+  }
+  return { root, epoch, profile, facts, ledgers, worker, qualify };
+}
+
+test("canonical root/jobs traces forbid queued epoch work at preflight and repeated qualification", (t) => {
+  const f = inspectionFixture(t);
+  f.qualify();
+  const before = f.ledgers.map((file) => fs.readFileSync(file));
+  f.worker("frozen-queued");
+  let launches = 0;
+  let sdk = 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.throws(
+      () => {
+        f.qualify();
+        launches++;
+        sdk++;
+      },
+      { code: "FROZEN_METADATA_FENCE_CHANGED" },
+    );
+  }
+  assert.equal(launches, 0);
+  assert.equal(sdk, 0);
+  for (const [index, file] of f.ledgers.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+});
+
+test("queued dispatch on the ledger itself forbids qualification without artifact files", (t) => {
+  const f = inspectionFixture(t);
+  const file = f.ledgers[1]!;
+  const ledger = JSON.parse(fs.readFileSync(file, "utf8"));
+  ledger.jobs["frozen-queued"].dispatch = { rpcCount: 1, completedCount: 0 };
+  fs.writeFileSync(file, JSON.stringify(ledger));
+  assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+});
+
+test("UNKNOWN start or dispatch without immutable worker identity never proves producers dead", (t) => {
+  for (const id of ["root-unknown", "export-unknown"]) {
+    for (const evidence of ["start", "dispatch", "none"]) {
+      const f = inspectionFixture(t);
+      fs.unlinkSync(path.join(f.root, "jobs", id, "worker-identity.json"));
+      if (evidence !== "start")
+        fs.unlinkSync(path.join(f.root, "jobs", id, "worker-start.json"));
+      if (evidence === "dispatch") {
+        const file = f.ledgers[id === "root-unknown" ? 0 : 1]!;
+        const ledger = JSON.parse(fs.readFileSync(file, "utf8"));
+        ledger.jobs[id].dispatch = { rpcCount: 1, completedCount: 0 };
+        fs.writeFileSync(file, JSON.stringify(ledger));
+      }
+      assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+    }
+  }
+});
+
+test("worker evidence must bind to the same job using the actual start/identity schema", (t) => {
+  for (const changed of ["start", "identity", "missing-start"] as const) {
+    const f = inspectionFixture(t);
+    if (changed === "missing-start") {
+      fs.unlinkSync(
+        path.join(f.root, "jobs", "root-unknown", "worker-start.json"),
+      );
+      assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+      continue;
+    }
+    const file = path.join(
+      f.root,
+      "jobs",
+      "root-unknown",
+      `worker-${changed}.json`,
+    );
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    value.jobId = "foreign-job";
+    fs.writeFileSync(file, JSON.stringify(value));
+    assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+  }
+});
+
+test("legacy epoch evidence cannot hide or contradict the canonical job namespace", (t) => {
+  const f = inspectionFixture(t);
+  f.worker("export-unknown", f.epoch, 202);
+  assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+});
+
+test("legacy queued traces and dangling job-directory symlinks are not absence evidence", (t) => {
+  for (const trace of ["legacy", "symlink"] as const) {
+    const f = inspectionFixture(t);
+    if (trace === "legacy") f.worker("frozen-queued", f.epoch);
+    else
+      fs.symlinkSync(
+        path.join(f.root, "missing"),
+        path.join(f.root, "jobs", "frozen-queued"),
+      );
+    assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+  }
+});
+
 test("v1 preserves the full physical config and rejects even connection-tuning changes", () => {
   const before = {
     backend: "addin",
@@ -163,31 +314,10 @@ test("frozen metadata authority admits the exact owner, runtime and two-store fr
 });
 
 test("two-store inspection preserves ledgers and distinguishes queue timing from dispatch evidence", (t) => {
-  const { profile } = fixture();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-frozen-metadata-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const epoch = path.join(root, "admission-epochs", "fixture");
-  fs.mkdirSync(epoch, { recursive: true });
-  const files = [
-    path.join(root, "queue-state.json"),
-    path.join(epoch, "queue-state.json"),
-  ];
-  for (const [index, store] of ["root", "epoch"].entries())
-    fs.writeFileSync(
-      files[index]!,
-      JSON.stringify({
-        jobs: Object.fromEntries(
-          profile.unresolved
-            .filter((row) => row.store === store)
-            .map((row) => [row.id, row]),
-        ),
-        active: null,
-        lease: null,
-      }),
-    );
+  const { profile, root, epoch, ledgers: files, worker } = inspectionFixture(t);
   const before = files.map((file) => fs.readFileSync(file));
   const queued = profile.unresolved.find((row) => row.state === "queued")!;
-  const jobDirectory = path.join(epoch, "jobs", queued.id);
+  const jobDirectory = path.join(root, "jobs", queued.id);
   fs.mkdirSync(jobDirectory, { recursive: true });
   fs.writeFileSync(
     path.join(jobDirectory, "phase-timings.json"),
@@ -201,19 +331,14 @@ test("two-store inspection preserves ledgers and distinguishes queue timing from
   let observation = inspectFrozenMetadataWork(root, epoch);
   assert.equal(observation.queuedNeverStarted, true);
   assert.equal(observation.unresolved.length, 3);
-  assert.deepEqual(observation.workers, []);
+  assert.deepEqual(observation.workers, [{ pid: 201, birth: "worker-201" }]);
   // A producer/dispatch trace invalidates the "never started" qualification.
-  fs.writeFileSync(
-    path.join(jobDirectory, "worker-identity.json"),
-    JSON.stringify({
-      pid: 201,
-      birth: "retained-worker",
-    }),
-  );
+  worker(queued.id, root, 202);
   observation = inspectFrozenMetadataWork(root, epoch);
   assert.equal(observation.queuedNeverStarted, false);
   assert.deepEqual(observation.workers, [
-    { pid: 201, birth: "retained-worker" },
+    { pid: 201, birth: "worker-201" },
+    { pid: 202, birth: "worker-202" },
   ]);
   for (const [index, file] of files.entries())
     assert.deepEqual(fs.readFileSync(file), before[index]);
