@@ -543,11 +543,11 @@ test("public document.status checks the current seven-unit artifact before exact
     );
   }
 
+  assertCurrentDocumentStatusAdmission(artifact);
   const valid = dispatchArtifact(production.admission, artifact);
   await valid.promise;
   assert.equal(required(valid.certificate.report).status, "passed");
   assert.equal(required(valid.certificate.report).diagnostics.length, 0);
-  assertCurrentDocumentStatusAdmission(artifact);
   assert.equal(required(valid.certificate.artifact).sha256, artifact.sha256);
   assert.equal(
     required(valid.certificate.artifact).artifactHash,

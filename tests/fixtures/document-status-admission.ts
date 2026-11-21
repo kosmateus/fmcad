@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { PreparedPythonArtifact } from "../../packages/core/src/domain/python-artifact";
 
-/** Pin the current public output independently of unavailable historical source. */
+/** Pin exact public output for each supported source-checkout line ending. */
 export function assertCurrentDocumentStatusAdmission(
   artifact: PreparedPythonArtifact,
 ): void {
@@ -18,22 +18,44 @@ export function assertCurrentDocumentStatusAdmission(
     ),
   ) as {
     artifact: {
+      checkoutProfile: string;
       wireHash: string;
       artifactHash: string;
       bytes: number;
       units: { id: string; filename: string; sha256: string }[];
+      checkoutVariants: {
+        checkoutProfile: string;
+        wireHash: string;
+        artifactHash: string;
+        bytes: number;
+        units: { id: string; filename: string; sha256: string }[];
+      }[];
     };
   };
-  assert.equal(artifact.sha256, evidence.artifact.wireHash);
-  assert.equal(artifact.artifactHash, evidence.artifact.artifactHash);
-  assert.equal(artifact.bytes.length, evidence.artifact.bytes);
+  const profile = [
+    {
+      checkoutProfile: evidence.artifact.checkoutProfile,
+      wireHash: evidence.artifact.wireHash,
+      artifactHash: evidence.artifact.artifactHash,
+      bytes: evidence.artifact.bytes,
+      units: evidence.artifact.units,
+    },
+    ...evidence.artifact.checkoutVariants,
+  ].find(({ wireHash }) => wireHash === artifact.sha256);
+  assert.ok(
+    profile,
+    `No pinned document.status artifact for wire hash ${artifact.sha256}`,
+  );
+  assert.equal(artifact.sha256, profile.wireHash);
+  assert.equal(artifact.artifactHash, profile.artifactHash);
+  assert.equal(artifact.bytes.length, profile.bytes);
   assert.deepEqual(
     artifact.units.map(({ id, filename, sha256 }) => ({
       id,
       filename,
       sha256,
     })),
-    evidence.artifact.units,
+    profile.units,
   );
   assert.equal(
     createHash("sha256").update(artifact.script).digest("hex"),

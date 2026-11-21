@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
   "route": "document.status",
-  "scope": "current public-output admission evidence for this candidate from the Linux LF checkout; not historical 6bb evidence, global readiness, or a master deployment claim",
+  "scope": "current public-output admission evidence for this candidate across Git checkout line-ending modes; not historical 6bb evidence, global readiness, or a master deployment claim",
   "candidateRuntimeCommit": "b30af5fe15073f061d12f20a9ff81475623ccdda",
   "profile": "document-status-current",
   "artifact": {
     "status": "passed",
+    "checkoutProfile": "core.autocrlf=false",
     "wireHash": "1cdd35f7cc1de4aa2328ad0dc3e958137f93d1750da9ec60c35a9d89c6ba10cb",
     "artifactHash": "ed713e7dcf21fb5270acb252c99f2f04e9cb7295b908fa29d11cec13bfb6f2b4",
     "bytes": 78681,
@@ -44,6 +45,51 @@
         "id": "wrapper",
         "filename": "<fmcad-wrapper>",
         "sha256": "00cfa5d88b7c6d3f1d2a7f9ccf168009006bf7a565751f018dfedd713bec386d"
+      }
+    ],
+    "checkoutVariants": [
+      {
+        "checkoutProfile": "core.autocrlf=true",
+        "wireHash": "5e775253b79e92f03bbca84713d15fd988c6e56155c4c900c6447a67db5e5bca",
+        "artifactHash": "fdd5fd436edc8c12a0f69f1f3c06ed309fa5c3856b6624f48c87d89b884e2c14",
+        "bytes": 79041,
+        "units": [
+          {
+            "id": "values",
+            "filename": "runtime/python/fmcad/domain/values.py",
+            "sha256": "001b0ccc38b8b60a35a0b3833287885525f41ea1f1d9e38bdc829807bb50ebd7"
+          },
+          {
+            "id": "fusion-values",
+            "filename": "runtime/python/fmcad/adapters/fusion/values.py",
+            "sha256": "68454b1fce040dea058d26718ad6eb6c1d09d43a71f688e29cc5cbef807ef26d"
+          },
+          {
+            "id": "fusion-typing",
+            "filename": "runtime/python/fmcad/adapters/fusion/typing.py",
+            "sha256": "6650894d5026b08015a9c4a48447b405dceeb65d1e6901c91bc2566d6d5ff6d1"
+          },
+          {
+            "id": "core",
+            "filename": "assets/cad/core.py",
+            "sha256": "c45ca446c2f3f64e64628d0b031e56f2ca7807590648ff7621759b1b1d26ca4b"
+          },
+          {
+            "id": "identity",
+            "filename": "runtime/python/fmcad/adapters/fusion/identity.py",
+            "sha256": "262e114e76e023fc2f61223f17bd80f9646a389e99a5f88aeef2ac1cfebc0ebc"
+          },
+          {
+            "id": "document_snapshot",
+            "filename": "runtime/python/fmcad/adapters/fusion/document_snapshot.py",
+            "sha256": "0ee2496f8d6715063d89ee9b1ece1bad8c4058ca87d87b7f1146e8e549d675ef"
+          },
+          {
+            "id": "wrapper",
+            "filename": "<fmcad-wrapper>",
+            "sha256": "00cfa5d88b7c6d3f1d2a7f9ccf168009006bf7a565751f018dfedd713bec386d"
+          }
+        ]
       }
     ]
   },
