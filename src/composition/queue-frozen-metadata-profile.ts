@@ -102,9 +102,7 @@ export function assertFrozenMetadataStartup(
 }
 
 export function assertFrozenMetadataRequest(
-  scope:
-    | Pick<FrozenMetadataProfile, "beneficiary" | "metadataRequestId">
-    | undefined,
+  scope: unknown,
   request: {
     clientId: string;
     requestId: string;
@@ -112,12 +110,18 @@ export function assertFrozenMetadataRequest(
     metadata: boolean;
   },
 ): void {
+  if (scope === undefined) return;
   if (
-    scope &&
-    (request.clientId !== scope.beneficiary ||
-      request.requestId !== scope.metadataRequestId ||
-      request.kind !== "rpc" ||
-      !request.metadata)
+    !scope ||
+    typeof scope !== "object" ||
+    !("beneficiary" in scope) ||
+    typeof scope.beneficiary !== "string" ||
+    !("metadataRequestId" in scope) ||
+    typeof scope.metadataRequestId !== "string" ||
+    request.clientId !== scope.beneficiary ||
+    request.requestId !== scope.metadataRequestId ||
+    request.kind !== "rpc" ||
+    !request.metadata
   )
     fail();
 }

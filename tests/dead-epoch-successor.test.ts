@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import childProcess from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
@@ -43,9 +44,11 @@ function backendFixture(
   t: TestContext,
   effectiveConfig?: Record<string, unknown>,
   sourceConfig?: Record<string, unknown>,
+  baseDirectory?: string,
 ) {
   t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
-  const base = fs.mkdtempSync("/tmp/opencode/backend-successor-");
+  const base =
+    baseDirectory || fs.mkdtempSync("/tmp/opencode/backend-successor-");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return (
     load("./fixtures/backend-successor.cjs") as (
@@ -137,7 +140,7 @@ test("FAKE backend succession: verified effective head permits cold inspection w
   );
 });
 
-function frozenBackendFixture(t: TestContext) {
+function frozenBackendFixture(t: TestContext, baseDirectory?: string) {
   const f = backendFixture(
     t,
     {
@@ -156,6 +159,7 @@ function frozenBackendFixture(t: TestContext) {
       routing: "queue",
       queue: {},
     },
+    baseDirectory,
   );
   const previous = openIsolatedEpoch(f.dir, { recover: false });
   previous.submit({
@@ -290,6 +294,170 @@ test("FAKE frozen metadata: public bootstrap refuses missing or foreign private 
     );
   assert.equal(fs.existsSync(path.join(f.audit, "worker-claim.json")), false);
   assert.equal(fs.existsSync(path.join(f.audit, "launch-intent.json")), false);
+});
+
+test("FAKE frozen metadata: uncertain launch is observed as pending and never spawned again", async (t) => {
+  const f = frozenBackendFixture(t);
+  const inspected = inspectSuccessor(
+    f.client,
+    f.cfg,
+    f.approvalFile,
+    f.requestId,
+  );
+  const authority = {
+    ...f.authority,
+    predecessor: lineage.predecessorSnapshot(f.dir, f.audit, true),
+    configHash: api.brokerConfigHash(f.cfg),
+    qualification: lineage.reference(f.approval.qualification.path),
+    backendTransition: inspected.backendTransition,
+    frozenMetadata: f.profile,
+  };
+  api.durable(f.authorityEntry.path, authority);
+  const entry = lineage.reference(f.authorityEntry.path);
+  api.durable(
+    path.join(f.audit, "intent.json"),
+    {
+      version: 1,
+      requestId: f.requestId,
+      clientId: f.clientId,
+      ownerTokenHash: api.hash(f.token),
+      nonce: f.nonce,
+      approval: lineage.reference(f.approvalFile),
+      previousOwner: f.previousOwner,
+    },
+    true,
+  );
+  const launch = path.join(f.audit, "launch-intent.json");
+  api.durable(launch, { nonce: f.nonce, authority: entry }, true);
+  const before = fs.readFileSync(launch);
+  t.mock.method(childProcess, "spawn", () => {
+    assert.fail("An uncertain launch must not spawn another worker");
+  });
+  const now = Date.now;
+  let elapsed = 0;
+  t.mock.method(Date, "now", () => now() + (elapsed += 120000));
+  const result = await bootstrapSuccessor(f.client, f.cfg, {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    confirmOwnership: true,
+    addinMetadataAdmission: {
+      ...f.profile.provisioning,
+      token: "private-launch-token-".repeat(4),
+    },
+  });
+  assert.ok("state" in result);
+  assert.equal(result.state, "pending");
+  assert.equal(result.noReplay, true);
+  assert.deepEqual(fs.readFileSync(launch), before);
+  assert.equal(fs.existsSync(path.join(f.audit, "worker-claim.json")), false);
+  assert.equal(fs.existsSync(path.join(f.audit, "worker.stdout.log")), false);
+});
+
+test("FAKE frozen metadata: real worker receives private stdin once while both predecessor stores remain frozen", async (t) => {
+  const temporary = fs.mkdtempSync("/tmp/opencode/frozen-worker-");
+  const base = path.join(temporary, "state", "fmcad");
+  fs.mkdirSync(base, { recursive: true });
+  const keys = [
+    "HOME",
+    "XDG_STATE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+  ];
+  const env = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) process.env[key] = path.join(temporary, key);
+  process.env["XDG_STATE_HOME"] = path.join(temporary, "state");
+  let worker: { pid: number; birth: string } | undefined;
+  let workerExit: Promise<void> | undefined;
+  let workerChild: childProcess.ChildProcess | undefined;
+  t.after(async () => {
+    workerChild?.ref(); // Bootstrap detaches it; cleanup must keep the exit event alive on Node22.
+    if (worker && api.priorProcessAlive(worker) === true) {
+      assert.equal(
+        fs.realpathSync(`/proc/${worker.pid}/cwd`),
+        path.join(base, "queue"),
+      );
+      process.kill(worker.pid, "SIGKILL"); // Only this test's synthetic worker.
+    }
+    await workerExit;
+    for (const [key, value] of env) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const f = frozenBackendFixture(t, base);
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  fs.unlinkSync(f.authorityEntry.path);
+  fs.rmSync(path.join(f.audit, "isolated-scratch-qualification"), {
+    recursive: true,
+    force: true,
+  });
+  const files = [f.stateFile, path.join(f.dir, "queue-state.json"), f.headFile];
+  const before = files.map((file) => fs.readFileSync(file));
+  const spawn = childProcess.spawn;
+  let launches = 0;
+  t.mock.method(
+    childProcess,
+    "spawn",
+    (
+      executable: string,
+      args: readonly string[],
+      options: childProcess.SpawnOptions,
+    ) => {
+      assert.equal(path.basename(args[0]!), "queue-epoch-successor-worker.js");
+      launches++;
+      const child = spawn(
+        executable,
+        ["--require", load.resolve("./fixtures/fake-wsl-preload.cjs"), ...args],
+        options,
+      );
+      workerChild = child;
+      assert.ok(child.pid);
+      worker = { pid: child.pid, birth: api.processBirth(child.pid) };
+      workerExit = new Promise<void>((resolve) =>
+        child.once("exit", () => resolve()),
+      );
+      return child;
+    },
+  );
+  const token = "private-worker-token-".repeat(4);
+  const options = {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    confirmOwnership: true,
+    addinMetadataAdmission: { ...f.profile.provisioning, token },
+  };
+  const results = await Promise.all([
+    bootstrapSuccessor(f.client, f.cfg, options),
+    bootstrapSuccessor(f.client, f.cfg, options),
+  ]);
+  for (const result of results)
+    assert.equal("sdkRequestsSent" in result && result.sdkRequestsSent, 0);
+  assert.equal(launches, 1);
+  const connection = load("../src/queue-connection") as {
+    request(dir: string, message: Record<string, unknown>): Promise<unknown>;
+  };
+  await assert.rejects(
+    connection.request(f.dir, {
+      action: "submit",
+      auth: f.client.auth,
+      request: {
+        kind: "rpc",
+        requestId: "foreign-fresh-request",
+        timeoutMs: 1000,
+        payload: { jsonrpc: "2.0", id: "refused", method: "ping" },
+      },
+    }),
+    // Before a fresh namespace is qualified, the existing lost-epoch guard wins.
+    { code: "EPOCH_PROCESS_UNAVAILABLE" },
+  );
+  for (const [index, file] of files.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  for (const name of fs.readdirSync(f.audit)) {
+    const file = path.join(f.audit, name);
+    if (fs.statSync(file).isFile())
+      assert.equal(fs.readFileSync(file, "utf8").includes(token), false, name);
+  }
 });
 
 test("FAKE backend succession: published lineage reopens against archived pointer and preserves old SDK/history", (t) => {

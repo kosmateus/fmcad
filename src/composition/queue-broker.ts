@@ -970,6 +970,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       : measuredStateOptions,
   );
+  const metadataSuccessorAuthority = successorRuntime?.authority ??
+    (state.epoch?.succession
+      ? (runtimeRequire("./queue-epoch-lineage") as typeof import("../queue-epoch-lineage"))
+        .successionAuthority(dir, state.epoch.succession).authority
+      : undefined);
+  const frozenMetadataScope = metadataSuccessorAuthority && "frozenMetadata" in metadataSuccessorAuthority
+    ? metadataSuccessorAuthority.frozenMetadata : undefined;
   phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
   if (successorRuntime?.effectiveIdentity) {
@@ -5139,6 +5146,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           );
         decodeRequest(r);
         const request = { ...r, clientId, ownerToken: clientHashes()[clientId] };
+        if (frozenMetadataScope !== undefined)
+          (runtimeRequire("./dist/composition/queue-frozen-metadata-profile") as
+          typeof import("./queue-frozen-metadata-profile")).assertFrozenMetadataRequest(
+          frozenMetadataScope,
+          {
+            clientId, requestId: request.requestId, kind: request.kind,
+            metadata: request.kind === "rpc" && isAddinMetadata(rpcPayload(r.rpc?.payload || r.payload)),
+          },
+        );
         if (state.epoch) {
           if (own(r, "isolatedEpoch"))
             fail(
