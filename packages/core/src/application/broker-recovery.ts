@@ -51,7 +51,7 @@ export interface CompletedPreflight {
   instance: RecoveryInstance;
 }
 
-type NativeEnd = RecoveryBinding & { outcome: string };
+export type RecoveryNativeEnd = RecoveryBinding & { outcome: string };
 export type RecoveryJob = Pick<
   QueueJob,
   "id" | "clientId" | "requestId" | "hash" | "state" | "dispatch"
@@ -83,7 +83,7 @@ export interface RecoveryFence {
 
 export interface RecoveryEvidence<
   Dispatch extends RecoveryDispatch,
-  Native extends NativeEnd,
+  Native extends RecoveryNativeEnd,
 > {
   /** Read fresh live state, including durable owner and instance identity;
    * return null if the current process no longer has that authority. */
@@ -112,12 +112,17 @@ export interface RecoveryEvidence<
     stage?: RecoveryProbeStage,
   ): RecoveryReceipt | null;
   probeRequestHash(
-    stage: "preflight" | "postflight",
+    stage: RecoveryProbeStage,
     jobId: string,
     rpcId: string,
   ): string;
   validateTerminalResponse(record: Dispatch): void;
-  readNativeEnd(record: Dispatch): Native | null;
+  readNativeLifecycle(
+    record: Dispatch,
+  ):
+    | { kind: "notDeclared" }
+    | { kind: "pending" }
+    | { kind: "completed"; proof: Native };
   readOutcome(jobId: string): unknown;
 }
 
@@ -217,7 +222,7 @@ export type RecoveryDecision<Dispatch, Native> =
  * fence; after an await call reconcile again, never apply a cached decision. */
 export function createBrokerRecovery<
   Dispatch extends RecoveryDispatch,
-  Native extends NativeEnd,
+  Native extends RecoveryNativeEnd,
 >(evidence: RecoveryEvidence<Dispatch, Native>) {
   function assertFence(expected: RecoveryFence): void {
     const current = evidence.readFence(expected.jobId);
@@ -363,7 +368,13 @@ export function createBrokerRecovery<
         );
       // The records port has already checked the canonical receipt path.
       // Preserve the native lifecycle guard before looking at the remote copy.
-      const ended = local ? null : evidence.readNativeEnd(record);
+      const native = local ? null : evidence.readNativeLifecycle(record);
+      if (native?.kind === "pending")
+        deny(
+          "NATIVE_WORKFLOW_PENDING",
+          "Declared native command has no matching terminal lifecycle receipt; no probe sent",
+        );
+      const ended = native?.kind === "completed" ? native.proof : null;
       if (ended) {
         if (!receiptMatches(ended, record.binding))
           deny(
@@ -408,6 +419,21 @@ export function createBrokerRecovery<
     return { records, receipts, nativeEnds };
   }
 
+  function probeMatches(
+    record: RecoveryProbe,
+    fence: RecoveryFence,
+    stage: RecoveryProbeStage,
+  ) {
+    return (
+      boundToJob(record, fence, true) &&
+      /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(
+        record.binding.rpcId,
+      ) &&
+      record.binding.requestHash ===
+        evidence.probeRequestHash(stage, fence.jobId, record.binding.rpcId)
+    );
+  }
+
   function readFlight(
     job: RecoveryJob,
     fence: RecoveryFence,
@@ -418,10 +444,7 @@ export function createBrokerRecovery<
     if (
       started.jobId !== job.id ||
       started.buildHash !== fence.buildHash ||
-      !boundToJob(started, fence, true) ||
-      !/^[a-f0-9-]{36}$/.test(started.binding.rpcId) ||
-      started.binding.requestHash !==
-        evidence.probeRequestHash(stage, job.id, started.binding.rpcId)
+      !probeMatches(started, fence, stage)
     )
       deny(
         "RECEIPT_MISMATCH",
@@ -538,7 +561,7 @@ export function createBrokerRecovery<
             "Generic RPC completion cannot certify the adapter result",
           );
         const prior = evidence.readProbeIntent(job.id, "reconcile");
-        if (prior && !boundToJob(prior, expectedFence, true))
+        if (prior && !probeMatches(prior, expectedFence, "reconcile"))
           deny("RECEIPT_MISMATCH", "Recovery probe identity mismatch");
         const receipt = prior ? readReceipt(prior, true, "reconcile") : null;
         assertFence(expectedFence);

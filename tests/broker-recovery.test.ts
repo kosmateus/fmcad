@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash, randomUUID } from "node:crypto";
 import test from "node:test";
 import {
   createBrokerRecovery,
@@ -10,6 +11,9 @@ import {
   type RecoveryReceipt,
 } from "../packages/core/src/application/broker-recovery";
 import { createBrokerRecoveryEvidence } from "../packages/node-adapters/src/execution/broker-recovery-evidence";
+
+const reconcileHash = (jobId: string, rpcId: string) =>
+  createHash("sha256").update(`reconcile:${jobId}:${rpcId}`).digest("hex");
 
 function fixture(rpcCount = 1) {
   const instance = {
@@ -61,11 +65,12 @@ function fixture(rpcCount = 1) {
     receipt: "/fixture/original-receipt",
     terminal: false,
   };
+  const probeId = randomUUID();
   const probe: RecoveryProbe = {
     binding: {
       jobId: job.id,
-      rpcId: "original-probe",
-      requestHash: "probe-payload",
+      rpcId: probeId,
+      requestHash: reconcileHash(job.id, probeId),
       buildHash,
     },
     instance,
@@ -92,6 +97,10 @@ function fixture(rpcCount = 1) {
     validResponse: true,
     context: "closed" as "absent" | "pending" | "closed",
     changeFenceOnRead: false,
+    workerIdentity: null as unknown,
+    processBirth: (): string =>
+      assert.fail("No original worker identity in this fixture"),
+    nativeDeclared: false,
   };
   const evidence = createBrokerRecoveryEvidence(
     {
@@ -109,15 +118,17 @@ function fixture(rpcCount = 1) {
       readOutcome: () => null,
       readWorkerResult: () => null,
       readWorkerStart: () => null,
-      readWorkerIdentity: () => null,
+      readWorkerIdentity: () => live.workerIdentity,
     },
     {
       readFence: () => live.fence,
       workerContext: () => live.context,
-      processBirth: () =>
-        assert.fail("No original worker identity in this fixture"),
+      processBirth: () => live.processBirth(),
       workflowNonterminal: () => false,
-      readNativeEnd: () => null,
+      nativeReceipts: {
+        start: () => (live.nativeDeclared ? {} : null),
+        completion: () => null,
+      },
       validateTerminalResponse() {
         if (!live.validResponse)
           throw Object.assign(new Error("Unexpected original wire reply ID"), {
@@ -194,13 +205,73 @@ test("a pending, foreign or busy recovery probe never authorizes another observa
 
   // An older attempt may still publish under its original exact name. Such a
   // receipt does not count as evidence for the new, now-owned probe intent.
+  const newProbeId = randomUUID();
   f.probes.set("reconcile", {
     ...f.probe,
-    binding: { ...f.probe.binding, rpcId: "new-probe" },
+    binding: {
+      ...f.probe.binding,
+      rpcId: newProbeId,
+      requestHash: reconcileHash(f.job.id, newProbeId),
+    },
     receipt: "/fixture/new-probe-receipt",
   });
   f.files.set(f.probe.receipt!, f.probeReceipt);
   waitingFor(f.recovery.reconcile(f.job, f.fence), "RECEIPT_UNAVAILABLE");
+});
+
+test("matching files cannot turn a different stage hash into recovery probe evidence", () => {
+  const f = fixture();
+  f.files.set(f.rpc.receipt!, f.rpcReceipt);
+  const requestHash = "foreign-stage-request-hash";
+  f.probes.set("reconcile", {
+    ...f.probe,
+    binding: { ...f.probe.binding, requestHash },
+  });
+  f.files.set(f.probe.receipt!, { ...f.probeReceipt, requestHash });
+  waitingFor(f.recovery.reconcile(f.job, f.fence), "RECEIPT_MISMATCH");
+});
+
+test("a native declaration without a terminal lifecycle receipt retains the hold", () => {
+  const f = fixture();
+  f.live.nativeDeclared = true;
+  f.files.set(f.rpc.receipt!, f.rpcReceipt);
+  f.files.set(f.probe.receipt!, f.probeReceipt);
+  f.probes.set("reconcile", f.probe);
+  waitingFor(f.recovery.reconcile(f.job, f.fence), "NATIVE_WORKFLOW_PENDING");
+});
+
+test("a malformed stored birth cannot prove the worker gone", () => {
+  const f = fixture();
+  f.live.context = "absent";
+  f.live.workerIdentity = { pid: process.pid };
+  f.live.processBirth = () => `${randomUUID()}:1234`;
+  f.files.set(f.rpc.receipt!, f.rpcReceipt);
+  waitingFor(
+    f.recovery.reconcile(f.job, f.fence),
+    "WORKER_IDENTITY_UNAVAILABLE",
+  );
+});
+
+test("unreadable birth data is not evidence that a live PID disappeared", () => {
+  const f = fixture();
+  f.live.context = "absent";
+  f.files.set(f.rpc.receipt!, f.rpcReceipt);
+  f.live.workerIdentity = { pid: process.pid, birth: `${randomUUID()}:1234` };
+  f.live.processBirth = () => {
+    throw Object.assign(new Error("Boot identity unavailable"), {
+      code: "ENOENT",
+    });
+  };
+  waitingFor(
+    f.recovery.reconcile(f.job, f.fence),
+    "WORKER_IDENTITY_UNAVAILABLE",
+  );
+  // The missing birth observation is usable only if the kernel proves that the
+  // PID really no longer exists. A high positive PID is outside Linux pid_max.
+  f.live.workerIdentity = { pid: 0x7fffffff, birth: `${randomUUID()}:1234` };
+  const result = f.recovery.reconcile(f.job, f.fence);
+  assert.equal(result.kind, "waitingForEvidence");
+  assert.equal(result.code, "OBSERVATION_REQUIRED");
 });
 
 test("source, build, process and epoch mismatches are not evidence of the original dispatch", () => {

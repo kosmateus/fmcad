@@ -122,10 +122,11 @@ test("failed terminal recovery probe can be replaced; unresolved, mismatched and
     buildHash,
     instance,
   });
+  const recoveryRpcId = randomUUID();
   const recoveryBinding = {
     jobId: text(job["id"]),
-    rpcId: randomUUID(),
-    requestHash: "probe",
+    rpcId: recoveryRpcId,
+    requestHash: qi.hash(`reconcile:${text(job["id"])}:${recoveryRpcId}`),
     buildHash,
   };
   const receipt = path.join(
