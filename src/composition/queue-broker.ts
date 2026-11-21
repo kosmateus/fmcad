@@ -14,6 +14,7 @@ import {
   createBrokerLane,
   isAddinMetadata,
   matchMetadataEvidence,
+  matchRetainedMetadataEvidence,
   prepareMetadataWire,
   provisionAddinMetadata,
 } from "../queue-broker-modules";
@@ -3450,7 +3451,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         let reply: P.Reply | null;
         try {
           reply = prepared.metadataProof
-            ? matchMetadataEvidence(response, required(admission).binding, outgoing.id, decodeAdmissionJson)
+            ? matchMetadataEvidence(response, required(admission).binding, record.binding.rpcId, outgoing.id, decodeAdmissionJson)
             : matching(client, response, outgoing);
         } catch (error) {
           if (trace)
@@ -4799,9 +4800,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const wire = record.wireRequest || record.request;
     const binding = record.binding["addinAdmission"];
     if (binding !== undefined) {
-      if (!record.response || !record.wireRequest)
-        fail("RECEIPT_MISMATCH", "ADDIN metadata has no original bound response");
-      return matchMetadataEvidence(record.response, binding, wire.id, decodeAdmissionJson);
+      const { jobId, rpcId } = record.binding;
+      const original = executionRecords.evidence.readReceivedResponse(jobId, rpcId);
+      return matchRetainedMetadataEvidence(record, original, decodeAdmissionJson);
     }
     return matching(client, record.response, wire);
   }

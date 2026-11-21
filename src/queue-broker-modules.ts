@@ -67,7 +67,10 @@ function metadataWire(payload: P.Rpc) {
 }
 
 export function addinMetadataSelector(payload: P.Rpc) {
-  return { fileId: metadataWire(payload).params.arguments.fileId };
+  return {
+    kind: "saved-document-metadata",
+    ...metadataWire(payload).params.arguments,
+  } as const;
 }
 
 /** A capability-specific proof, separate from every Python certificate. */
@@ -113,22 +116,27 @@ export function provisionAddinMetadata(
       timeoutMs: number,
     ) {
       const { fileId, version } = wire.params.arguments;
-      const target: unknown = observed?.documentState?.state?.identity;
+      const target = fields(observed?.documentState?.state?.identity);
+      const creationId = target["creationId"];
+      const inventory = observed?.documents?.map(fields).filter(
+        (entry) => entry["id"] === creationId,
+      );
+      const entry = inventory?.length === 1 ? inventory[0] : undefined;
       if (
         observed?.pid !== pid ||
         observed.birth !== birth ||
         pinned.pid !== pid ||
         pinned.birth !== birth ||
         observed.documentState?.status !== "complete" ||
-        !target ||
-        typeof target !== "object" ||
-        !("creationId" in target) ||
-        typeof target.creationId !== "string" ||
-        !target.creationId.trim() ||
-        !("fileId" in target) ||
-        target.fileId !== fileId ||
-        !("version" in target) ||
-        target.version !== version
+        typeof creationId !== "string" ||
+        !creationId.trim() ||
+        target["fileId"] !== fileId ||
+        target["version"] !== version ||
+        target["isSaved"] !== true ||
+        !entry ||
+        entry["fileId"] !== fileId ||
+        entry["isSaved"] !== true ||
+        entry["dataFileError"] !== undefined
       )
         refuse("DOCUMENT_ADMISSION_UNPROVEN", "Preflight did not prove the provisioned saved document");
 
@@ -139,7 +147,7 @@ export function provisionAddinMetadata(
         epoch,
         source,
         build,
-        document: JSON.stringify({ creationId: target.creationId, fileId, version }),
+        document: JSON.stringify({ creationId, fileId, version }),
       });
       try {
         // Construction is local. It validates the credentials, endpoint and
@@ -162,6 +170,7 @@ function fields(value: unknown): Record<string, unknown> {
 export function matchMetadataEvidence(
   response: P.Response,
   binding: unknown,
+  rpcId: string,
   wireId: P.Rpc["id"],
   decode: (raw: string) => unknown,
 ): P.Reply {
@@ -180,7 +189,8 @@ export function matchMetadataEvidence(
   const reply = fields(response.toolResponse);
   if (
     response.status !== 200 ||
-    !binding ||
+    fields(binding)["request"] !== rpcId ||
+    wireId !== `fmcad:${rpcId}` ||
     envelope["version"] !== 1 ||
     !isDeepStrictEqual(fields(envelope["binding"]), binding) ||
     terminal["state"] !== "terminal" ||
@@ -193,6 +203,35 @@ export function matchMetadataEvidence(
   )
     return invalid();
   return { jsonrpc: "2.0", id: wireId, result: reply["result"] };
+}
+
+export function matchRetainedMetadataEvidence(
+  record: Pick<P.RecordEvidence, "response" | "wireRequest" | "binding">,
+  original: {
+    version: number;
+    kind: string;
+    binding: P.Binding;
+    wireId?: P.Rpc["id"];
+    response: P.Response;
+  } | null,
+  decode: (raw: string) => unknown,
+) {
+  const { response, wireRequest, binding } = record;
+  if (
+    !response ||
+    !wireRequest ||
+    !original ||
+    original.version !== 1 ||
+    original.kind !== "owned-rpc-received-response-v1" ||
+    !isDeepStrictEqual(original.binding, binding) ||
+    original.wireId !== wireRequest.id ||
+    original.response?.status !== response.status ||
+    original.response.raw !== response.raw
+  )
+    throw Object.assign(new Error("ADDIN metadata differs from the original retained response"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  return matchMetadataEvidence(response, binding["addinAdmission"], binding.rpcId, wireRequest.id, decode);
 }
 
 type Grant = BrokerGrant<P.LaneContext>;

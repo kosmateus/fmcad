@@ -126,6 +126,12 @@ const other: Auth = { clientId: "ipc-owner-b", clientToken: "ipc-token-b" };
 const createFakeBackend = load(
   "./tests/fixtures/broker-ipc/fake-backend.cjs",
 ) as () => FakeBackend;
+const { matchRetainedMetadataEvidence } = load("./src/queue-broker-modules") as Pick<
+  typeof import("../src/queue-broker-modules"),
+  "matchRetainedMetadataEvidence"
+>;
+const { decodeAdmissionJson } = load("./src/dist/node-adapters/execution/admission-json") as
+  typeof import("../packages/node-adapters/src/execution/admission-json");
 const { serve } = load("./src/queue-broker") as {
   serve(
     config: { backend: string; timeoutMs: number },
@@ -429,7 +435,7 @@ async function fixture(
 ): Promise<Fixture> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-broker-ipc-"));
   const fake = createFakeBackend();
-  let broker: Broker | undefined;
+  const running: { broker?: Broker } = {};
   const {
     historyJobs = 0,
     serverDataChunks,
@@ -500,13 +506,13 @@ async function fixture(
   }
   t.after(async () => {
     try {
-      if (broker) await broker.close();
+      await running.broker?.close();
     } finally {
       socketHarness?.restore();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-  broker = await serve(
+  const broker = await serve(
     { backend: "mcp", timeoutMs: 5000 },
     {
       dir,
@@ -517,6 +523,7 @@ async function fixture(
       ...serveOptions,
     },
   );
+  running.broker = broker;
   for (const client of [owner, other])
     assert.deepEqual(await exchange(dir, { action: "register", ...client }), {
       ok: true,
@@ -583,6 +590,38 @@ async function ownedResult(
   }, "terminal result for " + jobId);
 }
 
+test("retained ADDIN metadata rejects a copied original response or another admission request", () => {
+  const make = (rpcId: string, request = rpcId) => {
+    const wireRequest = { jsonrpc: "2.0", method: "tools/call", id: `fmcad:${rpcId}` };
+    const addinAdmission = { request };
+    const binding = { jobId: `job-${rpcId}`, rpcId, buildHash: "build", requestHash: "hash", addinAdmission };
+    const result = { content: [] };
+    const response = {
+      status: 200,
+      raw: JSON.stringify({ version: 1, binding: addinAdmission, record: { state: "terminal", result } }),
+      toolResponse: { jsonrpc: "2.0", id: wireRequest.id, result },
+    };
+    const original = { version: 1, kind: "owned-rpc-received-response-v1", binding, wireId: wireRequest.id, response };
+    return { record: { binding, wireRequest, response }, original };
+  };
+  const a = make("a");
+  const b = make("b");
+  for (const candidate of [a, b])
+    assert.equal(
+      matchRetainedMetadataEvidence(candidate.record, candidate.original, decodeAdmissionJson).id,
+      candidate.original.wireId,
+    );
+  assert.throws(
+    () => matchRetainedMetadataEvidence({ ...b.record, response: a.record.response }, b.original, decodeAdmissionJson),
+    { code: "RECEIPT_MISMATCH" },
+  );
+  const relabelled = make("b", "a");
+  assert.throws(
+    () => matchRetainedMetadataEvidence(relabelled.record, relabelled.original, decodeAdmissionJson),
+    { code: "RECEIPT_MISMATCH" },
+  );
+});
+
 test("raw ADDIN metadata uses only the provisioned port and retains the bound original response", async (t) => {
   const childDir = process.env["FMCAD_METADATA_OFFLINE_CHILD_DIR"];
   if (!childDir) {
@@ -629,6 +668,8 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   const metadata = { creationId: "opaque-creation", fileId: "file-ą", version: 2 };
   const result = { content: [{ type: "text", text: JSON.stringify(metadata) }] };
   let observedVersion = 2;
+  let saved = true;
+  let inventory = true;
   let mode: "terminal" | "accepted" = "terminal";
   let broker: Broker | undefined;
   const server = createServer(async (req, res) => {
@@ -688,9 +729,12 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
       async callTool(args: { object: { script: string } }) {
         const observation = {
           ...instance,
+          documents: inventory
+            ? [{ id: metadata.creationId, fileId: metadata.fileId, isSaved: saved, isModified: false }]
+            : [],
           documentState: {
             status: "complete",
-            state: { identity: { ...metadata, version: observedVersion } },
+            state: { identity: { ...metadata, version: observedVersion, isSaved: saved } },
           },
         };
         for (const entry of nativeReceipts(args.object.script, dir, observation))
@@ -746,14 +790,23 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   assert.equal(malformed.ok ? "unexpected success" : malformed.error.code, "INVALID_RPC");
   assert.equal(sent.length, 0);
 
-  observedVersion = 3;
-  const wrong = String(successful(await exchange(dir, request()))["id"]);
-  const refused = record((await readResult(wrong, "failed"))["job"]);
-  assert.equal(refused["code"], "DOCUMENT_ADMISSION_UNPROVEN");
-  assert.equal(sent.length, 0);
-  assert.ok(!fs.readdirSync(path.join(dir, "jobs", wrong)).some(name => name.startsWith("rpc-")));
-
+  for (const missing of [
+    { version: 3, saved: true, documents: true },
+    { version: 2, saved: false, documents: false },
+    { version: 2, saved: true, documents: false },
+  ]) {
+    observedVersion = missing.version;
+    saved = missing.saved;
+    inventory = missing.documents;
+    const wrong = String(successful(await exchange(dir, request()))["id"]);
+    const refused = record((await readResult(wrong, "failed"))["job"]);
+    assert.equal(refused["code"], "DOCUMENT_ADMISSION_UNPROVEN");
+    assert.equal(sent.length, 0);
+    assert.ok(!fs.readdirSync(path.join(dir, "jobs", wrong)).some(name => name.startsWith("rpc-")));
+  }
   observedVersion = 2;
+  saved = true;
+  inventory = true;
   const valid = String(successful(await exchange(dir, request()))["id"]);
   const output = await readResult(valid, "succeeded");
   const caller = record(JSON.parse(String(record(output["rpc"])["raw"])));
@@ -1250,7 +1303,7 @@ test("partial-frame timeout expires after parsing", async (t) => {
   }
 });
 
-test("a complete frame disables the timeout before its async handler replies", async (t) => {
+test("a complete frame disables the timeout before its async handler replies", async () => {
   const dir = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-broker-ipc-handler-"),
   );
