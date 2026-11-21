@@ -414,6 +414,7 @@
     "tests/queue-probe-recovery.test.ts",
     "tests/broker-recovery.test.ts",
     "tests/broker-recovery-records.test.ts",
+    "tests/broker-lifetime.test.ts",
     "tests/recovery-isolation.test.ts",
     "tests/stage-journal.test.ts",
     "tests/stage-owner.test.ts"
