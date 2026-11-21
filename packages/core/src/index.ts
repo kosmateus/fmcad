@@ -1,6 +1,7 @@
 // Public boundary for host-independent domain, application, ports, and catalog modules.
 export * from "./domain/contracts";
 export * from "./domain/config";
+export * from "./domain/physical-backend";
 export * from "./domain/outcome";
 export * from "./domain/evidence";
 export * from "./domain/time-policy";

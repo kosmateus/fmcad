@@ -39,6 +39,9 @@ import {
 // Source and packaged launchers share the public facade's installation anchor.
 const runtimeAnchor = path.join(__dirname, "..", "queue-broker.js");
 const runtimeRequire = createRequire(runtimeAnchor);
+const { assertAutodeskFusionBackend } = runtimeRequire(
+  "./dist/core/domain/physical-backend",
+) as typeof import("../../packages/core/src/domain/physical-backend");
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
 const { MAX_BROKER_IPC_BYTES: MAX } = runtimeRequire(
@@ -652,6 +655,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "UNSUPPORTED_ROUTING",
       "routing=direct is no longer supported; start the shared fmcad broker with routing=queue",
     );
+  assertAutodeskFusionBackend(cfg);
+  cfg = { ...cfg, backend: cfg.backend ?? "addin" };
   const metadataAdmission = provisionAddinMetadata(
     options.addinMetadataAdmission,
     cfg.backend,
@@ -5194,7 +5199,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             request.sequence ||
             request.inputFiles?.length ||
             request.buildHash !== codeHash ||
-            request.backend !== (pinned.backend || "mcp") ||
+            request.backend !== (pinned.backend || "addin") ||
             request.cwd !== blockedJob.request.cwd
           ) {
             fail(
@@ -5448,7 +5453,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ),
             { code: "BUILD_CHANGED", notStarted: true },
           );
-        if (request.backend && request.backend !== (pinned.backend || "mcp"))
+        if (request.backend && request.backend !== (pinned.backend || "addin"))
           fail(
             "BACKEND_MISMATCH",
             "Job backend differs from the broker; no fallback",
@@ -6604,7 +6609,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       context.workerClosed = true;
     } else {
       const safeCfg = {
-        backend: pinned.backend || "mcp",
+        backend: pinned.backend || "addin",
         tool: pinned.tool,
         transport: pinned.transport,
         timeoutMs: job.timeoutMs,

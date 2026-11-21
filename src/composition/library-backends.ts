@@ -1,5 +1,6 @@
-import { McpClient, type CompatibilityServer } from "./library-client";
+import type { McpClient, CompatibilityServer } from "./library-client";
 import { AddinClient } from "./library-addin-client";
+import { assertAutodeskFusionBackend } from "../../packages/core/src/domain/physical-backend";
 export interface BackendConstructors<T> {
   McpClient?: new (server: CompatibilityServer) => T;
   AddinClient?: new (server: CompatibilityServer) => T;
@@ -20,9 +21,11 @@ export function createBackend<T>(
       ),
       { code: "UNSUPPORTED_ROUTING" },
     );
-  const backend = server["backend"] || "mcp";
-  if (backend === "mcp")
-    return new (constructors.McpClient || McpClient)(server);
+  assertAutodeskFusionBackend({
+    backend: server["backend"],
+    url: server["url"],
+  });
+  const backend = server["backend"] || "addin";
   if (backend === "addin")
     return new (constructors.AddinClient || AddinClient)(server);
   throw new Error("Unknown backend: " + (backend as string));
