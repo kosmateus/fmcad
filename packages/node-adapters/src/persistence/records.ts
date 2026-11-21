@@ -127,8 +127,11 @@ export function readJson(
   file: string,
   maxBytes = 16 * 1024 * 1024,
   io = fs,
+  expectedPath?: string,
 ): unknown {
-  return JSON.parse(readBytes(file, maxBytes, io).toString("utf8")) as unknown;
+  return JSON.parse(
+    readBytes(file, maxBytes, io, expectedPath).toString("utf8"),
+  ) as unknown;
 }
 
 /** A pending marker survives an ambiguous rename/fsync. Recovery is explicit. */

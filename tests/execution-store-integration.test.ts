@@ -7,6 +7,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import { object, field, string } from "./modeling-unit-test-support.js";
+import "./fixtures/broker-records-contract.js";
 const fixtureDirectory = path.join(process.cwd(), "tests");
 const load = createRequire(
   path.join(fixtureDirectory, "execution-store-integration.test.ts"),
@@ -30,6 +31,9 @@ const { readOwnedResult } = load(
 const { readAcceptedInput } = load(
   "../src/dist/node-adapters/persistence/accepted-inputs",
 ) as typeof import("../packages/node-adapters/src/persistence/accepted-inputs.js");
+const { createBrokerRecords } = load(
+  "../src/dist/node-adapters/persistence/broker-records",
+) as typeof import("../packages/node-adapters/src/persistence/broker-records.js");
 const { runBoundInstanceProbe } = load(
   "./fixtures/bound-instance-probe.cjs",
 ) as {
@@ -182,6 +186,14 @@ test("broker large project RPC/provenance survive restart; foreign owner and sym
   broker = null;
   broker = await start();
   const after = await call("result", { jobId: field(job, "id") });
+  const evidence = createBrokerRecords(f.dir).evidence;
+  const id = string(field(job, "id"));
+  const journals = evidence.readRpcRecords(id);
+  assert.equal(journals.length, 1);
+  assert.equal(journals[0]?.terminal, true);
+  assert.equal(journals[0]?.binding.jobId, id);
+  const rpcId = string(journals[0]?.binding.rpcId);
+  assert.deepEqual(evidence.readReceivedResponse(id, rpcId)?.response, journals[0]?.response);
   assert.equal(
     acceptedBytes(f.dir, field(after, "provenance", "inputs", 1)).toString(),
     "accepted-source\r\n",
