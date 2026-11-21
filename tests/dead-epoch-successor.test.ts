@@ -1,5 +1,9 @@
 import test from "node:test";
 import "./frozen-metadata-profile.test";
+import {
+  inspectFrozenMetadataWork,
+  type FrozenMetadataProfile,
+} from "../src/composition/queue-frozen-metadata-profile";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,7 +29,7 @@ const { openIsolatedEpoch, isolatedEpochDirectory } = load(
 const { assertSuccessorApproval, assertCurrentPredecessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
-const { inspectSuccessor } = load(
+const { inspectSuccessor, bootstrapSuccessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
 
@@ -35,7 +39,11 @@ type PublishedBackend = {
   identity: DeadEpochFixture["identity"];
   authority: DeadEpochFixture["authority"];
 };
-function backendFixture(t: TestContext) {
+function backendFixture(
+  t: TestContext,
+  effectiveConfig?: Record<string, unknown>,
+  sourceConfig?: Record<string, unknown>,
+) {
   t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
   const base = fs.mkdtempSync("/tmp/opencode/backend-successor-");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -43,6 +51,10 @@ function backendFixture(t: TestContext) {
     load("./fixtures/backend-successor.cjs") as (
       base: string,
       repo: string,
+      options?: {
+        effectiveConfig?: Record<string, unknown> | undefined;
+        sourceConfig?: Record<string, unknown> | undefined;
+      },
     ) => DeadEpochFixture & {
       client: Parameters<typeof inspectSuccessor>[0];
       approvalFile: string;
@@ -76,7 +88,7 @@ function backendFixture(t: TestContext) {
         authority: DeadEpochFixture["authority"];
       };
     }
-  )(base, repository);
+  )(base, repository, { effectiveConfig, sourceConfig });
 }
 
 function changeBackendHead(
@@ -123,6 +135,161 @@ test("FAKE backend succession: verified effective head permits cold inspection w
     openIsolatedEpoch(f.dir, { recover: false }).lookup(f.priorJob.id)!.state,
     "running",
   );
+});
+
+function frozenBackendFixture(t: TestContext) {
+  const f = backendFixture(
+    t,
+    {
+      backend: "addin",
+      url: "http://127.0.0.1:8765/mcp",
+      tool: "execute_python",
+    },
+    {
+      backend: "mcp",
+      url: "http://never-send.invalid",
+      headers: {},
+      tool: "execute_python",
+      transport: "node",
+      protocolVersion: "2025-06-18",
+      timeoutMs: 180000,
+      routing: "queue",
+      queue: {},
+    },
+  );
+  const previous = openIsolatedEpoch(f.dir, { recover: false });
+  previous.submit({
+    kind: "rpc",
+    clientId: f.clientId,
+    requestId: "frozen-peer-request",
+    timeoutMs: 1000,
+    payload: { jsonrpc: "2.0", id: "frozen-peer", method: "ping" },
+  });
+  const stateFile = path.join(f.inspection.pointer.root, "queue-state.json");
+  const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  state.jobs[f.priorJob.id].state = "needs_reconciliation";
+  state.active = null;
+  state.lease = null;
+  api.durable(stateFile, state);
+  const frozen = inspectFrozenMetadataWork(f.dir, f.inspection.pointer.root);
+  const profile: FrozenMetadataProfile = {
+    version: 1,
+    purpose: "dead-frozen-predecessor-metadata-v1",
+    ownerClientId: f.clientId,
+    beneficiary: "fresh-metadata-beneficiary",
+    metadataRequestId: "fresh-metadata-once",
+    previousConfigHash: api.brokerConfigHash(f.cfg),
+    successorConfigHash: api.brokerConfigHash(f.cfg),
+    sourceCommit: f.approval.sourceCommit,
+    buildHash: f.approval.buildHash,
+    expectedProcess: f.approval.expectedProcess,
+    provisioning: {
+      capability: "get_open_document_metadata",
+      owner: "fresh-metadata-beneficiary",
+      endpoint: "http://127.0.0.1:8765/admission/v1",
+      ...f.approval.expectedProcess,
+      instance: "fresh-instance",
+      epoch: "fresh-runtime",
+      source: "a".repeat(40),
+      build: "b".repeat(64),
+    },
+    unresolved: frozen.unresolved,
+  };
+  const qualification = api.readJson(f.approval.qualification.path) as object;
+  api.durable(f.approval.qualification.path, {
+    ...qualification,
+    frozenPredecessorMetadataQualified: true,
+  });
+  const snapshot = lineage.predecessorSnapshot(f.dir, f.audit);
+  const approval = {
+    ...f.approval,
+    purpose: profile.purpose,
+    frozenMetadata: profile,
+    stateHash: snapshot.state.sha256,
+    qualification: lineage.reference(f.approval.qualification.path),
+  };
+  api.durable(f.approvalFile, approval);
+  return { ...f, profile, frozen, stateFile };
+}
+
+test("FAKE frozen metadata: exact two-store UNKNOWN and queued topology is inspected without dispatch", (t) => {
+  const f = frozenBackendFixture(t);
+  const { frozen, stateFile } = f;
+  const protectedFiles = [
+    stateFile,
+    path.join(f.dir, "queue-state.json"),
+    f.headFile,
+  ];
+  const before = protectedFiles.map((file) => fs.readFileSync(file));
+  const inspected = inspectSuccessor(
+    f.client,
+    f.cfg,
+    f.approvalFile,
+    f.requestId,
+  );
+  assert.equal(inspected.frozenMetadataFacts?.queuedNeverStarted, true);
+  assert.deepEqual(
+    inspected.frozenMetadataFacts?.unresolved,
+    frozen.unresolved,
+  );
+  assert.throws(
+    () =>
+      inspectSuccessor(
+        f.client,
+        { ...f.cfg, timeoutMs: 1 },
+        f.approvalFile,
+        f.requestId,
+      ),
+    { code: "FROZEN_METADATA_FENCE_CHANGED" },
+  );
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+});
+
+test("FAKE frozen metadata: public bootstrap refuses missing or foreign private input before any claim", async (t) => {
+  const f = frozenBackendFixture(t);
+  const names = fs.readdirSync(f.audit).sort();
+  const before = names
+    .filter((name) => fs.statSync(path.join(f.audit, name)).isFile())
+    .map((name) => ({
+      name,
+      bytes: fs.readFileSync(path.join(f.audit, name)),
+    }));
+  const base = {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    preflight: true,
+  };
+  await assert.rejects(bootstrapSuccessor(f.client, f.cfg, base), {
+    code: "FROZEN_METADATA_FENCE_CHANGED",
+  });
+  await assert.rejects(
+    bootstrapSuccessor(f.client, f.cfg, {
+      ...base,
+      addinMetadataAdmission: {
+        ...f.profile.provisioning,
+        token: "a".repeat(64),
+        owner: "foreign",
+      },
+    }),
+    { code: "FROZEN_METADATA_FENCE_CHANGED" },
+  );
+  const result = await bootstrapSuccessor(f.client, f.cfg, {
+    ...base,
+    addinMetadataAdmission: {
+      ...f.profile.provisioning,
+      token: "a".repeat(64),
+    },
+  });
+  assert.equal("sdkRequestsSent" in result && result.sdkRequestsSent, 0);
+  assert.deepEqual(fs.readdirSync(f.audit).sort(), names);
+  for (const entry of before)
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.audit, entry.name)),
+      entry.bytes,
+    );
+  assert.equal(fs.existsSync(path.join(f.audit, "worker-claim.json")), false);
+  assert.equal(fs.existsSync(path.join(f.audit, "launch-intent.json")), false);
 });
 
 test("FAKE backend succession: published lineage reopens against archived pointer and preserves old SDK/history", (t) => {
@@ -534,8 +701,9 @@ test("FAKE backend succession: another cold scope without a current transition v
 test("a normal read-attempt link cannot authorize an isolated or atomic successor", (t) => {
   const f = backendFixture(t);
   for (const link of [null, false, {}, f.approval.qualification]) {
-    const untrusted = JSON.parse(JSON.stringify({ ...f.approval,
-      priorNormalCurrentFactsRetry: link }));
+    const untrusted = JSON.parse(
+      JSON.stringify({ ...f.approval, priorNormalCurrentFactsRetry: link }),
+    );
     assert.throws(() => assertSuccessorApproval(f.inspection, untrusted), {
       code: "NORMAL_SUCCESSOR_UNPROVEN",
     });
@@ -545,40 +713,115 @@ test("a normal read-attempt link cannot authorize an isolated or atomic successo
 test("fresh normal bootstrap keeps preserved creation identity separate from the retired read-worker lifecycle", (t) => {
   const base = fs.mkdtempSync("/tmp/opencode/normal-retry-bootstrap-");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const f = (load("./fixtures/dead-epoch-successor.cjs") as (base: string, repo: string) => DeadEpochFixture)(base, repository);
+  const f = (
+    load("./fixtures/dead-epoch-successor.cjs") as (
+      base: string,
+      repo: string,
+    ) => DeadEpochFixture
+  )(base, repository);
   assertSuccessorApproval(f.inspection, f.approval);
-  const normal = load("../src/dist/composition/queue-normal-cold-successor") as Record<string, unknown>;
+  const normal = load(
+    "../src/dist/composition/queue-normal-cold-successor",
+  ) as Record<string, unknown>;
   const original = normal["inspectNormalCurrentFactsRetry"];
-  t.after(() => { normal["inspectNormalCurrentFactsRetry"] = original; });
+  t.after(() => {
+    normal["inspectNormalCurrentFactsRetry"] = original;
+  });
   const priorFile = path.join(base, "previous-read-authority.json");
   const workerBuild = "e".repeat(64);
   api.durable(priorFile, { buildHash: workerBuild });
-  const normalStore = { kind: "normal-currentstore-v1", jobAuthorization: f.approval.qualification,
-    deathProof: f.approval.qualification, producerRetirement: f.approval.qualification };
-  const approval = JSON.parse(JSON.stringify({ ...f.approval, purpose: "dead-normal-currentstore-successor-v1",
-    normalCurrentStore: normalStore, priorNormalCurrentFactsRetry: f.approval.qualification }));
-  normal["inspectNormalCurrentFactsRetry"] = () => ({ previousAuthority: lineage.reference(priorFile),
-    originalNormalStore: normalStore, currentOwner: f.previousOwner, candidateRoot: f.approval.candidateRoot });
-  const inspection = { ...f.inspection, approval,
-    qualification: { ...f.inspection.qualification, normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true },
-    previousLifecycle: { ...f.inspection.previousLifecycle, buildHash: workerBuild } };
+  const normalStore = {
+    kind: "normal-currentstore-v1",
+    jobAuthorization: f.approval.qualification,
+    deathProof: f.approval.qualification,
+    producerRetirement: f.approval.qualification,
+  };
+  const approval = JSON.parse(
+    JSON.stringify({
+      ...f.approval,
+      purpose: "dead-normal-currentstore-successor-v1",
+      normalCurrentStore: normalStore,
+      priorNormalCurrentFactsRetry: f.approval.qualification,
+    }),
+  );
+  normal["inspectNormalCurrentFactsRetry"] = () => ({
+    previousAuthority: lineage.reference(priorFile),
+    originalNormalStore: normalStore,
+    currentOwner: f.previousOwner,
+    candidateRoot: f.approval.candidateRoot,
+  });
+  const inspection = {
+    ...f.inspection,
+    approval,
+    qualification: {
+      ...f.inspection.qualification,
+      normalCurrentStoreSuccessorQualified: true,
+      normalCurrentFactsRetryQualified: true,
+    },
+    previousLifecycle: {
+      ...f.inspection.previousLifecycle,
+      buildHash: workerBuild,
+    },
+  };
   assert.notEqual(workerBuild, inspection.identity.buildHash);
   assertSuccessorApproval(inspection, approval);
-  const legacyQualification = JSON.parse(JSON.stringify(inspection.qualification));
+  const legacyQualification = JSON.parse(
+    JSON.stringify(inspection.qualification),
+  );
   delete legacyQualification.normalCurrentFactsRetryQualified;
-  assert.throws(() => assertSuccessorApproval({ ...inspection, qualification: legacyQualification }, approval), {
-    code: "EPOCH_SUCCESSOR_UNQUALIFIED",
+  assert.throws(
+    () =>
+      assertSuccessorApproval(
+        { ...inspection, qualification: legacyQualification },
+        approval,
+      ),
+    {
+      code: "EPOCH_SUCCESSOR_UNQUALIFIED",
+    },
+  );
+  assert.throws(
+    () =>
+      assertSuccessorApproval(
+        { ...inspection, previousLifecycle: f.inspection.previousLifecycle },
+        approval,
+      ),
+    {
+      code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+    },
+  );
+  const wrongOwner = JSON.parse(
+    JSON.stringify({
+      ...approval,
+      previousOwner: { ...approval.previousOwner, nonce: "foreign" },
+    }),
+  );
+  assert.throws(() => assertSuccessorApproval(inspection, wrongOwner), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
   });
-  assert.throws(() => assertSuccessorApproval({ ...inspection, previousLifecycle: f.inspection.previousLifecycle }, approval), {
-    code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+  const wrongScope = JSON.parse(
+    JSON.stringify({
+      ...approval,
+      normalCurrentStore: {
+        ...normalStore,
+        jobAuthorization: {
+          ...normalStore.jobAuthorization,
+          sha256: "f".repeat(64),
+        },
+      },
+    }),
+  );
+  assert.throws(() => assertSuccessorApproval(inspection, wrongScope), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
   });
-  const wrongOwner = JSON.parse(JSON.stringify({ ...approval, previousOwner: { ...approval.previousOwner, nonce: "foreign" } }));
-  assert.throws(() => assertSuccessorApproval(inspection, wrongOwner), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
-  const wrongScope = JSON.parse(JSON.stringify({ ...approval, normalCurrentStore: { ...normalStore,
-    jobAuthorization: { ...normalStore.jobAuthorization, sha256: "f".repeat(64) } } }));
-  assert.throws(() => assertSuccessorApproval(inspection, wrongScope), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
-  const wrongRuntime = JSON.parse(JSON.stringify({ ...approval, candidateRoot: path.join(base, "foreign-runtime") }));
-  assert.throws(() => assertSuccessorApproval(inspection, wrongRuntime), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  const wrongRuntime = JSON.parse(
+    JSON.stringify({
+      ...approval,
+      candidateRoot: path.join(base, "foreign-runtime"),
+    }),
+  );
+  assert.throws(() => assertSuccessorApproval(inspection, wrongRuntime), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
+  });
 });
 
 test("FAKE normal runtime upgrade binds creation to the original authorized normal pair, not the historical quarantine pair", (t) => {

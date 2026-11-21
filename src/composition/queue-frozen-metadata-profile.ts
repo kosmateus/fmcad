@@ -54,6 +54,73 @@ function fail(): never {
     { code: "FROZEN_METADATA_FENCE_CHANGED" },
   );
 }
+/** V1 preserves the complete physical configuration, including connection tuning. */
+export function assertFrozenMetadataConnection(
+  previous: unknown,
+  successor: unknown,
+): void {
+  if (
+    !previous ||
+    !successor ||
+    typeof previous !== "object" ||
+    typeof successor !== "object" ||
+    Array.isArray(previous) ||
+    Array.isArray(successor)
+  )
+    fail();
+  const before: Record<string, unknown> = { ...previous };
+  const after: Record<string, unknown> = { ...successor };
+  if (before["backend"] !== "addin" || !isDeepStrictEqual(before, after))
+    fail();
+}
+/** Validate private input before publishing any launch or authority journal. */
+export function assertFrozenMetadataStartup(
+  profile: FrozenMetadataProfile | undefined,
+  admission: TrustedAddinMetadataAdmission | undefined,
+  cfg: unknown,
+): void {
+  if (!profile) {
+    if (admission !== undefined) fail();
+    return;
+  }
+  if (
+    !admission ||
+    typeof admission.token !== "string" ||
+    !/^[\x21-\x7e]{32,}$/.test(admission.token)
+  )
+    fail();
+  const { token, ...binding } = admission;
+  if (!isDeepStrictEqual(binding, profile.provisioning)) fail();
+  const contains = (value: unknown): boolean => {
+    if (typeof value === "string") return value.includes(token);
+    if (!value || typeof value !== "object") return false;
+    return Object.entries(value).some(
+      ([key, entry]) => key.includes(token) || contains(entry),
+    );
+  };
+  if (contains(cfg) || contains(profile)) fail();
+}
+
+export function assertFrozenMetadataRequest(
+  scope:
+    | Pick<FrozenMetadataProfile, "beneficiary" | "metadataRequestId">
+    | undefined,
+  request: {
+    clientId: string;
+    requestId: string;
+    kind: string;
+    metadata: boolean;
+  },
+): void {
+  if (
+    scope &&
+    (request.clientId !== scope.beneficiary ||
+      request.requestId !== scope.metadataRequestId ||
+      request.kind !== "rpc" ||
+      !request.metadata)
+  )
+    fail();
+}
 function keys(value: object, expected: string[]): void {
   if (Object.keys(value).sort().join() !== expected.sort().join()) fail();
 }
@@ -230,6 +297,7 @@ export function assertFrozenMetadataProfile(
     ].every((value) => /^[a-f0-9]{64}$/.test(value)) ||
     !/^[a-f0-9]{40}$/.test(profile.sourceCommit) ||
     profile.previousConfigHash !== facts.previousConfigHash ||
+    profile.previousConfigHash !== profile.successorConfigHash ||
     profile.successorConfigHash !== facts.successorConfigHash ||
     profile.buildHash !== facts.buildHash ||
     profile.sourceCommit !== facts.sourceCommit ||

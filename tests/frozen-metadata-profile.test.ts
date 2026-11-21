@@ -6,6 +6,9 @@ import path from "node:path";
 import {
   assertFrozenMetadataProfile,
   inspectFrozenMetadataWork,
+  assertFrozenMetadataConnection,
+  assertFrozenMetadataStartup,
+  assertFrozenMetadataRequest,
   type FrozenMetadataProfile,
   type FrozenMetadataFacts,
 } from "../src/composition/queue-frozen-metadata-profile";
@@ -18,7 +21,7 @@ function fixture() {
     beneficiary: "metadata-client",
     metadataRequestId: "fresh-metadata-request",
     previousConfigHash: "a".repeat(64),
-    successorConfigHash: "b".repeat(64),
+    successorConfigHash: "a".repeat(64),
     sourceCommit: "c".repeat(40),
     buildHash: "d".repeat(64),
     expectedProcess: { pid: 100, birth: "new-process" },
@@ -77,6 +80,80 @@ function fixture() {
   };
   return { profile, facts };
 }
+
+test("v1 preserves the full physical config and rejects even connection-tuning changes", () => {
+  const before = {
+    backend: "addin",
+    url: "http://127.0.0.1:8765/mcp",
+    timeoutMs: 180000,
+  };
+  assert.doesNotThrow(() =>
+    assertFrozenMetadataConnection(before, { ...before }),
+  );
+  assert.throws(
+    () =>
+      assertFrozenMetadataConnection(before, { ...before, timeoutMs: 60000 }),
+    { code: "FROZEN_METADATA_FENCE_CHANGED" },
+  );
+  const f = fixture();
+  f.profile.successorConfigHash = "b".repeat(64);
+  f.facts.successorConfigHash = f.profile.successorConfigHash;
+  assert.throws(() => assertFrozenMetadataProfile(f.profile, f.facts), {
+    code: "FROZEN_METADATA_FENCE_CHANGED",
+  });
+});
+
+test("private provisioning is required and credential copies are rejected before launch", () => {
+  const { profile } = fixture();
+  const token = 'private-"escaped-\\-credential-'.repeat(3);
+  const dto = { ...profile.provisioning, token };
+  const cfg = { backend: "addin" };
+  assert.doesNotThrow(() => assertFrozenMetadataStartup(profile, dto, cfg));
+  assert.doesNotThrow(() =>
+    assertFrozenMetadataStartup(undefined, undefined, cfg),
+  );
+  for (const run of [
+    () => assertFrozenMetadataStartup(profile, undefined, cfg),
+    () => assertFrozenMetadataStartup(undefined, dto, cfg),
+    () =>
+      assertFrozenMetadataStartup(profile, { ...dto, owner: "foreign" }, cfg),
+    () =>
+      assertFrozenMetadataStartup(profile, dto, {
+        ...cfg,
+        nested: [{ value: token }],
+      }),
+    () => assertFrozenMetadataStartup(profile, dto, { ...cfg, [token]: true }),
+  ])
+    assert.throws(run, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+});
+
+test("frozen successor accepts only its exact fresh metadata request, never peer or historical work", () => {
+  const { profile } = fixture();
+  const request = {
+    clientId: profile.beneficiary,
+    requestId: profile.metadataRequestId,
+    kind: "rpc",
+    metadata: true,
+  };
+  assert.doesNotThrow(() => assertFrozenMetadataRequest(profile, request));
+  for (const changed of [
+    { ...request, clientId: profile.ownerClientId },
+    { ...request, requestId: profile.unresolved[0]!.requestId },
+    { ...request, requestId: "other-fresh-request" },
+    { ...request, kind: "command" },
+    { ...request, metadata: false },
+  ])
+    assert.throws(() => assertFrozenMetadataRequest(profile, changed), {
+      code: "FROZEN_METADATA_FENCE_CHANGED",
+    });
+  assert.doesNotThrow(() =>
+    assertFrozenMetadataRequest(undefined, {
+      ...request,
+      kind: "command",
+      metadata: false,
+    }),
+  );
+});
 
 test("frozen metadata authority admits the exact owner, runtime and two-store frozen topology", () => {
   const { profile, facts } = fixture();

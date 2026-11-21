@@ -118,8 +118,10 @@ export interface Qualification {
   deadEpochSuccessorRestoreQualified?: boolean;
   normalCurrentStoreSuccessorQualified?: boolean;
   normalCurrentFactsRetryQualified?: boolean;
+  frozenPredecessorMetadataQualified?: boolean;
 }
 export interface Inspection {
+  frozenMetadataFacts?: import("./queue-frozen-metadata-profile").FrozenMetadataFacts;
   root: string;
   runtime: string;
   audit: string;
@@ -266,6 +268,8 @@ export interface Ready {
   sdkRequestsSent: number;
 }
 export interface BootstrapOptions {
+  /** Private operator input; never populated from public IPC or persisted. */
+  addinMetadataAdmission?: import("../queue-broker-ports").TrustedAddinMetadataAdmission;
   approval: string;
   requestId: string;
   preflight?: boolean;

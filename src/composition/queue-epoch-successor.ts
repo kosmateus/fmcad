@@ -27,6 +27,12 @@ import type {
 const anchor = path.join(__dirname, "../../queue-epoch-successor.js");
 const load = createRequire(anchor);
 const {
+  assertFrozenMetadataProfile,
+  assertFrozenMetadataConnection,
+  assertFrozenMetadataStartup,
+  inspectFrozenMetadataWork,
+} = load("./dist/composition/queue-frozen-metadata-profile") as typeof import("./queue-frozen-metadata-profile");
+const {
   hash,
   durable,
   readJson,
@@ -388,6 +394,14 @@ function normalReadRetry(root: string, approval: Approval) {
 }
 
 export function assertSuccessorApproval(value: Inspection, approval: Approval) {
+  const frozen = approval.purpose === "dead-frozen-predecessor-metadata-v1"
+    ? approval.frozenMetadata : undefined;
+  if (frozen) {
+    if (!value.frozenMetadataFacts)
+      fail("FROZEN_METADATA_FENCE_CHANGED", "Observed frozen predecessor facts required");
+    assertFrozenMetadataProfile(frozen, value.frozenMetadataFacts);
+  }
+  const predecessorConfigHash = frozen?.previousConfigHash ?? value.configHash;
   if (approval.priorNormalCurrentFactsRetry !== undefined && !approval.normalCurrentStore)
     fail("NORMAL_SUCCESSOR_UNPROVEN", "A fresh normal read attempt cannot authorize isolated or atomic work");
   const retry = normalReadRetry(value.root, approval);
@@ -414,14 +428,14 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
       value.snapshot,
       value.backendTransition,
       value.previousOwner,
-      value.configHash,
+      predecessorConfigHash,
     );
   } else if (approval.physicalBackendHead) {
     fail(
       "EPOCH_SUCCESSOR_FENCE_CHANGED",
       "Original root configuration or explicit backend transition proof required",
     );
-  } else if (value.rootIdentity.configHash !== value.configHash) {
+  } else if (value.rootIdentity.configHash !== predecessorConfigHash) {
     effectiveIdentity = successorEpochIdentity(
       value.root,
       value.pointer,
@@ -430,7 +444,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
   }
   if (
     approval.version !== 1 ||
-    approval.purpose !== (approval.normalCurrentStore ? "dead-normal-currentstore-successor-v1" : "dead-isolated-epoch-successor-v1") ||
+    approval.purpose !== (frozen ? "dead-frozen-predecessor-metadata-v1" : approval.normalCurrentStore ? "dead-normal-currentstore-successor-v1" : "dead-isolated-epoch-successor-v1") ||
     approval.requestId !== value.requestId ||
     approval.clientId !== value.clientId ||
     approval.predecessorEpochId !== value.pointer.epochId ||
@@ -444,7 +458,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     value.previousLifecycle.buildHash !== (retry
       ? read<Checked["authority"]>(retry.previousAuthority.path).buildHash
       : effectiveIdentity.buildHash) ||
-    value.previousLifecycle.configHash !== value.configHash ||
+    value.previousLifecycle.configHash !== predecessorConfigHash ||
     !["ready", "recovery"].includes(value.previousLifecycle.stage) ||
     approval.stateHash !== value.snapshot.state.sha256 ||
     approval.rootStateHash !== value.snapshot.rootState.sha256 ||
@@ -458,7 +472,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     approval.expectedProcess.pid <= 0 ||
     typeof approval.expectedProcess.birth !== "string" ||
     !approval.expectedProcess.birth ||
-    effectiveIdentity.configHash !== value.configHash ||
+    effectiveIdentity.configHash !== predecessorConfigHash ||
     value.previousBrokerAlive !== false ||
     value.previousProcessAlive !== false ||
     value.originalProcessAlive !== false ||
@@ -484,6 +498,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     q.deadEpochSuccessorRestoreQualified !== true
     || (approval.normalCurrentStore && q.normalCurrentStoreSuccessorQualified !== true)
     || (approval.priorNormalCurrentFactsRetry !== undefined && q.normalCurrentFactsRetryQualified !== true)
+    || (frozen && q.frozenPredecessorMetadataQualified !== true)
   )
     fail(
       "EPOCH_SUCCESSOR_UNQUALIFIED",
@@ -605,6 +620,30 @@ export function inspectSuccessor(
       ),
     };
   }
+  if (approval.purpose === "dead-frozen-predecessor-metadata-v1") {
+    // An exact current physical head is required; no fallback to a root identity.
+    if (!effectiveBackend)
+      fail("FROZEN_METADATA_FENCE_CHANGED", "A pinned physical predecessor head is required");
+    assertFrozenMetadataConnection(effectiveBackend.head.nextConfig, cfg);
+    const work = inspectFrozenMetadataWork(root, pointer.root);
+    value.frozenMetadataFacts = {
+      ownerClientId: value.clientId,
+      registeredOwnerMatches: value.registeredTokenHash === value.ownerTokenHash,
+      previousConfigHash: effectiveBackend.head.nextConfigHash,
+      successorConfigHash: value.configHash,
+      sourceCommit: approval.sourceCommit,
+      buildHash: value.codeHash,
+      expectedProcess: approval.expectedProcess,
+      previousProcessesDead: value.previousBrokerAlive === false &&
+        value.previousProcessAlive === false && value.originalProcessAlive === false,
+      expectedProcessAlive: value.expectedProcessAlive === true,
+      producersDead: work.workers.every((worker) => priorProcessAlive(worker) === false),
+      queuedNeverStarted: work.queuedNeverStarted,
+      unresolved: work.unresolved,
+      // This binding must also be matched to the private stdin DTO by the worker.
+      provisioning: approval.frozenMetadata.provisioning,
+    };
+  }
   assertSuccessorApproval(value, approval);
   if (approval.normalCurrentStore)
     (load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor")).inspectNormalCurrentStore(root, approval, pointer);
@@ -684,6 +723,27 @@ export function assertCurrentPredecessor(
     );
   if (a["normalCurrentStore"])
     (load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor")).assertNormalCurrentPredecessor(root, value);
+  if (a["frozenMetadata"] !== undefined) {
+    const profile = a["frozenMetadata"] as import("./queue-frozen-metadata-profile").FrozenMetadataProfile;
+    const observed = inspectFrozenMetadataWork(root, value.pointer.root);
+    assertFrozenMetadataProfile(profile, {
+      ownerClientId: a.clientId,
+      registeredOwnerMatches: true, // Reconstructed from clients.json above.
+      previousConfigHash: String(a["configHash"]),
+      successorConfigHash: String(a["configHash"]),
+      sourceCommit: a.sourceCommit,
+      buildHash: a.buildHash,
+      expectedProcess: a.expectedProcess,
+      previousProcessesDead: priorProcessAlive(a.previousOwner) === false &&
+        priorProcessAlive(value.pointer.currentInstance) === false &&
+        priorProcessAlive(value.pointer.originalInstance) === false,
+      expectedProcessAlive: priorProcessAlive(a.expectedProcess) === true,
+      producersDead: observed.workers.every((worker) => priorProcessAlive(worker) === false),
+      queuedNeverStarted: observed.queuedNeverStarted,
+      unresolved: observed.unresolved,
+      provisioning: profile.provisioning,
+    });
+  }
   return value;
 }
 
@@ -764,10 +824,18 @@ export async function bootstrapSuccessor(
     requestId,
     preflight = false,
     confirmOwnership = false,
+    addinMetadataAdmission,
   }: BootstrapOptions,
 ) {
   const root = client.dir,
     audit = path.join(root, "epoch-successions", hash(requestId || ""));
+  const startupApproval = read<Approval>(fs.realpathSync(approvalFile));
+  assertFrozenMetadataStartup(
+    startupApproval.purpose === "dead-frozen-predecessor-metadata-v1"
+      ? startupApproval.frozenMetadata : undefined,
+    addinMetadataAdmission,
+    cfg,
+  );
   const prior = exists<Intent>(path.join(audit, "intent.json"));
   if (prior) {
     const approved = reference(fs.realpathSync(approvalFile));
@@ -914,6 +982,9 @@ export async function bootstrapSuccessor(
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
       ...(value.approval.normalCurrentStore ? { normalCurrentStore: value.approval.normalCurrentStore } : {}),
+      ...(value.approval.purpose === "dead-frozen-predecessor-metadata-v1"
+        ? { frozenMetadata: value.approval.frozenMetadata }
+        : {}),
       ...(value.approval.priorNormalCurrentFactsRetry !== undefined ? { priorNormalCurrentFactsRetry: value.approval.priorNormalCurrentFactsRetry } : {}),
       ...(value.approval.priorRetiredSuccessor
         ? { priorRetiredSuccessor: value.approval.priorRetiredSuccessor }
@@ -1050,7 +1121,12 @@ export async function bootstrapSuccessor(
         );
         child.stdin!.on("error", () => {});
         child.stdin!.end(
-          JSON.stringify({ cfg, dir: root, audit, nonce: intent.nonce }),
+          JSON.stringify({
+            cfg, dir: root, audit, nonce: intent.nonce,
+            ...(addinMetadataAdmission
+              ? { addinMetadataAdmission }
+              : {}),
+          }),
         );
         child.unref();
       } finally {
