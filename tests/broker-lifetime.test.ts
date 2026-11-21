@@ -256,8 +256,8 @@ test(
     const dir = directory(t);
     const socket = path.join(dir, "queue.sock");
     let status: BrokerDrainState = "pending";
-    let disposed = false;
-    const broker = setup(dir, () => (disposed = true));
+    let disposed = 0;
+    const broker = setup(dir, () => disposed++);
     await broker.initialize(startup, () => {});
 
     const worker = spawn(
@@ -296,21 +296,24 @@ test(
     const reply = transact(socket, { pendingWorker: true });
     await workerRequested.wait;
     const close = broker.close();
+    const concurrentClose = broker.close();
     assert.equal(broker.stopping, true);
     await nextTurn();
     assert.equal(fs.existsSync(broker.lock), true);
-    assert.equal(disposed, false);
+    assert.equal(fs.existsSync(socket), true);
+    assert.equal(disposed, 0);
     assert.equal(worker.exitCode, null);
     status = "idle";
     broker.progress();
     await retirementBegan.wait;
     assert.equal(fs.existsSync(broker.lock), true);
-    assert.equal(disposed, false);
+    assert.equal(fs.existsSync(socket), true);
+    assert.equal(disposed, 0);
     assert.equal(worker.exitCode, null);
     finishRetirement.open();
     assert.deepEqual(await reply, { ok: true, result: { notStarted: true } });
-    await close;
-    assert.equal(disposed, true);
+    await Promise.all([close, concurrentClose]);
+    assert.equal(disposed, 1);
     assert.equal(fs.existsSync(broker.lock), false);
     assert.equal(fs.existsSync(socket), false);
   },

@@ -273,6 +273,7 @@ export function claimBrokerLifetime({
           } finally {
             handlers--;
             if (handlers === 0) handlersDrained?.();
+            progress();
           }
         },
         options.observeReply,
@@ -290,32 +291,36 @@ export function claimBrokerLifetime({
     } catch (error) {
       phase = "failed";
       // Transport cleanup is not broker close. Do not unlink another endpoint.
-      if (
-        runtime &&
-        (process.platform === "win32" ||
-          (endpoint && sameFile(socket, endpoint)))
-      )
-        runtime.stopListening();
-      disposeClient();
+      try {
+        if (
+          runtime &&
+          (process.platform === "win32" ||
+            (endpoint && sameFile(socket, endpoint)))
+        )
+          runtime.stopListening();
+      } catch {
+        // Keep the original listen failure.
+      }
+      try {
+        disposeClient();
+      } catch {
+        // Neither cleanup failure authorizes releasing the lock.
+      }
       throw error;
     }
   }
 
-  function close(): Promise<void> {
-    if (phase === "closed") return Promise.resolve();
+  async function close(): Promise<void> {
+    if (phase === "closed") return;
     if (closing) return closing.task;
     if (phase !== "ready" || !ports)
-      return Promise.reject(
-        brokerError("BROKER_UNAVAILABLE", "Broker is not ready"),
-      );
+      throw brokerError("BROKER_UNAVAILABLE", "Broker is not ready");
     const status = ports.inspectDrain();
-    if (status === "blocked") return Promise.reject(blocked());
+    if (status === "blocked") throw blocked();
     if (status === "physical")
-      return Promise.reject(
-        brokerError(
-          "BROKER_BUSY",
-          "An admitted physical operation is still active",
-        ),
+      throw brokerError(
+        "BROKER_BUSY",
+        "An admitted physical operation is still active",
       );
     phase = "draining";
     let resolve!: () => void;
