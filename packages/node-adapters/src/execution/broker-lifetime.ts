@@ -32,6 +32,7 @@ type Phase =
   | "ready"
   | "draining"
   | "closing"
+  | "retained"
   | "closed"
   | "failed";
 
@@ -143,6 +144,7 @@ export function claimBrokerLifetime({
   let timer: NodeJS.Timeout | undefined;
   let handlers = 0;
   let handlersDrained: (() => void) | undefined;
+  let retirement: Promise<void> | undefined;
   let closing:
     | {
         task: Promise<void>;
@@ -262,7 +264,7 @@ export function claimBrokerLifetime({
       runtime = await listenBrokerIpc(
         socket,
         async (message) => {
-          if (phase !== "ready" && phase !== "draining")
+          if (phase !== "ready" && phase !== "draining" && phase !== "retained")
             failure(
               "BROKER_UNAVAILABLE",
               "Broker cannot admit IPC in this phase",
@@ -313,7 +315,7 @@ export function claimBrokerLifetime({
   async function close(): Promise<void> {
     if (phase === "closed") return;
     if (closing) return closing.task;
-    if (phase !== "ready" || !ports)
+    if ((phase !== "ready" && phase !== "retained") || !ports)
       throw brokerError("BROKER_UNAVAILABLE", "Broker is not ready");
     const status = ports.inspectDrain();
     if (status === "blocked") throw blocked();
@@ -353,38 +355,68 @@ export function claimBrokerLifetime({
   async function drain() {
     if (phase !== "draining" || !closing || !ports || !runtime) return;
     const attempt = closing;
+    const drainPorts = ports;
+    const refuse = (error: unknown) => {
+      // Retirement cannot be undone. Leave control/recovery IPC online, but
+      // keep the admission fence closed and do not start another scheduler.
+      phase = retirement ? "retained" : "ready";
+      closing = undefined;
+      attempt.reject(error);
+    };
+    const assertIdle = () => {
+      const status = drainPorts.inspectDrain();
+      if (status === "blocked") throw blocked();
+      if (status !== "idle")
+        throw brokerError("BROKER_BUSY", "Broker work changed during shutdown");
+    };
+    let transportClosing = false;
     try {
       const status = ports.inspectDrain();
       if (status === "blocked") {
-        phase = "ready";
-        closing = undefined;
-        attempt.reject(blocked());
+        refuse(blocked());
         return;
       }
       if (status !== "idle") return;
       assertOwner();
       phase = "closing";
       clearInterval(timer);
-      await ports.retireWorkers();
+      // Share even a rejected retirement attempt; never replay uncertain cleanup.
+      retirement ??= Promise.resolve().then(() => drainPorts.retireWorkers());
+      await retirement;
+      assertIdle();
       // An already admitted worker reply may depend on retireWorkers rejecting
-      // its ungranted turn. Wait for its dispatcher after retiring workers.
+      // its ungranted turn. Wait for its dispatcher after retiring workers;
+      // transport owns flushing the actual response.
       if (handlers)
         await new Promise<void>((resolve) => (handlersDrained = resolve));
-      if (ports.inspectDrain() !== "idle") throw blocked();
+      assertIdle();
       assertOwner();
       ports.releaseLease();
+      assertIdle();
       if (endpoint && !sameFile(socket, endpoint))
         failure(
           "IPC_ENDPOINT_CHANGED",
           "Broker endpoint changed during shutdown",
         );
+      transportClosing = true;
       await runtime.close();
-      if (ports.inspectDrain() !== "idle") throw blocked();
+      assertIdle();
       disposeClient();
       releaseLock();
       phase = "closed";
       attempt.resolve();
     } catch (error) {
+      if (!transportClosing && retirement) {
+        try {
+          assertOwner();
+          if (!endpoint || sameFile(socket, endpoint)) {
+            refuse(error);
+            return;
+          }
+        } catch {
+          // An uncertain owner cannot keep serving requests.
+        }
+      }
       phase = "failed";
       clearInterval(timer);
       try {
@@ -404,10 +436,12 @@ export function claimBrokerLifetime({
     listen,
     close,
     progress,
+    /** Admission stays fenced after retirement, even with control IPC online. */
     get stopping() {
       return (
         phase === "draining" ||
         phase === "closing" ||
+        phase === "retained" ||
         phase === "closed" ||
         (phase === "failed" && closing !== undefined)
       );

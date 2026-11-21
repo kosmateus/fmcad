@@ -320,6 +320,119 @@ test(
 );
 
 test(
+  "broker lifetime: a response completed after worker retirement reaches its IPC client",
+  { timeout: 10_000 },
+  async (t) => {
+    const dir = directory(t);
+    const socket = path.join(dir, "queue.sock");
+    const broker = setup(dir);
+    const dispatchEntered = barrier();
+    const abandonedEntered = barrier();
+    const retired = barrier();
+    const response = barrier();
+    await broker.initialize(startup, () => {});
+    await broker.listen({
+      ...idlePorts,
+      async dispatch(message) {
+        if (message === "abandoned") abandonedEntered.open();
+        else dispatchEntered.open();
+        await response.wait;
+        return { accepted: "original-request" };
+      },
+      async retireWorkers() {
+        retired.open();
+      },
+    });
+
+    const reply = transact(socket, { submit: "original-request" });
+    await dispatchEntered.wait;
+    const abandoned = net.createConnection(socket, () => {
+      abandoned.write('"abandoned"\n');
+    });
+    t.after(() => abandoned.destroy());
+    const disconnected = once(abandoned, "close");
+    await abandonedEntered.wait;
+    const close = broker.close();
+    await retired.wait;
+    await nextTurn(); // The worker cleanup has resolved; the dispatcher hasn't.
+    assert.equal(fs.existsSync(broker.lock), true);
+    abandoned.destroy();
+    await disconnected;
+    response.open();
+    assert.deepEqual(await reply, {
+      ok: true,
+      result: { accepted: "original-request" },
+    });
+    await close;
+    assert.equal(fs.existsSync(broker.lock), false);
+  },
+);
+
+test(
+  "broker lifetime: UNKNOWN during retirement retains IPC for status and recovery",
+  { timeout: 10_000 },
+  async (t) => {
+    const dir = directory(t);
+    const socket = path.join(dir, "queue.sock");
+    const broker = setup(dir);
+    const retiring = barrier();
+    const retire = barrier();
+    let status: BrokerDrainState = "idle";
+    await broker.initialize(startup, () => {});
+    await broker.listen({
+      ...idlePorts,
+      inspectDrain: () => status,
+      async retireWorkers() {
+        retiring.open();
+        await retire.wait;
+      },
+      async dispatch(message) {
+        if (message === "status") return { status };
+        if (message === "recover") {
+          status = "idle"; // This fixture represents recovery of original evidence.
+          return { reconciled: "original-request" };
+        }
+        return { admitted: !broker.stopping };
+      },
+    });
+    try {
+      const close = broker.close();
+      await retiring.wait;
+      status = "blocked";
+      retire.open();
+      await assert.rejects(close, { code: "RECONCILIATION_REQUIRED" });
+      assert.deepEqual(
+        JSON.parse(fs.readFileSync(broker.lock, "utf8")),
+        broker.owner,
+      );
+      assert.deepEqual(await transact(socket, "status"), {
+        ok: true,
+        result: { status: "blocked" },
+      });
+      assert.deepEqual(await transact(socket, "submit"), {
+        ok: true,
+        result: { admitted: false },
+      });
+      assert.deepEqual(await transact(socket, "recover"), {
+        ok: true,
+        result: { reconciled: "original-request" },
+      });
+      assert.equal(fs.existsSync(broker.lock), true);
+      assert.deepEqual(await transact(socket, "submit"), {
+        ok: true,
+        result: { admitted: false },
+      });
+      await broker.close();
+      assert.equal(fs.existsSync(broker.lock), false);
+    } finally {
+      status = "idle";
+      retire.open();
+      await broker.close().catch(() => {});
+    }
+  },
+);
+
+test(
   "broker lifetime: active physical or newly unknown work keeps the owner and the IPC endpoint",
   { timeout: 10_000 },
   async (t) => {
