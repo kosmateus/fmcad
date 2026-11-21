@@ -184,8 +184,7 @@ export interface RecordEvidence {
   dispatchClass?: string;
   dispatchIndex?: number;
 }
-export interface NativeProof {
-  rpcId: string;
+export interface NativeProof extends Binding {
   outcome: string;
   native: {
     kind: string;
