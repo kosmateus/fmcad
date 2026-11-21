@@ -217,6 +217,7 @@ export function stageCore(root: string, identityOnly = false): void {
               .readFileSync(file, "utf8")
               .replaceAll('"@fmcad/core"', `"${core}"`)
               .replaceAll('require("../python/', 'require("../../python/')
+              .replaceAll('"../fusion-transport/', '"../../fusion-transport/')
               .replaceAll(
                 'require("../config-platform/',
                 'require("../../config-platform/',
