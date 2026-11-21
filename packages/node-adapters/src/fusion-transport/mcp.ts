@@ -359,7 +359,7 @@ export class BrokerMcpClient extends McpDiscoveryClient {
         );
       let response: ReturnType<typeof object>;
       try {
-        response = object(this._parse(res.raw));
+        response = object(res.toolResponse ?? this._parse(res.raw));
       } catch (error) {
         if (error instanceof Error) throw retainRaw(error);
         throw error;

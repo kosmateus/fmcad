@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import test from "node:test";
 import { createAddinAdmission } from "../packages/node-adapters/src/execution/addin-admission-client";
+import { postAddinAdmission } from "../packages/node-adapters/src/execution/broker-physical";
+import { BrokerMcpClient } from "../packages/node-adapters/src/fusion-transport/mcp";
 
 const identity = {
   owner: "owner",
@@ -15,6 +17,99 @@ const identity = {
   document: '{"creationId":"doc","fileId":"file","version":3}',
 };
 const token = "fixture-token-".repeat(4);
+
+test("physical admission preserves original evidence and final transformed bytes", async () => {
+  let requests = 0;
+  let raw = "";
+  let terminal = true;
+  const outgoing = {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "execute_python",
+      arguments: { code: 'guard()\nuser_code()\nrun("")\n' },
+    },
+  };
+  const server = createServer(async (req, res) => {
+    requests++;
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const message = JSON.parse(body);
+    assert.deepEqual(JSON.parse(message.payloadJson), outgoing);
+    assert.equal(
+      message.binding.inputHash,
+      createHash("sha256").update(message.payloadJson).digest("hex"),
+    );
+    raw = JSON.stringify(
+      {
+        version: 1,
+        binding: message.binding,
+        record: terminal
+          ? {
+              state: "terminal",
+              result: { content: [{ type: "text", text: "result" }] },
+            }
+          : { state: "unknown" },
+      },
+      null,
+      2,
+    );
+    res.end(raw);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert(address && typeof address !== "string");
+    const scope = {
+      endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+      token,
+      identity,
+    };
+    const result = await postAddinAdmission(scope, outgoing, 1000);
+    assert.equal(result.raw, raw);
+    assert.deepEqual(result.toolResponse, {
+      jsonrpc: "2.0",
+      id: 2,
+      result: { content: [{ type: "text", text: "result" }] },
+    });
+    class EvidenceTransport extends BrokerMcpClient {
+      override async _openSession() {
+        return undefined;
+      }
+      override async _post() {
+        return result;
+      }
+    }
+    const transport = new EvidenceTransport(
+      { url: scope.endpoint, backend: "addin" },
+      { version: "test", bridgeSource: () => "", requestTimeout: () => 1000 },
+    );
+    const tool = await transport.callTool({}, "get_open_document_metadata");
+    assert.equal(tool.text, "result");
+    assert.equal(Reflect.get(tool, "rawResponse"), raw);
+    assert.equal(requests, 1);
+    terminal = false;
+    await assert.rejects(
+      postAddinAdmission(scope, outgoing, 1000),
+      (error: unknown) => {
+        assert(error instanceof Error);
+        assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+        assert.equal(Reflect.get(error, "rawResponse"), raw);
+        return true;
+      },
+    );
+    assert.equal(requests, 2);
+    await assert.rejects(
+      postAddinAdmission(scope, { method: "initialize" }, 1000),
+    );
+    assert.equal(requests, 2);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
 
 test("payload serialization cannot retarget the captured identity", () => {
   const mutableIdentity = { ...identity };
