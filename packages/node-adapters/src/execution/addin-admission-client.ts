@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { admissionData, decodeAdmissionJson } from "./admission-json";
 import type { JsonValue } from "../../../core/src/domain/contracts";
 
 export type AdmissionIdentity = Readonly<{
@@ -48,6 +49,9 @@ export function createAddinAdmission(
   identity: AdmissionIdentity,
   payload: Record<string, JsonValue>,
 ) {
+  options = admissionData(options) as typeof options;
+  identity = admissionData(identity) as AdmissionIdentity;
+  const token = options.token;
   const endpoint = new URL(options.endpoint);
   if (
     endpoint.protocol !== "http:" ||
@@ -74,17 +78,7 @@ export function createAddinAdmission(
   )
     throw new Error("Exact admission identity required");
   // Hash the actual UTF-8 input, not two languages' different JSON serializers.
-  const payloadJson = JSON.stringify(payload, (_key, value: unknown) => {
-    if (
-      typeof value === "undefined" ||
-      typeof value === "function" ||
-      typeof value === "symbol" ||
-      typeof value === "bigint" ||
-      (typeof value === "number" && !Number.isFinite(value))
-    )
-      throw new Error("Admission input must contain only JSON values");
-    return value;
-  });
+  const payloadJson = JSON.stringify(admissionData(payload));
   if (!payloadJson || !object(JSON.parse(payloadJson)))
     throw new Error("Admission payload must be a JSON object");
   const binding: AdmissionBinding = Object.freeze({
@@ -92,7 +86,6 @@ export function createAddinAdmission(
     version: 1,
     inputHash: createHash("sha256").update(payloadJson, "utf8").digest("hex"),
   });
-  const token = options.token;
 
   async function call(operation: "admit" | "status" | "withdraw") {
     let response: Response;
@@ -115,17 +108,7 @@ export function createAddinAdmission(
       });
       if (response.status !== 200)
         throw failure(`Admission HTTP ${response.status}; do not resubmit`);
-      decoded = JSON.parse(await response.text(), (_key, value: unknown) => {
-        if (
-          typeof value === "number" &&
-          (!Number.isFinite(value) ||
-            (Number.isInteger(value) && !Number.isSafeInteger(value)))
-        )
-          throw failure(
-            "Admission evidence cannot be represented without numeric loss",
-          );
-        return value;
-      });
+      decoded = decodeAdmissionJson(await response.text());
     } catch {
       // Do not leak credentials or interpret transport failure as no effect.
       throw failure("Admission outcome unavailable; inspect the original key");

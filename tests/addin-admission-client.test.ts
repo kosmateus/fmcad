@@ -18,27 +18,32 @@ const token = "fixture-token-".repeat(4);
 
 test("payload serialization cannot retarget the captured identity", () => {
   const mutableIdentity = { ...identity };
+  const options = { endpoint: "http://127.0.0.1:8765/admission/v1", token };
   const payload = { nested: { value: "original" } };
   Object.defineProperty(payload.nested, "toJSON", {
     value: () => {
       mutableIdentity.document = "retargeted";
+      options.token = "changed";
       return { value: "original" };
     },
   });
-  const handle = createAddinAdmission(
-    {
-      endpoint: "http://127.0.0.1:8765/admission/v1",
-      token,
-    },
-    mutableIdentity,
-    payload,
+  assert.throws(
+    () => createAddinAdmission(options, mutableIdentity, payload),
+    /Executable/,
   );
-  assert.equal(mutableIdentity.document, "retargeted");
-  assert.equal(handle.binding.document, identity.document);
+  assert.equal(mutableIdentity.document, identity.document);
+  assert.equal(options.token, token);
 });
 
 test("refuses partial HTTP, false withdrawal and unsafe integer evidence", async () => {
-  for (const mode of ["partial", "withdraw-terminal", "unsafe-number"]) {
+  for (const mode of [
+    "partial",
+    "withdraw-terminal",
+    "unsafe-number",
+    "underflow",
+    "duplicate",
+    "rounded-decimal",
+  ]) {
     let requests = 0;
     const server = createServer(async (req, res) => {
       requests++;
@@ -48,7 +53,7 @@ test("refuses partial HTTP, false withdrawal and unsafe integer evidence", async
       res.statusCode = mode === "partial" ? 206 : 200;
       res.end(
         `{"version":1,"binding":${JSON.stringify(message.binding)},` +
-          `"record":{"state":"terminal","result":${mode === "unsafe-number" ? "9007199254740993" : "1"}}}`,
+          `"record":{${mode === "duplicate" ? '"state":"unknown",' : ""}"state":"terminal","result":${mode === "unsafe-number" ? "9007199254740993" : mode === "underflow" ? "1e-400" : mode === "rounded-decimal" ? "1.00000000000000001" : "1"}}}`,
       );
     });
     server.listen(0, "127.0.0.1");
@@ -65,7 +70,9 @@ test("refuses partial HTTP, false withdrawal and unsafe integer evidence", async
         {},
       );
       await assert.rejects(
-        mode === "unsafe-number" ? handle.admit() : handle.withdraw(),
+        ["partial", "withdraw-terminal"].includes(mode)
+          ? handle.withdraw()
+          : handle.admit(),
         { code: "ADDIN_ADMISSION_UNCERTAIN" },
         mode,
       );
