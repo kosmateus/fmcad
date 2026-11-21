@@ -1,0 +1,69 @@
+{
+  "snapshot": {
+    "version": 1,
+    "paused": true,
+    "revision": 72,
+    "epoch": 5,
+    "blocked": {
+      "id": "legacy-job-17",
+      "reason": "Postflight evidence missing",
+      "at": 1720000000100
+    },
+    "active": "legacy-job-17",
+    "lease": null,
+    "jobs": {
+      "legacy-job-17": {
+        "id": "legacy-job-17",
+        "requestId": "legacy-request-19",
+        "clientId": "alice",
+        "kind": "rpc",
+        "request": {
+          "requestId": "legacy-request-19",
+          "clientId": "alice",
+          "kind": "rpc",
+          "timeoutMs": 5000,
+          "payload": {
+            "document": "fixture-document-5",
+            "file": "fixture-file-2",
+            "version": "fixture-version-3"
+          }
+        },
+        "hash": "214732731ec0fd04664f97c2c6de81a174afbe710400633352cc924f8909a1378",
+        "order": 16,
+        "state": "needs_reconciliation",
+        "submittedAt": 1720000000000,
+        "queueDeadline": null,
+        "timeoutMs": 5000,
+        "sequenceId": null,
+        "sequenceState": null,
+        "details": { "executionOutcome": "unknown", "retained": true },
+        "dispatch": {
+          "dispatchCount": 2,
+          "rpcCount": 2,
+          "completedCount": 1,
+          "updatedAt": 1720000000099,
+          "rpcState": "sending",
+          "details": {
+            "rpcId": "missing-postflight-13",
+            "instance": "historical-fixture-7"
+          }
+        }
+      }
+    },
+    "lastClient": "alice"
+  },
+  "receipts": [
+    {
+      "receiptId": "legacy-receipt-22",
+      "rpcId": "legacy-rpc-23",
+      "jobId": "legacy-job-17",
+      "requestId": "legacy-request-19",
+      "owner": "alice",
+      "build": "legacy-build-11",
+      "source": "legacy-source-12",
+      "instance": "historical-fixture-7",
+      "hash": "214732731ec0fd04664f97c2c6de81a174afbe710400633352cc924f8909a1378",
+      "outcome": "complete"
+    }
+  ]
+}
