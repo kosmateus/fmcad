@@ -11,6 +11,52 @@ import { createHash } from "node:crypto";
 import type { AsyncLocalStorage } from "node:async_hooks";
 type RunApi = typeof import("../src/composition/run.js");
 type RunArguments = Parameters<RunApi["prepareRunScript"]>;
+type SourceUnit = ReturnType<RunApi["prepareRunScript"]>["units"][number];
+function assertSelectedProvenance(unit: SourceUnit, original: SourceUnit) {
+  assert.equal(unit.id, original.id);
+  assert.equal(unit.filename, original.filename);
+  assert.equal(unit.role, original.role);
+  assert.equal(
+    unit.sha256,
+    createHash("sha256").update(unit.source).digest("hex"),
+  );
+  if (unit.source === original.source || unit.role !== "runtime") {
+    assert.deepEqual(unit, original);
+    return;
+  }
+  const originalHash = createHash("sha256")
+    .update(original.source)
+    .digest("hex");
+  assert.equal(original.sha256, originalHash);
+  const marker = `\n# Automatic source selection; original-sha256=${originalHash}\n`;
+  assert.ok(
+    unit.source.endsWith(marker),
+    `${unit.id}: original source binding`,
+  );
+  // These user-script fixtures permit deletion, not generated-call specialization.
+  // Keep every retained source line byte-identical and in its original order.
+  const lines = original.source.split("\n");
+  let cursor = 0;
+  for (const line of unit.source.slice(0, -marker.length).split("\n")) {
+    if (!line.trim() || line.trim() === "pass") continue;
+    const found = lines.findIndex(
+      (originalLine, index) =>
+        index >= cursor &&
+        (originalLine === line ||
+          (/^\s*CAD_HANDLERS\.update\(\{.*\}\)\s*$/.test(line) &&
+            /^\s*CAD_HANDLERS\.update\(\{.*\}\)\s*$/.test(originalLine) &&
+            line.length === originalLine.length &&
+            line
+              .split("")
+              .every(
+                (character, column) =>
+                  character === " " || character === originalLine[column],
+              ))),
+    );
+    assert.ok(found >= cursor, `${unit.id}: changed retained line ${line}`);
+    cursor = found + 1;
+  }
+}
 const current = load("./src/run.js") as RunApi;
 const historical = load("./tests/fixtures/historical-module.cjs") as (
   revision: string,
@@ -80,10 +126,34 @@ for (const [label, identity, helper, operations] of cases) {
       assert.deepEqual(migrated.request, historical.request);
       for (const unit of migrated.units) {
         if (unit.id === "helpers") continue;
-        assert.deepEqual(
-          unit,
-          historical.units.find((original) => original.id === unit.id),
-        );
+        const original = historical.units.find((entry) => entry.id === unit.id);
+        assert.ok(original, `Unknown source unit ${unit.id}`);
+        assertSelectedProvenance(unit, original);
+        if (unit.source !== original.source) {
+          const source = unit.source.replace(/^(\S[^\n]*)/m, "$1 # changed");
+          assert.notEqual(source, unit.source);
+          assert.throws(
+            () =>
+              assertSelectedProvenance(
+                {
+                  ...unit,
+                  source,
+                  sha256: createHash("sha256").update(source).digest("hex"),
+                },
+                original,
+              ),
+            /changed retained line/,
+          );
+          assert.throws(() =>
+            assertSelectedProvenance(
+              {
+                ...unit,
+                sha256: original.sha256,
+              },
+              original,
+            ),
+          );
+        }
       }
     } else {
       assert.deepEqual(migrated, historical);
