@@ -4,7 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type {
   NativeRequest,
@@ -65,13 +64,12 @@ test("regional dedicated manifest is dependency-ordered, duplicate-safe and pres
 });
 
 test("regional runtime prepares without SDK/filesystem imports or a second comparator", () => {
-  const files = [
-    "runtime/python/fmcad/domain/regional_geometry.py",
-    "runtime/python/fmcad/adapters/fusion/regional_geometry.py",
-    "runtime/python/fmcad/application/regional_geometry.py",
-  ];
-  const source = files
-    .map((file) => readFileSync(path.join(root, file), "utf8"))
+  const source = cadBundleUnits(root)
+    .filter(
+      (unit) =>
+        unit.id === "values" || unit.id.startsWith("regional-geometry-"),
+    )
+    .map((unit) => unit.source)
     .join("\n");
   const script = `import sys, builtins
 source = sys.stdin.read()

@@ -1,6 +1,8 @@
 """Offline GM03 behavior/oracle tests; SDK objects only are doubled, not the resolver."""
 import json
+import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 import types
 import unittest
@@ -390,9 +392,45 @@ class QueryTests(unittest.TestCase):
         self.assertIsNone(row['statistics']['length']['min'])
         self.assertEqual(self.query(filters={'name':'short','length':'0 cm'})['count'],0)
 
+    def test_shared_reference_handlers_ignore_foreign_preloaded_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            foreign = Path(directory) / 'values.py'
+            foreign.write_text((ROOT / 'runtime/python/fmcad/domain/values.py').read_text())
+            spec = importlib.util.spec_from_file_location('fmcad.domain.values', foreign)
+            values = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(values)
+            with patch.dict(sys.modules, {'fmcad.domain.values': values}):
+                self.test_shared_reference_queries_execute_measure_check_and_assign_handlers()
+                self.assertIs(sys.modules['fmcad.domain.values'], values)
+                self.assertEqual(Path(values.__file__), foreign)
+
+    def test_shared_reference_handlers_ignore_foreign_regular_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / 'fmcad'
+            domain = package / 'domain'
+            domain.mkdir(parents=True)
+            (package / '__init__.py').write_text('')
+            (domain / '__init__.py').write_text('')
+            (domain / 'values.py').write_text(
+                (ROOT / 'runtime/python/fmcad/domain/values.py').read_text())
+            with patch.dict(sys.modules), patch.object(sys, 'path', [*sys.path, directory]):
+                for name in list(sys.modules):
+                    if name == 'fmcad' or name.startswith('fmcad.'):
+                        del sys.modules[name]
+                self.test_shared_reference_queries_execute_measure_check_and_assign_handlers()
+                self.assertNotIn('fmcad.domain.values', sys.modules)
+
     def test_shared_reference_queries_execute_measure_check_and_assign_handlers(self):
-        for filename in ('measure.py','io.py'):
-            exec(compile((ROOT/'assets/cad'/filename).read_text(), filename, 'exec'), self.core.__dict__)
+        source = ROOT / 'runtime/python/fmcad/domain/values.py'
+        spec = importlib.util.spec_from_file_location('fmcad.domain.values', source)
+        values = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(values)
+        with patch.dict(sys.modules, {'fmcad.domain.values': values}):
+            for filename in ('measure.py','io.py'):
+                exec(compile((ROOT/'assets/cad'/filename).read_text(), filename, 'exec'), self.core.__dict__)
+            self.assertEqual(Path(values.__file__).resolve(),
+                             source)
+            self.assertIs(self.core.JsonObject, values.JsonObject)
         self.e1.attributes.add('fixture.roles', 'measurement', 'short')
         reference = {'query':{'kind':'edge','filters':{'length':{'max':'0.1 mm'},
             'attributes':[{'group':'fixture.roles','name':'measurement','value':'short','owner':'native'}]}}}
