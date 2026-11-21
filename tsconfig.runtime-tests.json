@@ -321,6 +321,7 @@
     "tests/runner-stream.test.ts",
     "tests/upstream-queue-regressions.test.ts",
     "tests/broker-only.test.ts",
+    "tests/retained-python-result.test.ts",
     "tests/broker-regression-registration.test.ts",
     "tests/broker-ipc-contract.test.ts",
     "tests/audit-response-portable.test.ts",
