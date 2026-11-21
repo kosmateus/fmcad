@@ -6341,7 +6341,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         setImmediate(() =>
           close().catch((error) => {
             stopping = false;
-            brokerFault ??= error.code || "CLOSE_FAILED";
+            // A busy or unresolved queue refuses this stop, not future ones.
+            // Actual shutdown/transport failures are recorded independently.
+            if (
+              error.code !== "BROKER_BUSY" &&
+              error.code !== "RECONCILIATION_REQUIRED"
+            )
+              brokerFault ??= error.code || "CLOSE_FAILED";
           }),
         );
         return { stopping: true, draining: !!state.summary().active };

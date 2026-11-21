@@ -326,6 +326,24 @@ respond(async (message) => {
     serverError(new Error("Injected listener failure"));
     return true;
   }
+  if (message.action === "wait-unlocked") {
+    const lock = path.join(dir, "broker.lock");
+    await new Promise((resolve, reject) => {
+      const watch = fs.watch(dir, check);
+      watch.on("error", (error) => {
+        watch.close();
+        reject(error);
+      });
+      function check() {
+        if (!fs.existsSync(lock)) {
+          watch.close();
+          resolve();
+        }
+      }
+      check();
+    });
+    return true;
+  }
   if (message.action === "counts") return { active, maximum, sends, calls };
   if (message.action === "status") return broker.status();
   throw new Error("Unknown broker fixture command");

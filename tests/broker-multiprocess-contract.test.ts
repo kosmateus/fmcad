@@ -220,3 +220,41 @@ test(
     assert.deepEqual(fs.readFileSync(path.join(dir, "broker.lock")), lock);
   },
 );
+
+test(
+  "a refused stop during UNKNOWN does not poison the broker after reconciliation",
+  { timeout: 30000 },
+  async (t) => {
+    const { dir, server, a } = await fixture(t, "late-postflight");
+    const job = await a.call("submit");
+    await server.event("preparing", "A");
+    await server.call("release-prepare", { tag: "A" });
+    await server.event("physical", "A");
+    await server.call("release-physical", { tag: "A" });
+    await server.event("postflight");
+    const lock = path.join(dir, "broker.lock");
+    const originalOwner = fs.readFileSync(lock);
+    const first = await a.call("stop");
+    assert.equal(first["stopping"], true);
+    assert.equal(first["draining"], true);
+    await server.call("kill-worker", { tag: "A" });
+    await server.call("release-probe", { stage: "postflight" });
+    assert.deepEqual(fs.readFileSync(lock), originalOwner);
+    const held = await server.call("status");
+    assert.equal(held["stopping"], false);
+    assert.equal(
+      (held["jobs"] as Record<string, RecordValue>)[String(job["id"])]?.["state"],
+      "needs_reconciliation",
+    );
+    const resolved = await a.call("reconcile", { jobId: job["id"] });
+    assert.equal(resolved["state"], "failed");
+    const status = await server.call("status");
+    assert.equal(status["blocked"], null);
+    assert.equal(status["held"], null);
+    const retried = await a.call("stop");
+    assert.equal(retried["stopping"], true);
+    assert.equal(retried["draining"], false);
+    assert.equal(await server.call("wait-unlocked"), true);
+    assert.equal(fs.existsSync(lock), false);
+  },
+);
