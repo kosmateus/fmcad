@@ -82,10 +82,27 @@ test("reviewed import extraction preserves all 482 old sites and separately bind
       "utf8",
     ),
   ) as { current: { source: string; assertions: unknown[] }[] };
-  assert.equal(manifest.current.length, 7);
+  // 4fb56ac added the receipt-bound original/protected inventory baseline:
+  // 37 additional sites, without changing the frozen 482 above.
+  assert.deepEqual(
+    manifest.current.map(({ source, assertions }) => ({
+      source,
+      count: assertions.length,
+    })),
+    [
+      { source: "tests/fixed-import-result-contracts.ts", count: 50 },
+      { source: "tests/import-result-contracts.ts", count: 58 },
+      { source: "tests/live-data-import-fixed.ts", count: 112 },
+      { source: "tests/live-data-import.ts", count: 208 },
+      { source: "tests/live-import-receipts.ts", count: 80 },
+      { source: "tests/scenarios/import-baseline.ts", count: 37 },
+      { source: "tests/scenarios/native-import-cases.ts", count: 9 },
+      { source: "tests/scenarios/programs.ts", count: 30 },
+    ],
+  );
   assert.equal(
     manifest.current.reduce((total, row) => total + row.assertions.length, 0),
-    547,
+    584,
   );
 });
 
