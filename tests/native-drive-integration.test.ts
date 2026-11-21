@@ -171,7 +171,7 @@ test("catalog, typed CLI and MCP share the driver-test contract", async (t) => {
       assert.equal(call.object.readOnly, false);
       assert.match(
         call.object.script,
-        /CAD_HANDLERS\.update\(\{[\s\S]*?'mechanism\.drive-test': mechanism_drive_test,[\s\S]*?'mechanism\.motion-link\.create': mechanism_motion_link_create[\s\S]*?\}\)/,
+        /CAD_HANDLERS\.update\(\{[\s\S]*?'mechanism\.drive-test': mechanism_drive_test[\s\S]*?\}\)/,
       );
       assert.match(call.object.script, /mechanism\.drive-test/);
       assert.match(call.object.script, /_FMCAD_REQUEST: "_FMCADRequest" = \{/);
@@ -216,6 +216,15 @@ test("catalog, typed CLI and MCP share the driver-test contract", async (t) => {
   assert.equal(
     prepared.sha256,
     crypto.createHash("sha256").update(prepared.script).digest("hex"),
+  );
+  const motionLink = prepareCadScript(
+    "mechanism.motion-link.create",
+    catalog["mechanism.motion-link.create"]!.example,
+    { doc: "Synthetic", docId: "native-drive-document" },
+  );
+  assert.match(
+    motionLink.script,
+    /CAD_HANDLERS\.update\(\{[\s\S]*?'mechanism\.motion-link\.create': mechanism_motion_link_create[\s\S]*?\}\)/,
   );
   const direct = await executeInvocation(invocation, broker);
   assert.equal(field(direct, "operation"), operation);

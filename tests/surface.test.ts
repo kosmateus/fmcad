@@ -230,13 +230,27 @@ test("blocked native surface results lift the envelope and fail", async () => {
 });
 
 test("native handoff bundles the surface module and availability gates", () => {
-  const script = buildCadScript(
+  const trimScript = buildCadScript(
     "surface.trim",
     catalog["surface.trim"]!.example,
     { doc: "GM08" },
   );
-  assert.ok(script.includes("def _surface_open_profile"));
-  assert.ok(script.includes("TrimFeatureInput.cancel"));
-  assert.ok(script.includes("'surface.check': _surface_check"));
-  assert.ok(script.includes("_surface_model_preflight"));
+  assert.ok(trimScript.includes("'surface.trim': _surface_trim"));
+  assert.ok(trimScript.includes("def _surface_open_profile"));
+  assert.ok(trimScript.includes("TrimFeatureInput.cancel"));
+
+  const checkScript = buildCadScript(
+    "surface.check",
+    catalog["surface.check"]!.example,
+    { doc: "GM08" },
+  );
+  assert.ok(checkScript.includes("'surface.check': _surface_check"));
+
+  const loftScript = buildCadScript(
+    "model.loft",
+    { ...catalog["model.loft"]!.example, solid: false },
+    { doc: "GM08" },
+  );
+  assert.ok(loftScript.includes("def _surface_model_preflight("));
+  assert.ok(!loftScript.includes("'surface.check': _surface_check"));
 });
