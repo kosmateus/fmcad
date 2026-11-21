@@ -2553,6 +2553,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     resumeCheck,
     authorizeResetResume,
     diagnostics,
+    beforeNewResume() {
+      if (lifetime.stopping) fail("BROKER_STOPPING", "Broker is stopping");
+    },
     canResume() {
       if (
         (heldReason() && !state.data.controlBlocked) ||
@@ -5449,8 +5452,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "INSTANCE_HISTORY_QUARANTINED",
         "Historical unknown work is immutable; no replay, acceptance or cleanup",
       );
-    if (message.action === "resume" && lifetime.stopping)
-      fail("BROKER_STOPPING", "Broker is stopping");
     if (lifecycleControl.accepts(message.action))
       return lifecycleControl.handle(message, clientId);
     switch (message.action) {
@@ -7591,6 +7592,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         state._fault
       )
         return "blocked";
+      // Stop does not supply resume authority. A closed gate can leave an
+      // existing turn unable to settle until the owner explicitly resumes.
+      if (state.data.paused && (session.snapshot().active || gate.waiters.size))
+        return "paused-work";
       if (gate.resuming || gate.active.size) return "physical";
       if (busy() || context || rawPreparations || summary.active)
         return "pending";

@@ -32,10 +32,11 @@ export interface BrokerStartup {
   diagnosticPath: string;
 }
 
-/** A live read, not a second queue or session state machine. Blocked wins over
- * physical, which wins over pending. Pending work can settle without shutdown
- * granting another turn. */
-export type BrokerDrainState = "blocked" | "physical" | "pending" | "idle";
+/** A live read, not a second queue or session state machine. Blocked and
+ * paused-work refuse drain. Physical and pending work can settle without
+ * shutdown granting another turn or resuming the gate. */
+export type BrokerDrainState =
+  "blocked" | "paused-work" | "physical" | "pending" | "idle";
 type Phase =
   | "claimed"
   | "starting"
@@ -322,6 +323,7 @@ export function claimBrokerLifetime({
       throw brokerError("BROKER_UNAVAILABLE", "Broker is not ready");
     const status = ports.inspectDrain();
     if (status === "blocked") throw blocked();
+    if (status === "paused-work") throw pausedWork();
     if (status === "physical" && !drainPhysical)
       throw brokerError(
         "BROKER_BUSY",
@@ -350,6 +352,13 @@ export function claimBrokerLifetime({
     );
   }
 
+  function pausedWork() {
+    return brokerError(
+      "BROKER_BUSY",
+      "Cannot drain an unfinished turn that requires explicit resume",
+    );
+  }
+
   function progress() {
     if (phase !== "draining" || drainScheduled) return;
     drainScheduled = true;
@@ -374,6 +383,7 @@ export function claimBrokerLifetime({
     const assertIdle = () => {
       const status = drainPorts.inspectDrain();
       if (status === "blocked") throw (refusal = blocked());
+      if (status === "paused-work") throw (refusal = pausedWork());
       if (status !== "idle")
         throw (refusal = brokerError(
           "BROKER_BUSY",
@@ -383,8 +393,8 @@ export function claimBrokerLifetime({
     let transportClosing = false;
     try {
       const status = ports.inspectDrain();
-      if (status === "blocked") {
-        refuse(blocked());
+      if (status === "blocked" || status === "paused-work") {
+        refuse(status === "blocked" ? blocked() : pausedWork());
         return;
       }
       if (status !== "idle") return;

@@ -328,3 +328,102 @@ test(
     assert.equal(await server.call("retirements"), 1);
   },
 );
+
+for (const stopFirst of [false, true]) {
+  test(
+    `public stop does not strand a turn needing an explicit resume (${stopFirst ? "stop before pause" : "pause before stop"})`,
+    { timeout: 30000 },
+    async (t) => {
+      const { dir, server, a, b } = await fixture(t, "unsent-preflight");
+      const job = await a.call("submit");
+      await server.event("preparing", "A");
+      await server.call("release-prepare", { tag: "A" });
+      await server.event("preflight-waiting");
+      const lock = path.join(dir, "broker.lock");
+      const owner = fs.readFileSync(lock);
+      if (stopFirst)
+        assert.deepEqual(await a.call("stop"), {
+          stopping: true,
+          draining: true,
+        });
+      await b.call("pause", { requestId: "explicit-pause" });
+      await server.call("release-probe", { stage: "preflight" });
+      if (!stopFirst)
+        await assert.rejects(a.call("stop"), { code: "BROKER_BUSY" });
+      assert.equal((await a.call("status"))["stopping"], false);
+      assert.equal((await a.call("control-status"))["phase"], "PAUSED");
+      assert.equal((await server.call("counts"))["sends"], 0);
+      assert.deepEqual(fs.readFileSync(lock), owner);
+      await assert.rejects(a.call("stop"), { code: "BROKER_BUSY" });
+
+      assert.equal(
+        (await b.call("resume", { requestId: "explicit-resume" }))["phase"],
+        "RUNNING",
+      );
+      const result = await a.call("complete", { jobId: job["id"] });
+      const settled = result["job"] as RecordValue;
+      assert.equal(settled["id"], job["id"]);
+      assert.equal(settled["state"], "failed");
+      assert.equal(settled["code"], "DOCUMENT_CHANGED");
+      assert.equal(settled["mayHaveMutated"], false);
+      assert.equal((await server.call("counts"))["sends"], 0);
+      assert.deepEqual(await a.call("stop"), {
+        stopping: true,
+        draining: false,
+      });
+      assert.equal(await server.call("wait-unlocked"), true);
+    },
+  );
+}
+
+test(
+  "public stopping broker reads only the original bound resume receipt without replay",
+  { timeout: 30000 },
+  async (t) => {
+    const { dir, server, a, b } = await fixture(t);
+    await a.call("pause", { requestId: "pause-for-original-resume" });
+    const status = await a.call("control-status");
+    const requestId = "original-resume";
+    const control = {
+      instanceId: status["instanceId"],
+      expectedGeneration: status["generation"],
+      requestId,
+    };
+    const beforeResume = await server.call("counts");
+    const original = await a.call("resume", { control });
+    assert.equal(original["phase"], "RUNNING");
+    assert.ok(
+      Number((await server.call("counts"))["calls"]) >
+        Number(beforeResume["calls"]),
+    );
+    assert.deepEqual(await a.call("resume", { control }), original);
+
+    const job = await a.call("submit");
+    await server.event("preparing", "A");
+    await server.call("release-prepare", { tag: "A" });
+    await server.event("physical", "A");
+    const receipt = path.join(
+      dir,
+      `lifecycle-control-${createHash("sha256").update(requestId).digest("hex")}.json`,
+    );
+    const persisted = fs.readFileSync(receipt);
+    const inFlight = await server.call("counts");
+    assert.deepEqual(await a.call("stop"), { stopping: true, draining: true });
+    assert.deepEqual(await a.call("resume", { control }), original);
+    await assert.rejects(b.call("resume", { control }), {
+      code: "REQUEST_CONFLICT",
+    });
+    await assert.rejects(
+      a.call("resume", { control, resetOwnerNonce: "different-owner-binding" }),
+      {
+        code: "REQUEST_CONFLICT",
+      },
+    );
+    assert.deepEqual(fs.readFileSync(receipt), persisted);
+    assert.deepEqual(await server.call("counts"), inFlight);
+
+    await server.call("release-physical", { tag: "A" });
+    assert.equal(await server.call("wait-unlocked"), true);
+    assert.ok(job["id"]);
+  },
+);

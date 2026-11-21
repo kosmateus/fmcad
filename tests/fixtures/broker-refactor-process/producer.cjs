@@ -42,14 +42,18 @@ respond(async (message) => {
       requestId: message.requestId || input.requestId,
     });
   if (message.action === "status") return client.call("status");
-  if (message.action === "resume") {
+  if (message.action === "control-status") return client.call("control-status");
+  if (message.action === "pause" || message.action === "resume") {
     const status = await client.call("control-status");
-    return client.call("resume", {
-      control: {
+    return client.call(message.action, {
+      control: message.control || {
         instanceId: status.instanceId,
         expectedGeneration: status.generation,
         requestId: message.requestId,
       },
+      ...(message.resetOwnerNonce === undefined
+        ? {}
+        : { resetOwnerNonce: message.resetOwnerNonce }),
     });
   }
   if (message.action === "reconcile")

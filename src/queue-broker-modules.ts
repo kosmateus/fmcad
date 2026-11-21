@@ -373,6 +373,7 @@ export interface BrokerModules {
         fence: BrokerControlFence,
       ): P.ResetProof | undefined;
       diagnostics(): void;
+      beforeNewResume?(): void;
       canResume(): void;
     }): {
       accepts(action: string): boolean;

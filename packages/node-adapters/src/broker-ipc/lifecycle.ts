@@ -43,6 +43,7 @@ export function createLifecycleDispatcher({
   admin,
   dir,
   buildHash,
+  beforeNewResume,
   canResume,
   authorizeResetResume,
   resumeCheck,
@@ -52,6 +53,7 @@ export function createLifecycleDispatcher({
   admin: AdminPort;
   dir: string;
   buildHash: string;
+  beforeNewResume?(): void;
   canResume(): void;
   authorizeResetResume?(
     nonce: string | undefined,
@@ -151,6 +153,8 @@ export function createLifecycleDispatcher({
           "Observe the original control receipt; the action will not be replayed",
         );
       }
+      // Stop fences a new intent, never an authenticated immutable readback.
+      if (message.action === "resume") beforeNewResume?.();
       if (message.resetOwnerNonce !== undefined && !authorizeResetResume)
         deny(
           "FUSION_RESET_IN_PROGRESS",
