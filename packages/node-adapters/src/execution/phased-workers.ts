@@ -200,68 +200,91 @@ export class PhasedWorkers {
       url: "http://queue.invalid",
       headers: {},
     };
-    p.durable(
-      path.join(directory, "request.json"),
-      {
-        id: job.id,
-        request,
-        buildHash: p.codeHash,
-        properties: p.properties(),
-        deadline: Date.now() + job.timeoutMs,
-      },
-      true,
-    );
-    const out = fs.openSync(
-      p.responsePath(p.dir, job, "stdout.txt", true),
-      "wx",
-      0o600,
-    );
-    const err = fs.openSync(
-      p.responsePath(p.dir, job, "stderr.txt", true),
-      "wx",
-      0o600,
-    );
-    const env: NodeJS.ProcessEnv = {};
-    for (const key of [
-      "PATH",
-      "HOME",
-      "USER",
-      "LOGNAME",
-      "LANG",
-      "LC_ALL",
-      "XDG_CONFIG_HOME",
-      "XDG_STATE_HOME",
-      "XDG_CACHE_HOME",
-      "XDG_DATA_HOME",
-      "FMCAD_CONFIG",
-      "FMCAD_PYTHON",
-      "WSL_DISTRO_NAME",
-      "TMPDIR",
-      "SYSTEMROOT",
-    ]) {
-      if (process.env[key] !== undefined) env[key] = process.env[key];
-    }
-    Object.assign(env, {
-      FMCAD_QUEUE_WORKER_JOB: job.id,
-      FMCAD_QUEUE_WORKER_TOKEN: token,
-      FMCAD_QUEUE_DIR: p.dir,
-      FMCAD_QUEUE_WORKER_CONFIG: JSON.stringify(config),
-      FMCAD_QUEUE: "worker",
-    });
+    let out: number | undefined, err: number | undefined;
+    let requestStored = false;
     const finish = (code: number): void => {
       try {
-        fs.fsyncSync(out);
-        fs.fsyncSync(err);
+        if (out !== undefined) fs.fsyncSync(out);
+        if (err !== undefined) fs.fsyncSync(err);
         this.finish(record, code, directory);
       } catch (error) {
         p.onFault(error);
       } finally {
-        fs.closeSync(out);
-        fs.closeSync(err);
-        record.resolveClosed();
+        // A storage fault must not strand a process slot or its close waiter.
+        if (record.timer) clearTimeout(record.timer);
+        record.checkAbort?.abort();
+        record.pending?.reject(
+          failure(
+            "WORKER_CLOSED",
+            "Local worker closed; request is not replayed",
+          ),
+        );
+        record.pending = null;
+        this.workers.delete(job.id);
+        try {
+          for (const fd of [out, err]) {
+            if (fd === undefined) continue;
+            try {
+              fs.closeSync(fd);
+            } catch (error) {
+              p.onFault(error);
+            }
+          }
+        } finally {
+          record.resolveClosed();
+        }
       }
     };
     try {
+      p.durable(
+        path.join(directory, "request.json"),
+        {
+          id: job.id,
+          request,
+          buildHash: p.codeHash,
+          properties: p.properties(),
+          deadline: Date.now() + job.timeoutMs,
+        },
+        true,
+      );
+      requestStored = true;
+      out = fs.openSync(
+        p.responsePath(p.dir, job, "stdout.txt", true),
+        "wx",
+        0o600,
+      );
+      err = fs.openSync(
+        p.responsePath(p.dir, job, "stderr.txt", true),
+        "wx",
+        0o600,
+      );
+      const env: NodeJS.ProcessEnv = {};
+      for (const key of [
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "LANG",
+        "LC_ALL",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "FMCAD_CONFIG",
+        "FMCAD_PYTHON",
+        "WSL_DISTRO_NAME",
+        "TMPDIR",
+        "SYSTEMROOT",
+      ]) {
+        if (process.env[key] !== undefined) env[key] = process.env[key];
+      }
+      Object.assign(env, {
+        FMCAD_QUEUE_WORKER_JOB: job.id,
+        FMCAD_QUEUE_WORKER_TOKEN: token,
+        FMCAD_QUEUE_DIR: p.dir,
+        FMCAD_QUEUE_WORKER_CONFIG: JSON.stringify(config),
+        FMCAD_QUEUE: "worker",
+      });
       p.durable(
         path.join(directory, "worker-start.json"),
         {
@@ -309,7 +332,9 @@ export class PhasedWorkers {
       this.resumeLocal(record);
     } catch (error) {
       record.localFailure = errorCode(error) || "WORKER_SPAWN_FAILED";
+      record.preparationRejected = true;
       finish(1);
+      if (!requestStored) p.onFault(error);
     }
   }
   reportLocalPhase(
@@ -412,6 +437,11 @@ export class PhasedWorkers {
       this.pauseLocal(record);
       const prepare = async (): Promise<void> => {
         await this.ports.checkSdkRequest?.(message, checkAbort.signal);
+        if (this.stopping)
+          throw failure(
+            "BROKER_STOPPING",
+            "Broker draining before SDK dispatch",
+          );
         if (
           checkAbort.signal.aborted ||
           record.pending?.message !== message ||
@@ -545,12 +575,21 @@ export class PhasedWorkers {
         mayHaveMutated: false,
       });
     this.backlog.clear();
-    for (const [id] of this.workers) {
-      if (this.ports.state.status(id).state === "queued")
+    for (const [id, record] of this.workers) {
+      const phase = this.ports.state.status(id).state;
+      if (
+        phase === "queued" ||
+        (record.pending && ["preparing", "processing"].includes(phase))
+      ) {
+        record.preparationRejected = true;
         this.reject(
           id,
-          failure("BROKER_STOPPING", "Broker draining before SDK dispatch"),
+          Object.assign(
+            failure("BROKER_STOPPING", "Broker draining before SDK dispatch"),
+            { notStarted: true },
+          ),
         );
+      }
     }
     await Promise.all(
       [...this.workers.values()].map((record) => record.closed),
