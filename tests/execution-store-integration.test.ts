@@ -306,3 +306,66 @@ test("version-1 unfinished snapshots restore unknown, corrupt/truncated/unknown 
   fs.writeFileSync(state.file, '{"version":1');
   assert.throws(() => new QueueState(f.dir), { code: "CORRUPT_STATE" });
 });
+
+test("cancelled admission history stays reopenable when the next admission exceeds the snapshot limit", (t) => {
+  const f = fixture(t),
+    state = new QueueState(f.dir),
+    payload = { data: "x".repeat(15 * 1024 * 1024) },
+    history: Array<{ id: string; requestId: string }> = [];
+
+  // Each request is below the broker's 16 MiB message cap. They are admitted
+  // and cancelled without calling next(), so this scenario never reaches an SDK.
+  for (let index = 0; index < 8; index++) {
+    const requestId = `history-${index}`;
+    const job = state.submit({
+      clientId: "owner",
+      requestId,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload,
+    });
+    history.push({ id: string(field(job, "id")), requestId });
+    assert.equal(
+      field(state.cancel(string(field(job, "id")), "owner"), "state"),
+      "cancelled",
+    );
+  }
+
+  let admissionError: unknown;
+  try {
+    state.submit({
+      clientId: "owner",
+      requestId: "history-over-limit",
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload,
+    });
+  } catch (error) {
+    admissionError = error;
+  }
+  let reopened: InstanceType<typeof QueueState> | undefined;
+  let restoreError: unknown;
+  try {
+    reopened = new QueueState(f.dir);
+  } catch (error) {
+    restoreError = error;
+  }
+
+  assert.equal(
+    (admissionError as { code?: string } | undefined)?.code,
+    "SNAPSHOT_TOO_LARGE",
+    `admission error=${String(admissionError)}; restore error=${String(restoreError)}`,
+  );
+  assert.equal(restoreError, undefined);
+  assert.ok(reopened);
+  assert.deepEqual(
+    Object.keys(reopened.data.jobs).sort(),
+    history.map(({ id }) => id).sort(),
+    "the last rejected admission must not replace or prune prior history",
+  );
+  for (const { id, requestId } of history) {
+    const job = reopened.status(id);
+    assert.equal(field(job, "requestId"), requestId);
+    assert.equal(field(job, "state"), "cancelled");
+  }
+});

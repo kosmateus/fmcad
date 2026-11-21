@@ -114,6 +114,44 @@ test("post-rename directory fsync failure survives restart as a durable fault", 
   });
 });
 
+test("snapshot writer rejects states beyond the restore limit without replacing the prior snapshot", (t) => {
+  const f = fixture(t);
+  const store = records.createSnapshotStore(f.dir);
+  const previous = '{"version":1,"revision":1}';
+  store.commit(previous);
+
+  let writeError: unknown;
+  try {
+    store.commit(
+      JSON.stringify({
+        version: 1,
+        revision: 2,
+        payload: "é".repeat(64 * 1024 * 1024),
+      }),
+    );
+  } catch (error) {
+    writeError = error;
+  }
+  let restoreError: unknown;
+  try {
+    const restored = records.createSnapshotStore(f.dir).restore();
+    assert.equal(restored, previous);
+  } catch (error) {
+    restoreError = error;
+  }
+
+  assert.equal(
+    (writeError as { code?: string } | undefined)?.code,
+    "SNAPSHOT_TOO_LARGE",
+    `writer error=${String(writeError)}; restore error=${String(restoreError)}`,
+  );
+  assert.equal(restoreError, undefined);
+  assert.equal(
+    fs.existsSync(path.join(f.dir, "queue-state.pending.json")),
+    false,
+  );
+});
+
 test("exclusive receipts retain old bytes on failure, corruption and invalid limits are rejected", (t) => {
   const f = fixture(t),
     file = path.join(f.dir, "receipt.json");
