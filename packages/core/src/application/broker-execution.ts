@@ -90,3 +90,77 @@ export function executeTurn<
     },
   });
 }
+
+type TurnFailure = {
+  code?: string | undefined;
+  message?: string | undefined;
+  probeNotSubmitted?: boolean | undefined;
+  probeCompleted?: boolean | undefined;
+};
+
+type RefusedPreflight =
+  | { code: "BUILD_CHANGED_BEFORE_EXECUTION"; preflightCompleted: false }
+  | { code: "FUSION_BUSY"; preflightCompleted: true };
+
+interface ProductTurnPorts<Failure extends TurnFailure, Published> {
+  inspectPrepared(): boolean;
+  errorInfo(cause: unknown): Failure;
+  refusePreparation(error: Failure): void;
+  runObservation?: (() => Promise<Published>) | undefined;
+  verifyLocalInputs(): boolean;
+  assertCurrent(): void;
+  preflight(): Promise<unknown>;
+  sameObservedInstance(error: Failure): boolean;
+  refusePreflight(outcome: RefusedPreflight, error: Failure): void;
+  /** Return whether the prepared operation still has its original target. */
+  verifyDocument(localContextChanged: boolean): boolean;
+  executeAndComplete(): Promise<Published>;
+}
+
+/** Sequence a normal product turn. All probes and the product call retain their
+ * own send fences; the phase protocol cannot turn a lost reply into a retry. */
+export async function runBrokerProductTurn<
+  Failure extends TurnFailure,
+  Published,
+>(ports: ProductTurnPorts<Failure, Published>) {
+  let localContextChanged: boolean;
+  try {
+    localContextChanged = ports.inspectPrepared();
+  } catch (cause) {
+    const error = ports.errorInfo(cause);
+    if (error.code !== "DOCUMENT_CHANGED") {
+      ports.refusePreparation(error);
+      return;
+    }
+    // Observe the current document with the checked read-only preflight. Do
+    // not let the original operation use the replacement document.
+    localContextChanged = true;
+  }
+  if (ports.runObservation) return ports.runObservation();
+  if (!ports.verifyLocalInputs()) return;
+  try {
+    await ports.preflight();
+    ports.assertCurrent();
+  } catch (cause) {
+    ports.assertCurrent();
+    const error = ports.errorInfo(cause);
+    if (error.code === "BUILD_CHANGED" && error.probeNotSubmitted === true) {
+      ports.refusePreflight(
+        { code: "BUILD_CHANGED_BEFORE_EXECUTION", preflightCompleted: false },
+        error,
+      );
+      return;
+    }
+    if (
+      error.code === "FUSION_BUSY" &&
+      error.probeCompleted === true &&
+      ports.sameObservedInstance(error)
+    ) {
+      ports.refusePreflight({ code: "FUSION_BUSY", preflightCompleted: true }, error);
+      return;
+    }
+    throw error;
+  }
+  if (!ports.verifyDocument(localContextChanged)) return;
+  return ports.executeAndComplete();
+}

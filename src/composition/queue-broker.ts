@@ -35,6 +35,9 @@ const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
 const { MAX_BROKER_IPC_BYTES: MAX } = runtimeRequire(
   "./dist/node-adapters/broker-ipc/server",
 ) as typeof import("../../packages/node-adapters/src/broker-ipc/server");
+const { createBrokerIpcDispatch } = runtimeRequire(
+  "./dist/node-adapters/broker-ipc/dispatch",
+) as typeof import("../../packages/node-adapters/src/broker-ipc/dispatch");
 const { claimBrokerLifetime } = runtimeRequire(
   "./dist/node-adapters/execution/broker-lifetime",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-lifetime");
@@ -57,7 +60,12 @@ const brokerExecution = runtimeRequire(
 const { canonical } = runtimeRequire(
   "./dist/core/domain/queue",
 ) as typeof import("../../packages/core/src/domain/queue");
-const { prepareBrokerFlights, prepareBrokerScript } = runtimeRequire(
+const {
+  archiveCompletedBrokerTurn,
+  checkBrokerTurnInputs,
+  prepareBrokerFlights,
+  prepareBrokerScript,
+} = runtimeRequire(
   "./dist/node-adapters/execution/broker-preparation",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-preparation");
 const { fencePreparedWire } = runtimeRequire(
@@ -69,7 +77,11 @@ const { createBrokerRecords } = runtimeRequire(
 const { createBrokerRecovery } = runtimeRequire(
   "./dist/core/application/broker-recovery",
 ) as typeof import("../../packages/core/src/application/broker-recovery");
-const { createBrokerRecoveryEvidence, observeBrokerRecovery, publishBrokerRecoveredDispatch } = runtimeRequire(
+const {
+  createBrokerRecoveryEvidence,
+  observeBrokerRecovery,
+  publishBrokerRecoveredDispatch,
+} = runtimeRequire(
   "./dist/node-adapters/execution/broker-recovery-evidence",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-recovery-evidence");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
@@ -181,72 +193,6 @@ function replyEnvelope(value: unknown, payload: P.Rpc): value is P.Reply {
     reply["id"] === payload.id &&
     Object.hasOwn(reply, "result") !== Object.hasOwn(reply, "error")
   );
-}
-/** IPC is JSON, not a trusted TypeScript caller. Decode only structure here;
- * ownership, hashes, timeouts and admission remain the original branch guards. */
-function decodeEnvelope(
-  value: unknown,
-): Record<string, unknown> & { action: string } {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    fail("INVALID_MESSAGE", "Expected a JSON object");
-  const message = value as Record<string, unknown>;
-  if (typeof message["action"] !== "string")
-    fail("INVALID_ACTION", "Unknown broker action");
-  return message as Record<string, unknown> & { action: string };
-}
-function decodeMessage(value: unknown): P.Message {
-  const message = decodeEnvelope(value);
-  for (const key of [
-    "clientId",
-    "clientToken",
-    "jobId",
-    "debugTraceMessageId",
-    "requestId",
-    "sequenceId",
-    "observationJobId",
-    "workerToken",
-    "acceptedOutcome",
-    "expectedBuildHash",
-  ]) {
-    if (message[key] !== undefined && typeof message[key] !== "string")
-      fail("INVALID_REQUEST", "Broker identifiers must be strings");
-  }
-  for (const key of ["rpcTimeoutMs", "expectedRevision"]) {
-    if (message[key] !== undefined && typeof message[key] !== "number")
-      fail("INVALID_REQUEST", "Broker numeric fields must be numbers");
-  }
-  const auth = message["auth"];
-  if (
-    auth !== undefined &&
-    (auth === null ||
-      typeof auth !== "object" ||
-      Array.isArray(auth) ||
-      typeof object(auth)["clientId"] !== "string" ||
-      typeof object(auth)["clientToken"] !== "string")
-  )
-    fail("UNAUTHORIZED", "Valid registered client credentials required");
-  if (message["action"] === "backend") {
-    if (
-      !["callTool", "listTools", "executeUiGuardedScript"].includes(
-        String(message["method"]),
-      ) ||
-      !Array.isArray(message["args"])
-    )
-      fail("INVALID_BACKEND_METHOD", "Unsupported worker backend method");
-  }
-  const control = message["control"];
-  if (control !== undefined) {
-    if (!control || typeof control !== "object" || Array.isArray(control))
-      fail("INVALID_REQUEST", "Control fence must be an object");
-    const fence = object(control);
-    for (const key of ["requestId", "instanceId", "buildHash"])
-      if (fence[key] !== undefined && typeof fence[key] !== "string")
-        fail("INVALID_REQUEST", "Control identities must be strings");
-    for (const key of ["expectedGeneration", "generation", "contextEpoch"])
-      if (fence[key] !== undefined && typeof fence[key] !== "number")
-        fail("INVALID_REQUEST", "Control generations must be numbers");
-  }
-  return message as P.Message;
 }
 function decodeRequest(value: unknown): asserts value is P.Request {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -1275,7 +1221,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     expectedContextEpoch: number,
   ) {
     resetFence();
-    if (state.epoch && job) epochAdmission(state, job.request, clients);
+    if (state.epoch && job) epochAdmission(state, job.request, clientHashes());
     if (buildHash() !== codeHash)
       fail("BUILD_CHANGED", "Executable changed during local preparation");
     if (job && expectedContextEpoch !== (state.data.contextEpoch || 0))
@@ -1609,9 +1555,41 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
     });
   }
-  let clients: Record<string, string> = {};
   const clientsFile = path.join(dir, "clients.json");
-  if (fs.existsSync(clientsFile)) clients = readJson(clientsFile);
+  const ipcDispatch: {
+    dispatch(input: unknown): Promise<unknown>;
+    clientHashes(): Record<string, string>;
+  } = createBrokerIpcDispatch<P.Message, ReturnType<typeof owned>>(
+    fs.existsSync(clientsFile) ? readJson(clientsFile) : {},
+    {
+      persistClients: (hashes) => durable(clientsFile, hashes),
+      processUnavailable: () => epochProcessUnavailable,
+      hasSuccessor: (): boolean => !!successorControl,
+      ownsSuccessorCreation: (requestId): boolean => !!successorControl?.ownsCreation(requestId),
+      assertMigrationAdmission,
+      readEpochOwner: () => {
+        const epoch = state.epoch;
+        return epoch ? {
+          ownerClientId: epoch.ownerClientId,
+          ownerTokenHash: epoch.ownerTokenHash,
+        } : undefined;
+      },
+      isHistorical: (jobId) => state.isHistorical(jobId),
+      acceptsLifecycle: (action) => lifecycleControl.accepts(action),
+      lifecycle: (message, owner) => lifecycleControl.handle(message, owner),
+      backend(message) {
+        const workerMessage = message as P.WorkerMessage;
+        return state.data.jobs[workerMessage.jobId]?.request.phased
+          ? phased.enqueue(workerMessage)
+          : backend(workerMessage);
+      },
+      workerStatus: dispatchWorkerStatus,
+      readJob: (id) => state.status(id),
+      result: dispatchResult,
+      command: dispatchCommand,
+    },
+  );
+  const { dispatch, clientHashes } = ipcDispatch;
   let instance: P.Instance;
   const debugDispatchStarted = new WeakMap<P.Prepared, number>();
   const debugPreflightStarted = new WeakMap<P.Prepared, number>();
@@ -2852,7 +2830,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     origin?: P.Origin,
   ): Promise<P.Prepared> {
     const epochPolicy = state.epoch
-      ? epochAdmission(state, job.request, clients)
+      ? epochAdmission(state, job.request, clientHashes())
       : null;
     const contextEpoch = state.data.contextEpoch || 0;
     const rpcId = randomUUID();
@@ -3202,7 +3180,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       fence(prepared) {
         try {
           assertResetSubmissionOpen(dir);
-          if (state.epoch) epochAdmission(state, context.job.request, clients);
+          if (state.epoch) epochAdmission(state, context.job.request, clientHashes());
           if (
             prepared.record.binding.jobId !== context.job.id ||
             !sameInstance(prepared.record.instance, instance)
@@ -3580,18 +3558,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return physicalPost(payload, sessionId, requestOptions);
   };
 
-  function auth(message: P.Message) {
-    const value = message.auth;
-    if (
-      !value ||
-      !identifier(value.clientId) ||
-      !identifier(value.clientToken) ||
-      !own(clients, value.clientId) ||
-      !equal(clients[value.clientId], hash(value.clientToken))
-    )
-      fail("UNAUTHORIZED", "Valid registered client credentials required");
-    return value.clientId;
-  }
   function owned(id: string, clientId: string) {
     const job = state.status(id);
     if (job.clientId !== clientId)
@@ -4219,7 +4185,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     state,
     scope: currentAuditScope,
     buildHash: codeHash,
-    clients: () => clients,
+    clients: clientHashes,
     ownerNonce: marker.nonce,
     targetJobId: observationScopeConfig.jobId,
     auditPorts: recoveryAuditPorts,
@@ -4292,7 +4258,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     scope: currentAuditScope,
     configHash,
     buildHash: codeHash,
-    clients: () => clients,
+    clients: clientHashes,
     auditPorts: { ...recoveryAuditPorts, sendScript: sendOwnedFixtureScript },
     assertControl: assertScratchControl,
     additionalPrerequisite: () => factsCapture.approvedPrerequisite(),
@@ -4330,7 +4296,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ).createSavedFixtureControl({
     dir,
     state,
-    clients: () => clients,
+    clients: clientHashes,
     assertControl: assertScratchControl,
     snapshot: epochSnapshot,
     fence: fenceEpochLifecycle,
@@ -4357,7 +4323,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       state,
       configHash,
       buildHash: codeHash,
-      clients: () => clients,
+      clients: clientHashes,
       authority,
       ports: recoveryAuditPorts,
       sendAuditScript: recoveryAuditPorts.sendScript,
@@ -5152,29 +5118,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
   }
 
-  async function dispatch(input: unknown): Promise<unknown> {
-    const envelope = decodeEnvelope(input);
-    const successorAction =
-      successorControl &&
-      (envelope.action === "observe-successor" ||
-        (envelope.action === "create-isolated-scratch" &&
-          successorControl.ownsCreation(envelope["requestId"])));
-    if (
-      epochProcessUnavailable &&
-      !successorAction &&
-      ![
-        "register",
-        "control-status",
-        "queue-summary",
-        "find-request",
-        "status",
-        "result",
-      ].includes(envelope.action)
-    )
-      fail(
-        "EPOCH_PROCESS_UNAVAILABLE",
-        "Only authenticated metadata and existing receipts are available for this lost epoch; no SDK, lifecycle change or replacement",
-      );
+  function assertMigrationAdmission(action: string) {
     if (fs.existsSync(path.join(dir, "atomic-migration.lock"))) {
       const guard = readJson<{ kind: string; nonce: string; audit: string }>(
         path.join(dir, "atomic-migration.lock"),
@@ -5188,19 +5132,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ))
         load("./queue-atomic-migration-runtime").assertMigrationAdmission(
           dir,
-          envelope.action,
+          action,
         );
     }
-    // Process/history fences precede payload validation, as in the ordinary
-    // broker. A malformed request cannot replace EPOCH_PROCESS_UNAVAILABLE.
-    const message = decodeMessage(envelope);
-    if (message.action === "backend") {
-      const workerMessage = message as P.WorkerMessage;
-      if (state.data.jobs[workerMessage.jobId]?.request.phased)
-        return phased.enqueue(workerMessage);
-      return backend(workerMessage);
-    }
-    if (message.action === "worker-status") {
+  }
+
+  function dispatchWorkerStatus(message: P.Message) {
       const active = activeContext();
       if (
         !active ||
@@ -5244,59 +5181,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ...(snapshotHash === undefined ? {} : { snapshotHash }),
         control: gate.snapshot(),
       };
-    }
-    if (message.action === "register") {
-      if (!identifier(message.clientId) || !identifier(message.clientToken))
-        fail(
-          "INVALID_CLIENT",
-          "Nonempty clientId and private clientToken required",
-        );
-      const tokenHash = hash(message.clientToken);
-      if (
-        own(clients, message.clientId) &&
-        !equal(clients[message.clientId], tokenHash)
-      )
-        fail(
-          "CLIENT_EXISTS",
-          "Client id already registered with another token",
-        );
-      if (epochProcessUnavailable) {
-        if (!own(clients, message.clientId))
-          fail(
-            "EPOCH_PROCESS_UNAVAILABLE",
-            "A lost epoch cannot register new clients or grant authority",
-          );
-        return { clientId: message.clientId };
-      }
-      const updated = { ...clients, [message.clientId]: tokenHash };
-      durable(clientsFile, updated);
-      clients = updated;
-      return { clientId: message.clientId };
-    }
-    const clientId = auth(message);
-    if (
-      state.epoch &&
-      (lifecycleControl.accepts(message.action) ||
-        ["stop", "pause", "resume", "drain"].includes(message.action)) &&
-      (clientId !== state.epoch.ownerClientId ||
-        clients[clientId] !== state.epoch.ownerTokenHash)
-    )
-      fail(
-        "NOT_OWNER",
-        "A modeling grant is not epoch or broker administration authority",
-      );
-    if (
-      state.epoch &&
-      message.jobId &&
-      state.isHistorical(message.jobId) &&
-      ["cancel", "reconcile", "observe-atomic"].includes(message.action)
-    )
-      fail(
-        "INSTANCE_HISTORY_QUARANTINED",
-        "Historical unknown work is immutable; no replay, acceptance or cleanup",
-      );
-    if (lifecycleControl.accepts(message.action))
-      return lifecycleControl.handle(message, clientId);
+  }
+
+  async function dispatchCommand(message: P.Message, clientId: string, successorAction: boolean) {
     switch (message.action) {
       case "probe-saved-destination":
         return savedFixtureControl.probe(message, clientId);
@@ -5315,7 +5202,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             dir,
             state,
             buildHash: codeHash,
-            clients: () => clients,
+            clients: clientHashes,
             assertControl: assertScratchControl,
             fence() {
               assertResetSubmissionOpen(dir);
@@ -5350,7 +5237,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             marker,
             buildHash: codeHash,
             runtime: resolveRuntimePaths({ anchor: runtimeAnchor }).installation,
-            clients: () => clients,
+            clients: clientHashes,
             assertControl: assertScratchControl,
             fence() {
               assertResetSubmissionOpen(dir);
@@ -5425,7 +5312,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "workflowObservation is broker-authored and cannot be supplied by a client",
           );
         decodeRequest(r);
-        const request = { ...r, clientId, ownerToken: clients[clientId] };
+        const request = { ...r, clientId, ownerToken: clientHashes()[clientId] };
         if (state.epoch) {
           if (own(r, "isolatedEpoch"))
             fail(
@@ -5438,7 +5325,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "HISTORICAL_REQUEST_QUARANTINED",
               "Historical request IDs cannot be reused in a new epoch",
             );
-          epochAdmission(state, request, clients);
+          epochAdmission(state, request, clientHashes());
           request.isolatedEpoch = state.epoch.epochId;
         }
         if (
@@ -5790,7 +5677,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           verifyAcceptance();
           const accept = () => {
             verifyAcceptance();
-            if (state.epoch) epochAdmission(state, request, clients);
+            if (state.epoch) epochAdmission(state, request, clientHashes());
             if (!existing)
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",
@@ -5999,77 +5886,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                   }
                 : {}),
             };
-      case "result": {
-        if (!message.jobId)
-          return {
-            ...state.status(),
-            held: heldReason(),
-            stopping: lifetime.stopping,
-            recovery,
-            buildHash: codeHash,
-          };
-        const publicJob = owned(message.jobId, clientId);
-        if (
-          [
-            "succeeded",
-            "failed",
-            "cancelled",
-            "expired",
-            "needs_reconciliation",
-          ].includes(publicJob.state) &&
-          !debugResultPublished.has(publicJob.id)
-        ) {
-          const job = state.lookup(publicJob.id);
-          const trace = debugTraceContext(job.request, clientId);
-          if (trace) {
-            const artifactName =
-              job.kind === "rpc" ? "rpc-result.json" : "stdout.txt";
-            let artifactRef: string | undefined;
-            let stdoutObservation:
-              "not_observed" | "observed_empty" | "observed_nonempty" =
-              "not_observed";
-            let stdoutBytes: number | undefined;
-            try {
-              const file = load("./queue-response-files").responsePath(
-                dir,
-                job,
-                artifactName,
-              );
-              const stat = fs.lstatSync(file);
-              if (stat.isFile() && !stat.isSymbolicLink()) {
-                artifactRef = artifactName;
-                if (job.kind === "command") {
-                  stdoutBytes = stat.size;
-                  stdoutObservation =
-                    stat.size === 0 ? "observed_empty" : "observed_nonempty";
-                }
-              }
-            } catch {
-              // Trace metadata never gates retrieval of the owned result.
-            }
-            writeRequestTrace(job.request, clientId, {
-              stage: "result-published",
-              status:
-                publicJob.state === "succeeded"
-                  ? "published"
-                  : publicJob.state === "needs_reconciliation"
-                    ? "unknown"
-                    : "failed",
-              jobId: job.id,
-              buildHash: codeHash,
-              code: publicJob.code,
-              artifactRef,
-              stdoutBytes,
-              stdoutObservation,
-            });
-            debugResultPublished.add(publicJob.id);
-          }
-        }
-        return {
-          job: publicJob,
-          ...outputs(message.jobId),
-        };
-      }
       case "cancel":
         return state.cancel(required(message.jobId), clientId);
       case "release":
@@ -6128,6 +5944,77 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       default:
         fail("INVALID_ACTION", "Unknown broker action");
     }
+  }
+
+  function dispatchResult(clientId: string, publicJob: ReturnType<typeof owned> | undefined) {
+        if (!publicJob)
+          return {
+            ...state.status(),
+            held: heldReason(),
+            stopping: lifetime.stopping,
+            recovery,
+            buildHash: codeHash,
+          };
+        if (
+          [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "expired",
+            "needs_reconciliation",
+          ].includes(publicJob.state) &&
+          !debugResultPublished.has(publicJob.id)
+        ) {
+          const job = state.lookup(publicJob.id);
+          const trace = debugTraceContext(job.request, clientId);
+          if (trace) {
+            const artifactName =
+              job.kind === "rpc" ? "rpc-result.json" : "stdout.txt";
+            let artifactRef: string | undefined;
+            let stdoutObservation:
+              "not_observed" | "observed_empty" | "observed_nonempty" =
+              "not_observed";
+            let stdoutBytes: number | undefined;
+            try {
+              const file = load("./queue-response-files").responsePath(
+                dir,
+                job,
+                artifactName,
+              );
+              const stat = fs.lstatSync(file);
+              if (stat.isFile() && !stat.isSymbolicLink()) {
+                artifactRef = artifactName;
+                if (job.kind === "command") {
+                  stdoutBytes = stat.size;
+                  stdoutObservation =
+                    stat.size === 0 ? "observed_empty" : "observed_nonempty";
+                }
+              }
+            } catch {
+              // Trace metadata never gates retrieval of the owned result.
+            }
+            writeRequestTrace(job.request, clientId, {
+              stage: "result-published",
+              status:
+                publicJob.state === "succeeded"
+                  ? "published"
+                  : publicJob.state === "needs_reconciliation"
+                    ? "unknown"
+                    : "failed",
+              jobId: job.id,
+              buildHash: codeHash,
+              code: publicJob.code,
+              artifactRef,
+              stdoutBytes,
+              stdoutObservation,
+            });
+            debugResultPublished.add(publicJob.id);
+          }
+        }
+        return {
+          job: publicJob,
+          ...outputs(publicJob.id),
+        };
   }
 
   async function executeAtomicObservation(
@@ -6457,38 +6344,48 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const plan = localPlans.get(job.id);
     localPlans.delete(job.id);
     const flights = plan?.flights;
-    let localContextChanged = false;
-    try {
-      flights?.preflight.send.fence();
-      flights?.postflight.send.fence();
-      if (job.request.phased) {
-        if (
-          plan?.kind !== "worker" ||
-          phased.pending(job.id)?.message !== plan.message
-        )
-          fail("PREPARED_RPC_UNAVAILABLE", "The prepared worker turn is gone");
-        plan.send.fence();
-      }
-      if (job.kind === "rpc") {
-        if (plan?.kind !== "raw")
-          fail(
-            "PREPARED_RPC_UNAVAILABLE",
-            "The original checked RPC is unavailable; it is never reconstructed for replay",
-          );
-        plan.turn.inspect((prepared) => {
-          prepared.pythonCertificate.fence(prepared.outgoing);
-          localContextChanged =
-            !prepared.metadataOnly &&
-            prepared.contextEpoch !== (state.data.contextEpoch || 0);
-        });
-      }
-    } catch (cause) {
-      const error = errorInfo(cause);
-      if (error.code === "DOCUMENT_CHANGED") {
-        // Observe the fresh target with the already checked read-only probe,
-        // then return its state. Never release the stale product operation.
-        localContextChanged = true;
-      } else {
+    const notStartedDetails = {
+      executionOutcome: job.physicalTurns
+        ? "previous_turns_complete_current_not_started"
+        : "not_started",
+      userScriptSubmitted: !!job.dispatch?.rpcCount,
+      mayHaveMutated: !!job.dispatch?.rpcCount,
+      currentTurnSubmitted: false,
+    };
+    let previousTurn: P.Instance["documentState"] | null = null;
+    let observed: P.Instance | undefined;
+    let guardSelector: ReturnType<typeof documentSelector> | undefined;
+    let allowsBusyAfter = false;
+    return brokerExecution.runBrokerProductTurn({
+      inspectPrepared() {
+        let localContextChanged = false;
+        flights?.preflight.send.fence();
+        flights?.postflight.send.fence();
+        if (job.request.phased) {
+          if (
+            plan?.kind !== "worker" ||
+            phased.pending(job.id)?.message !== plan.message
+          )
+            fail("PREPARED_RPC_UNAVAILABLE", "The prepared worker turn is gone");
+          plan.send.fence();
+        }
+        if (job.kind === "rpc") {
+          if (plan?.kind !== "raw")
+            fail(
+              "PREPARED_RPC_UNAVAILABLE",
+              "The original checked RPC is unavailable; it is never reconstructed for replay",
+            );
+          plan.turn.inspect((prepared) => {
+            prepared.pythonCertificate.fence(prepared.outgoing);
+            localContextChanged =
+              !prepared.metadataOnly &&
+              prepared.contextEpoch !== (state.data.contextEpoch || 0);
+          });
+        }
+        return localContextChanged;
+      },
+      errorInfo,
+      refusePreparation(error) {
         const details = {
           state: "failed",
           code: error.code || "LOCAL_PREPARATION_FAILED",
@@ -6503,120 +6400,78 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         finishTurn(grant, details);
         if (job.request.phased)
           phased.reject(job.id, Object.assign(error, { notStarted: true }));
-        return;
-      }
-    }
-    if (job.workflowObservation) return executeAtomicObservation(job, grant);
-    const notStartedDetails = {
-      executionOutcome: job.physicalTurns
-        ? "previous_turns_complete_current_not_started"
-        : "not_started",
-      userScriptSubmitted: !!job.dispatch?.rpcCount,
-      mayHaveMutated: !!job.dispatch?.rpcCount,
-      currentTurnSubmitted: false,
-    };
-    const previousTurn =
-      job.request.phased && job.physicalTurns
-        ? readJson<P.Instance>(path.join(directory, "postflight.json"))
-            .documentState
-        : null;
-    if (job.request.phased && job.physicalTurns) {
-      const archive = privateDirectory(
-        path.join(directory, "turns", String(job.physicalTurns)),
-      );
-      for (const name of [
-        "preflight-start.json",
-        "preflight.json",
-        "preflight-result.json",
-        "postflight-start.json",
-        "postflight.json",
-        "postflight-result.json",
-        "outcome.json",
-      ]) {
-        const file = path.join(directory, name);
-        if (fs.existsSync(file)) {
-          durable(path.join(archive, name), readJson(file), true);
-          fs.unlinkSync(file);
+      },
+      runObservation: job.workflowObservation
+        ? () => executeAtomicObservation(job, grant)
+        : undefined,
+      verifyLocalInputs() {
+        if (job.request.phased && job.physicalTurns) {
+          previousTurn = readJson<P.Instance>(path.join(directory, "postflight.json"))
+            .documentState;
+          archiveCompletedBrokerTurn(directory, job.physicalTurns, {
+            privateDirectory,
+            read: readJson,
+            writeFresh: (file, value) => durable(file, value, true),
+          });
         }
-      }
-    }
-    let inputFailure;
-    if (
-      job.request.buildHash !== undefined &&
-      job.request.buildHash !== codeHash
-    )
-      inputFailure = "BUILD_CHANGED_BEFORE_EXECUTION";
-    try {
-      for (const input of job.request.inputFiles || []) {
-        if (
-          hash(
-            fs.readFileSync(
-              path.resolve(required(job.request.cwd), input.path),
-            ),
-          ) !== input.sha256
-        )
-          inputFailure = "INPUT_CHANGED";
-      }
-    } catch {
-      inputFailure = "INPUT_UNAVAILABLE";
-    }
-    if (inputFailure) {
-      const details = {
-        state: "failed",
-        code: inputFailure,
-        ...notStartedDetails,
-      };
-      durable(path.join(directory, "outcome.json"), details);
-      finishTurn(grant, details);
-      if (job.request.phased)
-        phased.reject(
-          job.id,
-          Object.assign(new Error(inputFailure), {
-            code: inputFailure,
-            notStarted: true,
-          }),
-        );
-      return;
-    }
-    const entry =
-      job.kind === "command" ? commandEntry(required(job.request.argv)) : null;
-    const protocolOnly =
-      job.kind === "rpc"
-        ? [
-            "initialize",
-            "notifications/initialized",
-            "ping",
-            "tools/list",
-          ].includes(rpcPayload(job.request.payload).method)
-        : ["tools", "doctor"].includes(entry?.kind ?? "");
-    const allowsBusy =
-      protocolOnly ||
-      ["ui.inspect", "ui.respond", "ui.resolve"].includes(entry?.target ?? "");
-    const allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
-    const guardSelector =
-      job.request.phased ||
-      job.sequenceMode === "automatic" ||
-      job.contextRefreshRequired ||
-      load("./composition/stage-dependencies").requiresPhysicalStageOwner(
-        job.request.payload,
-      )
-        ? documentSelector(job)
-        : undefined;
-    let observed: P.Instance | undefined;
-    // Record actual completion before applying the idle policy. Even a lost
-    // transport response has a bound remote receipt for later observation.
-    const rpcId = flights?.preflight.binding.rpcId || randomUUID();
-    const binding = flights?.preflight.binding || {
-      jobId: job.id,
-      rpcId,
-      requestHash: hash("preflight:" + job.id + ":" + rpcId),
-      buildHash: codeHash,
-    };
-    const receipt =
-      flights?.preflight.receipt ||
-      path.join(directory, "preflight-" + rpcId + ".receipt.json");
-    try {
-      await checkTurnInstance(
+        const inputFailure = checkBrokerTurnInputs(job.request, codeHash);
+        if (!inputFailure) return true;
+        const details = {
+          state: "failed",
+          code: inputFailure,
+          ...notStartedDetails,
+        };
+        durable(path.join(directory, "outcome.json"), details);
+        finishTurn(grant, details);
+        if (job.request.phased)
+          phased.reject(
+            job.id,
+            Object.assign(new Error(inputFailure), {
+              code: inputFailure,
+              notStarted: true,
+            }),
+          );
+        return false;
+      },
+      assertCurrent: () => lane.assertCurrent(grant),
+      preflight() {
+        const entry =
+          job.kind === "command" ? commandEntry(required(job.request.argv)) : null;
+        const protocolOnly =
+          job.kind === "rpc"
+            ? [
+                "initialize",
+                "notifications/initialized",
+                "ping",
+                "tools/list",
+              ].includes(rpcPayload(job.request.payload).method)
+            : ["tools", "doctor"].includes(entry?.kind ?? "");
+        const allowsBusy =
+          protocolOnly ||
+          ["ui.inspect", "ui.respond", "ui.resolve"].includes(entry?.target ?? "");
+        allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
+        guardSelector =
+          job.request.phased ||
+          job.sequenceMode === "automatic" ||
+          job.contextRefreshRequired ||
+          load("./composition/stage-dependencies").requiresPhysicalStageOwner(
+            job.request.payload,
+          )
+            ? documentSelector(job)
+            : undefined;
+        // Record completion before applying idle policy. A lost response
+        // retains the bound remote receipt for later observation.
+        const rpcId = flights?.preflight.binding.rpcId || randomUUID();
+        const binding = flights?.preflight.binding || {
+          jobId: job.id,
+          rpcId,
+          requestHash: hash("preflight:" + job.id + ":" + rpcId),
+          buildHash: codeHash,
+        };
+        const receipt =
+          flights?.preflight.receipt ||
+          path.join(directory, "preflight-" + rpcId + ".receipt.json");
+        return checkTurnInstance(
         grant,
         {
           prepared: flights?.preflight,
@@ -6650,41 +6505,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             receipt,
           }),
       );
-      lane.assertCurrent(grant);
-    } catch (cause) {
-      lane.assertCurrent(grant);
-      const error = errorInfo(cause);
-      if (error.code === "BUILD_CHANGED" && error.probeNotSubmitted === true) {
-        const outcome = {
-          state: "failed",
-          code: "BUILD_CHANGED_BEFORE_EXECUTION",
-          ...notStartedDetails,
-          preflightCompleted: false,
-        };
-        durable(path.join(directory, "outcome.json"), outcome);
-        finishTurn(grant, outcome);
-        if (job.request.phased)
-          phased.reject(
-            job.id,
-            Object.assign(new Error(error.message), {
-              code: outcome.code,
-              notStarted: true,
-            }),
-          );
-        return;
-      }
-      if (
-        error.code !== "FUSION_BUSY" ||
-        error.probeCompleted !== true ||
-        !sameInstance(error.observation, instance)
-      )
-        throw error;
+      },
+      sameObservedInstance: (error) => sameInstance(error.observation, instance),
+      refusePreflight(refusal, error) {
       const outcome = {
         state: "failed",
-        code: "FUSION_BUSY",
         ...notStartedDetails,
-        preflightCompleted: true,
-        activeCommand: required(error.observation).activeCommand,
+        ...refusal,
+        ...(refusal.preflightCompleted
+          ? { activeCommand: required(error.observation).activeCommand }
+          : {}),
       };
       durable(path.join(directory, "outcome.json"), outcome);
       finishTurn(grant, outcome);
@@ -6692,12 +6522,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         phased.reject(
           job.id,
           Object.assign(new Error(error.message), {
-            code: error.code,
+            code: refusal.code,
             notStarted: true,
           }),
         );
-      return;
-    }
+      },
+      verifyDocument(localContextChanged) {
     if (
       localContextChanged ||
       (job.request.phased && job.physicalTurns) ||
@@ -6778,9 +6608,25 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               notStarted: true,
             }),
           );
-        return;
+        return false;
       }
     }
+        return true;
+      },
+      executeAndComplete: () =>
+        executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter),
+    });
+  }
+
+  async function executePreparedProduct(
+    job: P.Job,
+    grant: ProductGrant,
+    plan: LocalPlan | undefined,
+    directory: string,
+    guardSelector: ReturnType<typeof documentSelector> | undefined,
+    allowsBusyAfter: boolean,
+  ) {
+    const flights = plan?.flights;
     const context: P.ProductContext = {
       job,
       productTurn: grant.turn,

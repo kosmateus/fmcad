@@ -5,6 +5,7 @@ import {
   createTurnIdentity as turn,
   executeTurn,
   prepare,
+  runBrokerProductTurn,
 } from "../packages/core/src/application/broker-execution";
 import { createBrokerScheduler } from "../packages/core/src/application/broker-scheduler";
 import { createBrokerSession } from "../packages/core/src/application/broker-session";
@@ -27,6 +28,34 @@ function latch() {
   });
   return { promise, release };
 }
+
+test("a late product preflight cannot execute or publish after its grant is revoked", async () => {
+  const started = latch();
+  const returned = latch();
+  let current = true;
+  const never = () => assert.fail("revoked grant reached a later phase");
+  const result = runBrokerProductTurn({
+    inspectPrepared: () => false,
+    errorInfo: never,
+    refusePreparation: never,
+    verifyLocalInputs: () => true,
+    assertCurrent() {
+      if (!current) throw Object.assign(new Error("Revoked"), stale);
+    },
+    async preflight() {
+      started.release();
+      await returned.promise;
+    },
+    sameObservedInstance: never,
+    refusePreflight: never,
+    verifyDocument: never,
+    executeAndComplete: never,
+  });
+  await started.promise;
+  current = false;
+  returned.release();
+  await assert.rejects(result, stale);
+});
 
 test("an active snapshot cannot reveal or mutate live execution context", () => {
   const session = createBrokerSession<ReturnType<typeof context>>();

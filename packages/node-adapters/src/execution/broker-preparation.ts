@@ -1,5 +1,6 @@
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import type { PreparedPythonArtifact } from "../../../core/src/domain/python-artifact";
 import { verifyPythonArtifact } from "../python/artifact";
 
@@ -131,4 +132,57 @@ export async function prepareBrokerFlights<Send>(ports: {
     preflight: await prepare("preflight"),
     postflight: await prepare("postflight"),
   };
+}
+
+/** Archive evidence for the completed turn before the same job writes new files. */
+export function archiveCompletedBrokerTurn(
+  directory: string,
+  turn: number,
+  ports: {
+    privateDirectory(path: string): string;
+    read(path: string): unknown;
+    writeFresh(path: string, value: unknown): void;
+  },
+): void {
+  const archive = ports.privateDirectory(path.join(directory, "turns", String(turn)));
+  for (const name of [
+    "preflight-start.json",
+    "preflight.json",
+    "preflight-result.json",
+    "postflight-start.json",
+    "postflight.json",
+    "postflight-result.json",
+    "outcome.json",
+  ]) {
+    const file = path.join(directory, name);
+    if (existsSync(file)) {
+      ports.writeFresh(path.join(archive, name), ports.read(file));
+      unlinkSync(file);
+    }
+  }
+}
+
+/** Revalidate local inputs, never rebuilding them for a second send. */
+export function checkBrokerTurnInputs(
+  request: {
+    buildHash?: string | undefined;
+    cwd?: string | undefined;
+    inputFiles?: readonly { path: string; sha256: string }[];
+  },
+  build: string,
+) {
+  let failure: "BUILD_CHANGED_BEFORE_EXECUTION" | "INPUT_CHANGED" | undefined;
+  if (request.buildHash !== undefined && request.buildHash !== build)
+    failure = "BUILD_CHANGED_BEFORE_EXECUTION";
+  try {
+    for (const input of request.inputFiles || []) {
+      if (request.cwd === undefined) return "INPUT_UNAVAILABLE";
+      const current = readFileSync(path.resolve(request.cwd, input.path));
+      if (createHash("sha256").update(current).digest("hex") !== input.sha256)
+        failure = "INPUT_CHANGED";
+    }
+  } catch {
+    return "INPUT_UNAVAILABLE";
+  }
+  return failure;
 }

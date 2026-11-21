@@ -6,8 +6,65 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
+import { createBrokerIpcDispatch } from "../packages/node-adapters/src/broker-ipc/dispatch";
 
 type Auth = { clientId: string; clientToken: string };
+
+test("broker dispatch never publishes another owner's output or grants new authority for a lost epoch", async () => {
+  let unavailable = false;
+  let published = 0;
+  let committed: Record<string, string> = {};
+  const owner = { clientId: "owner", clientToken: "owner-token" };
+  const observer = { clientId: "observer", clientToken: "observer-token" };
+  const never = () => assert.fail("unexpected routing");
+  const broker = createBrokerIpcDispatch({}, {
+    persistClients: hashes => { committed = hashes; },
+    processUnavailable: () => unavailable,
+    hasSuccessor: () => false,
+    ownsSuccessorCreation: never,
+    assertMigrationAdmission: () => {},
+    readEpochOwner: () => undefined,
+    isHistorical: () => false,
+    acceptsLifecycle: () => false,
+    lifecycle: never,
+    backend: never,
+    workerStatus: never,
+    command: never,
+    readJob: id => ({ id, clientId: owner.clientId }),
+    result(caller, job) {
+      assert.equal(caller, owner.clientId);
+      published++;
+      return job?.id;
+    },
+  });
+  await broker.dispatch({ action: "register", ...owner });
+  await broker.dispatch({ action: "register", ...observer });
+  const detached = broker.clientHashes();
+  detached[observer.clientId] = detached[owner.clientId]!;
+  const snapshot = committed;
+  unavailable = true;
+  await assert.rejects(
+    broker.dispatch({ action: "submit", clientId: 7 }),
+    { code: "EPOCH_PROCESS_UNAVAILABLE" },
+  );
+  await assert.rejects(
+    broker.dispatch({ action: "register", clientId: "new", clientToken: "secret" }),
+    { code: "EPOCH_PROCESS_UNAVAILABLE" },
+  );
+  await broker.dispatch({ action: "register", ...owner });
+  assert.equal(committed, snapshot);
+  await assert.rejects(
+    broker.dispatch({ action: "result", auth: observer, jobId: "original" }),
+    { code: "NOT_OWNER" },
+  );
+  assert.equal(published, 0);
+  assert.equal(
+    await broker.dispatch({ action: "result", auth: owner, jobId: "original" }),
+    "original",
+  );
+  assert.equal(published, 1);
+});
+
 type Broker = { close(): Promise<void> };
 type IpcTransport = {
   close(): Promise<void>;
