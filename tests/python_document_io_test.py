@@ -112,6 +112,25 @@ class RuntimeInventoryTests(unittest.TestCase):
                 self.assertEqual(baseline_owners[operation], 'measure', operation)
                 self.assertIsNone(migrated[operation].__closure__, operation)
 
+    def test_creation_id_oracle_rejects_weakened_helper_and_guard(self):
+        source = family_source('legacy-queue_document')
+        mutations = (
+            ('isinstance(value, str) and bool(value)', 'isinstance(value, str)'),
+            ('isinstance(value, str) and bool(value)', 'bool(value)'),
+            ('if not _qd_has_creation_id(creation_id):', 'if False:'),
+            ('if not _qd_has_creation_id(creation_id):',
+             'if _qd_has_creation_id(creation_id):'),
+        )
+        for before, after in mutations:
+            with self.subTest(mutation=after):
+                self.assertEqual(source.count(before), 1)
+                with patch.dict(FAMILIES, {'legacy-queue_document':
+                                           FAMILIES['legacy-queue_document']}, clear=True):
+                    with patch(__name__ + '.family_source',
+                               return_value=source.replace(before, after)):
+                        with self.assertRaises(AssertionError):
+                            self.test_every_retained_definition_has_exactly_its_previous_count()
+
     def test_every_retained_definition_has_exactly_its_previous_count(self):
         for family, entry in FAMILIES.items():
             renamed = PRIVATE_HELPER_RENAMES.get(family, {})
@@ -282,6 +301,37 @@ data = _cad_cast("_ReferencesInput", payload)
                         return self.generic_visit(statement)
 
                 node = RemoveTypeOnlySyntax().visit(node)
+                if family == 'legacy-queue_document' and node.name == '_qd_capture':
+                    # d34b59f extracted the nonempty-string predicate for typing.
+                    # Verify its full implementation before normalizing only this
+                    # exact call site; keep the frozen body and every guard intact.
+                    helper = next(n for n in ast.parse(family_source(family)).body
+                                  if isinstance(n, ast.FunctionDef) and
+                                  n.name == '_qd_has_creation_id')
+                    expected = ast.parse(
+                        'def _qd_has_creation_id(value):\n'
+                        '    return isinstance(value, str) and bool(value)\n').body[0]
+                    self.assertEqual(
+                        ast.dump(RemoveTypeOnlySyntax().visit(helper)), ast.dump(expected))
+                    extracted = ast.dump(ast.parse(
+                        'not _qd_has_creation_id(creation_id)', mode='eval').body)
+
+                    class RestoreCreationIdPredicate(ast.NodeTransformer):
+                        def visit_Name(self, name):
+                            # The metadata branch uses a separate typed local;
+                            # its retained counterpart reused the later state name.
+                            name.id = {'metadata_state': 'state',
+                                       'metadata_json': 'canonical'}.get(name.id, name.id)
+                            return name
+
+                        def visit_UnaryOp(self, expression):
+                            if ast.dump(expression) == extracted:
+                                return ast.parse(
+                                    'not isinstance(creation_id, str) or not creation_id',
+                                    mode='eval').body
+                            return self.generic_visit(expression)
+
+                    node = RestoreCreationIdPredicate().visit(node)
                 return ast.dump(node, include_attributes=False)
             original_nodes = {n.name: behavior_dump(n)
                               for n in ast.parse((ROOT / entry['compatibility']).read_text()).body
