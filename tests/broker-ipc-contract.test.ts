@@ -590,6 +590,10 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
     t.diagnostic(`Retained offline metadata evidence: ${dir}`);
     // Unknown work refuses orderly close. Exit the isolated test process only
     // after verifying the retained evidence and that expected refusal.
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, FMCAD_METADATA_OFFLINE_CHILD_DIR: dir };
+    // Nested Node 22 must start a test runner, not inherit the outer worker's
+    // binary message mode (which does not emit terminal TAP on stdout).
+    delete childEnv["NODE_TEST_CONTEXT"];
     const { stdout } = await promisify(execFile)(
       process.execPath,
       [
@@ -599,7 +603,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
         "--test-name-pattern=raw ADDIN metadata",
         __filename,
       ],
-      { env: { ...process.env, FMCAD_METADATA_OFFLINE_CHILD_DIR: dir }, timeout: 30000 },
+      { env: childEnv, timeout: 30000 },
     );
     assert.match(stdout, /^1\.\.1$/m);
     assert.match(stdout, /^# pass 1$/m);
