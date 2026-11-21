@@ -445,8 +445,12 @@ test("a restored block still selects exactly its armed observer and expires ordi
   queue.armWorkflowObservation(observerId, marker);
   const restored = new QueueDomain({ ...options, snapshot: queue.data });
   now = 30;
+  assert.equal(restored.next({ grant: false }), null);
+  assert.equal(restored.status(observerId)["state"], "queued");
+  assert.equal(restored.status(ordinary)["state"], "expired");
+  assert.equal(restored.summary().active, original.id);
+  assert.equal(restored.summary().blocked?.id, original.id);
   assert.equal(restored.next()?.id, observerId);
-  assert.equal(restored.status(ordinary)["state"], "queued");
   restored.finish(observerId);
   assert.equal(restored.next(), null);
   assert.equal(restored.status(ordinary)["state"], "expired");

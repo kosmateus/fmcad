@@ -796,7 +796,8 @@ export class QueueDomain {
     });
   }
 
-  next() {
+  /** Run the same deadline maintenance without granting any physical turn. */
+  next({ grant = true }: { grant?: boolean } = {}) {
     if (this._fault)
       fail(
         "STORAGE_UNAVAILABLE",
@@ -808,9 +809,12 @@ export class QueueDomain {
       time = this._time();
     if (d.controlBlocked || d.localUnknown) return null;
     if (d.blocked) {
-      const observers = this._waiting.filter(
-        (job) => workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
-      );
+      const observers = grant
+        ? this._waiting.filter(
+            (job) =>
+              workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
+          )
+        : [];
       if (observers.length > 1)
         fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job");
       if (observers.length === 1) {
@@ -854,7 +858,7 @@ export class QueueDomain {
       !d.active &&
       !d.blocked &&
       (time >= d.lease.idleUntil || time >= d.lease.holdUntil);
-    const canGrant = !d.blocked && !d.paused && !d.active;
+    const canGrant = grant && !d.blocked && !d.paused && !d.active;
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
@@ -883,7 +887,7 @@ export class QueueDomain {
     return this._commit((d) => {
       const time = this._time();
       this._expire(d, time);
-      if (d.blocked || d.paused || d.active) return null;
+      if (!grant || d.blocked || d.paused || d.active) return null;
       const eligible = Object.values(d.jobs).filter(
         (j) =>
           j.state === "queued" &&
