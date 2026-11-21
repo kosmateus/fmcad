@@ -1,7 +1,72 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const {spawn} = require('node:child_process');
+const childProcess = require('node:child_process');
+const originalSpawn = childProcess.spawn;
+let peerCheckerWaiter, pausedPeerChecker;
+function waitUntilStopped(child) {
+  return new Promise((resolve,reject)=>{
+    const deadline=Date.now()+5000;
+    const inspect=()=>{
+      let state;
+      try {
+        state=/^State:\s+([A-Za-z])/m.exec(fs.readFileSync(`/proc/${child.pid}/status`,'utf8'))?.[1];
+      } catch {
+        reject(Error('Peer checker exited before it could be suspended'));
+        return;
+      }
+      if(state==='T'||state==='t') resolve();
+      else if(child.exitCode!==null||child.signalCode!==null) reject(Error('Peer checker exited before it could be suspended'));
+      else if(Date.now()>=deadline) reject(Error('Peer checker did not enter the stopped state'));
+      else setTimeout(inspect,5);
+    };
+    inspect();
+  });
+}
+// Hold a real isolated checker child after its OS spawn, not just its Promise.
+childProcess.spawn=function(file,args,options) {
+  const hold=peerCheckerWaiter&&file==='python3'&&Array.isArray(args)&&
+    args[0]==='-I'&&args[1]==='-S'&&typeof args[2]==='string'&&args[2].includes('fmcad-check-')
+    ?peerCheckerWaiter:null;
+  let child;
+  try {
+    child=originalSpawn.call(this,file,args,options);
+  } catch(error) {
+    if(hold){peerCheckerWaiter=null;hold.reject(error);}
+    throw error;
+  }
+  if(hold) {
+    child.once('error',error=>{
+      if(peerCheckerWaiter===hold) peerCheckerWaiter=null;
+      if(!hold.cancelled) hold.reject(error);
+    });
+    child.once('spawn',()=>{
+      if(hold.cancelled) return;
+      if(peerCheckerWaiter===hold) peerCheckerWaiter=null;
+      if(!child.pid||!child.kill('SIGSTOP')) {
+        hold.reject(Error('Could not suspend the spawned peer checker'));
+        return;
+      }
+      pausedPeerChecker=child;
+      waitUntilStopped(child).then(hold.resolve,error=>{
+        pausedPeerChecker=null;
+        child.kill('SIGCONT');
+        hold.reject(error);
+      });
+    });
+  }
+  return child;
+};
+const {spawn} = childProcess;
+function resumePeerChecker() {
+  if(peerCheckerWaiter) {
+    peerCheckerWaiter.cancelled=true;
+    peerCheckerWaiter=undefined;
+  }
+  const child=pausedPeerChecker;
+  pausedPeerChecker=undefined;
+  if(child) child.kill('SIGCONT');
+}
 const packageRoot=process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE || path.resolve(__dirname,'../..');
 const load=name=>require(path.join(packageRoot,'dist/src',name));
 const {nativeReceipts}=require(path.join(__dirname,'native-source-envelope.cjs'));
@@ -14,12 +79,12 @@ const {resolveFmcadConfiguration} = load('dist/core');
 /** Real checker, transport preparation, broker IPC and worker processes. The
  * physical port records requests and emits synthetic receipts; it never runs
  * Python, contacts Fusion or makes a model/geometry correctness claim. */
-module.exports = async function fixture(t, {typedService = false} = {}) {
+module.exports = async function fixture(t, {typedService = false, slowPeerChecker = false} = {}) {
   const home=fs.mkdtempSync('/tmp/opencode/admission-ports-');
   const oldState=process.env.XDG_STATE_HOME, oldCwd=process.cwd();
   process.env.XDG_STATE_HOME=home;process.chdir(home);
   const dir=queueDirectory();
-  const cfg=resolveFmcadConfiguration({adapter:{backend:'mcp',url:'http://queue.invalid',timeoutMs:120000},
+  const cfg=resolveFmcadConfiguration({adapter:{backend:'addin',url:'http://127.0.0.1:8765/mcp',timeoutMs:120000},
     environment:{},file:{},platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
   const calls=[],clients=[];
@@ -45,7 +110,8 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
         if(probe) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify(observation);
         else text='typed-result';
       }
-      return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text}]}})};
+      const execution={success:true,stdout:text,stderr:''};
+      return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text:JSON.stringify(execution)}]}})};
     } finally {active--;}
   };
   const worker=path.join(home,'typed-service.cjs');
@@ -61,6 +127,7 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
   `);
   let broker;
   t.after(async()=>{
+    resumePeerChecker();
     for(const client of clients) client.dispose();
     fs.rmSync(path.join(dir,'fusion-reset.lock'),{force:true});
     try {
@@ -81,6 +148,12 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
     ...(typedService?{spawnWorker(executable,args,options){return spawn(executable,[worker,args[1]],options);}}:{}),
   });
   return {home,dir,cfg,calls,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
+    pauseNextPeerChecker(){
+      if(!slowPeerChecker)throw Error('Slow peer checker is not enabled');
+      if(peerCheckerWaiter||pausedPeerChecker)throw Error('A peer checker is already armed');
+      return new Promise((resolve,reject)=>{peerCheckerWaiter={resolve,reject,cancelled:false};});
+    },
+    resumePeerChecker,
     fingerprint(value){fingerprint=value;},observe(value){observe=value;},
     observeProduct(value){observeProduct=value;},
     observeProtocol(value){observeProtocol=value;},

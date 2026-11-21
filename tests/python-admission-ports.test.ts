@@ -160,7 +160,7 @@ const fixture = load(
   path.join(fixtureRoot, "fixtures/python-admission-broker.cjs"),
 ) as (
   t: import("node:test").TestContext,
-  options?: { typedService?: boolean },
+  options?: { typedService?: boolean; slowPeerChecker?: boolean },
 ) => Promise<AdmissionFixture>;
 const { decodeNativeProgram } = load(
   path.join(fixtureRoot, "fixtures/native-source-envelope.cjs"),
@@ -431,7 +431,7 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
         kind: "rpc",
         requestId: name,
         timeoutMs: 120000,
-        backend: "mcp",
+        backend: "addin",
         payload: {
           jsonrpc: "2.0",
           id: 1,
@@ -451,7 +451,7 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
 });
 
 test("actual prepared typed service keeps input/reset/document drift fences and a single SDK owner across clients", async (t) => {
-  const f = await fixture(t, { typedService: true }),
+  const f = await fixture(t, { typedService: true, slowPeerChecker: true }),
     a = await f.client("a"),
     b = await f.client("b");
   const source = f.script(
@@ -469,7 +469,7 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
       requestId: id,
       argv,
       cwd: f.home,
-      backend: "mcp",
+      backend: "addin",
       timeoutMs: 120000,
       inputFiles: inputFiles(argv, f.home),
       ...extra,
@@ -517,13 +517,14 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
         checkedPeer();
       }
     });
+    const peerCheckerStarted = f.pauseNextPeerChecker();
     const peer = await submit(b, "peer"),
       peerTerminal = b.wait(peer.id);
     await Promise.race([
-      peerChecked,
+      peerCheckerStarted,
       peerTerminal.then((result) => {
         throw Error(
-          "Peer ended before real checker completed: " +
+          "Peer ended before its checker process could be suspended: " +
             result.job.state +
             "/" +
             result.job.code,
@@ -546,9 +547,24 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
         stdout: firstResult.stdout,
       }),
     );
+    // The actual Python checker child is stopped and incomplete here. The
+    // first synthetic SDK response must succeed without waiting for it.
+    f.resumePeerChecker();
+    await Promise.race([
+      peerChecked,
+      peerTerminal.then((result) => {
+        throw Error(
+          "Peer ended before real checker completed: " +
+            result.job.state +
+            "/" +
+            result.job.code,
+        );
+      }),
+    ]);
     assert.equal((await peerTerminal).job.state, "succeeded");
   } finally {
     finish();
+    f.resumePeerChecker();
     f.observe(async () => {});
     f.observeProduct(async () => {});
   }
@@ -681,7 +697,7 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
       kind: "rpc",
       requestId: "pending-raw",
       timeoutMs: 120000,
-      backend: "mcp",
+      backend: "addin",
       payload: {
         jsonrpc: "2.0",
         id: 1,
@@ -801,6 +817,8 @@ interface AdmissionFixture {
     }) => Promise<void>,
   ): void;
   observeProduct(fn: (script: string) => Promise<void>): void;
+  pauseNextPeerChecker(): Promise<void>;
+  resumePeerChecker(): void;
 }
 
 function record(value: unknown): Record<string, unknown> {
