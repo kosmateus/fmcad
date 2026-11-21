@@ -199,7 +199,36 @@ const physical = {
   },
 };
 let broker;
+function waitForReadyTurn(jobId) {
+  // Watch only to wake the observer. The evidence is the real broker's public
+  // state, published after QueueDomain.readyTurn durably commits the request.
+  // Install before checking so a transition cannot fall between check/watch.
+  return new Promise((resolve, reject) => {
+    const watcher = fs.watch(dir, check);
+    watcher.on("error", fail);
+    function fail(error) {
+      watcher.close();
+      reject(error);
+    }
+    function check() {
+      try {
+        const job = broker.status().jobs[jobId];
+        assert.ok(job, "waiting for an admitted broker job");
+        if (job.state === "queued" && typeof job.sdkReadyAt === "number") {
+          watcher.close();
+          resolve(job);
+        } else if (job.state !== "preparing") {
+          fail(new Error(`Expected waiting SDK turn, observed ${job.state}`));
+        }
+      } catch (error) {
+        fail(error);
+      }
+    }
+    check();
+  });
+}
 respond(async (message) => {
+  if (message.action === "wait-ready") return waitForReadyTurn(message.jobId);
   if (message.action === "release-prepare") {
     workers.get(message.tag).send({ release: message.tag });
     return true;
@@ -235,7 +264,6 @@ respond(async (message) => {
         child.on("message", (message) => {
           if (
             message.fixture === "preparing" ||
-            message.fixture === "requesting" ||
             message.fixture === "publishing"
           ) {
             workers.set(message.tag, child);

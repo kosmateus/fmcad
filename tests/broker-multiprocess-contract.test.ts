@@ -49,6 +49,12 @@ test(
     await server.call("release-prepare", { tag: "B" });
     await server.event("physical", "B");
     await server.call("release-prepare", { tag: "A" });
+    const waitingA = await server.call("wait-ready", { jobId: jobA["id"] });
+    assert.equal(waitingA["id"], jobA["id"]);
+    assert.equal(waitingA["clientId"], "owner-A");
+    assert.equal(waitingA["requestId"], "request-A");
+    assert.equal(waitingA["state"], "queued");
+    assert.equal(typeof waitingA["sdkReadyAt"], "number");
     const duplicateB = await b.call("submit");
     assert.equal(duplicateB["id"], jobB["id"]);
     await assert.rejects(a.call("result", { jobId: jobB["id"] }), {

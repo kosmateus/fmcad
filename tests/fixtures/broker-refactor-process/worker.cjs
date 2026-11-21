@@ -20,7 +20,6 @@ run(process.argv[2], {
       releases.set(tag, resolve);
       process.send({ fixture: "preparing", tag, pid: process.pid });
     });
-    process.send({ fixture: "requesting", tag, pid: process.pid });
     const result = await backend.callTool({
       featureType: "script",
       object: {

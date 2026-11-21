@@ -199,7 +199,14 @@ for (const boundary of ["dispatch", "postflight"] as const) {
       });
       await restarted.event("preparing", "B");
       await restarted.call("release-prepare", { tag: "B" });
-      await restarted.event("requesting", "B");
+      const waitingB = await restarted.call("wait-ready", {
+        jobId: queuedB["id"],
+      });
+      assert.equal(waitingB["id"], queuedB["id"]);
+      assert.equal(waitingB["clientId"], "owner-B");
+      assert.equal(waitingB["requestId"], "request-B-after-restart");
+      assert.equal(waitingB["state"], "queued");
+      assert.equal(typeof waitingB["sdkReadyAt"], "number");
       assert.equal(
         (await restarted.call("counts"))["calls"],
         0,
