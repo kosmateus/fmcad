@@ -52,14 +52,14 @@ class NativeBootstrapRefusal extends Error {
 // No fork imports until stdlib-only validation completes, in EVERY process.
 // run_module invokes the supported CLI with its ordinary argument parser, but
 // unlike a separate precheck + -m process it cannot skip the process-local guard.
-const nativeBootstrap = `
+export const nativePhysicalGuard = `
 import ctypes,hashlib,json,os,runpy,sys
 from ctypes import wintypes as wt
 from pathlib import Path
 def deny(code):
     print(json.dumps({"guard":code}))
     raise SystemExit(78)
-raw_envelope=sys.stdin.buffer.read(4194305)
+raw_envelope=sys.stdin.buffer.readline(4194305)
 if len(raw_envelope)>4194304:
     raise RuntimeError("Envelope too large")
 e=json.loads(raw_envelope)
@@ -83,7 +83,7 @@ if os.environ.get("LOCALAPPDATA")!=p["localAppData"] or os.environ.get("FUSION_M
     deny("NATIVE_AUTHORITY_NAMESPACE")
 d=e["descriptor"]
 r=d["physicalRuntime"]
-provision=json.loads(Path(p["provisionPath"]).read_text())
+provision=json.loads(Path(p["provisionPath"]).read_bytes().decode("utf-8"))
 for key in ("pid","birth","source","build"):
     if provision[key]!=r[key]:
         deny("NATIVE_PROVISION_RUNTIME")
@@ -110,6 +110,9 @@ if cache.exists():
     deny("NATIVE_CACHE_PRESENT")
 sys.pycache_prefix=str(cache)
 sys.path.insert(0,str(root))
+`;
+
+const nativeBootstrap = `${nativePhysicalGuard}
 if e["action"]=="grant":
     sys.argv=["lib.physical_lifecycle","grant","--request",e["request"],"--output",e["output"],"--timeout",str(e["timeout"])]
     runpy.run_module("lib.physical_lifecycle",run_name="__main__")
