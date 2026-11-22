@@ -4,6 +4,7 @@ import type {
   QueueJob,
   QueueSnapshot,
 } from "./queue-model";
+import { quarantineTarget } from "./queue-quarantine";
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 export interface RuntimeRetiredExposure {
@@ -88,7 +89,48 @@ export function verifiedRuntimeRetirement(
       "RUNTIME_RETIREMENT_AUTHORITY_REQUIRED",
       "Verify the consumed native runtime root before restoring retired work",
     );
-  return copy(verify());
+  const coverage = copy(verify());
+  for (const exposure of Object.values(coverage.exposures)) {
+    if (exposure.source.kind !== "job") {
+      if (exposure.target !== null)
+        refused(
+          "RUNTIME_RETIREMENT_CHANGED",
+          "Local/control UNKNOWN cannot acquire a document scope",
+        );
+      continue;
+    }
+    if (exposure.layer !== coverage.marker.layer) {
+      // Foreign layers have no original job in this layer's frozen snapshot.
+      // They can contribute only conservative global conflicts here.
+      if (exposure.target !== null)
+        refused(
+          "RUNTIME_RETIREMENT_CHANGED",
+          "Foreign-layer scope requires its original frozen job",
+        );
+      continue;
+    }
+    const original = coverage.frozen.jobs[exposure.source.jobId];
+    if (!original)
+      refused(
+        "RUNTIME_RETIREMENT_CHANGED",
+        "Retired scope has no original job",
+      );
+    const expected = quarantineTarget(original.request);
+    if (
+      exposure.target !== null &&
+      (!expected ||
+        exposure.target.creationId !== expected.creationId ||
+        exposure.target.fileId !== expected.fileId ||
+        Object.keys(exposure.target).some(
+          (key) => key !== "creationId" && key !== "fileId",
+        ))
+    )
+      refused(
+        "RUNTIME_RETIREMENT_CHANGED",
+        "Runtime retirement cannot narrow an original UNKNOWN scope",
+      );
+  }
+  return coverage;
 }
 
 /** Pure first-bootstrap projection. The caller commits this result with its
@@ -135,6 +177,7 @@ export function projectRuntimeRetirement(
       !Object.values(coverage.exposures).some(
         (entry) =>
           entry.layer === coverage.marker.layer &&
+          entry.target === null &&
           entry.source.kind === kind &&
           "valueDigest" in entry.source &&
           entry.source.valueDigest === hash(canonical(value)),
@@ -218,7 +261,7 @@ export function projectRuntimeRetirement(
           "Only potentially started work can remain UNKNOWN after retirement",
         );
       const catalogDigest = hash(
-        canonical(job.physicalDispatches ?? job.dispatch),
+        canonical(job.physicalDispatches ?? job.dispatch ?? null),
       );
       if (
         !Object.values(coverage.exposures).some(
@@ -227,6 +270,12 @@ export function projectRuntimeRetirement(
             exposure.rootHead === coverage.marker.rootHead &&
             exposure.recordDigest === coverage.marker.recordDigest &&
             exposure.entryDigest === hash(canonical(job)) &&
+            (exposure.target === null ||
+              same(
+                exposure.target,
+                quarantineTarget(job.request),
+                canonical,
+              )) &&
             exposure.source.kind === "job" &&
             exposure.source.jobId === id &&
             exposure.source.requestId === job.requestId &&

@@ -26,6 +26,7 @@ export interface RetiredDocumentConflict {
   retirement: RuntimeRetiredExposure;
 }
 export type DocumentConflict = QueueQuarantine | RetiredDocumentConflict;
+const verifiedRuntimeConflicts = new WeakSet<object>();
 
 function targetConflicts(
   left: QueueIsolationTarget | null,
@@ -87,7 +88,7 @@ export function documentConflicts(
     if (!targetConflicts(retirement.target, target)) continue;
     const original = retirement.source;
     const syntheticId = "runtime-" + retirement.entryDigest;
-    result.push({
+    const conflict: RetiredDocumentConflict = {
       fenceKind: "runtime_retired",
       key,
       jobId: original.kind === "job" ? original.jobId : syntheticId,
@@ -103,7 +104,9 @@ export function documentConflicts(
         retirement.entryDigest,
       target: retirement.target,
       retirement,
-    });
+    };
+    verifiedRuntimeConflicts.add(conflict);
+    result.push(Object.freeze(conflict));
   }
   return result.sort((left, right) => {
     const a = left.jobId + ("key" in left ? ":" + left.key : "");
@@ -115,8 +118,5 @@ export function documentConflicts(
 /** A raw per-turn quarantine still cannot authorize identity lookup. A genuine
  * runtime retirement can authorize a bounded read, never an unbounded write. */
 export function documentConflictAllowsInspection(conflict: DocumentConflict) {
-  return (
-    conflict.target !== null ||
-    ("fenceKind" in conflict && conflict.fenceKind === "runtime_retired")
-  );
+  return conflict.target !== null || verifiedRuntimeConflicts.has(conflict);
 }

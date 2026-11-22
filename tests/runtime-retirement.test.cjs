@@ -308,3 +308,43 @@ test("a later UNKNOWN remains an active blocker after an actual domain restart",
     code: "SDK_QUIESCENCE_UNPROVEN",
   });
 });
+test("a JSON fenceKind field cannot turn a raw quarantine into retirement authority", () => {
+  assert.equal(
+    policy.documentConflictAllowsInspection({
+      target: null,
+      fenceKind: "runtime_retired",
+    }),
+    false,
+  );
+});
+test("a raw original UNKNOWN cannot be narrowed to an asserted document target", () => {
+  const f = fixture();
+  f.coverage.exposures[Object.keys(f.coverage.exposures)[0]].target = {
+    creationId: "asserted-doc-A",
+  };
+  assert.throws(() => f.project(), { code: "RUNTIME_RETIREMENT_CHANGED" });
+});
+test("queued work covered by an old reservation stays UNKNOWN with no dispatch catalog", () => {
+  const f = fixture();
+  const job = f.frozen.jobs[f.old.id];
+  job.state = "queued";
+  delete job.dispatch;
+  delete job.startedAt;
+  f.frozen.lease = {
+    id: "original-lease",
+    clientId: job.clientId,
+    epoch: f.frozen.epoch,
+    createdAt: 100,
+    idleUntil: 500,
+    holdUntil: 500,
+  };
+  f.marker.frozenDigest = hash(JSON.stringify(f.frozen));
+  f.coverage.currentSnapshotDigest = f.marker.frozenDigest;
+  const exposure = f.coverage.exposures[Object.keys(f.coverage.exposures)[0]];
+  exposure.entryDigest = hash(core.canonical(job));
+  exposure.source.catalogDigest = hash(core.canonical(null));
+  const next = f.project();
+  assert.equal(next.jobs[job.id].state, "needs_reconciliation");
+  assert.equal(next.lease, null);
+  assert.equal(next.active, null);
+});
