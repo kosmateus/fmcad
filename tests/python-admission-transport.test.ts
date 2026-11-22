@@ -13,11 +13,19 @@ const { assertCurrentDocumentStatusAdmission } = load(
 const { createBrokerTransport } = load(
   "../src/dist/fusion-transport/broker",
 ) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
-const { createPythonChecker, createPythonRpcAdmission, classifyPythonRpc } =
-  load(
-    "../src/python",
-  ) as typeof import("../packages/node-adapters/src/python/checker") &
-    typeof import("../packages/node-adapters/src/python/admission");
+const {
+  createPythonChecker,
+  createPythonRpcAdmission,
+  classifyPythonRpc,
+  prepareWireArtifact,
+  pythonArtifactManifest,
+  retainPythonOrigin,
+} = load(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/checker") &
+  typeof import("../packages/node-adapters/src/python/admission") &
+  typeof import("../packages/node-adapters/src/python/source-units") &
+  typeof import("../packages/node-adapters/src/python/context-binding");
 const { createProductionQueueAdmission } = load(
   "../src/queue-admission",
 ) as typeof import("../src/queue-admission");
@@ -36,7 +44,29 @@ const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
 
 // Real private adapter, real receipt builder and real distributed checker.
 // Only HTTP/SDK execution is synthetic; no input Python is ever executed here.
-for (const backend of ["mcp", "addin"])
+test("mcp backend is rejected before transport", () => {
+  assert.throws(
+    () =>
+      createBrokerTransport(
+        {
+          backend: "mcp",
+          tool: "fusion_mcp_execute",
+          url: "http://127.0.0.1",
+          timeoutMs: 5000,
+        },
+        {
+          version: "test",
+          requestTimeout: () => 5000,
+          bridgeSource: () => {
+            throw new Error("No bridge requested");
+          },
+        },
+      ),
+    (error) => field(error, "code") === "UNSUPPORTED_BACKEND",
+  );
+});
+
+for (const backend of ["addin"])
   test(`${backend}: final receipt checked before session, negative zero admission and positive exactly once`, async (t) => {
     const requests: Record<string, unknown>[] = [];
     const endpoint = http.createServer((req, res) => {
@@ -55,15 +85,13 @@ for (const backend of ["mcp", "addin"])
         const result =
           payload["method"] === "initialize"
             ? { protocolVersion: record(payload["params"])["protocolVersion"] }
-            : backend === "addin"
-              ? {
-                  structuredContent: {
-                    success: true,
-                    stdout: "checked",
-                    stderr: "",
-                  },
-                }
-              : { content: [{ type: "text", text: "checked" }] };
+            : {
+                structuredContent: {
+                  success: true,
+                  stdout: "checked",
+                  stderr: "",
+                },
+              };
         res.end(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result }));
       });
     });
@@ -189,7 +217,18 @@ test("public document.status admits the exact prepared light artifact before one
       const result =
         payload["method"] === "initialize"
           ? { protocolVersion: record(payload["params"])["protocolVersion"] }
-          : { content: [{ type: "text", text: "checked" }] };
+          : {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    success: true,
+                    stdout: "checked",
+                    stderr: "",
+                  }),
+                },
+              ],
+            };
       res.end(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result }));
     });
   });
@@ -207,7 +246,7 @@ test("public document.status admits the exact prepared light artifact before one
   const production = createProductionQueueAdmission(runtime);
   const client = createBrokerTransport(
     {
-      backend: "mcp",
+      backend: "addin",
       tool: "fusion_mcp_execute",
       url: `http://127.0.0.1:${port(endpoint)}`,
       timeoutMs: 5000,
@@ -256,21 +295,39 @@ test("public document.status admits the exact prepared light artifact before one
     preview: invocation.preview === true,
   });
   assertCurrentDocumentStatusAdmission(artifact);
-  client.preparePost = async (payload) => {
+  const origin = pythonArtifactManifest(artifact);
+  client.preparePost = async (payload, receivedOrigin) => {
     const outgoing = structuredClone(payload);
-    assert.equal(
-      record(record(record(outgoing["params"])["arguments"])["object"])[
-        "script"
-      ],
-      artifact.script,
+    const args = record(record(outgoing["params"])["arguments"]);
+    assert.equal(args["persistent"], false);
+    assert.equal(args["code"], `${artifact.script}\n\nrun("")\n`);
+    assert.ok(
+      receivedOrigin,
+      "ADDIN transport must preserve the original artifact manifest",
     );
-    const certificate = await production.admission.check(outgoing, artifact);
+    assert.equal(receivedOrigin.artifactHash, artifact.artifactHash);
+    assert.equal(receivedOrigin.sha256, artifact.sha256);
+    assert.deepEqual(receivedOrigin, origin);
+    const wireArtifact = retainPythonOrigin(
+      prepareWireArtifact(runtime, String(args["code"])),
+      receivedOrigin,
+    );
+    const certificate = await production.admission.check(
+      outgoing,
+      wireArtifact,
+    );
     assert.ok(certificate.report);
     assert.ok(certificate.artifact);
     assert.equal(certificate.report.status, "passed");
     assert.equal(certificate.report.diagnostics.length, 0);
-    assert.equal(certificate.artifact.sha256, artifact.sha256);
-    assert.equal(certificate.artifact.artifactHash, artifact.artifactHash);
+    assert.equal(certificate.artifact.sha256, wireArtifact.sha256);
+    assert.equal(certificate.artifact.artifactHash, wireArtifact.artifactHash);
+    assert.equal(wireArtifact.script, args["code"]);
+    const certifiedOrigin = record(
+      record(certificate.artifact.context)["origin"],
+    );
+    assert.equal(certifiedOrigin["artifactHash"], artifact.artifactHash);
+    assert.equal(certifiedOrigin["sha256"], artifact.sha256);
     return {
       fence: () => certificate.fence(outgoing),
       send: (sessionId) => {
@@ -280,10 +337,14 @@ test("public document.status admits the exact prepared light artifact before one
     };
   };
 
-  const prepared = await client.prepareCallTool({
-    featureType: "script",
-    object: { script: artifact.script, readOnly: true },
-  });
+  const prepared = await client.prepareCallTool(
+    {
+      featureType: "script",
+      object: { script: artifact.script, readOnly: true },
+    },
+    undefined,
+    origin,
+  );
   const result = await prepared();
   assert.equal(result.failed, false);
   assert.equal(
@@ -295,10 +356,8 @@ test("public document.status admits the exact prepared light artifact before one
     ["initialize", "notifications/initialized", "tools/call"],
   );
   assert.equal(
-    record(record(record(requests[2]!["params"])["arguments"])["object"])[
-      "script"
-    ],
-    artifact.script,
+    record(record(requests[2]!["params"])["arguments"])["code"],
+    `${artifact.script}\n\nrun("")\n`,
   );
 });
 
