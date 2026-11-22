@@ -18,11 +18,14 @@ const {
   createPythonRpcAdmission,
   classifyPythonRpc,
   prepareWireArtifact,
+  pythonArtifactManifest,
+  retainPythonOrigin,
 } = load(
   "../src/python",
 ) as typeof import("../packages/node-adapters/src/python/checker") &
   typeof import("../packages/node-adapters/src/python/admission") &
-  typeof import("../packages/node-adapters/src/python/source-units");
+  typeof import("../packages/node-adapters/src/python/source-units") &
+  typeof import("../packages/node-adapters/src/python/context-binding");
 const { createProductionQueueAdmission } = load(
   "../src/queue-admission",
 ) as typeof import("../src/queue-admission");
@@ -292,12 +295,23 @@ test("public document.status admits the exact prepared light artifact before one
     preview: invocation.preview === true,
   });
   assertCurrentDocumentStatusAdmission(artifact);
-  client.preparePost = async (payload) => {
+  const origin = pythonArtifactManifest(artifact);
+  client.preparePost = async (payload, receivedOrigin) => {
     const outgoing = structuredClone(payload);
     const args = record(record(outgoing["params"])["arguments"]);
     assert.equal(args["persistent"], false);
     assert.equal(args["code"], `${artifact.script}\n\nrun("")\n`);
-    const wireArtifact = prepareWireArtifact(runtime, String(args["code"]));
+    assert.ok(
+      receivedOrigin,
+      "ADDIN transport must preserve the original artifact manifest",
+    );
+    assert.equal(receivedOrigin.artifactHash, artifact.artifactHash);
+    assert.equal(receivedOrigin.sha256, artifact.sha256);
+    assert.deepEqual(receivedOrigin, origin);
+    const wireArtifact = retainPythonOrigin(
+      prepareWireArtifact(runtime, String(args["code"])),
+      receivedOrigin,
+    );
     const certificate = await production.admission.check(
       outgoing,
       wireArtifact,
@@ -308,6 +322,12 @@ test("public document.status admits the exact prepared light artifact before one
     assert.equal(certificate.report.diagnostics.length, 0);
     assert.equal(certificate.artifact.sha256, wireArtifact.sha256);
     assert.equal(certificate.artifact.artifactHash, wireArtifact.artifactHash);
+    assert.equal(wireArtifact.script, args["code"]);
+    const certifiedOrigin = record(
+      record(certificate.artifact.context)["origin"],
+    );
+    assert.equal(certifiedOrigin["artifactHash"], artifact.artifactHash);
+    assert.equal(certifiedOrigin["sha256"], artifact.sha256);
     return {
       fence: () => certificate.fence(outgoing),
       send: (sessionId) => {
@@ -317,10 +337,14 @@ test("public document.status admits the exact prepared light artifact before one
     };
   };
 
-  const prepared = await client.prepareCallTool({
-    featureType: "script",
-    object: { script: artifact.script, readOnly: true },
-  });
+  const prepared = await client.prepareCallTool(
+    {
+      featureType: "script",
+      object: { script: artifact.script, readOnly: true },
+    },
+    undefined,
+    origin,
+  );
   const result = await prepared();
   assert.equal(result.failed, false);
   assert.equal(
