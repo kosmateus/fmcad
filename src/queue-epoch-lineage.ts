@@ -599,6 +599,14 @@ export function successorBackendIdentity(
   const pointerRef = fs.existsSync(snapshot.pointer.path)
     ? snapshot.pointer
     : { path: livePointer, sha256: snapshot.pointer.sha256 };
+  const readPinnedPointer = (entry: Reference): unknown => {
+    if (entry.path !== livePointer || entry.sha256 !== pointerRef.sha256)
+      fail("Physical backend pointer reference differs from its archive");
+    const value = read(pointerRef, pointerRef.path);
+    if (!isDeepStrictEqual(value, pointer))
+      fail("Physical backend archived pointer differs from its epoch");
+    return value;
+  };
   const anchors = [
     snapshot.identity,
     snapshot.rootIdentity,
@@ -795,7 +803,7 @@ export function successorBackendIdentity(
     const startup = record(
       read(findEvidence(evidence, startupFile), startupFile),
     );
-    read(findEvidence(evidence, pointerFile), pointerFile);
+    readPinnedPointer(findEvidence(evidence, pointerFile));
     read(findEvidence(evidence, closedFile), closedFile);
     const lifecycleOwner = record(lifecycle["owner"]);
     const binding = record(lifecycle["binding"]);
@@ -847,7 +855,9 @@ export function successorBackendIdentity(
           fail("A predecessor worker is alive or its death is unproven");
       } else if (ref) fail("Predecessor worker evidence disappeared");
     }
-    for (const ref of evidence) read(ref, ref.path);
+    for (const ref of evidence)
+      if (ref.path === livePointer) readPinnedPointer(ref);
+      else read(ref, ref.path);
     const transitionIdentity = record(
       read(
         head["identity"] as Reference,
@@ -930,7 +940,8 @@ export function successorBackendIdentity(
     for (const ref of evidence) {
       if (headRefs.get(ref.path) !== ref.sha256)
         fail("Runtime upgrade source evidence is not anchored");
-      read(ref, ref.path);
+      if (ref.path === livePointer) readPinnedPointer(ref);
+      else read(ref, ref.path);
     }
     const ownLifecycleFile = path.join(
       root,
@@ -1043,7 +1054,7 @@ export function successorBackendIdentity(
     );
     const closedFile = path.join(pointer.root, "closed.json");
     const closed = record(read(findEvidence(evidence, closedFile), closedFile));
-    read(findEvidence(evidence, livePointer), livePointer);
+    readPinnedPointer(findEvidence(evidence, livePointer));
     if (
       closed["admissionMode"] !== "normal-multidocument" ||
       admin["action"] !== "console-stop" ||
@@ -1137,9 +1148,7 @@ export function successorBackendIdentity(
       if (!ref.path.startsWith(root + path.sep))
         fail("Physical backend evidence escaped its queue");
       if (ref.path === livePointer) {
-        if (ref.sha256 !== pointerRef.sha256)
-          fail("Physical backend pointer changed");
-        read(pointerRef, pointerRef.path);
+        readPinnedPointer(ref);
       } else read(ref, ref.path);
       remember(ref);
     }

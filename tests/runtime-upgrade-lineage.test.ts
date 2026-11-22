@@ -16,6 +16,8 @@ const fixture = load("./fixtures/runtime-upgrade-lineage.cjs") as (
 ) => {
   verify(): EffectivePredecessorIdentity;
   tamperCurrentProof(kind: string): void;
+  write(file: string, value: unknown): unknown;
+  snapshot: { pointer: { path: string } };
   current: { identity: EffectivePredecessorIdentity };
   root: string;
   pointer: { root: string; currentInstance: { pid: number; birth: string } };
@@ -46,6 +48,23 @@ test("successor lineage authenticates two runtime upgrades after a dead SDK repl
     files.map((file) => fs.readFileSync(file)),
     before,
   );
+});
+
+test("historical lineage survives publication of a different current pointer", (t) => {
+  const base = fs.mkdtempSync("/tmp/opencode/runtime-lineage-archive-");
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const f = fixture(base, runtime);
+  const original = f.verify();
+  const archived = fs.readFileSync(f.snapshot.pointer.path);
+  f.write(path.join(f.root, "isolated-admission-epoch.json"), {
+    ...f.pointer,
+    epochId: "another-live-epoch",
+    root: path.join(f.root, "admission-epochs/another-live-epoch"),
+  });
+  assert.deepEqual(f.verify(), original);
+  assert.deepEqual(fs.readFileSync(f.snapshot.pointer.path), archived);
+  fs.appendFileSync(f.snapshot.pointer.path, " ");
+  assert.throws(() => f.verify(), { code: "EPOCH_LINEAGE_INVALID" });
 });
 
 for (const kind of [
