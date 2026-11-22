@@ -4,7 +4,9 @@ import type {
   DocumentObservation,
   DocumentInspection,
 } from "@fmcad/core";
-import { quarantineTargetConflicts } from "@fmcad/core";
+import { createRequire } from "node:module";
+const { hash: canonicalHash } = createRequire(__filename)("./dist/core/application/cad/json") as
+  typeof import("../packages/core/src/application/cad/json");
 import type {
   createDocumentUnlockAdmission,
   CurrentUnlockTarget,
@@ -47,6 +49,11 @@ export interface DocumentUnlockControllerPorts {
     observation: DocumentObservation,
     target: CurrentUnlockTarget,
   ): void | Promise<void>;
+  /** Authenticate historical source/native evidence without a current CAD
+   * identity/read probe. This returns history, never fresh continuation rights. */
+  verifyStoredObservation(observation: DocumentObservation): void | Promise<void>;
+  /** No await is permitted from this final source check through CAS/disclosure. */
+  verifyFinal(observation: DocumentObservation): void;
   /** Authorize/filter all metadata before constructing the public DTO. */
   resolution(
     actor: UnlockPrincipal,
@@ -99,7 +106,6 @@ export function createDocumentUnlockController(
         ports.resolution(actor, metadata.selector),
       );
     }
-    ports.domain.assertDocumentProbeAllowed();
     ports.domain.rememberDocumentUnlockRequest(actor.clientId, request);
     const records = ports.domain.data.documentCheckpoints;
     const acceptance = Object.values(records?.acceptances ?? {}).find(
@@ -130,6 +136,29 @@ export function createDocumentUnlockController(
     )
       refused("NOT_AUTHORIZED");
 
+    if (request.action === "accept" && acceptance) {
+      if (!selected || acceptance.actorClientId !== actor.clientId ||
+          acceptance.observationId !== selected.id ||
+          acceptance.observationDigest !== canonicalHash(selected))
+        refused("REQUEST_CONFLICT");
+      await ports.verifyStoredObservation(selected);
+      ports.verifyFinal(selected);
+      metadata.recheck();
+      // Do not mint a current target from historical identity or repeat a CAD
+      // read for an already committed request. The result is explicitly history.
+      const { currentObservation, ...history } = ports.resolution(actor, request.target);
+      void currentObservation;
+      return {
+        ...serializeDocumentUnlockStatus({ ...history, state: "inspection_required" }),
+        previousAcceptance: {
+          checkpointId: acceptance.id, observationId: selected.id,
+          acceptedAt: acceptance.acceptedAt, acceptedBy: actor.clientId,
+          currentStateVerified: false as const,
+        },
+      };
+    }
+    ports.domain.assertDocumentProbeAllowed();
+
     const ticket = ports.admission.beginProbe(metadata.selector);
     metadata.recheck();
     const observed = await ports.probeIdentity(actor, metadata.selector);
@@ -148,6 +177,7 @@ export function createDocumentUnlockController(
       );
     if (selected) {
       await ports.verifyObservation(selected, target);
+      ports.verifyFinal(selected);
       permission.recheck();
       if (request.action === "accept") {
         ports.domain.acceptDocumentObservation({
@@ -167,10 +197,7 @@ export function createDocumentUnlockController(
       targetFor(target),
       ports.generation(),
     );
-    const blockers = quarantineTargetConflicts(
-      ports.domain.data,
-      marker.target,
-    ).map((value) => ({
+    const blockers = ports.domain.documentConflicts(marker.target).map((value) => ({
       jobId: value.jobId,
       requestId: value.requestId,
       originalHash: value.jobHash,
@@ -194,6 +221,7 @@ export function createDocumentUnlockController(
       createdAt: read.createdAt,
     };
     await ports.verifyObservation(observation, target);
+    ports.verifyFinal(observation);
     permission.recheck();
     const stored = ports.domain.recordDocumentObservation(observation);
     return serializeDocumentUnlockStatus(
@@ -261,6 +289,8 @@ export function createDocumentUnlockController(
         )
           code = "NOT_AUTHORIZED";
         if (code === "DOCUMENT_UNLOCK_STALE") code = "DOCUMENT_STATE_CHANGED";
+        if (["CORRUPT_STATE", "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH"].includes(code))
+          code = "STORAGE_UNAVAILABLE";
         return serializeDocumentUnlockError({
           ...resolution,
           code,

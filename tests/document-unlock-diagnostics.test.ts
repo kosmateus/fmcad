@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { hash } from "../packages/core/src/application/cad/json";
+import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
 
 import {
   serializeDocumentUnlockError,
@@ -11,6 +13,46 @@ import {
 } from "../src/document-unlock-diagnostics.js";
 
 const target = { docId: "creation-1", docFileId: "file-1" } as const;
+
+test("full observed parameters must match the exact canonical observation digest and authorized target", () => {
+  const observed: ParamCheckpointGuardV1 = {
+    schema: "fmcad.param-checkpoint-v1",
+    document: {
+      identity: { creationId: target.docId, name: "Authorized", fileId: target.docFileId,
+        version: 2, isSaved: true, isModified: false },
+      fingerprint: "a".repeat(64),
+    },
+    parameters: [{
+      name: "width", expression: "12 mm", unit: "mm", value: 1.2,
+      valueType: "numeric", valueUnits: "Fusion internal units (cm, rad, kg, s)",
+      comment: "Authorized parameter", metadata: { includesModel: true },
+    }],
+  };
+  const currentObservation = {
+    observationId: "verified-observation",
+    coverage: ["document_identity", "parameter_readback"] as const,
+    observed, stateDigest: hash(observed),
+  };
+  const result = status("inspection_required", { executionFence: "released", currentObservation });
+  assert.deepEqual(result.observed, observed);
+  assert.notEqual(result.observed, observed, "public data must be decoded copies, not host objects");
+  for (const invalid of [
+    { ...currentObservation, stateDigest: "f".repeat(64) },
+    { ...currentObservation, observed: { ...observed, parameters: [] } },
+    { ...currentObservation, observed: { ...observed,
+      document: { ...observed.document, identity: { ...observed.document.identity, creationId: "foreign" } } } },
+  ]) {
+    const refused = status("inspection_required", { executionFence: "released", currentObservation: invalid });
+    assert.equal(refused.observed, undefined);
+    assert.equal(refused.observation, undefined);
+    assert.equal(refused.next.kind === "command" && refused.next.action, "inspect");
+  }
+  const error = serializeDocumentUnlockError({
+    state: "inspection_required", target, executionFence: "released", currentObservation,
+    code: "DOCUMENT_STATE_CHANGED",
+  });
+  assert.equal("observed" in error, false);
+});
 
 function status(
   state: DocumentUnlockState,

@@ -29,6 +29,9 @@ export interface DocumentUnlockCurrentObservation {
   /** An observation freshly verified by the controller for this exact target. */
   readonly observationId: string;
   readonly coverage: readonly DocumentUnlockCoverage[];
+  /** Only the authenticated original readback for this exact observation. */
+  readonly observed?: ParamCheckpointGuardV1;
+  readonly stateDigest?: string;
 }
 
 /**
@@ -123,6 +126,7 @@ export interface DocumentUnlockPublicStatus {
   )[];
   readonly executionFence?: DocumentUnlockExecutionFence;
   readonly observation?: DocumentUnlockPublicObservation;
+  readonly observed?: ParamCheckpointGuardV1;
   readonly next: DocumentUnlockNext;
 }
 
@@ -451,8 +455,26 @@ export function serializeDocumentUnlockStatus(
 ): DocumentUnlockPublicStatus {
   const { state, fence, target } = resolvedState(resolution);
   if (!target) throw new Error("A resolved document target is required.");
+  let observed: ParamCheckpointGuardV1 | undefined;
+  const supplied = resolution.currentObservation;
+  if (state === "inspection_required" && supplied?.observed !== undefined) {
+    try {
+      if (!target.docId) throw new Error("Resolved identity required");
+      const decoded = decodeDocumentCheckpointReadback(supplied.observed, {
+        creationId: target.docId,
+        ...(target.docFileId === undefined ? {} : { fileId: target.docFileId }),
+      });
+      if (canonicalHash(decoded) !== supplied.stateDigest)
+        throw new Error("Original observed state changed");
+      observed = decoded;
+    } catch {
+      // Invalid facts must never disclose an unverified parameter snapshot or
+      // advertise it as an observation ready to accept.
+    }
+  }
   const observation =
-    state === "inspection_required"
+    state === "inspection_required" &&
+    (supplied?.observed === undefined || observed !== undefined)
       ? publicObservation(resolution.currentObservation)
       : undefined;
   const blockers = safeBlockers(resolution);
@@ -470,6 +492,7 @@ export function serializeDocumentUnlockStatus(
     blockers,
     ...(outputFence === undefined ? {} : { executionFence: outputFence }),
     ...(observation === undefined ? {} : { observation }),
+    ...(observed === undefined ? {} : { observed }),
     next: nextForState(state, target, fence, observation),
   };
 }
@@ -598,3 +621,8 @@ export function serializeDocumentUnlockError(
     next: nextForError(code, resolution, target),
   };
 }
+import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
+import { createRequire } from "node:module";
+const { hash: canonicalHash } = createRequire(__filename)("./dist/core/application/cad/json") as
+  typeof import("../packages/core/src/application/cad/json");
+import { decodeDocumentCheckpointReadback } from "./document-checkpoint-readback";
