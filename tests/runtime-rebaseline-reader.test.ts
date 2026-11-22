@@ -31,8 +31,13 @@ const sha = (bytes: string | Uint8Array) =>
  * subprocess runs on Linux, not Fusion/Windows. It validates/compiles the exact
  * transmitted QUERY script and reads its pre-existing database with mode=ro.
  * Signing and initial writes belong only to this explicit fixture producer. */
-async function fixture(t: TestContext) {
-  const directory = fs.mkdtempSync("/tmp/opencode/consumed-reader-");
+async function fixture(t: TestContext, prefix = "consumed-reader-") {
+  const directory = fs.mkdtempSync(
+    path.join(
+      process.env["FMCAD_READER_CHILD_BASE"] ?? "/tmp/opencode",
+      prefix,
+    ),
+  );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const store = path.join(directory, "store");
   fs.mkdirSync(store, { mode: 0o700 });
@@ -568,6 +573,243 @@ test("post-QUERY POSIX durability failure cannot approve a consumed root", async
   assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
   sync.mock.restore();
 });
+
+test("core final fsync refusal leaves the same native ports without activation approval", async (t) => {
+  const f = await fixture(t);
+  let nativeVerified = false,
+    failed = false;
+  const reader = core.createRuntimeRebaselineReaderAuthority({
+    ...f.ports,
+    async verifyConsumed(publication, completion) {
+      const staged = await f.ports.verifyConsumed(publication, completion);
+      nativeVerified = true;
+      return staged;
+    },
+  });
+  const fsync = fs.fsyncSync;
+  const mock = t.mock.method(fs, "fsyncSync", (fd: number) => {
+    if (nativeVerified && !failed) {
+      failed = true;
+      throw Object.assign(new Error("final core fsync"), { code: "EIO" });
+    }
+    return fsync(fd);
+  });
+  await assert.rejects(core.runtimeRebaselineRoot(f.store, reader), {
+    code: "EIO",
+  });
+  mock.mock.restore();
+  assert.equal(failed, true);
+  assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+});
+
+test("receipt verification alone exposes no activation before core finalization", async (t) => {
+  const f = await fixture(t);
+  let prematurelyVisible: unknown;
+  const reader = core.createRuntimeRebaselineReaderAuthority({
+    ...f.ports,
+    async verifyConsumed(publication, completion) {
+      const staged = await f.ports.verifyConsumed(publication, completion);
+      prematurelyVisible = await f.ports.getVerifiedActivation(f.descriptor);
+      return staged;
+    },
+  });
+  assert.ok(await core.runtimeRebaselineRoot(f.store, reader));
+  assert.equal(prematurelyVisible, undefined);
+  assert.ok(await f.ports.getVerifiedActivation(f.descriptor));
+});
+
+test("native finalizer fsync refusal never publishes a staged activation", async (t) => {
+  const f = await fixture(t);
+  let finalizing = false,
+    failed = false;
+  const reader = core.createRuntimeRebaselineReaderAuthority({
+    ...f.ports,
+    async verifyConsumed(publication, completion) {
+      const staged = await f.ports.verifyConsumed(publication, completion);
+      return {
+        finalize() {
+          finalizing = true;
+          staged.finalize();
+        },
+        abort() {
+          staged.abort();
+        },
+      };
+    },
+  });
+  const fsync = fs.fsyncSync;
+  const mock = t.mock.method(fs, "fsyncSync", (fd: number) => {
+    if (finalizing && !failed) {
+      failed = true;
+      throw Object.assign(new Error("finalizer fsync"), { code: "EIO" });
+    }
+    return fsync(fd);
+  });
+  await assert.rejects(core.runtimeRebaselineRoot(f.store, reader), {
+    code: "EIO",
+  });
+  mock.mock.restore();
+  assert.equal(failed, true);
+  assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+});
+
+test("failed core reapproval invalidates an earlier activation context", async (t) => {
+  const f = await fixture(t);
+  await core.runtimeRebaselineRoot(f.store, f.reader);
+  assert.ok(await f.ports.getVerifiedActivation(f.descriptor));
+  let verified = false,
+    failed = false;
+  const reader = core.createRuntimeRebaselineReaderAuthority({
+    ...f.ports,
+    async verifyConsumed(publication, completion) {
+      const staged = await f.ports.verifyConsumed(publication, completion);
+      verified = true;
+      return staged;
+    },
+  });
+  const fsync = fs.fsyncSync;
+  const mock = t.mock.method(fs, "fsyncSync", (fd: number) => {
+    if (verified && !failed) {
+      failed = true;
+      throw Object.assign(new Error("reapproval fsync"), { code: "EIO" });
+    }
+    return fsync(fd);
+  });
+  await assert.rejects(core.runtimeRebaselineRoot(f.store, reader), {
+    code: "EIO",
+  });
+  mock.mock.restore();
+  assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+});
+
+test("malformed UTF-8 cannot collide with signed NEW bytes containing a replacement character", async (t) => {
+  const f = await fixture(t, "consumed-reader-\ufffd-");
+  const original = Buffer.from(f.publication.activationBytes, "utf8");
+  const index = original.indexOf(Buffer.from("\ufffd", "utf8"));
+  assert.ok(index >= 0);
+  const corrupt = Buffer.concat([
+    original.subarray(0, index),
+    Buffer.from([0xff]),
+    original.subarray(index + 3),
+  ]);
+  assert.equal(corrupt.toString("utf8"), original.toString("utf8"));
+  assert.notDeepEqual(corrupt, original);
+  fs.writeFileSync(f.publication.activationFile, corrupt);
+  await assert.rejects(core.runtimeRebaselineRoot(f.store, f.reader));
+  assert.equal(fs.readFileSync(f.trace, "utf8"), "");
+});
+
+if (process.env["FMCAD_READER_IO_CHILD"]) {
+  test("owned descriptor race child", async (t) => {
+    const f = await fixture(t);
+    const kind = process.env["FMCAD_READER_IO_CHILD"];
+    const foreign = path.join(f.directory, "foreign-file");
+    fs.writeFileSync(foreign, "foreign inode", { mode: 0o600 });
+    const foreignDirectory = path.join(f.directory, "foreign-directory");
+    fs.mkdirSync(foreignDirectory, { mode: 0o700 });
+    let finalPhase = false,
+      opens = 0,
+      injected = false,
+      foreignSynced = false;
+    const reader = core.createRuntimeRebaselineReaderAuthority({
+      ...f.ports,
+      async verifyConsumed(publication, completion) {
+        const staged = await f.ports.verifyConsumed(publication, completion);
+        finalPhase = true;
+        return staged;
+      },
+    });
+    const openSync = fs.openSync;
+    const fsync = fs.fsyncSync;
+    const syncMock = t.mock.method(fs, "fsyncSync", (fd: number) => {
+      const actual = fs.realpathSync(`/proc/self/fd/${fd}`);
+      if (actual === foreign || actual === foreignDirectory)
+        foreignSynced = true;
+      return fsync(fd);
+    });
+    const mock = t.mock.method(
+      fs,
+      "openSync",
+      (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode) => {
+        if (
+          !injected &&
+          kind === "directory" &&
+          String(file) === f.store &&
+          typeof flags === "number" &&
+          flags & fs.constants.O_DIRECTORY &&
+          fs.readFileSync(f.trace, "utf8").includes("query")
+        ) {
+          injected = true;
+          return openSync(foreignDirectory, flags, mode);
+        }
+        if (
+          finalPhase &&
+          String(file) === f.publication.record.path &&
+          ++opens === 4
+        ) {
+          injected = true;
+          if (kind === "foreign-fd") return openSync(foreign, flags, mode);
+          if (kind === "fifo") {
+            fs.renameSync(
+              f.publication.record.path,
+              f.publication.record.path + ".saved",
+            );
+            const fifo = spawnSync(
+              "mkfifo",
+              ["--mode=600", f.publication.record.path],
+              { encoding: "utf8" },
+            );
+            assert.equal(fifo.status, 0, fifo.stderr);
+          }
+        }
+        return openSync(file, flags, mode);
+      },
+    );
+    await assert.rejects(core.runtimeRebaselineRoot(f.store, reader));
+    mock.mock.restore();
+    syncMock.mock.restore();
+    assert.equal(injected, true);
+    assert.equal(foreignSynced, false);
+    if (kind === "fifo") {
+      fs.unlinkSync(f.publication.record.path);
+      fs.renameSync(
+        f.publication.record.path + ".saved",
+        f.publication.record.path,
+      );
+    }
+    assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+  });
+} else {
+  for (const kind of ["fifo", "foreign-fd", "directory"])
+    test(`same verified descriptor rejects ${kind} substitution within a bounded child`, (t) => {
+      const directory = fs.mkdtempSync("/tmp/opencode/reader-io-child-");
+      t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        FMCAD_READER_IO_CHILD: kind,
+        FMCAD_READER_CHILD_BASE: directory,
+      };
+      delete env["NODE_TEST_CONTEXT"];
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--test",
+          "--test-reporter=tap",
+          "--test-name-pattern=^owned descriptor race child$",
+          __filename,
+        ],
+        {
+          env,
+          timeout: 10_000,
+          encoding: "utf8",
+        },
+      );
+      assert.equal(child.error, undefined, child.stderr);
+      assert.equal(child.status, 0, child.stdout + "\n" + child.stderr);
+      assert.match(child.stdout, /# tests 1\n/);
+      assert.match(child.stdout, /# pass 1\n/);
+    });
+}
 
 test("a pending concurrent publication refuses a reader without QUERY or issuance", async (t) => {
   const f = await fixture(t);

@@ -50,10 +50,14 @@ export interface NativeRuntimeRebaselineReaderPorts {
   verifyConsumed(
     publication: NativeRuntimeActivationPublication,
     completion: NativeRuntimeActivationCompletion,
-  ): Promise<void>;
+  ): Promise<NativeRuntimeConsumedVerification>;
   getVerifiedActivation(
     descriptor: PhysicalGenerationDescriptor,
   ): Promise<NativePhysicalActivation | undefined>;
+}
+export interface NativeRuntimeConsumedVerification {
+  finalize(): void;
+  abort(): void;
 }
 
 /** Same verified operator bytes go directly to the supported private authority.
@@ -105,14 +109,31 @@ function privateDirectory(directory: string) {
   return info;
 }
 function read(file: string, sync = false): Buffer {
-  privateDirectory(path.dirname(file));
+  const parent = path.dirname(file),
+    parentIdentity = privateDirectory(parent);
   if (fs.realpathSync(file) !== file) deny();
+  const namedBefore = fs.lstatSync(file, { bigint: true });
   const fd = fs.openSync(
     file,
     fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
   );
   try {
     const before = fs.fstatSync(fd, { bigint: true });
+    function assertHeld() {
+      const held = fs.fstatSync(fd, { bigint: true }),
+        named = fs.lstatSync(file, { bigint: true });
+      const currentParent = privateDirectory(parent);
+      if (
+        held.dev !== namedBefore.dev ||
+        held.ino !== namedBefore.ino ||
+        currentParent.dev !== parentIdentity.dev ||
+        currentParent.ino !== parentIdentity.ino ||
+        fs.realpathSync(`/proc/self/fd/${fd}`) !== file
+      )
+        deny();
+      for (const key of ["dev", "ino", "size", "mtimeNs", "ctimeNs"] as const)
+        if (held[key] !== before[key] || named[key] !== before[key]) deny();
+    }
     if (
       !before.isFile() ||
       before.nlink !== 1n ||
@@ -121,13 +142,16 @@ function read(file: string, sync = false): Buffer {
       before.size > 128n * 1024n * 1024n
     )
       deny();
+    assertHeld();
     const value = fs.readFileSync(fd);
+    assertHeld();
     if (sync) fs.fsyncSync(fd);
     const after = fs.fstatSync(fd, { bigint: true }),
       named = fs.lstatSync(file, { bigint: true });
     for (const key of ["dev", "ino", "size", "mtimeNs", "ctimeNs"] as const)
       if (before[key] !== after[key] || after[key] !== named[key]) deny();
     if (BigInt(value.length) !== before.size) deny();
+    assertHeld();
     return value;
   } finally {
     fs.closeSync(fd);
@@ -338,7 +362,8 @@ function capture(
       bytes = optional(file);
     files[file] = bytes;
     if (name === "runtime-rebaseline-head.json") {
-      if (bytes?.toString("utf8") !== publication.activationBytes) deny();
+      if (!bytes?.equals(Buffer.from(publication.activationBytes, "utf8")))
+        deny();
       immutable[file] = bytes;
     }
     if (name.endsWith("queue-state.pending.json") && bytes !== null) deny();
@@ -415,15 +440,45 @@ function resync(snapshot: ReturnType<typeof capture>) {
   for (const directory of [...directories].sort(
     (a, b) => b.length - a.length,
   )) {
-    privateDirectory(directory);
+    const expected = privateDirectory(directory);
+    const parent = path.dirname(directory),
+      parentIdentity = fs.lstatSync(parent);
+    if (
+      !parentIdentity.isDirectory() ||
+      parentIdentity.isSymbolicLink() ||
+      fs.realpathSync(parent) !== parent
+    )
+      deny();
     const fd = fs.openSync(
       directory,
       fs.constants.O_RDONLY |
         fs.constants.O_DIRECTORY |
-        fs.constants.O_NOFOLLOW,
+        fs.constants.O_NOFOLLOW |
+        fs.constants.O_NONBLOCK,
     );
     try {
+      function assertHeld() {
+        const held = fs.fstatSync(fd),
+          named = privateDirectory(directory),
+          currentParent = fs.lstatSync(parent);
+        if (
+          !held.isDirectory() ||
+          held.dev !== expected.dev ||
+          held.ino !== expected.ino ||
+          named.dev !== held.dev ||
+          named.ino !== held.ino ||
+          !currentParent.isDirectory() ||
+          currentParent.isSymbolicLink() ||
+          currentParent.dev !== parentIdentity.dev ||
+          currentParent.ino !== parentIdentity.ino ||
+          fs.realpathSync(`/proc/self/fd/${fd}`) !== directory ||
+          fs.realpathSync(parent) !== parent
+        )
+          deny();
+      }
+      assertHeld();
       fs.fsyncSync(fd);
+      assertHeld();
     } finally {
       fs.closeSync(fd);
     }
@@ -470,6 +525,7 @@ function createPorts(
     snapshot: ReturnType<typeof capture>;
   };
   let approved: Approval | undefined;
+  let approvalGeneration = 0;
   async function verify(
     publication: NativeRuntimeActivationPublication,
     completion: NativeRuntimeActivationCompletion,
@@ -543,10 +599,33 @@ function createPorts(
       publication: NativeRuntimeActivationPublication,
       completion: NativeRuntimeActivationCompletion,
     ) {
+      const generation = ++approvalGeneration;
+      approved = undefined;
       publication = structuredClone(publication);
       completion = structuredClone(completion);
       const result = await verify(publication, completion);
-      approved = { publication, completion, snapshot: result.snapshot };
+      if (approvalGeneration !== generation) deny();
+      let pending = true;
+      return Object.freeze({
+        finalize() {
+          if (!pending || approvalGeneration !== generation) deny();
+          pending = false;
+          if (!same(capture(pinned, publication, completion), result.snapshot))
+            deny();
+          resync(result.snapshot);
+          pinnedNative(pinned);
+          if (!same(capture(pinned, publication, completion), result.snapshot))
+            deny();
+          approved = { publication, completion, snapshot: result.snapshot };
+        },
+        abort() {
+          pending = false;
+          if (approvalGeneration === generation) {
+            approved = undefined;
+            approvalGeneration++;
+          }
+        },
+      });
     },
     async getVerifiedActivation(descriptor: PhysicalGenerationDescriptor) {
       const current = approved;

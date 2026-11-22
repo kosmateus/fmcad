@@ -11,6 +11,9 @@ const { runtimeRebaselineManifestNames: inputNames } = createRequire(
 )(
   "./dist/node-adapters/persistence/runtime-rebaseline-scope",
 ) as typeof import("../packages/node-adapters/src/persistence/runtime-rebaseline-scope");
+const { decodeAdmissionJson } = createRequire(__filename)(
+  "./dist/node-adapters/execution/admission-json",
+) as typeof import("../packages/node-adapters/src/execution/admission-json");
 
 type Data = Record<string, unknown>;
 export interface RebaselineReference {
@@ -113,7 +116,12 @@ export interface RuntimeRebaselineReaderPorts {
   verifyConsumed(
     publication: RuntimeActivationPublication,
     completion: RuntimeActivationCompletion,
-  ): Promise<void>;
+  ): Promise<RuntimeConsumedVerification>;
+}
+/** Private single-use finalizer, not a JSON verdict or a publication lease. */
+export interface RuntimeConsumedVerification {
+  finalize(): void;
+  abort(): void;
 }
 const readers = new WeakMap<object, RuntimeRebaselineReaderPorts>();
 declare const readerBrand: unique symbol;
@@ -230,6 +238,11 @@ function object(value: unknown): Data {
 function bytes(file: string): Buffer {
   return readBytes(file, 128 * 1024 * 1024, fs, file);
 }
+function json(value: Buffer): unknown {
+  return decodeAdmissionJson(
+    new TextDecoder("utf-8", { fatal: true }).decode(value),
+  );
+}
 function optional(file: string): Buffer | null {
   try {
     return bytes(file);
@@ -311,21 +324,88 @@ function ref(file: string): RebaselineReference {
   return { path: file, sha256: sha(bytes(file)) };
 }
 function verify(reference: RebaselineReference): Buffer {
+  return verifiedReference(reference, false);
+}
+function verifiedReference(
+  reference: RebaselineReference,
+  sync: boolean,
+): Buffer {
   if (
     !reference ||
     !path.isAbsolute(reference.path) ||
     !/^[a-f0-9]{64}$/.test(reference.sha256)
   )
     fail("RUNTIME_BARRIER_UNPROVEN", "Invalid evidence reference");
-  const value = bytes(reference.path);
-  if (sha(value) !== reference.sha256)
-    fail("RUNTIME_BARRIER_CHANGED", "Immutable evidence bytes changed");
-  return value;
+  const file = reference.path,
+    parent = path.dirname(file);
+  const parentIdentity = fs.lstatSync(parent);
+  const named = fs.lstatSync(file, { bigint: true });
+  if (
+    !parentIdentity.isDirectory() ||
+    parentIdentity.isSymbolicLink() ||
+    fs.realpathSync(parent) !== parent ||
+    fs.realpathSync(file) !== file
+  )
+    fail("RUNTIME_BARRIER_CHANGED", "Immutable evidence path changed");
+  const fd = fs.openSync(
+    file,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+  );
+  try {
+    const initial = fs.fstatSync(fd, { bigint: true });
+    function assertHeld() {
+      const held = fs.fstatSync(fd, { bigint: true });
+      const current = fs.lstatSync(file, { bigint: true });
+      const currentParent = fs.lstatSync(parent);
+      if (
+        !held.isFile() ||
+        held.size > 128n * 1024n * 1024n ||
+        held.dev !== named.dev ||
+        held.ino !== named.ino ||
+        fs.realpathSync(`/proc/self/fd/${fd}`) !== file ||
+        !currentParent.isDirectory() ||
+        currentParent.isSymbolicLink() ||
+        currentParent.dev !== parentIdentity.dev ||
+        currentParent.ino !== parentIdentity.ino ||
+        fs.realpathSync(parent) !== parent
+      )
+        fail(
+          "RUNTIME_BARRIER_CHANGED",
+          "Immutable evidence descriptor changed",
+        );
+      for (const key of ["dev", "ino", "size", "mtimeNs", "ctimeNs"] as const)
+        if (held[key] !== initial[key] || current[key] !== initial[key])
+          fail("RUNTIME_BARRIER_CHANGED", "Immutable evidence inode changed");
+    }
+    assertHeld();
+    const value = Buffer.alloc(Number(initial.size) + 1);
+    let length = 0;
+    while (length < value.length) {
+      const count = fs.readSync(
+        fd,
+        value,
+        length,
+        value.length - length,
+        length,
+      );
+      if (!count) break;
+      length += count;
+    }
+    const result = value.subarray(0, length);
+    if (BigInt(length) !== initial.size || sha(result) !== reference.sha256)
+      fail("RUNTIME_BARRIER_CHANGED", "Immutable evidence bytes changed");
+    assertHeld();
+    if (sync) fs.fsyncSync(fd);
+    assertHeld();
+    return result;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 function attests(reference: RebaselineReference, binding: unknown): boolean {
   const value = verify(reference);
   try {
-    return same(JSON.parse(value.toString("utf8")), binding);
+    return same(json(value), binding);
   } catch {
     return false;
   }
@@ -464,7 +544,7 @@ function scopedState(files: Record<string, Buffer | null>, handoffId: string) {
   for (const [name, value] of Object.entries(files)) {
     if (!name.endsWith("queue-state.json") || !value) continue;
     const layer = name === "queue-state.json" ? "root" : path.dirname(name);
-    const snapshot = object(JSON.parse(value.toString("utf8")));
+    const snapshot = object(json(value));
     snapshots[layer] = snapshot;
     const decisions = dispositions(snapshot, handoffId),
       carried = exposures(snapshot, handoffId);
@@ -552,11 +632,9 @@ function readRuntimeRebaselineRoot(directory: string): {
     }
     return null;
   }
-  const pointer = object(JSON.parse(active.toString("utf8")));
+  const pointer = object(json(active));
   const reference = pointer["record"] as RebaselineReference;
-  const record = object(
-    JSON.parse(verify(reference).toString("utf8")),
-  ) as unknown as RebaselineRecord;
+  const record = object(json(verify(reference))) as unknown as RebaselineRecord;
   const stat = fs.statSync(store);
   if (
     record.version !== 1 ||
@@ -565,12 +643,16 @@ function readRuntimeRebaselineRoot(directory: string): {
     record.storeDevice !== stat.dev ||
     record.storeInode !== stat.ino ||
     pointer["version"] !== 1 ||
-    active.toString("utf8") !==
-      JSON.stringify({
-        version: 1,
-        newHead: record.receipt.newHead,
-        record: { path: reference.path, sha256: reference.sha256 },
-      }) ||
+    !active.equals(
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          newHead: record.receipt.newHead,
+          record: { path: reference.path, sha256: reference.sha256 },
+        }),
+        "utf8",
+      ),
+    ) ||
     reference.path !==
       path.join(
         store,
@@ -755,10 +837,7 @@ function completionFile(record: RebaselineRecord) {
 function completed(record: RebaselineRecord): boolean {
   const value = optional(completionFile(record));
   if (!value) return false;
-  validateCompletion(
-    JSON.parse(value.toString("utf8")) as RuntimeActivationCompletion,
-    record,
-  );
+  validateCompletion(json(value) as RuntimeActivationCompletion, record);
   return true;
 }
 /** Only a completed, native-consumed root authorizes ordinary bootstrap. */
@@ -849,8 +928,9 @@ async function approveReadOnlyRoot(
       head.store !== publication.store ||
       head.device !== publication.storeDevice ||
       head.inode !== publication.storeInode ||
-      head.files["runtime-rebaseline-head.json"]?.toString("utf8") !==
-        publication.activationBytes ||
+      !head.files["runtime-rebaseline-head.json"]?.equals(
+        Buffer.from(publication.activationBytes, "utf8"),
+      ) ||
       !same(head, currentView)
     )
       fail(
@@ -860,15 +940,31 @@ async function approveReadOnlyRoot(
   }
   assertCurrent();
   flushReferences(root.record.store, references);
-  await ports.verifyConsumed(
+  const verification = await ports.verifyConsumed(
     structuredClone(publication),
     structuredClone(completion),
   );
-  // No await or mutation after this final synchronous verification and re-fsync.
-  assertCurrent();
-  flushReferences(root.record.store, references);
-  assertCurrent();
-  return { ...root, currentFiles: currentView.files };
+  if (
+    !verification ||
+    typeof verification.finalize !== "function" ||
+    typeof verification.abort !== "function"
+  )
+    fail(
+      "NOT_AUTHORIZED",
+      "A private consumed verification finalizer is required",
+    );
+  try {
+    assertCurrent();
+    flushReferences(root.record.store, references);
+    assertCurrent();
+    const result = { ...root, currentFiles: currentView.files };
+    // Activation visibility is the LAST guarded step, never merely native auth.
+    verification.finalize();
+    return result;
+  } catch (error) {
+    verification.abort();
+    throw error;
+  }
 }
 function readCompletion(record: RebaselineRecord): RuntimeActivationCompletion {
   const value = optional(completionFile(record));
@@ -877,26 +973,14 @@ function readCompletion(record: RebaselineRecord): RuntimeActivationCompletion {
       "RUNTIME_ACTIVATION_INCOMPLETE",
       "Native consume completion is missing",
     );
-  const completion = JSON.parse(
-    value.toString("utf8"),
-  ) as RuntimeActivationCompletion;
+  const completion = json(value) as RuntimeActivationCompletion;
   validateCompletion(completion, record);
   return completion;
 }
 function flushReferences(store: string, references: RebaselineReference[]) {
   const directories = new Set<string>([store]);
   for (const reference of references) {
-    verify(reference);
-    const fd = fs.openSync(
-      reference.path,
-      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
-    );
-    try {
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    verify(reference);
+    verifiedReference(reference, true);
     let directory = path.dirname(reference.path);
     directories.add(directory);
     while (directory.startsWith(store + path.sep)) {
@@ -905,7 +989,59 @@ function flushReferences(store: string, references: RebaselineReference[]) {
     }
   }
   for (const directory of [...directories].sort((a, b) => b.length - a.length))
-    syncDirectory(directory);
+    syncExistingDirectory(directory);
+}
+function syncExistingDirectory(directory: string) {
+  const parent = path.dirname(directory),
+    parentIdentity = fs.lstatSync(parent);
+  const named = fs.lstatSync(directory);
+  if (
+    !named.isDirectory() ||
+    named.isSymbolicLink() ||
+    !parentIdentity.isDirectory() ||
+    parentIdentity.isSymbolicLink() ||
+    fs.realpathSync(directory) !== directory ||
+    fs.realpathSync(parent) !== parent
+  )
+    fail("RUNTIME_BARRIER_CHANGED", "Evidence directory changed");
+  const fd = fs.openSync(
+    directory,
+    fs.constants.O_RDONLY |
+      fs.constants.O_DIRECTORY |
+      fs.constants.O_NOFOLLOW |
+      fs.constants.O_NONBLOCK,
+  );
+  try {
+    function assertHeld() {
+      const held = fs.fstatSync(fd),
+        current = fs.lstatSync(directory),
+        currentParent = fs.lstatSync(parent);
+      if (
+        !held.isDirectory() ||
+        !current.isDirectory() ||
+        current.isSymbolicLink() ||
+        held.dev !== named.dev ||
+        held.ino !== named.ino ||
+        current.dev !== held.dev ||
+        current.ino !== held.ino ||
+        !currentParent.isDirectory() ||
+        currentParent.isSymbolicLink() ||
+        currentParent.dev !== parentIdentity.dev ||
+        currentParent.ino !== parentIdentity.ino ||
+        fs.realpathSync(`/proc/self/fd/${fd}`) !== directory ||
+        fs.realpathSync(parent) !== parent
+      )
+        fail(
+          "RUNTIME_BARRIER_CHANGED",
+          "Evidence directory descriptor changed",
+        );
+    }
+    assertHeld();
+    fs.fsyncSync(fd);
+    assertHeld();
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 function activationReferences(record: RebaselineRecord) {
   const publication = publicationFor(record);
@@ -946,7 +1082,7 @@ function pendingForRequest(store: string, request: RuntimeRebaselineRequest) {
   );
   if (!marker) return false;
   try {
-    const value = object(JSON.parse(marker.toString("utf8")));
+    const value = object(json(marker));
     if (
       value["requestId"] === request.requestId &&
       value["expectedHead"] === request.expectedHead
