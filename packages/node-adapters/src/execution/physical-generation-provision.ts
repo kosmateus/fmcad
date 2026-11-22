@@ -470,6 +470,7 @@ export function createNativePhysicalGenerationProvision(
         const grantDigest = (
           await invoke({ action: "verify", attempt, output })
         ).trim();
+        assertBrokerOwner?.();
         if (!validSha(grantDigest)) throw new Error("Invalid grant digest");
         const rawGrant = readMappedFile(
           path.posix.join(pinned.mappedPrivateDirectory, attempt, "grant.json"),
@@ -512,6 +513,7 @@ export function createNativePhysicalGenerationProvision(
           returnedDirectory.ino !== originalDirectory.ino
         )
           throw new Error("Private directory pathname changed");
+        assertBrokerOwner?.();
         return {
           grantFile: path.posix.join(pinned.linuxGrantDirectory, name),
           grantDigest,
