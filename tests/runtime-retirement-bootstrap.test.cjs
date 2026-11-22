@@ -51,6 +51,8 @@ function fixture(t) {
   fs.writeFileSync(frozenFile, bytes, { mode: 0o600 });
   let owned = true;
   let rootValid = true;
+  let ownerAsync = false;
+  let rootAsync = false;
   let assertions = 0;
   const root = {
     record: {
@@ -86,11 +88,13 @@ function fixture(t) {
       root,
       assertBrokerOwner() {
         assertions++;
+        if (ownerAsync) return new Promise(() => {});
         if (!owned)
           throw Object.assign(new Error("writer lost"), { code: "OWNER_LOST" });
       },
       assertVerifiedRoot(actual) {
         assert.equal(actual, directory);
+        if (rootAsync) return new Promise(() => {});
         if (!rootValid)
           throw Object.assign(new Error("root changed"), {
             code: "ROOT_CHANGED",
@@ -110,6 +114,12 @@ function fixture(t) {
     },
     invalidateRoot() {
       rootValid = false;
+    },
+    asyncOwner() {
+      ownerAsync = true;
+    },
+    asyncRoot() {
+      rootAsync = true;
     },
     get assertions() {
       return assertions;
@@ -274,4 +284,105 @@ test("the approved current byteview is captured privately rather than borrowed f
     code: "RUNTIME_RETIREMENT_CHANGED",
   });
   assert.deepEqual(fs.readFileSync(f.file), changed);
+});
+test("a capability for directory A cannot publish in directory B with identical bytes", (t) => {
+  const f = fixture(t);
+  const authority = f.factory().forDirectory(f.directory);
+  const other = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-unrelated-")),
+  );
+  t.after(() => fs.rmSync(other, { recursive: true, force: true }));
+  fs.chmodSync(other, 0o750);
+  const file = path.join(other, "queue-state.json");
+  fs.writeFileSync(file, f.bytes, { mode: 0o600 });
+  assert.throws(
+    () =>
+      new QueueState(other, {
+        runtimeRetirement: authority,
+        now: () => 200,
+      }),
+    { code: "RUNTIME_RETIREMENT_CHANGED" },
+  );
+  assert.equal(fs.statSync(other).mode & 0o777, 0o750);
+  assert.deepEqual(fs.readFileSync(file), f.bytes);
+  assert.deepEqual(fs.readFileSync(f.file), f.bytes);
+});
+test("missing approved snapshot cannot become a new empty queue", (t) => {
+  const f = fixture(t);
+  const authority = f.factory().forDirectory(f.directory);
+  fs.unlinkSync(f.file);
+  assert.throws(
+    () =>
+      new QueueState(f.directory, {
+        runtimeRetirement: authority,
+        now: () => 200,
+      }),
+  );
+  assert.equal(fs.existsSync(f.file), false);
+});
+test("pending async ownership or root assertions cannot authorize publication", (t) => {
+  for (const kind of ["owner", "root"]) {
+    const f = fixture(t);
+    const authority = f.factory().forDirectory(f.directory);
+    if (kind === "owner") f.asyncOwner();
+    else f.asyncRoot();
+    assert.throws(
+      () =>
+        new QueueState(f.directory, {
+          runtimeRetirement: authority,
+          now: () => 200,
+        }),
+      { code: "RUNTIME_RETIREMENT_CHANGED" },
+    );
+    assert.deepEqual(fs.readFileSync(f.file), f.bytes);
+  }
+});
+test("domain validation refusal precedes every byte of projection publication", (t) => {
+  const f = fixture(t);
+  f.frozen.documentUnlockIntents = {
+    bad: {
+      actorClientId: "owner",
+      requestId: "request",
+      requestHash: "invalid-hash",
+    },
+  };
+  const bytes = Buffer.from(JSON.stringify(f.frozen));
+  const reference = f.root.record.frozen["queue-state.json"];
+  reference.sha256 = sha(bytes);
+  f.root.currentFiles["queue-state.json"] = bytes;
+  fs.writeFileSync(f.file, bytes);
+  fs.writeFileSync(reference.path, bytes);
+  const archive = path.join(
+    f.directory,
+    "runtime-rebaselines",
+    "owned-test-root",
+  );
+  const recordFile = path.join(archive, "record.json");
+  fs.writeFileSync(recordFile, JSON.stringify(f.root.record));
+  fs.writeFileSync(
+    path.join(f.directory, "runtime-rebaseline-head.json"),
+    JSON.stringify({
+      version: 1,
+      newHead: f.root.record.receipt.newHead,
+      record: { path: recordFile, sha256: sha(JSON.stringify(f.root.record)) },
+    }),
+  );
+  const authority = f.factory().forDirectory(f.directory);
+  assert.throws(
+    () =>
+      new QueueState(f.directory, {
+        runtimeRetirement: authority,
+        now: () => 200,
+      }),
+    { code: "CORRUPT_STATE" },
+  );
+  assert.deepEqual(fs.readFileSync(f.file), bytes);
+  assert.equal(
+    JSON.parse(fs.readFileSync(f.file, "utf8")).active,
+    f.submitted.id,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "queue-state.pending.json")),
+    false,
+  );
 });

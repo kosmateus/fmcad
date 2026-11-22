@@ -59,6 +59,11 @@ export function createApprovedRuntimeRetirement(options: {
     JSON.stringify(root.record),
   ) as ProjectionRoot["record"];
   const recordDigest = sha(JSON.stringify(record));
+  function assertOwner() {
+    const result: unknown = options.assertBrokerOwner();
+    if (result !== undefined)
+      refused("Broker ownership assertion must finish synchronously");
+  }
   if (
     typeof record.request.requestId !== "string" ||
     !record.request.requestId ||
@@ -75,8 +80,10 @@ export function createApprovedRuntimeRetirement(options: {
     "record.json",
   );
   function assertRoot() {
-    options.assertBrokerOwner();
-    options.assertVerifiedRoot(directory);
+    assertOwner();
+    const result: unknown = options.assertVerifiedRoot(directory);
+    if (result !== undefined)
+      refused("Runtime root assertion must finish synchronously");
     if (fs.realpathSync(directory) !== directory)
       refused("Runtime retirement store is not canonical");
     const stat = fs.statSync(directory);
@@ -176,6 +183,13 @@ export function createApprovedRuntimeRetirement(options: {
       assertRoot();
       if (fs.realpathSync(queueDirectory) !== queueDirectory)
         refused("Queue layer is not canonical");
+      const queueStat = fs.statSync(queueDirectory);
+      if (!queueStat.isDirectory()) refused("Queue layer is not a directory");
+      const namespace = {
+        directory: queueDirectory,
+        device: queueStat.dev,
+        inode: queueStat.ino,
+      };
       const relative = path.relative(directory, queueDirectory);
       if (
         relative === ".." ||
@@ -230,9 +244,9 @@ export function createApprovedRuntimeRetirement(options: {
           refused(
             "Unclassified queue evolution cannot inherit an old runtime retirement",
           );
-        options.assertBrokerOwner();
-        options.assertVerifiedRoot(directory);
+        assertRoot();
         return {
+          namespace,
           marker,
           currentSnapshotDigest: sha(bytes),
           frozen,
