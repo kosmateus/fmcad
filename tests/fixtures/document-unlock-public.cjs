@@ -271,7 +271,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function nativeRequest(script) {
+function nativeProgram(script) {
   const { decodeNativeProgram } = require("./native-source-envelope.cjs");
   let source = script;
   for (let depth = 0; depth < 8; depth++) {
@@ -295,10 +295,10 @@ function nativeRequest(script) {
         throw new Error(
           decoded.stderr || "Could not decode the compiled CAD request",
         );
-      return JSON.parse(decoded.stdout);
+      return { request: JSON.parse(decoded.stdout), source };
     }
     const wrapped = source.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
-    if (!wrapped) return null;
+    if (!wrapped) return { request: null, source };
     source = JSON.parse(wrapped[1]);
   }
   throw new Error("The compiled CAD request is nested too deeply");
@@ -390,15 +390,40 @@ function startOfflineBroker(
   let broker;
   let closed = false;
   function identityFor(request) {
-    const identity =
-      [...documentIdentities.values()].find(
-        (item) =>
-          (request.docId && item.creationId === request.docId) ||
-          (request.docFileId && item.fileId === request.docFileId) ||
-          (request.doc && item.name === request.doc),
-      ) ?? documentIdentities.values().next().value;
-    assert(identity, "the offline fixture must have a known exact document");
-    return identity;
+    const selectors = [
+      ["docId", "creationId"],
+      ["docFileId", "fileId"],
+      ["doc", "name"],
+    ].filter(
+      ([field]) => request[field] !== undefined && request[field] !== null,
+    );
+    assert(
+      selectors.length > 0,
+      "product operations require an explicit document selector",
+    );
+
+    let resolved;
+    for (const [field, identityField] of selectors) {
+      const value = request[field];
+      assert.equal(
+        typeof value,
+        "string",
+        `document selector ${field} must be a string`,
+      );
+      assert.ok(value, `document selector ${field} must not be empty`);
+      const match = [...documentIdentities.values()].find(
+        (item) => item[identityField] === value,
+      );
+      assert(match, `unknown document selector ${field}: ${value}`);
+      if (resolved)
+        assert.equal(
+          match.creationId,
+          resolved.creationId,
+          "all provided document selectors must identify the same document",
+        );
+      else resolved = match;
+    }
+    return resolved;
   }
   function documentCheckpoint(identity) {
     const history = documents.get(identity.creationId) ?? new Map();
@@ -454,11 +479,37 @@ function startOfflineBroker(
       payload.params?.arguments?.code;
     let stdout = "{}";
     if (typeof script === "string") {
-      const request = nativeRequest(script);
-      const identity = request
+      const program = nativeProgram(script);
+      const { request } = program;
+      const identityProbe = program.source.includes("FMCAD_QUEUE_INSTANCE");
+      const hasDocumentSelector =
+        request &&
+        ["docId", "docFileId", "doc"].some(
+          (field) => request[field] !== undefined && request[field] !== null,
+        );
+      const requestEvent = request
+        ? {
+            operation: request.operation,
+            docId: request.docId,
+            docFileId: request.docFileId,
+            request,
+            dispatch: calls.filter(
+              (call) => call.method === "tools/call" && call.params?.arguments,
+            ).length,
+          }
+        : undefined;
+      if (requestEvent) operations.push(requestEvent);
+      const identity = hasDocumentSelector
         ? identityFor(request)
-        : documentIdentities.values().next().value;
-      assert(identity, "the offline fixture must have a known exact document");
+        : identityProbe && request === null
+          ? documentIdentities.get(documentIds.documentA)
+          : undefined;
+      assert(
+        identity,
+        identityProbe
+          ? "only the explicit active-document identity probe may omit selectors"
+          : "every fake product operation requires an exact document selector",
+      );
       const checkpoint = documentCheckpoint(identity);
       const observation = {
         ...instance,
@@ -484,17 +535,9 @@ function startOfflineBroker(
           const docKey = identity.creationId;
           const history = documents.get(docKey) ?? new Map();
           documents.set(docKey, history);
-          const event = {
-            operation: request.operation,
-            docId: identity.creationId,
-            docFileId: request.docFileId,
-            creationId: identity.creationId,
-            request,
-            dispatch: calls.filter(
-              (call) => call.method === "tools/call" && call.params?.arguments,
-            ).length,
-          };
-          operations.push(event);
+          const event = requestEvent;
+          event.docId = identity.creationId;
+          event.creationId = identity.creationId;
 
           const hold = nextHold;
           if (hold && request.operation === hold.operation) {
