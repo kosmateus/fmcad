@@ -70,31 +70,61 @@ function fixture() {
   let afterConsume = () => {},
     casCount = 0,
     consumeCount = 0;
+  const invocationModes: string[] = [];
+  let nativeMissing = false;
+  let beginAttempts = 0;
   const authorityFor = (operatorId = "local-operator") =>
     createRuntimeRebaselineAuthority({
       store: dir,
       operatorId,
       pins,
-      async withExclusiveBarrier(request, work) {
+      async withExclusiveBarrier(request, mode, work) {
+        invocationModes.push(mode);
+        const nativeFile = path.join(dir, "native-original-consume.json");
+        if (
+          mode === "verify-completed" &&
+          (nativeMissing || !fs.existsSync(nativeFile))
+        )
+          throw Object.assign(Error("native consumed source is absent"), {
+            code: "NATIVE_RECEIPT_UNPROVEN",
+          });
         const beginFile = path.join(dir, "native-begin.json");
+        if (
+          mode === "publish-or-resume" &&
+          (nativeMissing || !fs.existsSync(beginFile))
+        )
+          beginAttempts++;
         if (!fs.existsSync(beginFile))
           durable(beginFile, { request, initiatorOperatorId: operatorId });
         const begin = JSON.parse(fs.readFileSync(beginFile, "utf8"));
         assert.deepEqual(begin.request, request);
         return work({
+          get fenceState() {
+            return fs.existsSync(nativeFile) && !nativeMissing
+              ? "consumed"
+              : "pending";
+          },
           initiatorOperatorId: begin.initiatorOperatorId,
           assertWriterAndProvisionLock() {
             assert.ok(lock, "writer/provision lock lost");
           },
           async verifyCurrentBarrier() {
+            assert.equal(
+              fs.existsSync(nativeFile) && !nativeMissing,
+              false,
+              "CONSUMED cannot claim an active no-grant barrier",
+            );
             reads++;
             return { binding: current, evidence: [proof] };
           },
           async publishActivation(publication) {
             beforePublish();
             assert.ok(lock, "publication authority lost its lock");
-            assert.equal(current.grantCount, 0);
-            assert.equal(current.admissionCount, 0);
+            const consumed = fs.existsSync(nativeFile) && !nativeMissing;
+            if (!consumed) {
+              assert.equal(current.grantCount, 0);
+              assert.equal(current.admissionCount, 0);
+            }
             assert.equal(
               digest(fs.readFileSync(publication.record.path)),
               publication.record.sha256,
@@ -114,6 +144,8 @@ function fixture() {
               fs.existsSync(publication.activationFile) &&
               fs.readFileSync(publication.activationFile, "utf8") ===
                 publication.activationBytes;
+            if (consumed)
+              assert.ok(exactNew, "consumed phase permits exact NEW only");
             if (!exactNew) {
               assert.equal(
                 literalRuntimeHead(dir).digest,
@@ -166,7 +198,7 @@ function fixture() {
             };
             const file = path.join(dir, "native-consumed.json");
             const original = path.join(dir, "native-original-consume.json");
-            if (!fs.existsSync(original))
+            if (!fs.existsSync(original)) {
               durable(
                 original,
                 {
@@ -177,9 +209,10 @@ function fixture() {
                 },
                 true,
               );
+              consumeCount++;
+            }
             if (!fs.existsSync(file)) {
               durable(file, binding, true);
-              consumeCount++;
             }
             assert.deepEqual(
               JSON.parse(fs.readFileSync(file, "utf8")),
@@ -210,6 +243,11 @@ function fixture() {
             };
           },
           async verifyNativeConsumeReceipt(publication, completion) {
+            assert.equal(
+              nativeMissing,
+              false,
+              "native durable consumed row is absent",
+            );
             assert.ok(lock, "native receipt query lost writer lock");
             const original = path.join(dir, "native-original-consume.json");
             assert.deepEqual(completion.nativeReceipt, {
@@ -266,6 +304,11 @@ function fixture() {
       afterConsume = hook;
     },
     counts: () => ({ cas: casCount, consume: consumeCount }),
+    invocationModes,
+    removeNativeSource: () => {
+      nativeMissing = true;
+    },
+    beginAttempts: () => beginAttempts,
   };
 }
 
@@ -633,7 +676,9 @@ test("symlink destination is refused before writing foreign evidence", async () 
     code: "STORAGE_UNAVAILABLE",
   });
   assert.deepEqual(fs.readdirSync(foreign), []);
-  assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
+    code: "STORAGE_UNAVAILABLE",
+  });
 });
 
 test("symlink artifact parent is refused before creating a foreign request directory", async () => {
@@ -727,7 +772,7 @@ test("independent runner processes publish one activation under a real exclusive
     const {dir,pins,current,proof,request} = JSON.parse(process.argv[1]);
     const authority = api.createRuntimeRebaselineAuthority({
       store: dir, operatorId: "local-operator", pins,
-      async withExclusiveBarrier(request,work) {
+      async withExclusiveBarrier(request,mode,work) {
         const file = path.join(dir, "owned-writer.lock");
         let fd;
         for(let i=0;i<500;i++) {
@@ -738,6 +783,7 @@ test("independent runner processes publish one activation under a real exclusive
         const inode=fs.fstatSync(fd).ino;
         function assertHeld() {if(fs.statSync(file).ino!==inode) throw Error("writer replaced")}
         try {return await work({
+          get fenceState(){return fs.existsSync(path.join(dir,"original-consumed.json"))?"consumed":"pending"},
           initiatorOperatorId: "local-operator",
           assertWriterAndProvisionLock: assertHeld,
           async verifyCurrentBarrier() {assertHeld();await delay(40);return {binding:current,evidence:[proof]}},
@@ -1099,4 +1145,74 @@ test("review: an original-receipt lookalike is rejected by the private native so
   };
   fs.writeFileSync(file, JSON.stringify(completion));
   await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority));
+});
+
+test("phase review: native CONSUMED without local completion resumes by receipt query, not a no-grant barrier", async () => {
+  const f = fixture(),
+    request = f.request();
+  f.afterConsume(() => {
+    throw Error("native consumed ACK lost");
+  });
+  await assert.rejects(
+    rebaselineRuntime(f.dir, request, f.authority),
+    /native consumed ACK lost/,
+  );
+  const reads = f.reads();
+  Object.assign(f.current, { grantCount: 1, admissionCount: 7 });
+  f.afterConsume(() => {});
+  await rebaselineRuntime(f.dir, request, f.authorityFor("phase-resumer"));
+  assert.equal(f.reads(), reads);
+  assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
+  assert.ok(await runtimeRebaselineRoot(f.dir, f.authority));
+});
+
+test("phase review: a consumed native record cannot recreate a missing activation pointer", async () => {
+  const f = fixture(),
+    request = f.request();
+  f.afterConsume(() => {
+    throw Error("ACK lost");
+  });
+  await assert.rejects(
+    rebaselineRuntime(f.dir, request, f.authority),
+    /ACK lost/,
+  );
+  fs.unlinkSync(path.join(f.dir, "runtime-rebaseline-head.json"));
+  f.afterConsume(() => {});
+  await assert.rejects(
+    rebaselineRuntime(f.dir, request, f.authorityFor("new-operator")),
+  );
+  assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
+  assert.equal(
+    fs.existsSync(path.join(f.dir, "runtime-rebaseline-head.json")),
+    false,
+  );
+});
+
+test("phase review: approved-root verification refuses absent native source without a new BEGIN", async () => {
+  const f = fixture(),
+    request = f.request();
+  await rebaselineRuntime(f.dir, request, f.authority);
+  const begins = f.beginAttempts();
+  f.removeNativeSource();
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
+    code: "NATIVE_RECEIPT_UNPROVEN",
+  });
+  assert.equal(f.invocationModes.at(-1), "verify-completed");
+  await assert.rejects(rebaselineRuntime(f.dir, request, f.authority), {
+    code: "NATIVE_RECEIPT_UNPROVEN",
+  });
+  assert.equal(f.invocationModes.at(-1), "verify-completed");
+  assert.equal(f.beginAttempts(), begins);
+  assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
+});
+
+test("phase review: a missing approved pointer never falls back to an ordinary historical root", async () => {
+  const f = fixture(),
+    request = f.request();
+  await rebaselineRuntime(f.dir, request, f.authority);
+  fs.unlinkSync(path.join(f.dir, "runtime-rebaseline-head.json"));
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
+    code: "RUNTIME_BARRIER_CHANGED",
+  });
+  assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
 });

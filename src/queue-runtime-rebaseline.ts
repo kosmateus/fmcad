@@ -69,6 +69,8 @@ export interface RuntimeActivationCompletion {
  * Evidence includes a byte-bound attestation equal to binding plus its original
  * source references. No host CAS, provisioning or SDK port exists here. */
 export interface RuntimeBarrierLease {
+  /** Authenticated native QUERY phase; CONSUMED is not an active no-grant fence. */
+  readonly fenceState: "pending" | "consumed";
   /** Frozen by the native begin record, not the current resumer's identity. */
   readonly initiatorOperatorId: string;
   assertWriterAndProvisionLock(): void;
@@ -98,6 +100,7 @@ export interface RuntimeRebaselineAuthorityPorts {
   pins: RuntimePins;
   withExclusiveBarrier<T>(
     request: RuntimeRebaselineRequest,
+    mode: "publish-or-resume" | "verify-completed",
     work: (lease: RuntimeBarrierLease) => Promise<T>,
   ): Promise<T>;
 }
@@ -391,7 +394,33 @@ function readRuntimeRebaselineRoot(directory: string): {
 } | null {
   const store = fs.realpathSync(directory),
     active = optional(activatedFile(store));
-  if (!active) return null;
+  if (!active) {
+    const archive = path.join(store, "runtime-rebaselines");
+    if (fs.existsSync(archive)) {
+      if (fs.realpathSync(archive) !== archive)
+        fail(
+          "STORAGE_UNAVAILABLE",
+          "Rebaseline archive escaped canonical store",
+        );
+      for (const entry of fs.readdirSync(archive, { withFileTypes: true })) {
+        if (entry.isSymbolicLink())
+          fail(
+            "STORAGE_UNAVAILABLE",
+            "Rebaseline archive entry is not a canonical directory",
+          );
+        if (!entry.isDirectory() || !/^[A-Za-z0-9_-]{1,128}$/.test(entry.name))
+          continue;
+        if (
+          optional(path.join(archive, entry.name, "completion.json")) !== null
+        )
+          fail(
+            "RUNTIME_BARRIER_CHANGED",
+            "Approved runtime activation pointer is missing",
+          );
+      }
+    }
+    return null;
+  }
   const pointer = object(JSON.parse(active.toString("utf8")));
   const reference = pointer["record"] as RebaselineReference;
   const record = object(
@@ -623,16 +652,25 @@ export async function runtimeRebaselineRoot(
       "NOT_AUTHORIZED",
       "Root approval requires its trusted native receipt verifier",
     );
-  return ports.withExclusiveBarrier(root.record.request, async (lease) => {
-    const current = readRuntimeRebaselineRoot(directory);
-    if (!current || !same(current.record.receipt, root.record.receipt))
-      fail(
-        "RUNTIME_BARRIER_CHANGED",
-        "Root changed while acquiring approval lock",
-      );
-    await approveCompletion(current.record, lease);
-    return current;
-  });
+  return ports.withExclusiveBarrier(
+    root.record.request,
+    "verify-completed",
+    async (lease) => {
+      if (lease.fenceState !== "consumed")
+        fail(
+          "RUNTIME_ACTIVATION_INCOMPLETE",
+          "Completed-root verification requires the original native consumed phase",
+        );
+      const current = readRuntimeRebaselineRoot(directory);
+      if (!current || !same(current.record.receipt, root.record.receipt))
+        fail(
+          "RUNTIME_BARRIER_CHANGED",
+          "Root changed while acquiring approval lock",
+        );
+      await approveCompletion(current.record, lease);
+      return current;
+    },
+  );
 }
 function readCompletion(record: RebaselineRecord): RuntimeActivationCompletion {
   const value = optional(completionFile(record));
@@ -737,11 +775,25 @@ async function finishActivation(
       "RUNTIME_BARRIER_CHANGED",
       "Native begin initiator changed during resume",
     );
-  const current = await barrier(lease, pins);
-  if (!same(current, { binding: record.binding, evidence: record.evidence }))
+  const pending = lease.fenceState === "pending";
+  if (pending) {
+    const current = await barrier(lease, pins);
+    if (!same(current, { binding: record.binding, evidence: record.evidence }))
+      fail(
+        "RUNTIME_BARRIER_CHANGED",
+        "Current barrier differs from the frozen activation authority",
+      );
+  } else if (lease.fenceState === "consumed") {
+    const existing = readRuntimeRebaselineRoot(record.store);
+    if (!existing || !same(existing.record.receipt, record.receipt))
+      fail(
+        "RUNTIME_BARRIER_CHANGED",
+        "Consumed native fence requires the exact already-published activation",
+      );
+  } else
     fail(
-      "RUNTIME_BARRIER_CHANGED",
-      "Current barrier differs from the frozen activation authority",
+      "RUNTIME_BARRIER_UNPROVEN",
+      "Authenticated native fence phase is required",
     );
   const publication = publicationFor(record);
   await lease.publishActivation(publication);
@@ -754,14 +806,19 @@ async function finishActivation(
   fault?.("after_activation");
   lease.assertWriterAndProvisionLock();
   flushReferences(record.store, activationReferences(record));
-  const beforeConsume = await barrier(lease, pins);
-  if (
-    !same(beforeConsume, { binding: record.binding, evidence: record.evidence })
-  )
-    fail(
-      "RUNTIME_BARRIER_CHANGED",
-      "Host barrier changed before native consume",
-    );
+  if (pending) {
+    const beforeConsume = await barrier(lease, pins);
+    if (
+      !same(beforeConsume, {
+        binding: record.binding,
+        evidence: record.evidence,
+      })
+    )
+      fail(
+        "RUNTIME_BARRIER_CHANGED",
+        "Host barrier changed before native consume",
+      );
+  }
   const completion = await lease.consumeActivation(publication);
   validateCompletion(completion, record);
   if (!completed(record))
@@ -840,13 +897,23 @@ export async function rebaselineRuntime(
       fail("REQUEST_CONFLICT", "Rebaseline request ID has different inputs");
   }
   pendingForRequest(store, request);
-  return ports.withExclusiveBarrier(request, async (lease) => {
+  const mode =
+    prior?.record.request.requestId === request.requestId &&
+    completed(prior.record)
+      ? "verify-completed"
+      : "publish-or-resume";
+  return ports.withExclusiveBarrier(request, mode, async (lease) => {
     // Another same-ID process may have committed while this caller waited.
     const concurrent = readRuntimeRebaselineRoot(store);
     if (concurrent?.record.request.requestId === request.requestId) {
       if (!same(concurrent.record.request, request))
         fail("REQUEST_CONFLICT", "Rebaseline request ID has different inputs");
       if (completed(concurrent.record)) {
+        if (lease.fenceState !== "consumed")
+          fail(
+            "RUNTIME_ACTIVATION_INCOMPLETE",
+            "Completed receipt requires an authenticated consumed native fence",
+          );
         await approveCompletion(concurrent.record, lease);
         return concurrent.record.receipt;
       }
@@ -858,6 +925,11 @@ export async function rebaselineRuntime(
       );
     }
     pendingForRequest(store, request);
+    if (lease.fenceState !== "pending")
+      fail(
+        "RUNTIME_BARRIER_UNPROVEN",
+        "Unpublished activation requires an authenticated pending fence",
+      );
     const old = readLiteralRuntimeHead(store);
     if (
       Object.entries(old.files).some(
