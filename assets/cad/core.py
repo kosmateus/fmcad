@@ -16,6 +16,7 @@ import adsk.core
 import adsk.fusion
 from typing import TYPE_CHECKING, TYPE_CHECKING as _CAD_TYPE_CHECKING, Protocol as _CadProtocol
 from typing import TypeAlias as _CadTypeAlias, TypedDict as _CadTypedDict, cast as _cad_cast, overload as _cad_overload
+from typing import NoReturn as _CadNoReturn
 
 
 if TYPE_CHECKING:
@@ -777,14 +778,19 @@ def _cad_param_inspect(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
     return {'parameters': [_cad_parameter_info(ctx, p) for p in parameters]}
 
 
-def _cad_param_checkpoint(ctx: 'CadContext') -> 'JsonRecord':
+def _cad_param_checkpoint(ctx: 'CadContext') -> 'JsonValue':
     captured = _qd_capture(ctx.app, {'creationId': ctx.doc.creationId})
-    if not isinstance(captured, dict) or captured.get('status') != 'complete':
+    if captured.get('status') != 'complete':
         raise RuntimeError('DOCUMENT_STATE_CHANGED: Current document and dependency snapshot is unavailable')
     state = captured.get('state')
-    identity = state.get('identity') if isinstance(state, dict) else None
+    if not isinstance(state, dict):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
+    state = _cad_cast('JsonObject', state)
+    identity = state.get('identity')
+    if not isinstance(identity, dict):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
     fingerprint = captured.get('fingerprint')
-    if not isinstance(identity, dict) or 'dataFileError' in identity:
+    if 'dataFileError' in identity:
         raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
     identity_fields = {'creationId', 'name', 'fileId', 'version', 'isSaved', 'isModified'}
     if set(identity) != identity_fields or identity.get('creationId') != ctx.doc.creationId or \
@@ -825,29 +831,39 @@ def _cad_checkpoint_canonical_json(value: object) -> str:
                 number = 0.0
             return ['number', number]
         if isinstance(item, list):
-            return ['array', [tagged(element) for element in item]]
+            values = _cad_cast('list[object]', item)
+            return ['array', [tagged(element) for element in values]]
         if isinstance(item, dict):
-            if any(not isinstance(key, str) for key in item):
+            entries = _cad_cast('dict[object, object]', item)
+            if any(not isinstance(key, str) for key in entries):
                 raise TypeError('JSON object keys must be strings')
-            return ['object', [[key, tagged(item[key])] for key in sorted(item)]]
+            string_entries = _cad_cast('dict[str, object]', entries)
+            return ['object', [[key, tagged(string_entries[key])] for key in sorted(string_entries)]]
         raise TypeError('Unsupported JSON value')
 
     return json.dumps(tagged(value), separators=(',', ':'), allow_nan=False)
 
 
 def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
-    def changed(reason: str) -> None:
+    def changed(reason: str) -> '_CadNoReturn':
         raise RuntimeError('DOCUMENT_STATE_CHANGED: ' + reason)
 
-    if not isinstance(expected, dict) or set(expected) != {'schema', 'document', 'parameters'} or \
+    if not isinstance(expected, dict):
+        changed('Accepted parameter checkpoint is malformed')
+    expected = _cad_cast('JsonObject', expected)
+    if set(expected) != {'schema', 'document', 'parameters'} or \
             expected.get('schema') != 'fmcad.param-checkpoint-v1':
         changed('Accepted parameter checkpoint is malformed')
     document = expected.get('document')
-    if not isinstance(document, dict) or set(document) != {'identity', 'fingerprint'}:
+    if not isinstance(document, dict):
+        changed('Accepted document checkpoint is malformed')
+    if set(document) != {'identity', 'fingerprint'}:
         changed('Accepted document checkpoint is malformed')
     identity = document.get('identity')
     fields = {'creationId', 'name', 'fileId', 'version', 'isSaved', 'isModified'}
-    if not isinstance(identity, dict) or set(identity) != fields or \
+    if not isinstance(identity, dict):
+        changed('Accepted document identity is malformed')
+    if set(identity) != fields or \
             not isinstance(identity.get('creationId'), str) or not identity['creationId'] or \
             not isinstance(identity.get('name'), str) or not identity['name'] or \
             type(identity.get('isSaved')) is not bool or type(identity.get('isModified')) is not bool:
@@ -866,25 +882,36 @@ def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
                         'valueUnits', 'comment', 'metadata'}
     if not isinstance(parameters, list):
         changed('Accepted full parameter inspection is malformed')
+    parameters = _cad_cast('list[object]', parameters)
     names: set[str] = set()
     try:
-        for parameter in parameters:
-            if not isinstance(parameter, dict) or set(parameter) != parameter_fields or \
-                    not isinstance(parameter.get('name'), str) or not parameter['name'] or \
-                    parameter['name'] in names or not isinstance(parameter.get('expression'), str) or \
-                    not isinstance(parameter.get('unit'), str) or \
-                    parameter.get('valueType') not in ('numeric', 'text') or \
-                    (parameter.get('valueUnits') is not None and not isinstance(parameter.get('valueUnits'), str)) or \
-                    not isinstance(parameter.get('comment'), str) or not isinstance(parameter.get('metadata'), dict):
+        for parameter_value in parameters:
+            if not isinstance(parameter_value, dict):
+                changed('Accepted full parameter inspection is malformed')
+            parameter = _cad_cast('JsonObject', parameter_value)
+            name = parameter.get('name')
+            expression = parameter.get('expression')
+            unit = parameter.get('unit')
+            value_type = parameter.get('valueType')
+            value_units = parameter.get('valueUnits')
+            comment = parameter.get('comment')
+            metadata = parameter.get('metadata')
+            if set(parameter) != parameter_fields or \
+                    not isinstance(name, str) or not name or \
+                    name in names or not isinstance(expression, str) or \
+                    not isinstance(unit, str) or \
+                    value_type not in ('numeric', 'text') or \
+                    (value_units is not None and not isinstance(value_units, str)) or \
+                    not isinstance(comment, str) or not isinstance(metadata, dict):
                 changed('Accepted full parameter inspection is malformed')
             value = parameter['value']
-            if parameter['valueType'] == 'numeric':
-                if type(value) not in (int, float) or not math.isfinite(value) or \
-                        parameter['valueUnits'] != 'Fusion internal units (cm, rad, kg, s)':
+            if value_type == 'numeric':
+                if type(value) not in (int, float) or not math.isfinite(_cad_cast('int | float', value)) or \
+                        value_units != 'Fusion internal units (cm, rad, kg, s)':
                     changed('Accepted numeric parameter inspection is malformed')
-            elif not isinstance(value, str) or parameter['valueUnits'] is not None:
+            elif not isinstance(value, str) or value_units is not None:
                 changed('Accepted text parameter inspection is malformed')
-            names.add(parameter['name'])
+            names.add(name)
         expected_json = _cad_checkpoint_canonical_json(expected)
     except (OverflowError, TypeError, ValueError):
         changed('Accepted full parameter inspection is not valid JSON')

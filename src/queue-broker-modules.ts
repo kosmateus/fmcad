@@ -503,6 +503,10 @@ interface AtomicWire extends ScopedPrepared {
   dispatchTimeoutMs: number;
 }
 export interface BrokerModules {
+  "./document-unlock-admission": typeof import("./document-unlock-admission");
+  "./document-unlock-diagnostics": typeof import("./document-unlock-diagnostics");
+  "./document-checkpoint-readback": typeof import("./document-checkpoint-readback");
+  "./document-unlock-controller": typeof import("./document-unlock-controller");
   "./dist/node-adapters/execution/physical-generation-profile": typeof import("../packages/node-adapters/src/execution/physical-generation-profile");
   "./queue-isolated-epoch": {
     openIsolatedEpoch(dir: string, options?: Record<string, unknown>): P.State;

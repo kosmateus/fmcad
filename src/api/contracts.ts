@@ -2,6 +2,7 @@ import type {
   Backend,
   CatalogInvocation,
   CadWorkerInvocation,
+  DocumentUnlockRequest,
   FmcadConfiguration,
   InvocationContextInput,
   JsonValue,
@@ -21,6 +22,7 @@ export type {
   Backend,
   CatalogInvocation,
   CadWorkerInvocation,
+  DocumentUnlockRequest,
   FmcadConfiguration,
   InvocationContextInput,
   JsonValue,
@@ -433,6 +435,8 @@ export interface FmcadServices {
     options: ExecuteOptions,
   ): Promise<ExecutionReceipt>;
   control(request: ControlRequest): Promise<ExecutionReceipt>;
+  /** Broker-only document recovery control; never submits a CAD operation. */
+  documentUnlock(request: DocumentUnlockRequest): Promise<unknown>;
   start(): Promise<void>;
   dispose(): Promise<void>;
 }

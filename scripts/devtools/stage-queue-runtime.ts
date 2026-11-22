@@ -4,6 +4,9 @@ import { createHash } from "node:crypto";
 
 export const queueRuntimeModules = [
   "document-unlock-admission",
+  "document-checkpoint-readback",
+  "document-unlock-diagnostics",
+  "document-unlock-controller",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",
   "queue-audit-facts-capture",

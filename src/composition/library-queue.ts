@@ -4,6 +4,7 @@ import {
 } from "../../packages/core/src";
 import type {
   CadWorkerInvocation,
+  DocumentUnlockRequest,
   ExecutionReceipt,
   FmcadConfiguration,
   PythonCheckReport,
@@ -31,6 +32,7 @@ interface ResultProjection {
 interface QueueClientPort {
   register(options: { autoStart: false }): Promise<unknown>;
   call(action: string, value?: unknown): Promise<unknown>;
+  documentUnlock(request: DocumentUnlockRequest): Promise<unknown>;
   readResult?(action: string, value: Record<string, unknown>): Promise<unknown>;
   submitAdmitted?(request: Record<string, unknown>): Promise<unknown>;
   persistRequestContext?(
@@ -492,6 +494,10 @@ export function createQueueSession(
     async control(action: "cancel" | "reconcile", jobId: string) {
       await fence();
       return receipt((await client.call(action, { jobId })) as JobProjection);
+    },
+    async documentUnlock(request: DocumentUnlockRequest) {
+      await fence();
+      return client.documentUnlock(request);
     },
     dispose() {
       ready = false;

@@ -8,7 +8,7 @@ import {
   type DocumentUnlockResolvedBlocker,
   type DocumentUnlockServerResolution,
   type DocumentUnlockState,
-} from "../src/document-unlock-diagnostics.ts";
+} from "../src/document-unlock-diagnostics.js";
 
 const target = { docId: "creation-1", docFileId: "file-1" } as const;
 
