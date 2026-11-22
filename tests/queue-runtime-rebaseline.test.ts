@@ -37,7 +37,6 @@ function fixture() {
       done: { id: "done", state: "succeeded" },
     },
     quarantined: { unknown: { target: null } },
-    lease: { clientId: "vanished" },
   };
   fs.writeFileSync(path.join(dir, "queue-state.json"), JSON.stringify(state));
   fs.writeFileSync(
@@ -166,6 +165,18 @@ function fixture() {
               initiatorOperatorId: begin.initiatorOperatorId,
             };
             const file = path.join(dir, "native-consumed.json");
+            const original = path.join(dir, "native-original-consume.json");
+            if (!fs.existsSync(original))
+              durable(
+                original,
+                {
+                  kind: "owned-native-consumed",
+                  publicationJson: JSON.stringify(publication),
+                  source: pins.source,
+                  generation: pins.generation,
+                },
+                true,
+              );
             if (!fs.existsSync(file)) {
               durable(file, binding, true);
               consumeCount++;
@@ -184,9 +195,47 @@ function fixture() {
               syncDirectory(dir);
             }
             return {
+              nativeReceipt: {
+                kind: "native-runtime-rebaseline-consume-v1",
+                reference: {
+                  path: original,
+                  sha256: digest(fs.readFileSync(original)),
+                },
+              },
               binding,
-              evidence: [{ path: file, sha256: digest(fs.readFileSync(file)) }],
+              evidence: [
+                { path: original, sha256: digest(fs.readFileSync(original)) },
+                { path: file, sha256: digest(fs.readFileSync(file)) },
+              ],
             };
+          },
+          async verifyNativeConsumeReceipt(publication, completion) {
+            assert.ok(lock, "native receipt query lost writer lock");
+            const original = path.join(dir, "native-original-consume.json");
+            assert.deepEqual(completion.nativeReceipt, {
+              kind: "native-runtime-rebaseline-consume-v1",
+              reference: {
+                path: original,
+                sha256: digest(fs.readFileSync(original)),
+              },
+            });
+            assert.deepEqual(JSON.parse(fs.readFileSync(original, "utf8")), {
+              kind: "owned-native-consumed",
+              publicationJson: JSON.stringify(publication),
+              source: pins.source,
+              generation: pins.generation,
+            });
+            const record = JSON.parse(
+              fs.readFileSync(publication.record.path, "utf8"),
+            );
+            for (const key of [
+              "process",
+              "generation",
+              "source",
+              "build",
+              "admissionStore",
+            ] as const)
+              assert.deepEqual(current[key], record.binding[key]);
           },
         });
       },
@@ -232,7 +281,7 @@ test("literal preflight and new root preserve unproven history and freeze all ol
     fs.readFileSync(path.join(f.dir, "queue-state.json")),
     before,
   );
-  const root = runtimeRebaselineRoot(f.dir)!;
+  const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
   assert.equal(root.record.dispositions["unknown"]?.outcome, "unknown");
   assert.equal(root.record.dispositions["queued"]?.outcome, "not_started");
   assert.equal(
@@ -255,7 +304,7 @@ test("retry after publication resumes native consume before returning success wi
     }),
     /crash/,
   );
-  assert.throws(() => runtimeRebaselineRoot(f.dir), {
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
     code: "RUNTIME_ACTIVATION_INCOMPLETE",
   });
   assert.deepEqual(f.counts(), { cas: 1, consume: 0 });
@@ -265,19 +314,27 @@ test("retry after publication resumes native consume before returning success wi
     request,
     f.authorityFor("successor"),
   );
-  assert.deepEqual(receipt, runtimeRebaselineRoot(f.dir)!.record.receipt);
-  assert.equal(f.reads(), reads);
+  assert.deepEqual(
+    receipt,
+    (await runtimeRebaselineRoot(f.dir, f.authority))!.record.receipt,
+  );
+  assert.ok(f.reads() > reads);
   assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
   assert.equal(
-    runtimeRebaselineRoot(f.dir)!.record.operatorId,
+    (await runtimeRebaselineRoot(f.dir, f.authority))!.record.operatorId,
     "local-operator",
   );
-  f.unlock();
+  const resumedReads = f.reads();
   assert.deepEqual(
     await rebaselineRuntime(f.dir, request, f.authority),
     receipt,
   );
-  assert.equal(f.reads(), reads);
+  assert.equal(f.reads(), resumedReads);
+  f.unlock();
+  await assert.rejects(
+    rebaselineRuntime(f.dir, request, f.authority),
+    /lock lost/,
+  );
   await assert.rejects(
     rebaselineRuntime(f.dir, { ...request, handoffId: "other" }, f.authority),
     { code: "REQUEST_CONFLICT" },
@@ -295,7 +352,7 @@ test("crash before CAS leaves old activation and permits same-ID retry", async (
     }),
     /crash/,
   );
-  assert.equal(runtimeRebaselineRoot(f.dir), null);
+  assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
   assert.equal(literalRuntimeHead(f.dir).digest, request.expectedHead);
   await rebaselineRuntime(
     f.dir,
@@ -303,7 +360,7 @@ test("crash before CAS leaves old activation and permits same-ID retry", async (
     f.authorityFor("successor-before-cas"),
   );
   assert.equal(
-    runtimeRebaselineRoot(f.dir)!.record.operatorId,
+    (await runtimeRebaselineRoot(f.dir, f.authority))!.record.operatorId,
     "local-operator",
   );
 });
@@ -319,7 +376,7 @@ test("lost consume ACK resumes the durable terminal receipt under a different op
     /consume ACK lost/,
   );
   assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
-  assert.throws(() => runtimeRebaselineRoot(f.dir), {
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
     code: "RUNTIME_ACTIVATION_INCOMPLETE",
   });
   f.afterConsume(() => {});
@@ -331,7 +388,7 @@ test("lost consume ACK resumes the durable terminal receipt under a different op
   assert.equal(receipt.rebaselineId, request.requestId);
   assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
   assert.equal(
-    runtimeRebaselineRoot(f.dir)!.record.operatorId,
+    (await runtimeRebaselineRoot(f.dir, f.authority))!.record.operatorId,
     "local-operator",
   );
   assert.equal(
@@ -360,7 +417,7 @@ test("published head without native consume cannot authorize bootstrap or surviv
     /canonical state changed/,
   );
   assert.deepEqual(f.counts(), { cas: 1, consume: 0 });
-  assert.throws(() => runtimeRebaselineRoot(f.dir), {
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
     code: "RUNTIME_ACTIVATION_INCOMPLETE",
   });
 });
@@ -376,7 +433,7 @@ test("native consume byte provenance is required before completion is published"
   await assert.rejects(rebaselineRuntime(f.dir, f.request(), f.authority), {
     code: "RUNTIME_ACTIVATION_INCOMPLETE",
   });
-  assert.throws(() => runtimeRebaselineRoot(f.dir), {
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
     code: "RUNTIME_ACTIVATION_INCOMPLETE",
   });
 });
@@ -393,7 +450,7 @@ test("changed head, copied store and lost lock fail before activation", async ()
         ? fs.mkdtempSync(path.join(os.tmpdir(), "foreign-store-"))
         : f.dir;
     await assert.rejects(rebaselineRuntime(target, request, f.authority));
-    assert.equal(runtimeRebaselineRoot(f.dir), null);
+    assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
   }
 });
 
@@ -407,7 +464,7 @@ test("host PID birth, grant, admissions and evidence substitution fail closed", 
       Object.assign(f.current, { admissionCount: 1 });
     if (mutation === "proof") fs.appendFileSync(f.proof.path, " ");
     await assert.rejects(rebaselineRuntime(f.dir, request, f.authority));
-    assert.equal(runtimeRebaselineRoot(f.dir), null);
+    assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
   }
 });
 
@@ -426,7 +483,7 @@ test("store and host are rechecked after staging immediately before CAS", async 
         },
       }),
     );
-    assert.equal(runtimeRebaselineRoot(f.dir), null);
+    assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
   }
 });
 
@@ -449,7 +506,7 @@ test("modeling inputs and forged capability cannot grant local operator authorit
     ),
     { code: "INVALID_REQUEST" },
   );
-  assert.equal(runtimeRebaselineRoot(f.dir), null);
+  assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
 });
 
 test("source, handoff, generation, admission store and endpoint substitutions are rejected", async () => {
@@ -466,7 +523,7 @@ test("source, handoff, generation, admission store and endpoint substitutions ar
     await assert.rejects(rebaselineRuntime(f.dir, request, f.authority), {
       code: "RUNTIME_BARRIER_UNPROVEN",
     });
-    assert.equal(runtimeRebaselineRoot(f.dir), null);
+    assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
   }
   const f = fixture();
   f.current.generation.instance = "wrong-generation";
@@ -483,7 +540,7 @@ test("UNKNOWN without a known target and local/control uncertainty remain global
   snapshot.jobs.queued.dispatch = { rpcCount: 1 };
   fs.writeFileSync(file, JSON.stringify(snapshot));
   const receipt = await rebaselineRuntime(f.dir, f.request(), f.authority);
-  const root = runtimeRebaselineRoot(f.dir)!;
+  const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
   assert.equal(receipt.carriedExposures, 4);
   for (const value of Object.values(root.record.carriedExposures))
     assert.equal((value as { target: unknown }).target, null);
@@ -503,7 +560,7 @@ test("started queued work and existing exposure keys cannot be mislabeled or ove
   snapshot.jobs.queued.startedAt = 0;
   fs.writeFileSync(file, JSON.stringify(snapshot));
   await rebaselineRuntime(f.dir, f.request(), f.authority);
-  const root = runtimeRebaselineRoot(f.dir)!;
+  const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
   assert.equal(root.record.dispositions["queued"]?.outcome, "unknown");
   assert.deepEqual(
     root.record.carriedExposures["runtime:queued"],
@@ -520,9 +577,9 @@ test("started queued work and existing exposure keys cannot be mislabeled or ove
 test("frozen snapshot tamper is not converted into an empty or ordinary root", async () => {
   const f = fixture();
   await rebaselineRuntime(f.dir, f.request(), f.authority);
-  const root = runtimeRebaselineRoot(f.dir)!;
+  const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
   fs.appendFileSync(root.record.frozen["queue-state.json"]!.path, " ");
-  assert.throws(() => runtimeRebaselineRoot(f.dir), {
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
     code: "RUNTIME_BARRIER_CHANGED",
   });
 });
@@ -539,7 +596,7 @@ test("the approved activation pointer must retain its exact consumed bytes", asy
       file,
       JSON.stringify(value) + (change === "whitespace" ? " " : ""),
     );
-    assert.throws(() => runtimeRebaselineRoot(f.dir), {
+    await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
       code: "RUNTIME_BARRIER_CHANGED",
     });
   }
@@ -549,7 +606,7 @@ test("ordinary root does not resolve the impossible historical bridge again", as
   const f = fixture();
   await rebaselineRuntime(f.dir, f.request(), f.authority);
   // The historical pointer is frozen exact bytes, not authenticated as passed.
-  const root = runtimeRebaselineRoot(f.dir)!;
+  const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
   assert.equal(
     fs.readFileSync(
       root.record.frozen["physical-backend-head.json"]!.path,
@@ -576,7 +633,7 @@ test("symlink destination is refused before writing foreign evidence", async () 
     code: "STORAGE_UNAVAILABLE",
   });
   assert.deepEqual(fs.readdirSync(foreign), []);
-  assert.equal(runtimeRebaselineRoot(f.dir), null);
+  assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
 });
 
 test("symlink artifact parent is refused before creating a foreign request directory", async () => {
@@ -599,7 +656,11 @@ test("loss at the publication authority after the parent precheck cannot publish
         fs.appendFileSync(path.join(f.dir, "queue-state.json"), " ");
     });
     await assert.rejects(rebaselineRuntime(f.dir, f.request(), f.authority));
-    assert.equal(runtimeRebaselineRoot(f.dir), null);
+    if (fs.existsSync(path.join(f.dir, "runtime-rebaseline-publication.json")))
+      await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
+        code: "RUNTIME_PUBLICATION_PENDING",
+      });
+    else assert.equal(await runtimeRebaselineRoot(f.dir, f.authority), null);
   }
 });
 
@@ -617,7 +678,9 @@ test("native publisher reservation survives parent death and blocks new activati
     code: "RUNTIME_PUBLICATION_PENDING",
   });
   assert.equal(f.reads(), 0);
-  assert.equal(runtimeRebaselineRoot(f.dir), null);
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
+    code: "RUNTIME_PUBLICATION_PENDING",
+  });
   assert.ok(
     fs.existsSync(path.join(f.dir, "runtime-rebaseline-publication.json")),
   );
@@ -633,7 +696,7 @@ test("even a committed receipt cannot bypass a corrupt native reservation", asyn
   await assert.rejects(rebaselineRuntime(f.dir, request, f.authority), {
     code: "RUNTIME_PUBLICATION_PENDING",
   });
-  assert.throws(() => runtimeRebaselineRoot(f.dir), {
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
     code: "RUNTIME_PUBLICATION_PENDING",
   });
   assert.equal(f.reads(), reads);
@@ -693,7 +756,20 @@ test("independent runner processes publish one activation under a real exclusive
               initiatorOperatorId:"local-operator"};
             const file=path.join(dir,"consumed.json");
             durable(file,binding);
-            return {binding,evidence:[{path:file,sha256:createHash("sha256").update(fs.readFileSync(file)).digest("hex")}]};
+            const original=path.join(dir,"original-consumed.json");
+            durable(original,{publicationJson:JSON.stringify(p),kind:"native-consumed"});
+            return {nativeReceipt:{kind:"native-runtime-rebaseline-consume-v1",
+              reference:{path:original,sha256:createHash("sha256").update(fs.readFileSync(original)).digest("hex")}},
+              binding,evidence:[{path:file,sha256:createHash("sha256").update(fs.readFileSync(file)).digest("hex")}]};
+          },
+          async verifyNativeConsumeReceipt(p,c) {
+            assertHeld();
+            const original=path.join(dir,"original-consumed.json");
+            if(c.nativeReceipt.reference.path!==original ||
+              c.nativeReceipt.reference.sha256!==createHash("sha256").update(fs.readFileSync(original)).digest("hex"))
+              throw Error("native receipt substituted");
+            if(JSON.parse(fs.readFileSync(original,"utf8")).publicationJson!==JSON.stringify(p))
+              throw Error("native publication differs");
           }
         })} finally {fs.closeSync(fd);fs.unlinkSync(file)}
       }
@@ -785,4 +861,242 @@ test("staging resolves known core declarations and rejects foreign workspace imp
       );
     }
   }
+});
+
+test("review: active epoch-only work changes literal head and all layers are frozen", async () => {
+  const f = fixture(),
+    epochId = "active-epoch",
+    epoch = path.join(f.dir, "admission-epochs", epochId);
+  fs.mkdirSync(epoch, { recursive: true });
+  fs.writeFileSync(
+    path.join(epoch, "instance.json"),
+    '{"epochIdentity":"active"}',
+  );
+  fs.writeFileSync(
+    path.join(f.dir, "isolated-admission-epoch.json"),
+    JSON.stringify({ root: epoch, epochId }),
+  );
+  const snapshot = {
+    jobs: {
+      epochUnknown: { id: "epochUnknown", state: "needs_reconciliation" },
+    },
+    quarantined: { epochUnknown: { target: null } },
+  };
+  fs.writeFileSync(
+    path.join(epoch, "queue-state.json"),
+    JSON.stringify(snapshot),
+  );
+  const head = literalRuntimeHead(f.dir).digest;
+  snapshot.jobs.epochUnknown.state = "unknown";
+  fs.writeFileSync(
+    path.join(epoch, "queue-state.json"),
+    JSON.stringify(snapshot),
+  );
+  assert.notEqual(literalRuntimeHead(f.dir).digest, head);
+  await rebaselineRuntime(f.dir, f.request(), f.authority);
+  const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
+  assert.ok(
+    Object.keys(root.record.dispositions).some((key) =>
+      key.includes("epochUnknown"),
+    ),
+  );
+  assert.ok(
+    Object.keys(root.record.carriedExposures).some((key) =>
+      key.includes("epochUnknown"),
+    ),
+  );
+});
+
+test("review: exact NEW resume re-verifies current PID/birth and frozen writer generation", async () => {
+  for (const field of ["process", "writerGeneration", "authorityPins"]) {
+    const f = fixture(),
+      request = f.request();
+    await assert.rejects(
+      rebaselineRuntime(f.dir, request, f.authority, {
+        fault(point) {
+          if (point === "after_activation") throw Error("crash");
+        },
+      }),
+      /crash/,
+    );
+    if (field === "process") f.current.process.birth = "substituted-process";
+    else if (field === "writerGeneration")
+      f.current.writerGeneration = "substituted-writer";
+    else f.pins.build = "f".repeat(64);
+    await assert.rejects(
+      rebaselineRuntime(
+        f.dir,
+        request,
+        field === "authorityPins" ? f.authorityFor("wrong-pins") : f.authority,
+      ),
+    );
+    assert.deepEqual(f.counts(), { cas: 1, consume: 0 });
+  }
+});
+
+test("review: epoch-only mutation during staging refuses the single publication", async () => {
+  const f = fixture(),
+    epoch = path.join(f.dir, "admission-epochs", "current");
+  fs.mkdirSync(epoch, { recursive: true });
+  fs.writeFileSync(
+    path.join(f.dir, "isolated-admission-epoch.json"),
+    JSON.stringify({
+      root: epoch,
+      epochId: "current",
+    }),
+  );
+  fs.writeFileSync(path.join(epoch, "instance.json"), "{}");
+  const file = path.join(epoch, "queue-state.json");
+  fs.writeFileSync(file, JSON.stringify({ jobs: {} }));
+  await assert.rejects(
+    rebaselineRuntime(f.dir, f.request(), f.authority, {
+      fault(point) {
+        if (point === "after_staging")
+          fs.writeFileSync(
+            file,
+            JSON.stringify({
+              jobs: { late: { state: "unknown" } },
+              quarantined: { late: { target: null } },
+            }),
+          );
+      },
+    }),
+    { code: "RUNTIME_BARRIER_CHANGED" },
+  );
+  assert.deepEqual(f.counts(), { cas: 0, consume: 0 });
+});
+
+test("review: completion directory fsync EIO is not converted into receipt-query success", async () => {
+  const f = fixture(),
+    request = f.request(),
+    original = fs.fsyncSync;
+  let broken = false;
+  f.afterConsume(() => {
+    broken = true;
+  });
+  fs.fsyncSync = (fd: number) => {
+    const file = fs.readlinkSync(`/proc/self/fd/${fd}`);
+    if (
+      broken &&
+      fs.fstatSync(fd).isDirectory() &&
+      file === path.join(f.dir, "runtime-rebaselines", request.requestId)
+    )
+      throw Object.assign(Error("directory EIO"), { code: "EIO" });
+    original(fd);
+  };
+  try {
+    await assert.rejects(rebaselineRuntime(f.dir, request, f.authority), {
+      code: "EIO",
+    });
+    await assert.rejects(rebaselineRuntime(f.dir, request, f.authority), {
+      code: "EIO",
+    });
+    await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority), {
+      code: "EIO",
+    });
+  } finally {
+    fs.fsyncSync = original;
+  }
+  await rebaselineRuntime(f.dir, request, f.authorityFor("durability-resumer"));
+  assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
+  assert.ok(await runtimeRebaselineRoot(f.dir, f.authority));
+});
+
+test("review: normalized projection alone is not native consume authority at reopen", async () => {
+  const f = fixture(),
+    request = f.request();
+  await rebaselineRuntime(f.dir, request, f.authority);
+  const file = path.join(
+    f.dir,
+    "runtime-rebaselines",
+    request.requestId,
+    "completion.json",
+  );
+  const completion = JSON.parse(fs.readFileSync(file, "utf8"));
+  delete completion.nativeReceipt;
+  fs.writeFileSync(file, JSON.stringify(completion));
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority));
+});
+
+test("review: root and active epoch pending snapshots refuse activation", async () => {
+  for (const active of [false, true]) {
+    const f = fixture();
+    let directory = f.dir;
+    if (active) {
+      directory = path.join(f.dir, "admission-epochs", "current");
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(
+        path.join(f.dir, "isolated-admission-epoch.json"),
+        JSON.stringify({
+          root: directory,
+          epochId: "current",
+        }),
+      );
+      fs.writeFileSync(
+        path.join(directory, "queue-state.json"),
+        JSON.stringify({ jobs: {} }),
+      );
+      fs.writeFileSync(path.join(directory, "instance.json"), "{}");
+    }
+    const before = literalRuntimeHead(f.dir).digest;
+    fs.writeFileSync(
+      path.join(directory, "queue-state.pending.json"),
+      '{"recoveryRequired":true}',
+    );
+    assert.notEqual(literalRuntimeHead(f.dir).digest, before);
+    await assert.rejects(rebaselineRuntime(f.dir, f.request(), f.authority), {
+      code: "STORAGE_UNAVAILABLE",
+    });
+    assert.deepEqual(f.counts(), { cas: 0, consume: 0 });
+  }
+});
+
+test("review: a matching active or uncertain lease contradicts queued not-started", async () => {
+  for (const state of [
+    { active: "queued" },
+    { lease: { clientId: "owner" } },
+  ]) {
+    const f = fixture(),
+      file = path.join(f.dir, "queue-state.json");
+    const snapshot = JSON.parse(fs.readFileSync(file, "utf8"));
+    Object.assign(snapshot, state);
+    snapshot.jobs.queued.clientId = "owner";
+    fs.writeFileSync(file, JSON.stringify(snapshot));
+    await rebaselineRuntime(f.dir, f.request(), f.authority);
+    const root = (await runtimeRebaselineRoot(f.dir, f.authority))!;
+    assert.equal(root.record.dispositions["queued"]?.outcome, "unknown");
+  }
+});
+
+test("review: consumed root readback allows legitimate later grants without new begin or CAS", async () => {
+  const f = fixture(),
+    request = f.request();
+  await rebaselineRuntime(f.dir, request, f.authority);
+  const reads = f.reads();
+  Object.assign(f.current, { grantCount: 1, admissionCount: 5 });
+  assert.ok(await runtimeRebaselineRoot(f.dir, f.authority));
+  await rebaselineRuntime(f.dir, request, f.authority);
+  assert.equal(f.reads(), reads);
+  assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
+});
+
+test("review: an original-receipt lookalike is rejected by the private native source verifier", async () => {
+  const f = fixture(),
+    request = f.request();
+  await rebaselineRuntime(f.dir, request, f.authority);
+  const file = path.join(
+    f.dir,
+    "runtime-rebaselines",
+    request.requestId,
+    "completion.json",
+  );
+  const completion = JSON.parse(fs.readFileSync(file, "utf8"));
+  const lookalike = path.join(f.dir, "lookalike-native.json");
+  fs.writeFileSync(lookalike, JSON.stringify(completion.binding));
+  completion.nativeReceipt.reference = {
+    path: lookalike,
+    sha256: digest(fs.readFileSync(lookalike)),
+  };
+  fs.writeFileSync(file, JSON.stringify(completion));
+  await assert.rejects(runtimeRebaselineRoot(f.dir, f.authority));
 });

@@ -6,6 +6,11 @@ import { createRequire } from "node:module";
 const { durableBytes, readBytes, syncDirectory } = createRequire(__filename)(
   "./dist/node-adapters/persistence/records",
 ) as typeof import("../packages/node-adapters/src/persistence/records");
+const { runtimeRebaselineManifestNames: inputNames } = createRequire(
+  __filename,
+)(
+  "./dist/node-adapters/persistence/runtime-rebaseline-scope",
+) as typeof import("../packages/node-adapters/src/persistence/runtime-rebaseline-scope");
 
 type Data = Record<string, unknown>;
 export interface RebaselineReference {
@@ -45,6 +50,10 @@ export interface RuntimeActivationPublication {
   record: RebaselineReference;
 }
 export interface RuntimeActivationCompletion {
+  nativeReceipt: {
+    kind: "native-runtime-rebaseline-consume-v1";
+    reference: RebaselineReference;
+  };
   binding: {
     requestId: string;
     newHead: string;
@@ -78,6 +87,10 @@ export interface RuntimeBarrierLease {
   consumeActivation(
     publication: RuntimeActivationPublication,
   ): Promise<RuntimeActivationCompletion>;
+  verifyNativeConsumeReceipt(
+    publication: RuntimeActivationPublication,
+    completion: RuntimeActivationCompletion,
+  ): Promise<void>;
 }
 export interface RuntimeRebaselineAuthorityPorts {
   store: string;
@@ -136,15 +149,9 @@ interface RebaselineRecord {
   binding: RuntimeBarrierBinding;
   dispositions: Record<string, Disposition>;
   carriedExposures: Data;
+  layers: ReturnType<typeof scopedState>["layers"];
   receipt: RuntimeRebaselineReceipt;
 }
-const inputs = [
-  "physical-backend-head.json",
-  "isolated-admission-epoch.json",
-  "instance.json",
-  "queue-state.json",
-  "runtime-rebaseline-head.json",
-] as const;
 const sha = (bytes: string | Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
 function fail(code: string, message: string): never {
@@ -194,14 +201,23 @@ function readLiteralRuntimeHead(directory: string) {
   const store = fs.realpathSync(directory),
     stat = fs.statSync(store);
   const files: Record<string, Buffer | null> = {};
-  for (const name of inputs) files[name] = optional(path.join(store, name));
+  const pointer = optional(path.join(store, "isolated-admission-epoch.json"));
+  const names = inputNames(store, pointer);
+  for (const name of names) files[name] = optional(path.join(store, name));
+  if (!same(pointer, files["isolated-admission-epoch.json"]))
+    fail("RUNTIME_BARRIER_CHANGED", "Active epoch changed during literal read");
+  for (const name of names.filter(
+    (name) => name.includes("/") && !name.endsWith(".pending.json"),
+  ))
+    if (!files[name])
+      fail("STORAGE_UNAVAILABLE", "Active epoch snapshot/identity is missing");
   if (!files["queue-state.json"])
     fail(
       "STORAGE_UNAVAILABLE",
       "Existing canonical queue snapshot is required",
     );
   const manifest = Object.fromEntries(
-    inputs.map((name) => [
+    names.map((name) => [
       name,
       files[name] === null ? null : sha(files[name]!),
     ]),
@@ -211,6 +227,7 @@ function readLiteralRuntimeHead(directory: string) {
     device: stat.dev,
     inode: stat.ino,
     files,
+    manifest,
     digest: sha(
       JSON.stringify({ store, device: stat.dev, inode: stat.ino, manifest }),
     ),
@@ -224,6 +241,7 @@ export function literalRuntimeHead(directory: string) {
     device: value.device,
     inode: value.inode,
     digest: value.digest,
+    manifest: value.manifest,
   };
 }
 function validateRequest(value: RuntimeRebaselineRequest): void {
@@ -258,6 +276,11 @@ function dispositions(
     // Missing dispatch metadata is not evidence that a sent/active job never ran.
     const neverStarted =
       job["state"] === "queued" &&
+      snapshot["active"] !== id &&
+      (!snapshot["lease"] ||
+        (job["clientId"] !== undefined &&
+          object(snapshot["lease"])["clientId"] !== job["clientId"])) &&
+      (!snapshot["blocked"] || object(snapshot["blocked"])["id"] !== id) &&
       job["dispatch"] === undefined &&
       job["startedAt"] === undefined &&
       !job["physicalTurns"] &&
@@ -296,6 +319,46 @@ function exposures(snapshot: Data, handoffId: string): Data {
   }
   return result;
 }
+function scopedState(files: Record<string, Buffer | null>, handoffId: string) {
+  const snapshots: Record<string, Data> = {};
+  const allDispositions: Record<string, Disposition> = {};
+  const allExposures: Data = {};
+  const layers: Record<
+    string,
+    { dispositions: Record<string, Disposition>; carriedExposures: Data }
+  > = {};
+  for (const [name, value] of Object.entries(files)) {
+    if (!name.endsWith("queue-state.json") || !value) continue;
+    const layer = name === "queue-state.json" ? "root" : path.dirname(name);
+    const snapshot = object(JSON.parse(value.toString("utf8")));
+    snapshots[layer] = snapshot;
+    const decisions = dispositions(snapshot, handoffId),
+      carried = exposures(snapshot, handoffId);
+    layers[layer] = { dispositions: decisions, carriedExposures: carried };
+    for (const [id, decision] of Object.entries(decisions)) {
+      let key = layer === "root" ? id : `${layer}/${id}`;
+      while (Object.hasOwn(allDispositions, key)) key += ":";
+      Object.defineProperty(allDispositions, key, {
+        value: decision,
+        enumerable: true,
+      });
+    }
+    for (const [id, exposure] of Object.entries(carried)) {
+      let key = layer === "root" ? id : `${layer}/${id}`;
+      while (Object.hasOwn(allExposures, key)) key += ":";
+      Object.defineProperty(allExposures, key, {
+        value: exposure,
+        enumerable: true,
+      });
+    }
+  }
+  return {
+    snapshots,
+    layers,
+    dispositions: allDispositions,
+    carriedExposures: allExposures,
+  };
+}
 function activatedFile(dir: string) {
   return path.join(dir, "runtime-rebaseline-head.json");
 }
@@ -324,6 +387,7 @@ export function assertNoPendingRuntimePublication(directory: string): void {
 function readRuntimeRebaselineRoot(directory: string): {
   record: RebaselineRecord;
   snapshot: Data;
+  snapshots: Record<string, Data>;
 } | null {
   const store = fs.realpathSync(directory),
     active = optional(activatedFile(store));
@@ -358,11 +422,13 @@ function readRuntimeRebaselineRoot(directory: string): {
   )
     fail("RUNTIME_BARRIER_CHANGED", "Rebaseline root/store binding changed");
   validateRequest(record.request);
-  if (!same(Object.keys(record.frozen).sort(), [...inputs].sort()))
+  const frozenPointer = record.frozen["isolated-admission-epoch.json"];
+  const names = inputNames(store, frozenPointer ? verify(frozenPointer) : null);
+  if (!same(Object.keys(record.frozen).sort(), [...names].sort()))
     fail("RUNTIME_BARRIER_CHANGED", "Incomplete frozen canonical metadata");
   for (const [name, reference] of Object.entries(record.frozen)) {
     if (
-      !inputs.includes(name as (typeof inputs)[number]) ||
+      !names.includes(name) ||
       (reference &&
         reference.path !==
           path.join(
@@ -382,11 +448,26 @@ function readRuntimeRebaselineRoot(directory: string): {
       "RUNTIME_BARRIER_UNPROVEN",
       "Rebaseline root lost its verified attestation",
     );
-  const snapshot = object(
-    JSON.parse(verify(record.frozen["queue-state.json"]!).toString("utf8")),
+  const frozenFiles = Object.fromEntries(
+    Object.entries(record.frozen).map(([name, reference]) => [
+      name,
+      reference ? verify(reference) : null,
+    ]),
   );
+  if (
+    Object.entries(frozenFiles).some(
+      ([name, value]) =>
+        name.endsWith("queue-state.pending.json") && value !== null,
+    )
+  )
+    fail(
+      "RUNTIME_BARRIER_UNPROVEN",
+      "Frozen snapshot has unresolved durability journal",
+    );
+  const scoped = scopedState(frozenFiles, record.request.handoffId);
+  const snapshot = scoped.snapshots["root"]!;
   const manifest = Object.fromEntries(
-    inputs.map((name) => [name, record.frozen[name]?.sha256 ?? null]),
+    names.map((name) => [name, record.frozen[name]?.sha256 ?? null]),
   );
   const originalHead = sha(
     JSON.stringify({
@@ -426,14 +507,9 @@ function readRuntimeRebaselineRoot(directory: string): {
       "Rebaseline root digest or authority changed",
     );
   if (
-    !same(
-      dispositions(snapshot, record.request.handoffId),
-      record.dispositions,
-    ) ||
-    !same(
-      exposures(snapshot, record.request.handoffId),
-      record.carriedExposures,
-    ) ||
+    !same(scoped.dispositions, record.dispositions) ||
+    !same(scoped.carriedExposures, record.carriedExposures) ||
+    !same(scoped.layers, record.layers) ||
     record.receipt.carriedExposures !==
       Object.keys(record.carriedExposures).length
   )
@@ -441,7 +517,7 @@ function readRuntimeRebaselineRoot(directory: string): {
       "RUNTIME_BARRIER_CHANGED",
       "Outstanding work or exposure disposition changed",
     );
-  return { record, snapshot };
+  return { record, snapshot, snapshots: scoped.snapshots };
 }
 function publicationFor(
   record: RebaselineRecord,
@@ -459,7 +535,10 @@ function publicationFor(
     storeInode: record.storeInode,
     expectedHead: record.request.expectedHead,
     expectedFiles: Object.fromEntries(
-      inputs.map((name) => [name, record.frozen[name]?.sha256 ?? null]),
+      Object.entries(record.frozen).map(([name, reference]) => [
+        name,
+        reference?.sha256 ?? null,
+      ]),
     ),
     activationFile: activatedFile(record.store),
     activationBytes: JSON.stringify({
@@ -484,6 +563,7 @@ function validateCompletion(
 ): void {
   if (
     !value ||
+    value.nativeReceipt?.kind !== "native-runtime-rebaseline-consume-v1" ||
     !same(value.binding, completionBinding(record)) ||
     !Array.isArray(value.evidence) ||
     !value.evidence.length
@@ -492,9 +572,12 @@ function validateCompletion(
       "RUNTIME_ACTIVATION_INCOMPLETE",
       "Native consume is not bound to this exact activation",
     );
+  verify(value.nativeReceipt.reference);
   let bound = false;
-  for (const reference of value.evidence)
+  for (const reference of value.evidence) {
+    if (same(reference, value.nativeReceipt.reference)) continue;
     if (attests(reference, value.binding)) bound = true;
+  }
   if (!bound)
     fail(
       "RUNTIME_ACTIVATION_INCOMPLETE",
@@ -519,16 +602,107 @@ function completed(record: RebaselineRecord): boolean {
   return true;
 }
 /** Only a completed, native-consumed root authorizes ordinary bootstrap. */
-export function runtimeRebaselineRoot(directory: string) {
+export async function runtimeRebaselineRoot(
+  directory: string,
+  authority: RuntimeRebaselineAuthority,
+) {
   const root = readRuntimeRebaselineRoot(directory);
-  if (!root) return null;
+  if (!root) {
+    assertNoPendingRuntimePublication(directory);
+    return null;
+  }
   if (!completed(root.record))
     fail(
       "RUNTIME_ACTIVATION_INCOMPLETE",
       "Local head is published but native consume requires same-ID resume",
     );
   assertNoPendingRuntimePublication(directory);
-  return root;
+  const ports = authorities.get(authority);
+  if (!ports || fs.realpathSync(ports.store) !== root.record.store)
+    fail(
+      "NOT_AUTHORIZED",
+      "Root approval requires its trusted native receipt verifier",
+    );
+  return ports.withExclusiveBarrier(root.record.request, async (lease) => {
+    const current = readRuntimeRebaselineRoot(directory);
+    if (!current || !same(current.record.receipt, root.record.receipt))
+      fail(
+        "RUNTIME_BARRIER_CHANGED",
+        "Root changed while acquiring approval lock",
+      );
+    await approveCompletion(current.record, lease);
+    return current;
+  });
+}
+function readCompletion(record: RebaselineRecord): RuntimeActivationCompletion {
+  const value = optional(completionFile(record));
+  if (!value)
+    fail(
+      "RUNTIME_ACTIVATION_INCOMPLETE",
+      "Native consume completion is missing",
+    );
+  const completion = JSON.parse(
+    value.toString("utf8"),
+  ) as RuntimeActivationCompletion;
+  validateCompletion(completion, record);
+  return completion;
+}
+function flushReferences(store: string, references: RebaselineReference[]) {
+  const directories = new Set<string>([store]);
+  for (const reference of references) {
+    verify(reference);
+    const fd = fs.openSync(
+      reference.path,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+    );
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    verify(reference);
+    let directory = path.dirname(reference.path);
+    directories.add(directory);
+    while (directory.startsWith(store + path.sep)) {
+      directory = path.dirname(directory);
+      directories.add(directory);
+    }
+  }
+  for (const directory of [...directories].sort((a, b) => b.length - a.length))
+    syncDirectory(directory);
+}
+function activationReferences(record: RebaselineRecord) {
+  const publication = publicationFor(record);
+  return [
+    ...Object.values(record.frozen).filter(
+      (value): value is RebaselineReference => value !== null,
+    ),
+    ...record.evidence,
+    publication.record,
+    ref(publication.activationFile),
+  ];
+}
+function refsync(
+  record: RebaselineRecord,
+  completion: RuntimeActivationCompletion,
+) {
+  flushReferences(record.store, [
+    ...activationReferences(record),
+    ...completion.evidence,
+    completion.nativeReceipt.reference,
+    ref(completionFile(record)),
+  ]);
+}
+async function approveCompletion(
+  record: RebaselineRecord,
+  lease: RuntimeBarrierLease,
+) {
+  const completion = readCompletion(record);
+  lease.assertWriterAndProvisionLock();
+  refsync(record, completion);
+  await lease.verifyNativeConsumeReceipt(publicationFor(record), completion);
+  lease.assertWriterAndProvisionLock();
+  assertNoPendingRuntimePublication(record.store);
 }
 function pendingForRequest(store: string, request: RuntimeRebaselineRequest) {
   const marker = optional(
@@ -553,6 +727,7 @@ function pendingForRequest(store: string, request: RuntimeRebaselineRequest) {
 async function finishActivation(
   record: RebaselineRecord,
   lease: RuntimeBarrierLease,
+  pins: RuntimePins,
   fault?: (
     point: "after_staging" | "before_activation" | "after_activation",
   ) => void,
@@ -561,6 +736,12 @@ async function finishActivation(
     fail(
       "RUNTIME_BARRIER_CHANGED",
       "Native begin initiator changed during resume",
+    );
+  const current = await barrier(lease, pins);
+  if (!same(current, { binding: record.binding, evidence: record.evidence }))
+    fail(
+      "RUNTIME_BARRIER_CHANGED",
+      "Current barrier differs from the frozen activation authority",
     );
   const publication = publicationFor(record);
   await lease.publishActivation(publication);
@@ -571,6 +752,16 @@ async function finishActivation(
       "Publication result is unproven; resume the original request ID",
     );
   fault?.("after_activation");
+  lease.assertWriterAndProvisionLock();
+  flushReferences(record.store, activationReferences(record));
+  const beforeConsume = await barrier(lease, pins);
+  if (
+    !same(beforeConsume, { binding: record.binding, evidence: record.evidence })
+  )
+    fail(
+      "RUNTIME_BARRIER_CHANGED",
+      "Host barrier changed before native consume",
+    );
   const completion = await lease.consumeActivation(publication);
   validateCompletion(completion, record);
   if (!completed(record))
@@ -578,7 +769,7 @@ async function finishActivation(
       completionFile(record),
       Buffer.from(JSON.stringify(completion)),
     );
-  assertNoPendingRuntimePublication(record.store);
+  await approveCompletion(record, lease);
   return record.receipt;
 }
 async function barrier(lease: RuntimeBarrierLease, pins: RuntimePins) {
@@ -647,8 +838,6 @@ export async function rebaselineRuntime(
   if (prior?.record.request.requestId === request.requestId) {
     if (!same(prior.record.request, request))
       fail("REQUEST_CONFLICT", "Rebaseline request ID has different inputs");
-    if (completed(prior.record) && !pendingForRequest(store, request))
-      return prior.record.receipt;
   }
   pendingForRequest(store, request);
   return ports.withExclusiveBarrier(request, async (lease) => {
@@ -657,12 +846,29 @@ export async function rebaselineRuntime(
     if (concurrent?.record.request.requestId === request.requestId) {
       if (!same(concurrent.record.request, request))
         fail("REQUEST_CONFLICT", "Rebaseline request ID has different inputs");
-      if (completed(concurrent.record) && !pendingForRequest(store, request))
+      if (completed(concurrent.record)) {
+        await approveCompletion(concurrent.record, lease);
         return concurrent.record.receipt;
-      return finishActivation(concurrent.record, lease, testing.fault);
+      }
+      return finishActivation(
+        concurrent.record,
+        lease,
+        ports.pins,
+        testing.fault,
+      );
     }
     pendingForRequest(store, request);
     const old = readLiteralRuntimeHead(store);
+    if (
+      Object.entries(old.files).some(
+        ([name, value]) =>
+          name.endsWith("queue-state.pending.json") && value !== null,
+      )
+    )
+      fail(
+        "STORAGE_UNAVAILABLE",
+        "Unresolved snapshot durability journal requires explicit recovery",
+      );
     if (
       old.digest !== request.expectedHead ||
       ports.pins.handoffId !== request.handoffId
@@ -692,20 +898,24 @@ export async function rebaselineRuntime(
     syncDirectory(store);
     syncDirectory(path.dirname(destination));
     const frozen: Record<string, RebaselineReference | null> = {};
-    for (const name of inputs) {
+    for (const name of Object.keys(old.files)) {
       const value = old.files[name],
         file = path.join(destination, name);
       if (value === null) {
         frozen[name] = null;
         continue;
       }
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+      if (fs.realpathSync(path.dirname(file)) !== path.dirname(file))
+        fail(
+          "STORAGE_UNAVAILABLE",
+          "Frozen snapshot namespace escaped canonical store",
+        );
       immutableBytes(file, value!);
       frozen[name] = ref(file);
     }
-    const snapshot = object(
-      JSON.parse(old.files["queue-state.json"]!.toString("utf8")),
-    );
-    const carriedExposures = exposures(snapshot, request.handoffId);
+    const scoped = scopedState(old.files, request.handoffId);
+    const carriedExposures = scoped.carriedExposures;
     // A root digest binds exact frozen bytes, host evidence and administrator.
     const newHead = sha(
       JSON.stringify({
@@ -736,7 +946,8 @@ export async function rebaselineRuntime(
       history: "preserved_unproven",
       frozen,
       ...current,
-      dispositions: dispositions(snapshot, request.handoffId),
+      dispositions: scoped.dispositions,
+      layers: scoped.layers,
       carriedExposures,
       receipt,
     };
@@ -759,7 +970,7 @@ export async function rebaselineRuntime(
         "RUNTIME_BARRIER_CHANGED",
         "Canonical state changed before activation",
       );
-    return finishActivation(record, lease, testing.fault);
+    return finishActivation(record, lease, ports.pins, testing.fault);
   });
 }
 function immutableBytes(file: string, value: Buffer) {
