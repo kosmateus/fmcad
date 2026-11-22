@@ -48,7 +48,8 @@ def _qd_design_state(doc, seen):
         for feature in _qd_items(component.features.deriveFeatures):
             if not feature.isSuppressed:
                 derive_refs.append(feature.documentReference)
-    parameters = [{'name': p.name, 'expression': p.expression, 'value': p.value, 'unit': p.unit}
+    parameters = [{'name': p.name, 'expression': p.expression,
+                   'value': p.textValue if p.unit.lower() == 'text' else p.value, 'unit': p.unit}
                   for p in _qd_items(design.allParameters)]
     references = []
     # allDocumentReferences includes nested ordinary references. Derive features
