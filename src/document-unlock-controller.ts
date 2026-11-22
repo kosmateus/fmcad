@@ -99,12 +99,7 @@ export function createDocumentUnlockController(
         ports.resolution(actor, metadata.selector),
       );
     }
-    if (
-      ports.domain.data.blocked ||
-      ports.domain.data.localUnknown ||
-      ports.domain.data.controlBlocked
-    )
-      refused("SDK_QUIESCENCE_UNPROVEN");
+    ports.domain.assertDocumentProbeAllowed();
     ports.domain.rememberDocumentUnlockRequest(actor.clientId, request);
     const records = ports.domain.data.documentCheckpoints;
     const acceptance = Object.values(records?.acceptances ?? {}).find(

@@ -362,3 +362,27 @@ test("exact request intent remains bound after completion and reopening the cont
   );
   assert.equal(f.counts().reads, 1);
 });
+
+test("global raw quarantine without runtime retirement proof refuses before identity lookup", async (t) => {
+  const f = fixture(t);
+  f.domain.data.quarantined = {
+    old: {
+      jobId: "old",
+      requestId: "old-request",
+      clientId: "old-actor",
+      target: null,
+      jobHash: "e".repeat(64),
+      catalogDigest: "f".repeat(64),
+      evidenceReference: "owned-fixture:released",
+      evidenceDigest: "a".repeat(64),
+      binding: {},
+    },
+  };
+  const result = await f.controller.handle(inspect, actor);
+  assert.equal(
+    (result as { error: { code: string } }).error.code,
+    "UNKNOWN_SCOPE_UNPROVEN",
+  );
+  assert.equal(f.counts().probes, 0);
+  assert.equal(f.counts().reads, 0);
+});

@@ -650,6 +650,13 @@ export class QueueDomain {
     return this._submit(request, undefined, copy(marker));
   }
 
+  assertDocumentProbeAllowed() {
+    if (this.data.blocked || this.data.localUnknown || this.data.controlBlocked)
+      fail("SDK_QUIESCENCE_UNPROVEN", "The previous physical execution is not fenced");
+    if (Object.values(this.data.quarantined ?? {}).some((value) => value.target === null))
+      fail("UNKNOWN_SCOPE_UNPROVEN", "Raw exposure requires an authenticated runtime-retirement barrier before identity lookup");
+  }
+
   rememberDocumentUnlockRequest(actorClientId: string, request: unknown) {
     const input: unknown = JSON.parse(canonical(request));
     if (!identifier(actorClientId) || !plain(input) ||
