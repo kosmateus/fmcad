@@ -853,6 +853,8 @@ async function main() {
     assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed before qualification");
     for (const file of tests) assert.ok(fs.lstatSync(path.join(runtime, file)).isFile(), file);
     const corpusFile = path.join(runtime, "frozen-metadata-test-corpus.json");
+    assert.equal(fs.realpathSync(corpusFile), corpusFile);
+    assert.ok(fs.lstatSync(corpusFile).isFile());
     const corpusBytes = fs.readFileSync(corpusFile);
     const corpusHash = createHash("sha256").update(corpusBytes).digest("hex");
     const corpus = object(JSON.parse(corpusBytes.toString("utf8")) as unknown);
