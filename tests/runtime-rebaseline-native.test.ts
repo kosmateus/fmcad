@@ -728,6 +728,36 @@ sys.stdin.buffer.read()
       const database = winRoot + "-owned.sqlite3";
       const options = f.options;
       options.pins.process = identity;
+      options.pins.admissionStore = database;
+      const preservedRows = JSON.parse(
+        fs.readFileSync(options.originalEvidence.preservedRows.path, "utf8"),
+      );
+      preservedRows.databasePath = database;
+      const preservedBytes = JSON.stringify(preservedRows);
+      fs.writeFileSync(
+        options.originalEvidence.preservedRows.path,
+        preservedBytes,
+      );
+      options.originalEvidence.preservedRows.sha256 = sha(preservedBytes);
+      options.publicationAuthority.nativeOperatorFile =
+        winRoot + "-operator.json";
+      fs.writeFileSync(
+        root + "-operator.json",
+        JSON.stringify({
+          database,
+          runtime: {
+            handoffId: options.pins.handoffId,
+            generation: options.pins.generation,
+            physicalRuntime: {
+              ...identity,
+              version: options.runtimeVersion,
+              source: options.pins.source,
+              build: options.pins.build,
+            },
+            endpointURL: options.pins.endpoint,
+          },
+        }),
+      );
       const retiredBytes = JSON.stringify({
         exited: true,
         oldPidPresent: false,
@@ -841,6 +871,19 @@ print("OWNED_ISSUANCE_DENIED_AFTER_VERIFIER_EXIT")
       );
       assert.equal(issuer.status, 0, issuer.stderr);
       assert.match(issuer.stdout, /OWNED_ISSUANCE_DENIED_AFTER_VERIFIER_EXIT/);
+      const operatorBytes = fs.readFileSync(root + "-operator.json");
+      const wrongStoreOperator = JSON.parse(operatorBytes.toString("utf8"));
+      wrongStoreOperator.database = winRoot + "-other.sqlite3";
+      fs.writeFileSync(
+        root + "-operator.json",
+        JSON.stringify(wrongStoreOperator),
+      );
+      await assert.rejects(
+        ports.withExclusiveBarrier(f.request, async () =>
+          assert.fail("Wrong operator AdmissionStore accepted"),
+        ),
+      );
+      fs.writeFileSync(root + "-operator.json", operatorBytes);
       const falselyRetired = JSON.stringify({
         exited: true,
         oldPidPresent: false,
@@ -869,6 +912,7 @@ print("OWNED_ISSUANCE_DENIED_AFTER_VERIFIER_EXIT")
       fs.rmSync(root + "-mailbox", { recursive: true, force: true });
       for (const suffix of [
         "-provision.json",
+        "-operator.json",
         "-owned.sqlite3",
         "-owned.sqlite3-journal",
       ])

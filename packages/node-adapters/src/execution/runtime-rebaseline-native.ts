@@ -129,6 +129,13 @@ export interface NativeRuntimeRebaselineOptions {
 
 const nativeFenceScript = `${nativePhysicalGuard}
 from lib.physical_authority import _read_private_bytes,private_directory
+operator=json.loads(_read_private_bytes(Path(e["operatorFile"])).decode("utf-8"))
+if Path(operator["database"]).resolve()!=Path(e["admissionStore"]).resolve():
+    deny("NATIVE_ADMISSION_STORE_CHANGED")
+expected_runtime={"handoffId":e["runtimePins"]["handoffId"],"generation":d["generation"],
+                  "physicalRuntime":r,"endpointURL":e["runtimePins"]["endpoint"]}
+if operator["runtime"]!=expected_runtime:
+    deny("NATIVE_OPERATOR_RUNTIME_CHANGED")
 # Original retirement is re-observed, not accepted merely from archived JSON.
 old=e["retiredProcess"]
 old_handle=k.OpenProcess(0x1000,False,old["pid"])
@@ -264,6 +271,8 @@ async function nativeFence(
         retiredProcess,
         action,
         operatorFile: options.publicationAuthority.nativeOperatorFile,
+        admissionStore: options.pins.admissionStore,
+        runtimePins: options.pins,
         requestJson: JSON.stringify(request),
       }) + "\n",
     );
