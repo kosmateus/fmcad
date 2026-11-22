@@ -11,6 +11,7 @@
     "tests/physical-generation-transport.test.ts",
     "tests/physical-generation-grant.test.ts",
     "tests/physical-generation-provision.test.ts",
+    "tests/physical-generation-profile.test.ts",
     "tests/addin-admission-client.test.ts",
     "tests/python-source-codec.test.ts",
     "tests/python-public-source-selection.test.ts",

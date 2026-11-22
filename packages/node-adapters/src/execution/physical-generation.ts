@@ -190,7 +190,9 @@ export function createPhysicalGenerationAuthorization(
         denied();
       fd = fs.openSync(
         grantFile,
-        fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+        fs.constants.O_RDONLY |
+          fs.constants.O_NOFOLLOW |
+          fs.constants.O_NONBLOCK,
       );
       const before = fs.fstatSync(fd, { bigint: true });
       if (
