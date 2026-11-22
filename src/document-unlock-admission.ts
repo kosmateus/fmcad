@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
 import type { epochAdmission } from "./queue-isolated-epoch";
-import type * as CadService from "./composition/cad-service";
 
 const load = createRequire(__filename);
 type EpochState = Parameters<typeof epochAdmission>[0];
@@ -29,6 +28,10 @@ export interface UnlockPrincipal {
   readonly clientTokenHash: string;
 }
 declare const confirmed: unique symbol;
+declare const probe: unique symbol;
+export interface UnlockProbeTicket {
+  readonly [probe]: true;
+}
 export interface ConfirmedUnlockTarget extends CurrentUnlockTarget {
   readonly [confirmed]: true;
 }
@@ -55,6 +58,10 @@ export function createDocumentUnlockAdmission(
       context: number;
     }
   >();
+  const probes = new WeakMap<
+    UnlockProbeTicket,
+    { selector: UnlockTargetSelector; binding: ReturnType<typeof binding> }
+  >();
   function binding(context: UnlockAdmissionContext) {
     if (!text(context.generation) || context.generation.length > 256)
       fail(
@@ -68,17 +75,50 @@ export function createDocumentUnlockAdmission(
       context: context.state.data.contextEpoch ?? 0,
     };
   }
-  function confirmTarget(
-    selector: UnlockTargetSelector,
-    observed: CurrentUnlockTarget,
-  ): ConfirmedUnlockTarget {
+  function beginProbe(selector: UnlockTargetSelector): UnlockProbeTicket {
     if (
       Object.keys(selector).some(
         (key) => !["docId", "docFileId"].includes(key),
       ) ||
       (!text(selector.docId) && !text(selector.docFileId)) ||
       (selector.docId !== undefined && !text(selector.docId)) ||
-      (selector.docFileId !== undefined && !text(selector.docFileId)) ||
+      (selector.docFileId !== undefined && !text(selector.docFileId))
+    )
+      fail(
+        "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
+        "Exact document pins are required",
+      );
+    const context = current();
+    if (context.scope !== "ordinary")
+      fail(
+        "DOCUMENT_UNLOCK_FROZEN_SCOPE",
+        "Scoped metadata qualification does not authorize document unlocking",
+      );
+    const ticket = Object.freeze({}) as UnlockProbeTicket;
+    probes.set(ticket, {
+      selector: Object.freeze({ ...selector }),
+      binding: binding(context),
+    });
+    return ticket;
+  }
+  function confirmTarget(
+    ticket: UnlockProbeTicket,
+    observed: CurrentUnlockTarget,
+  ): ConfirmedUnlockTarget {
+    const pending = probes.get(ticket);
+    if (!pending)
+      fail(
+        "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
+        "A broker-created probe ticket is required",
+      );
+    probes.delete(ticket);
+    if (!isDeepStrictEqual(binding(current()), pending.binding))
+      fail(
+        "DOCUMENT_UNLOCK_STALE",
+        "The generation or epoch changed during the probe",
+      );
+    const selector = pending.selector;
+    if (
       observed.complete !== true ||
       !text(observed.creationId) ||
       !text(observed.name) ||
@@ -103,7 +143,7 @@ export function createDocumentUnlockAdmission(
       ...(observed.version === undefined ? {} : { version: observed.version }),
       fingerprint: observed.fingerprint,
     }) as ConfirmedUnlockTarget;
-    proofs.set(proof, binding(current()));
+    proofs.set(proof, pending.binding);
     return proof;
   }
   function authorize(
@@ -143,10 +183,13 @@ export function createDocumentUnlockAdmission(
         );
       if (!["status", "inspect", "accept"].includes(action))
         fail("INVALID_REQUEST", "Unknown document unlock action");
-      const service = load("./cad-service") as typeof CadService;
+      const service = load("./cad-service") as {
+        decodeInvocation(value: unknown): unknown;
+        policyArguments(value: unknown): string[];
+      };
       // Capability checks use an actual, fixed typed policy request, not a
       // caller's claimed readOnly flag. This request is never submitted/executed.
-      const payload = service.decodeInvocation({
+      const payload = {
         version: 1,
         kind: "cad",
         operation: action === "accept" ? "sketch.create" : "document.status",
@@ -155,14 +198,15 @@ export function createDocumentUnlockAdmission(
         ...(target.fileId ? { docFileId: target.fileId } : {}),
         data:
           action === "accept" ? { name: "unlock-admission", plane: "XY" } : {},
-      });
+      };
+      const invocation = service.decodeInvocation(payload);
       const request: Parameters<typeof epochAdmission>[1] = {
         kind: "command",
         clientId: actor.clientId,
         requestId: "document-unlock-admission",
         timeoutMs: 1,
-        argv: service.policyArguments(payload),
-        payload: { ...payload },
+        argv: service.policyArguments(invocation),
+        payload,
       };
       (
         load("./queue-isolated-epoch") as {
@@ -174,5 +218,5 @@ export function createDocumentUnlockAdmission(
     // No job/result/token or historical author identity crosses this boundary.
     return Object.freeze({ target, recheck });
   }
-  return Object.freeze({ confirmTarget, authorize });
+  return Object.freeze({ beginProbe, confirmTarget, authorize });
 }

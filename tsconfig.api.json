@@ -8,7 +8,6 @@
     "outDir": "dist/library-build"
   },
   "include": [
-    "src/document-unlock-admission.ts",
     "src/queue-broker.ts",
     "src/composition/queue-broker.ts",
     "src/composition/queue-public-python-result.ts",
@@ -88,7 +87,8 @@
     "src/fusion-reset.ts",
     "src/queue-audit-facts-capture.ts",
     "src/queue-settled-epoch-evidence.ts",
-    "src/atomic-runtime-abi.ts"
+    "src/atomic-runtime-abi.ts",
+    "src/document-unlock-admission.ts"
   ],
   "references": [
     {

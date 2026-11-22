@@ -75,7 +75,10 @@ function fixture(t: TestContext, fresh = false) {
     fingerprint: "current-native-probe-fingerprint",
   };
   function confirm(target = observed) {
-    return admission.confirmTarget({ docId: target.creationId }, target);
+    return admission.confirmTarget(
+      admission.beginProbe({ docId: target.creationId }),
+      target,
+    );
   }
   function principal(clientId = "newActor") {
     return { clientId, clientTokenHash: clients[clientId]! };
@@ -206,6 +209,59 @@ test("current physical generation and epoch control changes invalidate admission
   assert.throws(admitted.recheck, { code: "DOCUMENT_UNLOCK_STALE" });
 });
 
+test("a probe started in G1 cannot be relabelled as G2 after its response arrives", async (t) => {
+  const f = fixture(t);
+  f.grant();
+  const ticket = f.admission.beginProbe({ docId: f.observed.creationId });
+  const response = Promise.resolve().then(() => {
+    f.setGeneration("replacement-generation");
+    return f.observed;
+  });
+  const rawObservation = await response;
+  assert.throws(() => f.admission.confirmTarget(ticket, rawObservation), {
+    code: "DOCUMENT_UNLOCK_STALE",
+  });
+  // Neither retrying the consumed ticket nor supplying raw JSON mints authority.
+  assert.throws(() => f.admission.confirmTarget(ticket, rawObservation), {
+    code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
+  });
+  assert.throws(
+    () =>
+      f.admission.confirmTarget(
+        JSON.parse(JSON.stringify({ docId: f.observed.creationId })),
+        rawObservation,
+      ),
+    { code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN" },
+  );
+  // A genuinely new read gets its own G2 ticket and can complete normally.
+  const freshTicket = f.admission.beginProbe({ docId: f.observed.creationId });
+  const freshObservation = await Promise.resolve({
+    ...f.observed,
+    fingerprint: "actual-new-generation-probe",
+  });
+  const freshProof = f.admission.confirmTarget(freshTicket, freshObservation);
+  f.admission.authorize(f.principal(), "accept", freshProof).recheck();
+});
+
+test("probe tickets retain exact selector and pre-read control context and are single-use", (t) => {
+  const f = fixture(t);
+  const selector = { docId: f.observed.creationId };
+  const ticket = f.admission.beginProbe(selector);
+  selector.docId = "B";
+  assert.throws(
+    () => f.admission.confirmTarget(ticket, { ...f.observed, creationId: "B" }),
+    { code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN" },
+  );
+  assert.throws(() => f.admission.confirmTarget(ticket, f.observed), {
+    code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
+  });
+  const pending = f.admission.beginProbe({ docId: f.observed.creationId });
+  f.state.pause(false, "changed-while-probing");
+  assert.throws(() => f.admission.confirmTarget(pending, f.observed), {
+    code: "DOCUMENT_UNLOCK_STALE",
+  });
+});
+
 test("replacing the actual epoch cannot retain an old target proof", (t) => {
   const a = fixture(t);
   const b = fixture(t);
@@ -219,19 +275,23 @@ test("replacing the actual epoch cannot retain an old target proof", (t) => {
     scope: "ordinary",
   }));
   const proof = admission.confirmTarget(
-    { docId: a.observed.creationId },
+    admission.beginProbe({ docId: a.observed.creationId }),
     a.observed,
   );
   const admitted = admission.authorize(a.principal(), "accept", proof);
+  const pending = admission.beginProbe({ docId: a.observed.creationId });
   state = b.state;
   assert.throws(admitted.recheck, { code: "DOCUMENT_UNLOCK_STALE" });
+  assert.throws(() => admission.confirmTarget(pending, a.observed), {
+    code: "DOCUMENT_UNLOCK_STALE",
+  });
 });
 
 test("both target pins must agree with a complete probe; name alone is never identity", (t) => {
   const f = fixture(t);
   const saved = { ...f.observed, fileId: "file-A", version: 3 };
   const exact = f.admission.confirmTarget(
-    { docId: saved.creationId, docFileId: "file-A" },
+    f.admission.beginProbe({ docId: saved.creationId, docFileId: "file-A" }),
     saved,
   );
   assert.equal(exact.fileId, "file-A");
@@ -242,13 +302,16 @@ test("both target pins must agree with a complete probe; name alone is never ide
     { docId: "", docFileId: "file-A" },
     { doc: saved.name },
   ])
-    assert.throws(() => f.admission.confirmTarget(selector, saved), {
-      code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
-    });
+    assert.throws(
+      () => f.admission.confirmTarget(f.admission.beginProbe(selector), saved),
+      {
+        code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
+      },
+    );
   assert.throws(
     () =>
       f.admission.confirmTarget(
-        { docId: saved.creationId },
+        f.admission.beginProbe({ docId: saved.creationId }),
         JSON.parse(JSON.stringify({ ...saved, complete: false })),
       ),
     { code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN" },
@@ -315,7 +378,7 @@ test("ordinary queue without a recovery epoch needs no added per-document grant"
     scope: "ordinary",
   }));
   const target = admission.confirmTarget(
-    { docId: "A", docFileId: "file-A" },
+    admission.beginProbe({ docId: "A", docFileId: "file-A" }),
     {
       complete: true,
       name: "Actual document A",
