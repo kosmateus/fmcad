@@ -49,12 +49,13 @@ const { runBoundInstanceProbe } = createRequire(
 
 function setup(
   currentInstance?: P.Instance,
-  sourceBackend: "addin" | "mcp" = "addin",
+  sourceBackend: "addin" | "mcp" = "mcp",
   sourceUrl?: string,
   forPublicCli = false,
 ) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "fmcad-backend-transition-"));
   if (forPublicCli) fs.mkdirSync(path.join(root, "fmcad"));
+  // MCP here is archived predecessor metadata only; new physical configs use ADDIN.
   const sourceConfig: P.Config =
     sourceBackend === "mcp"
       ? {
@@ -70,7 +71,7 @@ function setup(
         }
       : {
           backend: "addin",
-          url: sourceUrl || "http://never-send.invalid",
+          url: sourceUrl || "http://127.0.0.1:8765/mcp",
           headers: {},
           tool: "execute_python",
           transport: "node",
@@ -100,14 +101,13 @@ function setup(
         }
       : {
           ...f.cfg,
-          backend: "mcp",
-          url: "http://127.0.0.1:1/never-called",
-          headers: { "X-Synthetic-Endpoint": "mcp" },
-          tool: "fusion_mcp_execute",
-          protocolVersion: "2024-11-05",
+          url: "http://127.0.0.1:8765/transition",
         };
   const approval: BackendTransitionApproval = {
-    requestId: "to-mcp",
+    requestId:
+      sourceBackend === "mcp"
+        ? "historical-mcp-to-addin"
+        : "addin-config-change",
     clientId: f.clientId,
     clientToken: f.token,
     previousConfig: f.cfg,
@@ -422,7 +422,7 @@ test(
 );
 
 test(
-  "owner stop composes a dead SDK transition and recovers orphan work through its authenticated live backend",
+  "owner stop authorizes an ADDIN runtime upgrade and recovers orphan work through its authenticated live backend",
   { timeout: 30000 },
   async (t) => {
     const processBirth = (
@@ -474,6 +474,12 @@ test(
       "tests/fixtures/backend-transition-owner.cjs",
     );
     const repoRoot = path.resolve(__dirname, "..", "..");
+    const targetIdentity = oldSdk;
+    const targetObservation = {
+      ...targetIdentity,
+      activeCommand: "SelectCommand",
+      documents: [],
+    };
     const owner = spawn(
       process.execPath,
       [
@@ -481,12 +487,10 @@ test(
         runtimeRoot,
         repoRoot,
         f.dir,
-        JSON.stringify(f.cfg),
-        JSON.stringify({
-          ...oldSdk,
-          activeCommand: "SelectCommand",
-          documents: [],
-        }),
+        JSON.stringify(f.next),
+        JSON.stringify(targetObservation),
+        JSON.stringify(f.approval),
+        "a".repeat(64),
       ],
       { stdio: ["ignore", "ignore", "pipe", "ipc"] },
     );
@@ -558,7 +562,7 @@ test(
 
     let stdout = "";
     const cliDeps = {
-      loadConfig: () => ({ cfg: f.cfg }),
+      loadConfig: () => ({ cfg: f.next }),
       stdout: {
         write(text: string) {
           stdout += text;
@@ -569,7 +573,7 @@ test(
     const { queueCommand } = load("./dist/entrypoints/queue-cli") as {
       queueCommand(argv: string[], deps: typeof cliDeps): Promise<number>;
     };
-    const stopRequestId = "dead-sdk-owner-stop";
+    const stopRequestId = "addin-runtime-owner-stop";
     assert.equal(
       await queueCommand(
         ["stop", "--client", f.clientId, "--request-id", stopRequestId],
@@ -583,9 +587,6 @@ test(
     owner.send({ action: "exit" });
     await ownerExit;
     assert.ok(fs.existsSync(sourceStartupReceipt));
-    const sdkExit = once(sdk, "exit");
-    sdk.kill("SIGKILL");
-    await sdkExit;
     const sourceState = (
       load("./queue-isolated-epoch") as {
         openIsolatedEpoch(dir: string, options: { recover: false }): P.State;
@@ -595,26 +596,6 @@ test(
       Object.entries(sourceState.data.jobs).map(([id, job]) => [id, job.state]),
     );
 
-    const targetProcess = spawn(
-      process.execPath,
-      ["-e", "setInterval(() => {}, 1000)"],
-      {
-        stdio: "ignore",
-      },
-    );
-    children.push(targetProcess);
-    await once(targetProcess, "spawn");
-    assert.ok(targetProcess.pid);
-    const targetIdentity = {
-      pid: targetProcess.pid,
-      birth: processBirth(targetProcess.pid),
-      version: "fixture",
-    };
-    const targetObservation = {
-      ...targetIdentity,
-      activeCommand: "SelectCommand",
-      documents: [],
-    };
     let targetProbes = 0;
     let probeStarted!: () => void;
     let continueProbe!: () => void;
@@ -626,8 +607,13 @@ test(
     });
     const approval: BackendTransitionApproval = {
       ...f.approval,
-      requestId: "dead-sdk-mcp-to-addin",
+      requestId: "addin-runtime-upgrade-after-owner-stop",
+      previousConfig: f.next,
+      nextConfig: f.next,
       stopRequestId,
+      nextBuildHash: (
+        load("./queue-instance") as { buildHash(): string }
+      ).buildHash(),
     };
     const approvalFile = path.join(f.root, "backend-approval.json");
     fs.writeFileSync(approvalFile, JSON.stringify(approval), { mode: 0o600 });
@@ -769,7 +755,7 @@ test(
           "--client",
           f.clientId,
           "--request-id",
-          "resume-after-dead-sdk-transition",
+          "resume-after-addin-runtime-upgrade",
         ],
         { ...cliDeps, loadConfig: () => ({ cfg: f.next }) },
       ),
@@ -862,7 +848,7 @@ test(
     assert.ok(backend);
     assert.equal(backend.identity.instance.pid, targetIdentity.pid);
     assert.equal(backend.identity.instance.birth, targetIdentity.birth);
-    assert.notEqual(backend.identity.instance.pid, f.epoch.currentInstance.pid);
+    assert.equal(backend.identity.instance.pid, f.epoch.currentInstance.pid);
     const reopened = openIsolatedEpoch(f.dir);
     assert.equal(reopened.status(jobId)["state"], "needs_reconciliation");
     assert.equal(reopened.summary().blocked?.id, jobId);
@@ -1055,12 +1041,13 @@ test("owner transition preserves predecessor identity/history; inverse transitio
       documents: [],
     };
     prepared.commit(instance, prepared.identity.buildHash);
-    const mcp = lifecycle.backendHead(f.dir)!;
+    const targetHead = lifecycle.backendHead(f.dir)!;
     assert.equal(
-      mcp.identity.configHash,
+      targetHead.identity.configHash,
       load("./queue-instance").brokerConfigHash(f.next),
     );
-    const mcpBytes = fs.readFileSync(mcp.identityFile);
+    const targetBytes = fs.readFileSync(targetHead.identityFile);
+    // This inverse round-trip exercises transition metadata only; it never starts a broker or backend.
     const inverse = lifecycle.prepareBackendTransition(f.dir, f.state, f.cfg, {
       ...f.approval,
       requestId: "back-to-addin",
@@ -1072,7 +1059,7 @@ test("owner transition preserves predecessor identity/history; inverse transitio
       lifecycle.backendHead(f.dir)!.identity.configHash,
       prepared.identity.configHash,
     );
-    assert.deepEqual(fs.readFileSync(mcp.identityFile), mcpBytes);
+    assert.deepEqual(fs.readFileSync(targetHead.identityFile), targetBytes);
     for (const original of originals)
       assert.deepEqual(fs.readFileSync(original.file), original.bytes);
     const head = path.join(f.dir, "physical-backend-head.json");
@@ -1521,13 +1508,14 @@ test(
   },
 );
 
-test("sole broker probes target once, reopens matching head without SDK, and returns to addin", async () => {
+test("sole broker probes a supported ADDIN target once and reopens its matching head without an SDK probe", async () => {
   const f = setup();
   let probes = 0;
   let handle: Awaited<ReturnType<typeof serve>> | undefined;
   const originalIdentity = fs.readFileSync(
     path.join(f.epoch.root, "instance.json"),
   );
+  const archivedIdentity = fs.readFileSync(path.join(f.dir, "instance.json"));
   const observation = {
     ...f.epoch.currentInstance,
     activeCommand: "SelectCommand",
@@ -1573,18 +1561,15 @@ test("sole broker probes target once, reopens matching head without SDK, and ret
     assert.equal(probes, 1);
     await handle.close();
     handle = undefined;
-    handle = await serve(f.cfg, {
-      ...options,
-      backendTransition: {
-        ...f.approval,
-        requestId: "restore-addin",
-        previousConfig: f.next,
-        nextConfig: f.cfg,
-      },
-    });
-    assert.equal(probes, 2);
-    await handle.close();
-    handle = undefined;
+    assert.equal(
+      lifecycle.backendHead(f.dir)?.identity.configHash,
+      load("./queue-instance").brokerConfigHash(f.next),
+    );
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.dir, "instance.json")),
+      archivedIdentity,
+    );
+    assert.equal(probes, 1, "the archived MCP predecessor is never reopened");
     assert.deepEqual(
       fs.readFileSync(path.join(f.epoch.root, "instance.json")),
       originalIdentity,
@@ -1693,14 +1678,41 @@ test("CLI requires an explicit transition verb and a private bounded approval fi
 });
 
 test("supported owner stop authorizes one paused transition without implicitly resuming", async () => {
-  const f = setup();
+  const f = setup(undefined, "mcp");
   let handle: Awaited<ReturnType<typeof serve>> | undefined;
   let probes = 0;
+  let ownerProbes = 0;
   const observation = {
     ...f.epoch.currentInstance,
     activeCommand: "SelectCommand",
     documents: [],
   };
+  const owner = spawn(
+    process.execPath,
+    [
+      path.join(process.cwd(), "tests/fixtures/backend-transition-owner.cjs"),
+      runtimeRoot,
+      process.cwd(),
+      f.dir,
+      JSON.stringify(f.next),
+      JSON.stringify(observation),
+      JSON.stringify(f.approval),
+      "a".repeat(64),
+    ],
+    { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+  );
+  const ownerReady = new Promise<void>((resolve, reject) => {
+    owner.on("message", (raw: unknown) => {
+      const message = raw as { kind: string; message?: string };
+      if (message.kind === "probe") ownerProbes++;
+      else if (message.kind === "ready") resolve();
+      else if (message.kind === "error")
+        reject(new Error(message.message || "Backend-transition owner failed"));
+    });
+    owner.once("exit", () =>
+      reject(new Error("Owner exited before becoming ready")),
+    );
+  });
   const { request } = load("./queue-connection") as {
     request(
       dir: string,
@@ -1741,7 +1753,8 @@ test("supported owner stop authorizes one paused transition without implicitly r
     }),
   };
   try {
-    handle = await serve(f.cfg, options);
+    await ownerReady;
+    assert.equal(ownerProbes, 1);
     const auth = { clientId: f.clientId, clientToken: f.token };
     const control = await request(f.dir, { action: "control-status", auth });
     const stopped = await request(f.dir, {
@@ -1753,9 +1766,10 @@ test("supported owner stop authorizes one paused transition without implicitly r
         expectedGeneration: control["generation"],
       },
     });
-    await handle.close();
-    handle = undefined;
     const releaseFile = String(stopped["releaseFile"]);
+    const ownerExit = once(owner, "exit");
+    owner.send({ action: "exit" });
+    await ownerExit;
     await new Promise<void>((resolve, reject) => {
       const watcher = fs.watch(f.dir, inspect);
       watcher.once("error", reject);
@@ -1772,7 +1786,10 @@ test("supported owner stop authorizes one paused transition without implicitly r
       true,
     );
     await assert.rejects(
-      serve(f.next, { ...options, backendTransition: f.approval }),
+      serve(f.next, {
+        ...options,
+        backendTransition: f.approval,
+      }),
       { code: "EPOCH_BUSY" },
     );
     assert.equal(probes, 0);
@@ -1792,9 +1809,17 @@ test("supported owner stop authorizes one paused transition without implicitly r
       { code: "BACKEND_TRANSITION_UNPROVEN" },
     );
     fs.writeFileSync(releaseFile, release);
+    const qi = load("./queue-instance") as { buildHash(): string };
     handle = await serve(f.next, {
       ...options,
-      backendTransition: { ...f.approval, stopRequestId: "actual-owner-stop" },
+      backendTransition: {
+        ...f.approval,
+        requestId: "actual-owner-stop-runtime-upgrade",
+        previousConfig: f.next,
+        nextConfig: f.next,
+        stopRequestId: "actual-owner-stop",
+        nextBuildHash: qi.buildHash(),
+      },
     });
     assert.equal(probes, 1);
     assert.equal(
@@ -1805,13 +1830,11 @@ test("supported owner stop authorizes one paused transition without implicitly r
     await handle.close();
     handle = undefined;
     await assert.rejects(
-      serve(f.cfg, {
+      serve(f.next, {
         ...options,
         backendTransition: {
           ...f.approval,
           requestId: "cannot-reuse-stop",
-          previousConfig: f.next,
-          nextConfig: f.cfg,
           stopRequestId: "actual-owner-stop",
         },
       }),
@@ -1822,6 +1845,11 @@ test("supported owner stop authorizes one paused transition without implicitly r
     assert.equal(handle.status().paused, true);
     assert.equal(probes, 1);
   } finally {
+    if (owner.exitCode === null && owner.signalCode === null) {
+      const exit = once(owner, "exit");
+      owner.kill("SIGKILL");
+      await exit;
+    }
     if (handle) await handle.close();
     fs.rmSync(f.root, { recursive: true, force: true });
   }
