@@ -24,6 +24,8 @@ export interface NativePhysicalGenerationProvisionOptions {
   getVerifiedActivation?: (
     descriptor: PhysicalGenerationDescriptor,
   ) => Promise<NativePhysicalActivation | undefined>;
+  /** Actual maintained broker-owner capability from private composition. */
+  assertBrokerOwner?: () => void;
 }
 
 export interface NativePhysicalActivation {
@@ -221,7 +223,8 @@ function readMappedFile(file: string): Buffer {
 export function createNativePhysicalGenerationProvision(
   options: NativePhysicalGenerationProvisionOptions,
 ) {
-  const { getVerifiedActivation, ...configuration } = options;
+  const { getVerifiedActivation, assertBrokerOwner, ...configuration } =
+    options;
   const pinned = structuredClone(configuration);
   const timeout = pinned.timeoutMs ?? 30_000;
   const validSha = (value: string) => /^[a-f0-9]{64}$/.test(value);
@@ -272,7 +275,7 @@ export function createNativePhysicalGenerationProvision(
       let issuanceStarted = false;
       let directoryFd: number | undefined;
       const snapshot = structuredClone(descriptor);
-      const invoke = (action: object): Promise<string> => {
+      const invoke = (action: Record<string, unknown>): Promise<string> => {
         // Before launch as well as inside the native process: never execute a
         // mismapped interpreter or import a mismapped installed package.
         if (
@@ -290,6 +293,12 @@ export function createNativePhysicalGenerationProvision(
           )
             throw new Error("Installed package differs");
         return new Promise((resolve, reject) => {
+          if (action["action"] === "grant") {
+            // Preparation and package preflight are not issuance. The actual
+            // maintained owner must still exist at the physical spawn boundary.
+            assertBrokerOwner?.();
+            issuanceStarted = true;
+          }
           const child = spawn(
             pinned.mappedNativePython,
             ["-I", "-S", "-B", "-c", nativeBootstrap],
@@ -371,6 +380,7 @@ export function createNativePhysicalGenerationProvision(
         });
       };
       try {
+        assertBrokerOwner?.();
         if (
           path.posix.normalize(pinned.linuxGrantDirectory) !==
             pinned.linuxGrantDirectory ||
@@ -400,6 +410,7 @@ export function createNativePhysicalGenerationProvision(
         const approval = await getVerifiedActivation?.(
           structuredClone(snapshot),
         );
+        assertBrokerOwner?.();
         const activation =
           approval === undefined ? undefined : structuredClone(approval);
         if (
@@ -434,7 +445,7 @@ export function createNativePhysicalGenerationProvision(
         ).trim();
         if (requestDigest !== digest(raw))
           throw new Error("Descriptor digest mismatch");
-        issuanceStarted = true;
+        assertBrokerOwner?.();
         const acknowledgment = decodeAdmissionJson(
           await invoke({
             action: "grant",
@@ -445,6 +456,7 @@ export function createNativePhysicalGenerationProvision(
             activationRaw,
           }),
         );
+        assertBrokerOwner?.();
         if (
           !acknowledgment ||
           typeof acknowledgment !== "object" ||
@@ -458,6 +470,7 @@ export function createNativePhysicalGenerationProvision(
         const grantDigest = (
           await invoke({ action: "verify", attempt, output })
         ).trim();
+        assertBrokerOwner?.();
         if (!validSha(grantDigest)) throw new Error("Invalid grant digest");
         const rawGrant = readMappedFile(
           path.posix.join(pinned.mappedPrivateDirectory, attempt, "grant.json"),
@@ -500,6 +513,7 @@ export function createNativePhysicalGenerationProvision(
           returnedDirectory.ino !== originalDirectory.ino
         )
           throw new Error("Private directory pathname changed");
+        assertBrokerOwner?.();
         return {
           grantFile: path.posix.join(pinned.linuxGrantDirectory, name),
           grantDigest,
