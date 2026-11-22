@@ -8,6 +8,7 @@
     "outDir": "dist/library-build"
   },
   "include": [
+    "src/document-unlock-admission.ts",
     "src/queue-broker.ts",
     "src/composition/queue-broker.ts",
     "src/composition/queue-public-python-result.ts",

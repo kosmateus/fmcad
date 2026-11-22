@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "tests/document-unlock-admission.test.ts",
     "tests/physical-generation-transport.test.ts",
     "tests/physical-generation-grant.test.ts",
     "tests/physical-generation-provision.test.ts",

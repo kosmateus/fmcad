@@ -77,6 +77,8 @@ tests/partition-bench-*/
 /src/queue-closed-epoch-proof.d.ts
 /src/queue-isolated-epoch.js
 /src/queue-isolated-epoch.d.ts
+/src/document-unlock-admission.js
+/src/document-unlock-admission.d.ts
 /src/queue-scratch-control.js
 /src/queue-scratch-control.d.ts
 /tests/fixtures/closed-epoch-successor.cjs
