@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "tests/library-native-root.test.ts",
     "tests/document-unlock-admission.test.ts",
     "tests/document-unlock-diagnostics.test.ts",
     "tests/document-unlock-controller.test.ts",

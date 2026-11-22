@@ -108,37 +108,103 @@ export function createQueueSession(
   let client: QueueClientPort;
   let build: string;
   let ready = false;
-  function readFence() {
+  let nativeRoot = false;
+  const rootProfile = () =>
+    require("../node-adapters/execution/physical-generation-profile") as typeof import("../../packages/node-adapters/src/execution/physical-generation-profile");
+  function hasNativeRootEvidence() {
+    // Ordinary legacy fences must not load physical clients before their
+    // compatibility checks. This is only a lazy-load hint, never approval.
+    const possible = [
+      "runtime-rebaseline-head.json",
+      "runtime-rebaseline-publication.json",
+      "runtime-rebaselines",
+    ].some((name) => {
+      try {
+        fs.lstatSync(path.join(directory, name));
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    });
+    return possible && rootProfile().hasRuntimeRootEvidence(directory);
+  }
+  async function readFence() {
     const marker = JSON.parse(
       fs.readFileSync(path.join(directory, "broker.lock"), "utf8"),
     );
     if (marker.protocol !== 2)
       throw new CompatibilityError("broker", marker.protocol, 2);
-    const admissionDirectory: string =
-      require("../queue-isolated-epoch").isolatedEpochDirectory(directory);
+    const current: string = require("../queue-instance").buildHash();
+    const configHash: string =
+      require("../queue-instance").brokerConfigHash(config);
+    const hasNativeRoot = hasNativeRootEvidence();
+    let approved:
+      | import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot
+      | undefined;
+    if (hasNativeRoot) {
+      // Use the same private profile and authenticated QUERY-only reader as the
+      // broker, before any legacy epoch selector. Marker presence grants nothing.
+      const wiring =
+        require("../queue-runtime-physical-wiring") as typeof import("../queue-runtime-physical-wiring");
+      const physical = rootProfile().physicalBrokerPortsFromEnvironment<
+        import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot
+      >(process.env, {
+        runtimeRootFactory: wiring.createRuntimeRootPhysicalProfileFactory(),
+      });
+      if (!physical)
+        throw Object.assign(
+          new Error("Native-authenticated runtime root is required"),
+          { code: "RUNTIME_ROOT_AUTHORITY_REQUIRED" },
+        );
+      approved = await physical.verifyRuntimeRootBeforeRestore({
+        directory,
+        buildHash: current,
+        configHash,
+      });
+      if (!approved)
+        throw Object.assign(
+          new Error("Native-authenticated runtime root is required"),
+          { code: "RUNTIME_ROOT_AUTHORITY_REQUIRED" },
+        );
+    }
+    const admissionDirectory: string = approved
+      ? directory
+      : require("../queue-isolated-epoch").isolatedEpochDirectory(directory);
     const state = JSON.parse(
-      fs.readFileSync(
-        path.join(admissionDirectory, "queue-state.json"),
-        "utf8",
-      ),
+      approved
+        ? approved.currentFiles["queue-state.json"]!.toString("utf8")
+        : fs.readFileSync(
+            path.join(admissionDirectory, "queue-state.json"),
+            "utf8",
+          ),
     );
     if (state.version !== 1)
       throw new CompatibilityError("persistedState", state.version, 1);
-    const current: string = require("../queue-instance").buildHash();
-    const backend = require("../queue-backend-transition").resolveBackendHead(
-      directory,
-      () =>
-        require("../queue-isolated-epoch").openIsolatedEpoch(directory, {
-          recover: false,
-        }),
+    const backend = approved
+      ? undefined
+      : require("../queue-backend-transition").resolveBackendHead(
+          directory,
+          () =>
+            require("../queue-isolated-epoch").openIsolatedEpoch(directory, {
+              recover: false,
+            }),
+        );
+    const identityFile = path.join(
+      admissionDirectory,
+      approved ? "runtime-rebaseline-current-instance.json" : "instance.json",
     );
+    const { readBytes } =
+      require("../node-adapters/persistence/records") as typeof import("../../packages/node-adapters/src/persistence/records");
     const identity =
-      backend.current?.identity ??
+      backend?.current?.identity ??
       JSON.parse(
-        fs.readFileSync(path.join(admissionDirectory, "instance.json"), "utf8"),
+        approved
+          ? readBytes(identityFile, 1024 * 1024, fs, identityFile).toString(
+              "utf8",
+            )
+          : fs.readFileSync(identityFile, "utf8"),
       );
-    const configHash: string =
-      require("../queue-instance").brokerConfigHash(config);
     if (identity.configHash !== configHash)
       throw new CompatibilityError(
         "configuration",
@@ -152,20 +218,35 @@ export function createQueueSession(
       );
     if (identity.buildHash !== current)
       throw new CompatibilityError("build", identity.buildHash, current);
-    return current;
+    return { build: current, nativeRoot: hasNativeRoot };
   }
   // Snapshot commits synchronously publish pending -> atomic snapshot -> remove
   // pending. A client in another process can observe the middle of that write.
   // Retry only this read; never recover storage, register, or resubmit a job here.
   function metadataSample() {
     const pointerFile = path.join(directory, "isolated-admission-epoch.json");
-    const pointer = fs.existsSync(pointerFile)
-      ? (JSON.parse(fs.readFileSync(pointerFile, "utf8")) as {
+    const pointerBytes = fs.existsSync(pointerFile)
+      ? fs.readFileSync(pointerFile)
+      : null;
+    const pointer = pointerBytes
+      ? (JSON.parse(pointerBytes.toString("utf8")) as {
           epochId?: string;
         })
       : null;
     const stores = [directory];
-    if (pointer?.epochId && /^[a-f0-9-]{36}$/.test(pointer.epochId))
+    const hasNativeRoot = hasNativeRootEvidence();
+    const nativeFiles: string[] = hasNativeRoot
+      ? (
+          require("../node-adapters/persistence/runtime-rebaseline-scope") as typeof import("../../packages/node-adapters/src/persistence/runtime-rebaseline-scope")
+        ).runtimeRebaselineManifestNames(directory, pointerBytes)
+      : [];
+    if (hasNativeRoot) {
+      for (const file of nativeFiles)
+        if (file.endsWith("queue-state.json")) {
+          const store = path.dirname(path.join(directory, file));
+          if (!stores.includes(store)) stores.push(store);
+        }
+    } else if (pointer?.epochId && /^[a-f0-9-]{36}$/.test(pointer.epochId))
       stores.push(path.join(directory, "admission-epochs", pointer.epochId));
     const stamp = (file: string): string => {
       try {
@@ -193,6 +274,13 @@ export function createQueueSession(
       path.join(directory, "broker.lock"),
       pointerFile,
       path.join(directory, "physical-backend-head.json"),
+      ...(hasNativeRoot
+        ? [
+            ...nativeFiles.map((file) => path.join(directory, file)),
+            path.join(directory, "runtime-rebaseline-current-instance.json"),
+            path.join(directory, "runtime-rebaseline-publication.json"),
+          ]
+        : []),
       ...stores.flatMap((store) => [
         path.join(store, "queue-state.json"),
         path.join(store, "instance.json"),
@@ -207,11 +295,11 @@ export function createQueueSession(
     const deadline = Date.now() + config.timeoutMs;
     for (;;) {
       const before = metadataSample();
-      let current: string | undefined;
+      let current: Awaited<ReturnType<typeof readFence>> | undefined;
       let error: unknown;
       if (!before.pending) {
         try {
-          current = readFence();
+          current = await readFence();
         } catch (cause) {
           error = cause;
         }
@@ -223,7 +311,8 @@ export function createQueueSession(
         before.signature === after.signature
       ) {
         if (current === undefined) throw error;
-        build = current;
+        build = current.build;
+        nativeRoot = current.nativeRoot;
         return;
       }
       if (Date.now() >= deadline)
@@ -322,6 +411,7 @@ export function createQueueSession(
       let isolatedScratch: BrokerStatus["isolatedScratch"];
       let sourceCommit: string | undefined;
       if (
+        !nativeRoot &&
         fs.existsSync(path.join(directory, "isolated-admission-epoch.json"))
       ) {
         const summary = (await client.call("queue-summary")) as {
