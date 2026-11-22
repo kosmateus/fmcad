@@ -460,7 +460,6 @@ export function claimBrokerLifetime({
   }
 
   return {
-    assertOwner,
     abortBeforeInitialize,
     owner,
     lock,
