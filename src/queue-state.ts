@@ -4,11 +4,13 @@ import { isDeepStrictEqual } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createRequire } from "node:module";
-import type { QueueDomainOptions, QueueSnapshot } from "@fmcad/core";
+import type { QueueDomain as CoreQueueDomain, QueueDomainOptions, QueueSnapshot } from "@fmcad/core";
 const load = createRequire(__filename);
-const { QueueDomain, terminal, validateQueueOptions, canonical } = load(
+const queueModule: typeof import("../packages/core/src/domain/queue") = load(
   "./dist/core/domain/queue",
-) as typeof import("../packages/core/src/domain/queue");
+);
+const QueueDomain: typeof CoreQueueDomain = queueModule.QueueDomain;
+const { terminal, validateQueueOptions, canonical } = queueModule;
 const { createSnapshotStore, readBytes, MAX_JSON_RECORD_BYTES } = load(
   "./dist/node-adapters/persistence/records",
 ) as typeof import("../packages/node-adapters/src/persistence/records");

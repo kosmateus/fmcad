@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import type { QueueJob, QueueSnapshot } from "@fmcad/core";
+import type { QueueJob, QueueSnapshot, RuntimeRetirementAuthority } from "@fmcad/core";
 import type { ApprovedRuntimeRebaselineRoot } from "./queue-runtime-rebaseline";
 import type {
   RuntimeRetiredExposure,
@@ -43,7 +43,7 @@ export function createApprovedRuntimeRetirement(options: {
   root: ProjectionRoot;
   assertVerifiedRoot(directory: string): void;
   assertBrokerOwner(): void;
-}) {
+}): Readonly<{ forDirectory(queueDirectory: string): RuntimeRetirementAuthority }> {
   const root = options.root;
   const currentFiles = Object.fromEntries(
     Object.entries(root.currentFiles).map(([name, bytes]) => [
