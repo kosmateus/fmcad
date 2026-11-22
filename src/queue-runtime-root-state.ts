@@ -17,6 +17,9 @@ const { createApprovedRuntimeRetirement } = load(
 const { decodeOpaqueQueueJson } = load(
   "./dist/node-adapters/execution/admission-json",
 ) as typeof import("../packages/node-adapters/src/execution/admission-json");
+const { canonical } = load(
+  "./dist/core/domain/queue",
+) as typeof import("../packages/core/src/domain/queue");
 type State = ReturnType<typeof openIsolatedEpoch>;
 type ModelGrant = (clientId: string, tokenHash: string) => void;
 const grants = new WeakMap<object, ModelGrant>();
@@ -60,6 +63,14 @@ export function openRuntimeRootState(options: {
       recover: false,
       runtimeRetirement: retirement.forDirectory(layerDirectory),
     });
+    const frozen = options.root.frozenBaseline.snapshots[
+      layer
+    ] as unknown as QueueSnapshot;
+    if (!frozen || canonical(historical.data.jobs) !== canonical(frozen.jobs))
+      refused(
+        "RUNTIME_RETIREMENT_CHANGED",
+        "Read-only historical jobs differ from their immutable original identities",
+      );
     historicalStates.push(historical);
     for (const job of Object.values(historical.data.jobs)) {
       if (history.has(job.id) || requests.has(job.requestId))

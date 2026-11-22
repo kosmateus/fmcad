@@ -510,6 +510,13 @@ function commandEntry(argv: string[]) {
   return load("./commands").findCommand(rest);
 }
 
+function hasRuntimeRootEvidence(directory: string): boolean {
+  for (const name of ["runtime-rebaseline-head.json", "runtime-rebaseline-publication.json", "runtime-rebaselines"]) {
+    try { fs.lstatSync(path.join(directory, name)); return true; }
+    catch (error) { if (errorInfo(error).code !== "ENOENT") throw error; }
+  }
+  return false;
+}
 export async function serve(cfg: P.Config, options: P.Options = {}) {
   let runtimeRootWiring:
     import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
@@ -532,8 +539,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "./dist/node-adapters/execution/physical-generation-profile",
     ).physicalBrokerPortsFromEnvironment<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot>(
       process.env,
-      fs.existsSync(path.join(path.resolve(options.dir || queueDirectory()), "runtime-rebaseline-head.json")) ||
-      fs.existsSync(path.join(path.resolve(options.dir || queueDirectory()), "runtime-rebaseline-publication.json"))
+      hasRuntimeRootEvidence(path.resolve(options.dir || queueDirectory()))
         ? {
             runtimeRootFactory(profile) {
               const { createRuntimeRootPhysicalWiring } = runtimeRequire(
@@ -673,9 +679,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const approvedRuntimeRoot = await verifyRuntimeRootBeforeRestore?.({
     directory: dir, buildHash: codeHash, configHash,
   });
-  if (!approvedRuntimeRoot &&
-    (fs.existsSync(path.join(dir, "runtime-rebaseline-head.json")) ||
-     fs.existsSync(path.join(dir, "runtime-rebaseline-publication.json"))))
+  if (!approvedRuntimeRoot && hasRuntimeRootEvidence(dir))
     fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Use the private native-authenticated runtime-root startup");
   if (approvedRuntimeRoot &&
     [options.backendTransition, options.atomicMigrationNonce,
@@ -921,18 +925,26 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
   });
   const { owner: marker, lock, close } = lifetime;
+  let physicalGrantState: "not_attempted" | "unknown" | "issued" = "not_attempted";
+  try {
   async function preparePhysicalGeneration() {
-   try {
     lifetime.assertOwner();
+    if (options.preparePhysicalGeneration) physicalGrantState = "unknown";
+    try {
     await options.preparePhysicalGeneration?.({
       directory: dir, owner: marker, buildHash: codeHash, configHash,
       assertBrokerOwner: lifetime.assertOwner,
     });
+    } catch (error) {
+      const detail = errorInfo(error);
+      const issuance = object(error)["grantIssuance"];
+      if (issuance !== "unknown" &&
+        (detail.notStarted === true || issuance === "notStarted"))
+        physicalGrantState = "not_attempted";
+      throw error;
+    }
+    if (options.preparePhysicalGeneration) physicalGrantState = "issued";
     lifetime.assertOwner();
-  } catch (error) {
-    lifetime.abortBeforeInitialize();
-    throw error;
-  }
   }
   if (!approvedRuntimeRoot) await preparePhysicalGeneration();
   const { successorRuntime, migrationSnapshotHash } = startupClaims;
@@ -982,7 +994,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       : measuredStateOptions,
    );
    } catch (error) {
-     lifetime.abortBeforeInitialize();
      throw error;
    }
    // Project the authenticated existing snapshot under the real writer claim
@@ -996,7 +1007,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   try {
     assertPhysicalIsolationAuthority();
   } catch (error) {
-    lifetime.abortBeforeInitialize();
     throw error;
   }
   const metadataSuccessorAuthority = successorRuntime?.authority ??
@@ -6384,10 +6394,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         if (!identifier(message.requestId))
           fail("INVALID_REQUEST", "requestId must contain 1..256 characters");
         if (message.expectedRequest !== undefined) {
+          const prior = state.epoch || approvedRuntimeRoot
+            ? state.findAnyRequest(clientId, message.requestId) : null;
+          const retained = prior && state.lookup(prior.id);
           const id = load(
             "./dist/core/domain/queue-request-identity",
           ).matchAdmittedRequest(
-            state.data.jobs,
+            retained ? { [retained.id]: retained } : state.data.jobs,
             clientId,
             message.requestId,
             message.expectedRequest,
@@ -6399,7 +6412,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             buildHash: codeHash,
           };
         }
-        if (state.epoch)
+        if (state.epoch || approvedRuntimeRoot)
           return {
             job: state.findAnyRequest(clientId, message.requestId),
             buildHash: codeHash,
@@ -7986,6 +7999,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       buildHash: codeHash,
     }),
   };
+  } catch (error) {
+    try {
+      if (physicalGrantState === "not_attempted") lifetime.abortBeforeInitialize();
+      else lifetime.retainBeforeInitializeFailure({
+        code: errorInfo(error).code || "BROKER_STARTUP_FAILED",
+        grantIssuance: physicalGrantState,
+      });
+    } catch { /* Preserve the failure and retain ownership if evidence cannot be written. */ }
+    throw error;
+  }
 }
 
 function reclaim(dir: string) {

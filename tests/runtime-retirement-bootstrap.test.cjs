@@ -196,7 +196,17 @@ test("runtime root admission is explicit and does not derive modeling rights fro
       ),
     { code: "NOT_AUTHORIZED" },
   );
-  assert.equal(grants, 1);
+  const { epochAdmission } = require("../src/queue-isolated-epoch.js");
+  assert.throws(
+    () =>
+      epochAdmission(
+        state,
+        { clientId: "successor" },
+        { successor: "token-hash" },
+      ),
+    { code: "NOT_AUTHORIZED" },
+  );
+  assert.equal(grants, 2);
   allowed = true;
   assert.equal(
     admitRuntimeRootRequest(
@@ -225,11 +235,8 @@ test("runtime root admission is explicit and does not derive modeling rights fro
   );
 });
 
-test("runtime root keeps other layers read-only and fences every submission entry against historical IDs", (t) => {
+function historicalFixture(t) {
   const f = fixture(t);
-  const {
-    openRuntimeRootState,
-  } = require("../src/queue-runtime-root-state.js");
   const previous = new QueueDomain({
     now: () => 100,
     newId: () => "epoch-job",
@@ -273,13 +280,23 @@ test("runtime root keeps other layers read-only and fences every submission entr
       record: { path: recordFile, sha256: sha(JSON.stringify(f.root.record)) },
     }),
   );
-  const state = openRuntimeRootState({
-    root: f.root,
-    assertBrokerOwner() {},
-    assertVerifiedRoot() {},
-    assertNativeModelGrant() {},
-    stateOptions: { now: () => 200 },
-  });
+  return { ...f, request, snapshot, bytes, layer, layerFile };
+}
+test("runtime root keeps other layers read-only and fences every submission entry against historical IDs", (t) => {
+  const f = historicalFixture(t);
+  const { request, snapshot, bytes, layer, layerFile } = f;
+  const {
+    openRuntimeRootState,
+  } = require("../src/queue-runtime-root-state.js");
+  const open = () =>
+    openRuntimeRootState({
+      root: f.root,
+      assertBrokerOwner() {},
+      assertVerifiedRoot() {},
+      assertNativeModelGrant() {},
+      stateOptions: { now: () => 200 },
+    });
+  const state = open();
   assert.equal(state.lookup("epoch-job").state, "needs_reconciliation");
   assert.equal(state.isHistorical("epoch-job"), true);
   assert.equal(state.findAnyRequest("stranger", "epoch-request"), null);
@@ -301,13 +318,52 @@ test("runtime root keeps other layers read-only and fences every submission entr
     state.documentConflicts({ creationId: "unrelated-doc" }).length,
     2,
   );
+  const tampered = structuredClone(snapshot);
+  const job = tampered.jobs["epoch-job"];
+  job.clientId = job.request.clientId = "different-owner";
+  job.requestId = job.request.requestId = "different-request";
+  job.hash = sha(require("@fmcad/core").canonical(job.request));
+  const changed = Buffer.from(JSON.stringify(tampered));
+  fs.writeFileSync(layerFile, changed);
+  f.root.currentFiles[layer + "/queue-state.json"] = changed;
+  f.root.currentFiles["queue-state.json"] = fs.readFileSync(f.file);
+  const currentRoot = fs.readFileSync(f.file);
+  assert.throws(open, {
+    code: "RUNTIME_RETIREMENT_CHANGED",
+    message:
+      "Read-only historical jobs differ from their immutable original identities",
+  });
+  assert.deepEqual(fs.readFileSync(f.file), currentRoot);
+  assert.deepEqual(fs.readFileSync(layerFile), changed);
 });
 
-for (const denyVerification of [false, true]) {
-  test(`actual serve ${denyVerification ? "refuses unverified roots before any writer or legacy read" : "projects a verified root under its writer claim before grant"}`, (t) => {
-    const f = fixture(t);
+for (const mode of [
+  "before-grant",
+  "verification-denied",
+  "missing-head",
+  "unknown-grant",
+  "backend-failure",
+  "history-ipc",
+]) {
+  const denyVerification = ["verification-denied", "missing-head"].includes(
+    mode,
+  );
+  const uncertainGrant = ["unknown-grant", "backend-failure"].includes(mode);
+  test(`actual serve runtime-root boundary: ${mode}`, (t) => {
+    const f = mode === "history-ipc" ? historicalFixture(t) : fixture(t);
     const rootFile = path.join(f.directory, "test-approved-root.json");
     fs.writeFileSync(rootFile, JSON.stringify(f.root), { mode: 0o600 });
+    if (mode === "missing-head") {
+      fs.writeFileSync(
+        path.join(
+          f.directory,
+          "runtime-rebaselines/owned-test-root/completion.json",
+        ),
+        JSON.stringify({ fixture: "retained native completion evidence" }),
+        { mode: 0o600 },
+      );
+      fs.unlinkSync(path.join(f.directory, "runtime-rebaseline-head.json"));
+    }
     const legacyFile = path.join(f.directory, "isolated-admission-epoch.json");
     fs.writeFileSync(legacyFile, "deliberately-invalid-legacy-pointer", {
       mode: 0o600,
@@ -337,9 +393,11 @@ const wiring = {
 require("./src/queue-runtime-physical-wiring.js").createRuntimeRootPhysicalWiring = () => wiring;
 require("./src/dist/node-adapters/execution/physical-generation-profile.js")
   .physicalBrokerPortsFromEnvironment = (_environment, dependencies) => {
-    assert.equal(dependencies.runtimeRootFactory({}), wiring);
+    const rootAuthority = dependencies.runtimeRootFactory?.({});
+    if (rootAuthority) assert.equal(rootAuthority, wiring);
     return {
-      verifyRuntimeRootBeforeRestore: wiring.verifyRuntimeRootBeforeRestore,
+      verifyRuntimeRootBeforeRestore: rootAuthority
+        ? wiring.verifyRuntimeRootBeforeRestore : async () => undefined,
       authorizePhysicalRequest: neverSDK, bindPhysicalTurn: neverSDK,
       withPhysicalTurn: neverSDK, physicalTurnQuiescence: neverSDK,
       async preparePhysicalGeneration(context) {
@@ -352,21 +410,82 @@ require("./src/dist/node-adapters/execution/physical-generation-profile.js")
         assert.equal(state.active, null);
         assert.equal(state.jobs["original-job"].state, "needs_reconciliation");
         grants++;
-        throw Object.assign(new Error("deliberate stop before any native grant"), { code: "ROOT_STARTUP_TEST_STOP" });
+        if (${mode === "backend-failure" || mode === "history-ipc"}) return;
+        if (${mode === "unknown-grant"})
+          throw Object.assign(new Error("uncertain grant fixture"), {
+            code: "PHYSICAL_GENERATION_REJECTED", grantIssuance: "unknown" });
+        throw Object.assign(new Error("deliberate stop before any native grant"), {
+          code: "ROOT_STARTUP_TEST_STOP", notStarted: true });
       },
     };
   };
 process.env.FMCAD_PHYSICAL_OPERATOR_PROFILE = "test-only-stub-not-a-production-profile";
+process.env.XDG_DATA_HOME = path.join(directory, "test-xdg-data");
+if (${mode === "history-ipc"}) {
+  // Only the unrelated physical startup probe is replaced. The writer,
+  // lifecycle, listener, credential checks and public IPC handler are real.
+  const lifetimeModule = require("./src/dist/node-adapters/execution/broker-lifetime.js");
+  const claim = lifetimeModule.claimBrokerLifetime;
+  lifetimeModule.claimBrokerLifetime = (options) => {
+    const lifetime = claim(options);
+    const initialize = lifetime.initialize;
+    lifetime.initialize = (settings) => initialize(settings, async () => undefined);
+    return lifetime;
+  };
+  const hash = (text) => require("node:crypto").createHash("sha256").update(text).digest("hex");
+  fs.writeFileSync(path.join(directory, "clients.json"), JSON.stringify({
+    "previous-owner": hash("owner-token"), stranger: hash("stranger-token"),
+  }), { mode: 0o600 });
+}
 const { serve } = require("./src/queue-broker.js");
 (async () => {
-  await assert.rejects(serve({ backend: "addin", routing: "queue", transport: "node",
+  const start = () => serve({ backend: "addin", routing: "queue", transport: "node",
     url: "http://127.0.0.1:8765/mcp" }, {
-    confirmOwnership: true, dir: directory, createBackend: neverSDK,
-  }), { code: ${JSON.stringify(denyVerification ? "ROOT_NATIVE_VERIFY_DENIED" : "ROOT_STARTUP_TEST_STOP")} });
+    confirmOwnership: true, dir: directory, createBackend() {
+      if (${mode === "history-ipc"}) return {
+        server: { backend: "addin", routing: "queue" }, _post: neverSDK, _parse: (value) => value,
+      };
+      throw Object.assign(new Error("backend constructor failed"), { code: "BACKEND_FACTORY_FAILED" });
+    },
+  });
+  if (${mode === "history-ipc"}) {
+    const broker = await start();
+    try {
+      const { request } = require("./src/queue-connection.js");
+      const owned = { clientId: "previous-owner", clientToken: "owner-token" };
+      const foreign = { clientId: "stranger", clientToken: "stranger-token" };
+      const expected = root.frozenBaseline.snapshots["admission-epochs/previous-epoch"].jobs["epoch-job"].request;
+      for (const auth of [owned, foreign]) {
+        await request(directory, { action: "register", ...auth });
+        for (const exact of [false, true]) {
+          const found = await request(directory, { action: "find-request", auth,
+            requestId: "epoch-request", ...(exact ? { expectedRequest: expected } : {}) });
+          assert.equal(found.job?.id ?? null, auth === owned ? "epoch-job" : null);
+          if (auth === owned) {
+            assert.equal(found.job.state, "needs_reconciliation");
+            assert.equal(found.job.quarantined, true);
+          }
+        }
+      }
+      await assert.rejects(request(directory, { action: "find-request", auth: owned,
+        requestId: "epoch-request", expectedRequest: { ...expected, timeoutMs: 999 } }),
+        { code: "REQUEST_CONFLICT" });
+      console.log("REAL_IPC_HISTORY_OWNER_EXPECTED_AND_FOREIGN_CHECKED");
+    } finally { await broker.close(); }
+  } else await assert.rejects(start(), { code: ${JSON.stringify(denyVerification ? "ROOT_NATIVE_VERIFY_DENIED" : mode === "unknown-grant" ? "PHYSICAL_GENERATION_REJECTED" : mode === "backend-failure" ? "BACKEND_FACTORY_FAILED" : "ROOT_STARTUP_TEST_STOP")} });
   assert.equal(verified, 1);
   assert.equal(grants, ${denyVerification ? 0 : 1});
   assert.equal(sdk, 0);
-  assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false);
+  assert.equal(fs.existsSync(path.join(directory, "broker.lock")), ${uncertainGrant});
+  if (${uncertainGrant}) {
+    const owner = JSON.parse(fs.readFileSync(path.join(directory, "broker.lock"), "utf8"));
+    const lifecycle = JSON.parse(fs.readFileSync(path.join(directory,
+      "broker-lifecycle-" + owner.nonce + ".json"), "utf8"));
+    assert.equal(lifecycle.stage, "failed");
+    assert.equal(lifecycle.safeToRecover, false);
+    assert.deepEqual(lifecycle.owner, owner);
+    assert.equal(lifecycle.grantIssuance, ${JSON.stringify(mode === "backend-failure" ? "issued" : "unknown")});
+  }
   console.log("ROOT_VERIFIED_CLAIMED_PROJECTED_BEFORE_GRANT");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `;

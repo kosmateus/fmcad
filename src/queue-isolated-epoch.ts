@@ -699,6 +699,10 @@ function epochAdmission(
   request: QueueRequest,
   clients: Record<string, string> = {},
 ) {
+  const { admitRuntimeRootRequest } = runtimeRequire(
+    "./queue-runtime-root-state",
+  ) as typeof import("./queue-runtime-root-state");
+  if (admitRuntimeRootRequest(state, request, clients)) return;
   const epoch = state.epoch;
   if (!epoch) return;
   const normal = state.admissionMode === "normal-multidocument";

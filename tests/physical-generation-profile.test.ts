@@ -155,6 +155,9 @@ test(
           context.assertBrokerOwner();
           throw Object.assign(new Error("Owned post-claim fixture"), {
             code: "OFFLINE_POSTCLAIM_CAPTURED",
+            // This private fixture never invokes the issuer. Generic failures
+            // cannot claim this classification and must retain the owner.
+            notStarted: true,
           });
         },
       };

@@ -174,11 +174,41 @@ export function claimBrokerLifetime({
   }
   function abortBeforeInitialize() {
     if (phase !== "claimed" || runtime || ports)
-      failure("BROKER_LIFETIME_STATE", "Only a claim with no physical initialization may be abandoned");
+      failure(
+        "BROKER_LIFETIME_STATE",
+        "Only a claim with no physical initialization may be abandoned",
+      );
     assertOwner();
     disposeClient();
     releaseLock();
     phase = "closed";
+  }
+
+  /** An issued or uncertain physical grant must retain its exact owner and
+   * durable failure evidence. This does not revoke, settle or retry that grant. */
+  function retainBeforeInitializeFailure(failure: {
+    code: string;
+    grantIssuance: "unknown" | "issued";
+  }) {
+    if (phase !== "claimed") return;
+    assertOwner();
+    durable(
+      lifecycleFile,
+      {
+        owner,
+        buildHash,
+        configHash,
+        receipt,
+        stage: "failed",
+        safeToRecover: false,
+        code: /^[A-Z][A-Z0-9_]{0,127}$/.test(failure.code)
+          ? failure.code
+          : "BROKER_STARTUP_FAILED",
+        grantIssuance: failure.grantIssuance,
+      },
+      true,
+    );
+    phase = "failed";
   }
 
   async function initialize<T>(
@@ -461,6 +491,7 @@ export function claimBrokerLifetime({
 
   return {
     abortBeforeInitialize,
+    retainBeforeInitializeFailure,
     owner,
     lock,
     assertOwner,
