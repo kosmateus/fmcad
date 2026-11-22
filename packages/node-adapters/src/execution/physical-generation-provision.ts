@@ -22,9 +22,30 @@ export interface NativePhysicalGenerationProvisionOptions {
 }
 
 export class PhysicalGenerationProvisionError extends Error {
-  constructor(readonly grantIssuance: "notStarted" | "unknown") {
+  constructor(
+    readonly grantIssuance: "notStarted" | "unknown",
+    readonly guardCode?: string,
+  ) {
     super(`Private physical grant provisioning failed (${grantIssuance})`);
     this.name = "PhysicalGenerationProvisionError";
+  }
+}
+
+const nativeGuardCodes = new Set([
+  "NATIVE_RUNTIME_MAPPING",
+  "NATIVE_INTERPRETER_DIGEST",
+  "NATIVE_PACKAGE_DIGEST",
+  "NATIVE_PACKAGE_CONTENTS",
+  "NATIVE_AUTHORITY_NAMESPACE",
+  "NATIVE_PROVISION_RUNTIME",
+  "NATIVE_PROVISION_GENERATION",
+  "NATIVE_PROCESS_UNAVAILABLE",
+  "NATIVE_PROCESS_BIRTH",
+  "NATIVE_CACHE_PRESENT",
+]);
+class NativeBootstrapRefusal extends Error {
+  constructor(readonly guardCode: string) {
+    super("Private native bootstrap refused");
   }
 }
 
@@ -35,6 +56,9 @@ const nativeBootstrap = `
 import ctypes,hashlib,json,os,runpy,sys
 from ctypes import wintypes as wt
 from pathlib import Path
+def deny(code):
+    print(json.dumps({"guard":code}))
+    raise SystemExit(78)
 raw_envelope=sys.stdin.buffer.read(4194305)
 if len(raw_envelope)>4194304:
     raise RuntimeError("Envelope too large")
@@ -45,26 +69,26 @@ exe=Path(p["nativePython"])
 def digest(file):
     return hashlib.sha256(file.read_bytes()).hexdigest()
 if sys.platform!="win32" or Path(sys.executable).resolve()!=exe.resolve() or Path.cwd().resolve()!=root.resolve():
-    raise RuntimeError("Native runtime mapping differs")
+    deny("NATIVE_RUNTIME_MAPPING")
 if digest(exe)!=p["nativePythonSha256"]:
-    raise RuntimeError("Native interpreter differs")
+    deny("NATIVE_INTERPRETER_DIGEST")
 for name,sha in p["installedPackageFiles"].items():
     if digest(root/name)!=sha:
-        raise RuntimeError("Installed package differs")
+        deny("NATIVE_PACKAGE_DIGEST")
 expected_files={str(Path(name)).lower() for name in p["installedPackageFiles"]}
 actual_files={str(file.relative_to(root)).lower() for file in root.rglob("*") if file.is_file() and "__pycache__" not in file.relative_to(root).parts}
 if actual_files!=expected_files:
-    raise RuntimeError("Unexpected installed file")
+    deny("NATIVE_PACKAGE_CONTENTS")
 if os.environ.get("LOCALAPPDATA")!=p["localAppData"] or os.environ.get("FUSION_MCP_ADMISSION_PROVISION")!=p["provisionPath"]:
-    raise RuntimeError("Native authority namespace differs")
+    deny("NATIVE_AUTHORITY_NAMESPACE")
 d=e["descriptor"]
 r=d["physicalRuntime"]
 provision=json.loads(Path(p["provisionPath"]).read_text())
 for key in ("pid","birth","source","build"):
     if provision[key]!=r[key]:
-        raise RuntimeError("Physical runtime provision differs")
+        deny("NATIVE_PROVISION_RUNTIME")
 if (provision["instance"],provision["epoch"])!=(d["generation"]["instance"],d["generation"]["epoch"]):
-    raise RuntimeError("Physical generation differs")
+    deny("NATIVE_PROVISION_GENERATION")
 k=ctypes.WinDLL("kernel32",use_last_error=True)
 k.OpenProcess.argtypes=[wt.DWORD,wt.BOOL,wt.DWORD]
 k.OpenProcess.restype=wt.HANDLE
@@ -72,18 +96,18 @@ k.GetProcessTimes.argtypes=[wt.HANDLE,ctypes.POINTER(wt.FILETIME),ctypes.POINTER
 k.CloseHandle.argtypes=[wt.HANDLE]
 handle=k.OpenProcess(0x1000,False,r["pid"])
 if not handle:
-    raise RuntimeError("Physical process unavailable")
+    deny("NATIVE_PROCESS_UNAVAILABLE")
 try:
     times=[wt.FILETIME() for _ in range(4)]
     if not k.GetProcessTimes(handle,*(ctypes.byref(t) for t in times)):
-        raise RuntimeError("Physical birth unavailable")
-if str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)!=r["birth"]:
-        raise RuntimeError("Physical process birth differs")
+        deny("NATIVE_PROCESS_BIRTH")
+    if str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)!=r["birth"]:
+        deny("NATIVE_PROCESS_BIRTH")
 finally:
     k.CloseHandle(handle)
 cache=Path(p["nativePrivateDirectory"])/e["attempt"]/"unused-python-cache"
 if cache.exists():
-    raise RuntimeError("Unexpected interpreter cache")
+    deny("NATIVE_CACHE_PRESENT")
 sys.pycache_prefix=str(cache)
 sys.path.insert(0,str(root))
 if e["action"]=="grant":
@@ -264,7 +288,25 @@ export function createNativePhysicalGenerationProvision(
           });
           child.once("close", (code) => {
             clearTimeout(timer);
-            if (code !== 0 || overflow)
+            if (code === 78 && !overflow) {
+              try {
+                const refusal = decodeAdmissionJson(
+                  new TextDecoder("utf-8", { fatal: true }).decode(output),
+                ) as Record<string, unknown>;
+                if (
+                  refusal &&
+                  Object.keys(refusal).join(",") === "guard" &&
+                  typeof refusal["guard"] === "string" &&
+                  nativeGuardCodes.has(refusal["guard"])
+                ) {
+                  reject(new NativeBootstrapRefusal(refusal["guard"]));
+                  return;
+                }
+              } catch {
+                // Only the bounded, allowlisted guard code can cross this boundary.
+              }
+              reject(new Error("Private subprocess failed"));
+            } else if (code !== 0 || overflow)
               reject(new Error("Private subprocess failed"));
             else {
               try {
@@ -285,6 +327,13 @@ export function createNativePhysicalGenerationProvision(
         });
       };
       try {
+        if (
+          path.posix.normalize(pinned.linuxGrantDirectory) !==
+            pinned.linuxGrantDirectory ||
+          fs.realpathSync(pinned.linuxGrantDirectory) !==
+            pinned.linuxGrantDirectory
+        )
+          throw new Error("Canonical private directory required");
         directoryFd = fs.openSync(
           pinned.linuxGrantDirectory,
           fs.constants.O_RDONLY |
@@ -292,6 +341,16 @@ export function createNativePhysicalGenerationProvision(
             fs.constants.O_NOFOLLOW,
         );
         const originalDirectory = privateDirectoryIdentity(directoryFd);
+        const directoryAtOpen = fs.lstatSync(pinned.linuxGrantDirectory, {
+          bigint: true,
+        });
+        if (
+          fs.realpathSync(pinned.linuxGrantDirectory) !==
+            pinned.linuxGrantDirectory ||
+          directoryAtOpen.dev !== originalDirectory.dev ||
+          directoryAtOpen.ino !== originalDirectory.ino
+        )
+          throw new Error("Canonical directory identity changed");
         const raw = Buffer.from(JSON.stringify(snapshot));
         if (raw.length > 1_048_576) throw new Error("Descriptor too large");
         const attempt = randomUUID();
@@ -369,6 +428,8 @@ export function createNativePhysicalGenerationProvision(
         privateDirectoryIdentity(directoryFd);
         if (
           returnedDirectory.isSymbolicLink() ||
+          fs.realpathSync(pinned.linuxGrantDirectory) !==
+            pinned.linuxGrantDirectory ||
           returnedDirectory.dev !== originalDirectory.dev ||
           returnedDirectory.ino !== originalDirectory.ino
         )
@@ -377,9 +438,10 @@ export function createNativePhysicalGenerationProvision(
           grantFile: path.posix.join(pinned.linuxGrantDirectory, name),
           grantDigest,
         };
-      } catch {
+      } catch (error) {
         throw new PhysicalGenerationProvisionError(
           issuanceStarted ? "unknown" : "notStarted",
+          error instanceof NativeBootstrapRefusal ? error.guardCode : undefined,
         );
       } finally {
         if (directoryFd !== undefined) fs.closeSync(directoryFd);

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   createNativePhysicalGenerationProvision,
@@ -78,7 +79,7 @@ const raw=Buffer.from(envelope.descriptorRaw||"");
 if(envelope.action==="prepare"){
  const attempt=envelope.attempt,dir=path.join(root,attempt);fs.mkdirSync(dir,{mode:448});
  fs.writeFileSync(path.join(dir,"request.json"),raw,{flag:"wx",mode:384});
- record({operation:"prepare",descriptor:JSON.parse(raw),cwd:process.cwd(),env:process.env,startupFlags:args.slice(0,4)});
+ record({operation:"prepare",descriptor:JSON.parse(raw),cwd:process.cwd(),env:process.env,startupFlags:args.slice(0,4),bootstrap:args[4]});
  if(mode==="changed-fork")fs.writeFileSync(${JSON.stringify(path.join(directory, "lib/physical_lifecycle.py"))},"# changed");
  console.log(digest(raw));return;
 }
@@ -264,6 +265,52 @@ test(
 );
 
 test(
+  "exact bootstrap from the actual spawn arguments compiles in Python",
+  platformOptions,
+  async (t) => {
+    const f = fixture();
+    t.after(f.cleanup);
+    await createNativePhysicalGenerationProvision(f.options).provision(
+      descriptor,
+    );
+    const bootstrap = f.records()[0]?.["bootstrap"];
+    assert.equal(typeof bootstrap, "string");
+    const compiled = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-S",
+        "-B",
+        "-c",
+        "import json,sys; compile(json.load(sys.stdin),'actual-spawn-bootstrap','exec')",
+      ],
+      {
+        input: JSON.stringify(bootstrap),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(compiled.status, 0, compiled.stderr);
+  },
+);
+
+test(
+  "stable symlink in the Linux parent chain refuses with zero native process calls",
+  platformOptions,
+  async (t) => {
+    const f = fixture();
+    t.after(f.cleanup);
+    const parentAlias = path.join(f.directory, "parent-alias");
+    fs.symlinkSync(f.directory, parentAlias);
+    const port = createNativePhysicalGenerationProvision({
+      ...f.options,
+      linuxGrantDirectory: path.join(parentAlias, "linux"),
+    });
+    await assert.rejects(port.provision(descriptor));
+    assert.equal(f.records().length, 0);
+  },
+);
+
+test(
   "invalid UTF-8 acknowledgment cannot alias a replacement-character handoff",
   platformOptions,
   async (t) => {
@@ -405,19 +452,190 @@ const nativePythonWin = process.env["FMCAD_TEST_NATIVE_PYTHON_WIN"];
 const nativeRoot = process.env["FMCAD_TEST_NATIVE_DIRECTORY"];
 const nativeRootWin = process.env["FMCAD_TEST_NATIVE_DIRECTORY_WIN"];
 const localAppData = process.env["FMCAD_TEST_NATIVE_LOCALAPPDATA"];
+const nativePlatformOptions = {
+  skip:
+    process.platform !== "linux" ||
+    !nativePython ||
+    !nativePythonWin ||
+    !nativeRoot ||
+    !nativeRootWin ||
+    !localAppData
+      ? "Requires explicitly configured native Windows Python and owned filesystem fixture root; no Fusion calls"
+      : false,
+};
+
+test(
+  "actual native bootstrap positively reaches an owned offline issuer and copies its fake grant",
+  nativePlatformOptions,
+  async (t) => {
+    const f = fixture();
+    t.after(f.cleanup);
+    const id = path.basename(f.directory);
+    const root = path.join(nativeRoot!, id);
+    const rootWin = path.win32.join(nativeRootWin!, id);
+    const mailbox = root + "-mailbox";
+    const mailboxWin = rootWin + "-mailbox";
+    const events = root + "-events";
+    const eventsWin = rootWin + "-events";
+    const provisionFile = root + "-provision.json";
+    const provisionWin = rootWin + "-provision.json";
+    fs.mkdirSync(root, { mode: 0o700 });
+    fs.mkdirSync(path.join(root, "lib"));
+    t.after(() => {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(mailbox, { recursive: true, force: true });
+      fs.rmSync(events, { force: true });
+      fs.rmSync(provisionFile, { force: true });
+    });
+    const files: Record<string, string> = {
+      "lib/__init__.py": "",
+      "lib/physical_authority.py": `
+from pathlib import Path
+def private_directory(value):
+    value=Path(value)
+    value.mkdir(parents=True,exist_ok=True,mode=0o700)
+    return value
+def _read_private_bytes(value):
+    with open(${JSON.stringify(eventsWin)},"a") as f:
+        f.write("owned-private-read\\n")
+    return Path(value).read_bytes()
+`,
+      "lib/physical_lifecycle.py": `
+import argparse,json,os
+from pathlib import Path
+p=argparse.ArgumentParser()
+p.add_argument("operation",choices=["grant"])
+p.add_argument("--request",required=True)
+p.add_argument("--output",required=True)
+p.add_argument("--timeout",required=True)
+a=p.parse_args()
+d=json.loads(Path(a.request).read_bytes())
+raw=json.dumps({"descriptor":d,"token":"OWNED-FAKE-OFFLINE-NOT-A-REAL-GRANT"}).encode("utf-8")
+fd=os.open(a.output,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+with os.fdopen(fd,"wb") as f:
+    f.write(raw)
+    f.flush()
+    os.fsync(f.fileno())
+with open(${JSON.stringify(eventsWin)},"a") as f:
+    f.write("owned-fake-issuer-reached\\n")
+print(json.dumps({"state":"granted","handoffId":d["handoffId"]}))
+`,
+    };
+    const packageFiles: Record<string, string> = {};
+    for (const [name, source] of Object.entries(files)) {
+      fs.writeFileSync(path.join(root, name), source);
+      packageFiles[name] = createHash("sha256").update(source).digest("hex");
+    }
+    // This owned plain-Python process is the fixture's pinned physical identity.
+    // It imports no Fusion code, opens no ports, and terminates when stdin closes.
+    const issuer = spawn(
+      nativePython!,
+      [
+        "-I",
+        "-S",
+        "-B",
+        "-c",
+        `
+import ctypes,json,os,sys
+from ctypes import wintypes as wt
+k=ctypes.WinDLL("kernel32",use_last_error=True)
+k.GetCurrentProcess.restype=wt.HANDLE
+k.GetProcessTimes.argtypes=[wt.HANDLE,ctypes.POINTER(wt.FILETIME),ctypes.POINTER(wt.FILETIME),ctypes.POINTER(wt.FILETIME),ctypes.POINTER(wt.FILETIME)]
+times=[wt.FILETIME() for _ in range(4)]
+if not k.GetProcessTimes(k.GetCurrentProcess(),*(ctypes.byref(x) for x in times)):
+    raise RuntimeError("Fixture birth unavailable")
+print(json.dumps({"pid":os.getpid(),"birth":str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)}),flush=True)
+sys.stdin.buffer.read()
+`,
+      ],
+      { stdio: ["pipe", "pipe", "ignore"] },
+    );
+    const exited = new Promise<void>((resolve) =>
+      issuer.once("close", () => resolve()),
+    );
+    t.after(async () => {
+      issuer.stdin.end();
+      await exited;
+    });
+    const processBinding = await new Promise<{ pid: number; birth: string }>(
+      (resolve, reject) => {
+        let output = "";
+        const timeout = setTimeout(() => {
+          issuer.kill();
+          reject(new Error("Owned native fixture startup timed out"));
+        }, 10_000);
+        issuer.once("error", (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+        issuer.stdout.on("data", (bytes: Buffer) => {
+          output += bytes.toString("utf8");
+          if (output.includes("\n")) {
+            clearTimeout(timeout);
+            try {
+              resolve(JSON.parse(output.trim()));
+            } catch (error) {
+              reject(error);
+            }
+          }
+        });
+      },
+    );
+    const ownedDescriptor = structuredClone(descriptor);
+    Object.assign(ownedDescriptor.physicalRuntime, processBinding);
+    fs.writeFileSync(
+      provisionFile,
+      JSON.stringify({
+        ...ownedDescriptor.physicalRuntime,
+        instance: ownedDescriptor.generation.instance,
+        epoch: ownedDescriptor.generation.epoch,
+      }),
+    );
+    const port = createNativePhysicalGenerationProvision({
+      ...f.options,
+      nativePython: nativePythonWin!,
+      mappedNativePython: nativePython!,
+      nativePythonSha256: createHash("sha256")
+        .update(fs.readFileSync(nativePython!))
+        .digest("hex"),
+      installedForkDirectory: rootWin,
+      mappedInstalledForkDirectory: root,
+      installedPackageFiles: packageFiles,
+      provisionPath: provisionWin,
+      localAppData: localAppData!,
+      nativePrivateDirectory: mailboxWin,
+      mappedPrivateDirectory: mailbox,
+    });
+    const result = await port.provision(ownedDescriptor);
+    const raw = fs.readFileSync(result.grantFile);
+    assert.equal(
+      result.grantDigest,
+      createHash("sha256").update(raw).digest("hex"),
+    );
+    assert.equal(fs.statSync(result.grantFile).mode & 0o777, 0o600);
+    const data = JSON.parse(raw.toString());
+    assert.deepEqual(data.descriptor, ownedDescriptor);
+    assert.equal(data.token, "OWNED-FAKE-OFFLINE-NOT-A-REAL-GRANT");
+    assert.deepEqual(fs.readFileSync(events, "utf8").trim().split(/\r?\n/), [
+      "owned-private-read",
+      "owned-fake-issuer-reached",
+      "owned-private-read",
+    ]);
+    const attempt = fs.readdirSync(mailbox)[0]!;
+    assert.equal(
+      fs.readFileSync(path.join(mailbox, attempt, "request.json"), "utf8"),
+      JSON.stringify(ownedDescriptor),
+    );
+    assert.deepEqual(
+      fs.readFileSync(path.join(mailbox, attempt, "grant.json")),
+      raw,
+    );
+  },
+);
+
 test(
   "real isolated Windows Python refuses shadow json/sitecustomize and wrong fork before imports",
-  {
-    skip:
-      process.platform !== "linux" ||
-      !nativePython ||
-      !nativePythonWin ||
-      !nativeRoot ||
-      !nativeRootWin ||
-      !localAppData
-        ? "Requires explicitly configured native Windows Python and owned filesystem fixture root; no Fusion calls"
-        : false,
-  },
+  nativePlatformOptions,
   async (t) => {
     const f = fixture();
     t.after(f.cleanup);
@@ -452,7 +670,12 @@ test(
       localAppData: localAppData!,
     };
     const port = createNativePhysicalGenerationProvision(nativeOptions);
-    await assert.rejects(port.provision(descriptor));
+    await assert.rejects(
+      port.provision(descriptor),
+      (error: unknown) =>
+        error instanceof PhysicalGenerationProvisionError &&
+        error.guardCode === "NATIVE_PACKAGE_CONTENTS",
+    );
     assert.equal(fs.existsSync(marker), false);
     assert.equal(fs.readdirSync(f.linux).length, 0);
     for (const name of ["json.py", "sitecustomize.py"])
@@ -461,7 +684,12 @@ test(
       ...nativeOptions,
       installedForkDirectory: path.win32.join(nativeRootWin!, id + "-wrong"),
     });
-    await assert.rejects(wrongCwd.provision(descriptor));
+    await assert.rejects(
+      wrongCwd.provision(descriptor),
+      (error: unknown) =>
+        error instanceof PhysicalGenerationProvisionError &&
+        error.guardCode === "NATIVE_RUNTIME_MAPPING",
+    );
     assert.equal(fs.existsSync(marker), false);
     const provisionFile = path.join(nativeRoot!, id + "-provision.json");
     const invalidProcess = structuredClone(descriptor);
@@ -479,7 +707,12 @@ test(
       ...nativeOptions,
       provisionPath: path.win32.join(nativeRootWin!, id + "-provision.json"),
     });
-    await assert.rejects(wrongProcess.provision(invalidProcess));
+    await assert.rejects(
+      wrongProcess.provision(invalidProcess),
+      (error: unknown) =>
+        error instanceof PhysicalGenerationProvisionError &&
+        error.guardCode === "NATIVE_PROCESS_UNAVAILABLE",
+    );
     assert.equal(fs.existsSync(marker), false);
   },
 );
