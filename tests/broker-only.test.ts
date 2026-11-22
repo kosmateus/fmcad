@@ -50,6 +50,17 @@ function assertPhysicalTransportBoundary(name: string, source: string) {
     const rawCurl = /require\(["']\.\.\/\.\.\/fusion-transport\/curl["']\)/g;
     assert.equal(source.match(rawCurl)?.length ?? 0, 1, name);
     source = source.replace(rawCurl, "");
+  } else if (
+    [
+      "composition/queue-frozen-inline-observer.js",
+      "dist/composition/queue-frozen-inline-observer.js",
+    ].includes(name)
+  ) {
+    // These four immutable path/hash pairs describe historical bytes, not imports.
+    const archivedHashes =
+      /"src\/dist\/fusion-transport\/(?:broker|addin|mcp|curl)\.js"\s*:\s*"[a-f0-9]{64}"/g;
+    assert.equal(source.match(archivedHashes)?.length ?? 0, 4, name);
+    source = source.replace(archivedHashes, "");
   }
   assert.doesNotMatch(source, physicalTransport, name);
 }
@@ -69,13 +80,18 @@ test("only the broker bootstrap imports the private physical transport", () => {
     assert.doesNotMatch(source, physicalTransport, name);
   }
   const runtime = path.join(root, "dist/src");
-  const files = fs.readdirSync(runtime, { recursive: true, encoding: "utf8" }).filter(
-    (name) =>
-      name.endsWith(".js") &&
-      !name.startsWith(path.join("dist", "fusion-transport") + path.sep),
-  );
+  const files = fs
+    .readdirSync(runtime, { recursive: true, encoding: "utf8" })
+    .filter(
+      (name) =>
+        name.endsWith(".js") &&
+        !name.startsWith(path.join("dist", "fusion-transport") + path.sep),
+    );
   for (const bootstrap of brokerBootstraps) {
-    assert.ok(files.includes(path.normalize(bootstrap)), `Missing ${bootstrap}`);
+    assert.ok(
+      files.includes(path.normalize(bootstrap)),
+      `Missing ${bootstrap}`,
+    );
   }
   // Check the emitted consumers, not just the facade or known public sources.
   // Staging mirrors the same composition owner in both locations above.
@@ -83,6 +99,21 @@ test("only the broker bootstrap imports the private physical transport", () => {
     assertPhysicalTransportBoundary(
       name.split(path.sep).join("/"),
       fs.readFileSync(path.join(runtime, name), "utf8"),
+    );
+  }
+  for (const name of [
+    "composition/queue-frozen-inline-observer.js",
+    "dist/composition/queue-frozen-inline-observer.js",
+  ]) {
+    assert.ok(files.includes(path.normalize(name)));
+    const source = fs.readFileSync(path.join(runtime, name), "utf8");
+    assert.throws(
+      () =>
+        assertPhysicalTransportBoundary(
+          name,
+          source + '\nrequire("./dist/fusion-transport/mcp");\n',
+        ),
+      "Historical source hashes must never authorize a physical import",
     );
   }
   assert.equal(
@@ -110,9 +141,12 @@ test("private admission port alone may import raw curl once, never another physi
     assert.throws(() => assertPhysicalTransportBoundary(consumer, rawCurl));
   }
   for (const module of ["broker", "http", "mcp", "addin", "curl-client"]) {
-    assert.throws(() => assertPhysicalTransportBoundary(
-      name, rawCurl + `require("../../fusion-transport/${module}");`,
-    ));
+    assert.throws(() =>
+      assertPhysicalTransportBoundary(
+        name,
+        rawCurl + `require("../../fusion-transport/${module}");`,
+      ),
+    );
   }
 });
 
@@ -127,7 +161,9 @@ test("transport boundary detects a missing owner, duplicate construction and for
     ),
   );
   assert.throws(() => assertPhysicalTransportBoundary(owner, ""));
-  assert.throws(() => assertPhysicalTransportBoundary(owner, factory.repeat(2)));
+  assert.throws(() =>
+    assertPhysicalTransportBoundary(owner, factory.repeat(2)),
+  );
   for (const consumer of [
     "queue-broker.js",
     "entrypoints/cli.js",
@@ -261,158 +297,159 @@ test("legacy direct factory/config and worker environment grant no physical acce
   );
 });
 
-test(
-  "CLI, MCP and library fail closed with a missing broker and reset marker",
-  async (t) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-broker-only-"));
-    const project = path.join(home, "project");
-    fs.mkdirSync(project);
-    let physicalRequests = 0;
-    const server = http.createServer((request, response) => {
-      physicalRequests++;
-      request.resume();
-      request.on("end", () => response.end("{}"));
-    });
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
+test("CLI, MCP and library fail closed with a missing broker and reset marker", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-broker-only-"));
+  const project = path.join(home, "project");
+  fs.mkdirSync(project);
+  let physicalRequests = 0;
+  const server = http.createServer((request, response) => {
+    physicalRequests++;
+    request.resume();
+    request.on("end", () => response.end("{}"));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const configPath = path.join(home, "config.json");
+  const config = {
+    backend: "addin",
+    routing: "queue",
+    url: `http://127.0.0.1:${address(server).port}/mcp`,
+    headers: {},
+    timeoutMs: 1000,
+    tool: "execute_python",
+    transport: "node",
+    protocolVersion: "2025-06-18",
+    queue: { autoStart: false, autoRecover: false },
+    controlCenter: { port: 4748 },
+  } as const;
+  const { backend, routing, queue, controlCenter, ...addin } = config;
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      backend,
+      routing,
+      queue,
+      controlCenter,
+      backends: { addin },
+    }),
+  );
+  const envKeys = [
+    "XDG_STATE_HOME",
+    "FMCAD_CONFIG",
+    "FMCAD_ROUTING",
+    "FMCAD_CLIENT",
+  ];
+  const before = Object.fromEntries(
+    envKeys.map((key) => [key, process.env[key]]),
+  );
+  process.env["XDG_STATE_HOME"] = home;
+  process.env["FMCAD_CONFIG"] = configPath;
+  process.env["FMCAD_ROUTING"] = "queue";
+  process.env["FMCAD_CLIENT"] = "offline-broker-only-test";
+  t.after(async () => {
+    for (const key of envKeys) {
+      if (before[key] === undefined) delete process.env[key];
+      else process.env[key] = before[key];
+    }
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
     );
-    const configPath = path.join(home, "config.json");
-    const config = {
-      backend: "addin",
-      routing: "queue",
-      url: `http://127.0.0.1:${address(server).port}/mcp`,
-      headers: {},
-      timeoutMs: 1000,
-      tool: "execute_python",
-      transport: "node",
-      protocolVersion: "2025-06-18",
-      queue: { autoStart: false, autoRecover: false },
-      controlCenter: { port: 4748 },
-    } as const;
-    const { backend, routing, queue, controlCenter, ...addin } = config;
-    fs.writeFileSync(configPath, JSON.stringify({
-      backend, routing, queue, controlCenter, backends: { addin },
-    }));
-    const envKeys = [
-      "XDG_STATE_HOME",
-      "FMCAD_CONFIG",
-      "FMCAD_ROUTING",
-      "FMCAD_CLIENT",
-    ];
-    const before = Object.fromEntries(
-      envKeys.map((key) => [key, process.env[key]]),
-    );
-    process.env["XDG_STATE_HOME"] = home;
-    process.env["FMCAD_CONFIG"] = configPath;
-    process.env["FMCAD_ROUTING"] = "queue";
-    process.env["FMCAD_CLIENT"] = "offline-broker-only-test";
-    t.after(async () => {
-      for (const key of envKeys) {
-        if (before[key] === undefined) delete process.env[key];
-        else process.env[key] = before[key];
-      }
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
-      fs.rmSync(home, { recursive: true, force: true });
-    });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
 
-    const cli = load("./src/cli") as typeof import("../src/entrypoints/cli");
-    let cliError = "";
-    assert.equal(
-      await cli.main(["projects", "--config", configPath], {
-        stdout: { write() {} },
-        stderr: {
-          write(value) {
-            cliError += value;
-          },
-        },
-        setExitCode() {},
-      }),
-      1,
-    );
-    assert.match(
-      cliError,
-      /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
-    );
-
-    const stdin = new PassThrough();
-    let stdout = "";
-    const mcp = (
-      load("./src/mcp-stdio") as typeof import("../src/entrypoints/mcp-stdio")
-    ).startStdio(["--project-directory", project], {
-      stdin,
-      stdout: {
+  const cli = load("./src/cli") as typeof import("../src/entrypoints/cli");
+  let cliError = "";
+  assert.equal(
+    await cli.main(["projects", "--config", configPath], {
+      stdout: { write() {} },
+      stderr: {
         write(value) {
-          stdout += value;
+          cliError += value;
         },
       },
-      stderr: { write() {} },
-      loadConfig: () => ({ cfg: config }),
-    });
-    stdin.end(
-      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "resources/list" }) +
-        "\n",
-    );
-    assert.ok(mcp);
-    await mcp.closed;
-    const mcpReply = record(JSON.parse(stdout.trim()));
-    assert.equal(mcpReply["id"], 1);
-    assert.ok(mcpReply["error"]);
-    assert.match(
-      String(record(mcpReply["error"])["message"]),
-      /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
-    );
+      setExitCode() {},
+    }),
+    1,
+  );
+  assert.match(
+    cliError,
+    /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
+  );
 
-    const { createFmcad } = load(
-      "fmcad/api",
-    ) as typeof import("../src/api/index");
-    const api = createFmcad({
-      version: 1,
-      config,
-      context: {
-        clientId: "offline-library",
-        instanceId: "offline-instance",
-        source: "system",
-        projectDirectory: project,
+  const stdin = new PassThrough();
+  let stdout = "";
+  const mcp = (
+    load("./src/mcp-stdio") as typeof import("../src/entrypoints/mcp-stdio")
+  ).startStdio(["--project-directory", project], {
+    stdin,
+    stdout: {
+      write(value) {
+        stdout += value;
       },
-    });
-    await assert.rejects(api.start());
-    await api.dispose();
-    assert.equal(
-      physicalRequests,
-      0,
-      "missing broker never falls back to the configured physical endpoint",
-    );
+    },
+    stderr: { write() {} },
+    loadConfig: () => ({ cfg: config }),
+  });
+  stdin.end(
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "resources/list" }) + "\n",
+  );
+  assert.ok(mcp);
+  await mcp.closed;
+  const mcpReply = record(JSON.parse(stdout.trim()));
+  assert.equal(mcpReply["id"], 1);
+  assert.ok(mcpReply["error"]);
+  assert.match(
+    String(record(mcpReply["error"])["message"]),
+    /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
+  );
 
-    const state = path.join(home, "fmcad", "queue");
-    fs.mkdirSync(state, { recursive: true });
-    fs.writeFileSync(
-      path.join(state, "fusion-reset.lock"),
-      JSON.stringify({ protocol: 1, nonce: "fixture-reset" }),
-    );
-    let resetError = "";
-    assert.equal(
-      await cli.main(["projects", "--config", configPath], {
-        stdout: { write() {} },
-        stderr: {
-          write(value) {
-            resetError += value;
-          },
+  const { createFmcad } = load(
+    "fmcad/api",
+  ) as typeof import("../src/api/index");
+  const api = createFmcad({
+    version: 1,
+    config,
+    context: {
+      clientId: "offline-library",
+      instanceId: "offline-instance",
+      source: "system",
+      projectDirectory: project,
+    },
+  });
+  await assert.rejects(api.start());
+  await api.dispose();
+  assert.equal(
+    physicalRequests,
+    0,
+    "missing broker never falls back to the configured physical endpoint",
+  );
+
+  const state = path.join(home, "fmcad", "queue");
+  fs.mkdirSync(state, { recursive: true });
+  fs.writeFileSync(
+    path.join(state, "fusion-reset.lock"),
+    JSON.stringify({ protocol: 1, nonce: "fixture-reset" }),
+  );
+  let resetError = "";
+  assert.equal(
+    await cli.main(["projects", "--config", configPath], {
+      stdout: { write() {} },
+      stderr: {
+        write(value) {
+          resetError += value;
         },
-        setExitCode() {},
-      }),
-      1,
-    );
-    assert.match(
-      resetError,
-      /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
-    );
-    assert.equal(
-      physicalRequests,
-      0,
-      "a reset marker does not authorize direct dispatch",
-    );
-  },
-);
+      },
+      setExitCode() {},
+    }),
+    1,
+  );
+  assert.match(
+    resetError,
+    /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
+  );
+  assert.equal(
+    physicalRequests,
+    0,
+    "a reset marker does not authorize direct dispatch",
+  );
+});
