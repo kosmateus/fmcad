@@ -69,7 +69,9 @@ export interface RuntimeBarrierLease {
   }>;
   /** Final recheck + durable local CAS must execute at the authority holding
    * both barriers, not a callback in a different process after a heartbeat ACK.
-   * Loss of either lock holder must make publication impossible. */
+   * A durable native provision fence may survive a remote process's death;
+   * losing a transient remote lock must never permit unfenced publication.
+   * Exact NEW resumes re-verify and POSIX re-fsync; they do not perform a CAS. */
   publishActivation(publication: RuntimeActivationPublication): Promise<void>;
   /** Verify exact native consumed receipt after publication/re-fsync. Idempotent
    * query/resume uses native durable identity, never the initiator's lost token. */
@@ -188,7 +190,7 @@ function attests(reference: RebaselineReference, binding: unknown): boolean {
   }
 }
 /** Literal metadata only: deliberately does not resolve historical lineage. */
-export function literalRuntimeHead(directory: string) {
+function readLiteralRuntimeHead(directory: string) {
   const store = fs.realpathSync(directory),
     stat = fs.statSync(store);
   const files: Record<string, Buffer | null> = {};
@@ -212,6 +214,16 @@ export function literalRuntimeHead(directory: string) {
     digest: sha(
       JSON.stringify({ store, device: stat.dev, inode: stat.ino, manifest }),
     ),
+  };
+}
+/** Public preflight returns metadata only, never snapshot/configuration bytes. */
+export function literalRuntimeHead(directory: string) {
+  const value = readLiteralRuntimeHead(directory);
+  return {
+    store: value.store,
+    device: value.device,
+    inode: value.inode,
+    digest: value.digest,
   };
 }
 function validateRequest(value: RuntimeRebaselineRequest): void {
@@ -643,7 +655,7 @@ export async function rebaselineRuntime(
       return finishActivation(concurrent.record, lease, testing.fault);
     }
     pendingForRequest(store, request);
-    const old = literalRuntimeHead(store);
+    const old = readLiteralRuntimeHead(store);
     if (
       old.digest !== request.expectedHead ||
       ports.pins.handoffId !== request.handoffId

@@ -222,6 +222,7 @@ function fixture() {
 
 test("literal preflight and new root preserve unproven history and freeze all old work", async () => {
   const f = fixture();
+  assert.equal(Object.hasOwn(literalRuntimeHead(f.dir), "files"), false);
   const before = fs.readFileSync(path.join(f.dir, "queue-state.json"));
   const receipt = await rebaselineRuntime(f.dir, f.request(), f.authority);
   assert.equal(receipt.history, "preserved_unproven");
