@@ -105,6 +105,15 @@ export function stageQueueTestFixtures(root: string): void {
     "epoch-audit.cjs",
     "fake-wsl-platform.cjs",
     "fake-wsl-preload.cjs",
+    "backend-successor.cjs",
+    "current-epoch-upgrade.cjs",
+    "dead-epoch-successor.cjs",
+    "publish-saved-fixture.cjs",
+    "saved-first-save-evidence.cjs",
+    "saved-first-save.cjs",
+    "saved-native-destination.cjs",
+    "settled-probes.cjs",
+    "native-source-envelope.cjs",
   ];
   const workspaceArtifacts = workspaceNames.map((filename) => ({
     filename,

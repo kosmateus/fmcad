@@ -43,7 +43,8 @@ function text(value: unknown): string {
   return value;
 }
 
-// Installed-artifact offline qualification. No broker, SDK or lifecycle port.
+// Installed-artifact offline qualification; frozen mode uses owned fake-HTTP
+// brokers only. No live SDK or canonical lifecycle port is invoked.
 
 async function main() {
   const options: Record<string, string> = {},
@@ -59,6 +60,7 @@ async function main() {
         "--source-commit",
         "--closed-fixture",
         "--normal-currentstore",
+        "--frozen-metadata",
       ].includes(key) ||
       options[key] ||
       !value
@@ -68,6 +70,8 @@ async function main() {
   }
   const runtime = path.resolve(options["--runtime"] || ""),
     output = path.resolve(options["--output"] || "");
+  if (options["--frozen-metadata"] !== undefined && options["--frozen-metadata"] !== "true")
+    throw new Error("--frozen-metadata supports only true");
   if (options["--normal-currentstore"] !== undefined && options["--normal-currentstore"] !== "true") throw new Error("--normal-currentstore supports only true");
   if (
     !options["--runtime"] ||
@@ -839,6 +843,35 @@ async function main() {
       { flag: "wx", mode: 0o600 },
     );
   }
+  let frozenQualification: Record<string, unknown> | undefined;
+  if (options["--frozen-metadata"] === "true") {
+    const tests = [
+      "tests/dead-epoch-successor.test.js",
+      "tests/frozen-inline-observer.test.js",
+      "tests/frozen-metadata-profile.test.js",
+    ];
+    assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed before qualification");
+    for (const file of tests) assert.ok(fs.lstatSync(path.join(runtime, file)).isFile(), file);
+    const child = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...tests], {
+      cwd: runtime, encoding: "utf8", timeout: 240000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const log = path.join(output, "frozen-metadata-profile.tap");
+    fs.writeFileSync(log, child.stdout + child.stderr, { flag: "wx", mode: 0o600 });
+    assert.equal(child.status, 0, child.stderr || String(child.error) || log);
+    const count = (name: string): number => {
+      const match = child.stdout.match(new RegExp(`^# ${name} (\\d+)$`, "m"));
+      assert.ok(match, `Missing ${name} in ${log}`);
+      return Number(match[1]);
+    };
+    const total = count("tests");
+    assert.ok(total >= 122, "The complete frozen profile corpus is required");
+    assert.equal(count("pass"), total);
+    for (const field of ["fail", "cancelled", "skipped", "todo"]) assert.equal(count(field), 0);
+    assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed during qualification");
+    frozenQualification = { runtime, buildHash: fingerprint, tests: total, passed: total,
+      sdkRequestsSent: 0, backend: "offline-fake-http", log };
+  }
   const result = {
     sourceCommit: options["--source-commit"],
     buildHash: fingerprint,
@@ -855,6 +888,10 @@ async function main() {
     auditFactsCaptureQualified: true,
     deadEpochSuccessorReadQualified: true,
     deadEpochSuccessorRestoreQualified: true,
+    ...(frozenQualification ? {
+      frozenPredecessorMetadataQualified: true,
+      frozenMetadataProfileQualification: frozenQualification,
+    } : {}),
     ...(options["--normal-currentstore"] === "true" ? { normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true } : {}),
     regionalFixtureTypedOperationsQualified: true,
     fixedContainmentProgramQualified: true,
