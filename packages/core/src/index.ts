@@ -13,6 +13,12 @@ export * from "./ports";
 export * from "./catalog";
 export * from "./domain/queue-model";
 export * from "./domain/document-checkpoint";
+export type {
+  AppliedRuntimeRetirement,
+  RuntimeRetiredExposure,
+  RuntimeRetirementAuthority,
+} from "./domain/runtime-retirement";
+export type { DocumentConflict, RetiredDocumentConflict } from "./domain/document-conflicts";
 export { quarantineTargetConflicts } from "./domain/queue-quarantine";
 export * from "./domain/queue";
 export * from "./domain/document";

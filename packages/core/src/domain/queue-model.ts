@@ -202,6 +202,8 @@ export interface QueueSnapshot {
   lastClient: string | null;
   quarantined?: Record<string, QueueQuarantine>;
   documentCheckpoints?: import("./document-checkpoint").DocumentCheckpoints;
+  appliedRuntimeRetirement?: import("./runtime-retirement").AppliedRuntimeRetirement;
+  runtimeRetiredExposures?: Record<string, import("./runtime-retirement").RuntimeRetiredExposure>;
   documentUnlockIntents?: Record<string, {
     actorClientId: string;
     requestId: string;
@@ -217,6 +219,7 @@ export interface QueueSnapshot {
   lastInstanceTransitionId?: string | undefined;
 }
 export interface QueueDomainOptions {
+  runtimeRetirement?: import("./runtime-retirement").RuntimeRetirementAuthority;
   /** False only when continuing a live in-memory snapshot, not restoring after restart. */
   recover?: boolean;
   snapshot?: QueueSnapshot | undefined;
