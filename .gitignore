@@ -292,3 +292,5 @@ src/document-unlock-diagnostics.js
 src/document-unlock-diagnostics.d.ts
 src/queue-runtime-retirement.js
 src/queue-runtime-retirement.d.ts
+src/queue-runtime-root-state.js
+src/queue-runtime-root-state.d.ts

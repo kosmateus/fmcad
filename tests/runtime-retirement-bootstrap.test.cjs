@@ -159,6 +159,236 @@ test("real QueueState atomically projects UNKNOWN before ordinary recovery", (t)
   assert.equal(restored.documentConflicts({ creationId: "doc-A" }).length, 1);
 });
 
+test("runtime root admission is explicit and does not derive modeling rights from a missing epoch", (t) => {
+  const f = fixture(t);
+  const {
+    openRuntimeRootState,
+    admitRuntimeRootRequest,
+  } = require("../src/queue-runtime-root-state.js");
+  let allowed = false;
+  let grants = 0;
+  const state = openRuntimeRootState({
+    root: f.root,
+    assertBrokerOwner() {},
+    assertVerifiedRoot(directory) {
+      assert.equal(directory, f.directory);
+    },
+    assertNativeModelGrant(clientId, tokenHash) {
+      grants++;
+      assert.equal(clientId, "successor");
+      assert.equal(tokenHash, "token-hash");
+      if (!allowed)
+        throw Object.assign(new Error("no current native grant"), {
+          code: "NOT_AUTHORIZED",
+        });
+    },
+    stateOptions: { now: () => 200 },
+  });
+  assert.equal(state.epoch, null);
+  assert.equal(state.admissionMode, "runtime-rebaseline");
+  assert.deepEqual(state.lookup(f.submitted.id), f.frozen.jobs[f.submitted.id]);
+  assert.throws(
+    () =>
+      admitRuntimeRootRequest(
+        state,
+        { clientId: "successor" },
+        { successor: "token-hash" },
+      ),
+    { code: "NOT_AUTHORIZED" },
+  );
+  assert.equal(grants, 1);
+  allowed = true;
+  assert.equal(
+    admitRuntimeRootRequest(
+      state,
+      { clientId: "successor" },
+      { successor: "token-hash" },
+    ),
+    true,
+  );
+  assert.throws(
+    () =>
+      admitRuntimeRootRequest(
+        state,
+        { clientId: "stranger" },
+        { successor: "token-hash" },
+      ),
+    { code: "NOT_AUTHORIZED" },
+  );
+  assert.equal(
+    admitRuntimeRootRequest(
+      { epoch: null },
+      { clientId: "successor" },
+      { successor: "token-hash" },
+    ),
+    false,
+  );
+});
+
+test("runtime root keeps other layers read-only and fences every submission entry against historical IDs", (t) => {
+  const f = fixture(t);
+  const {
+    openRuntimeRootState,
+  } = require("../src/queue-runtime-root-state.js");
+  const previous = new QueueDomain({
+    now: () => 100,
+    newId: () => "epoch-job",
+    hash: sha,
+  });
+  const request = {
+    ...f.frozen.jobs[f.submitted.id].request,
+    requestId: "epoch-request",
+    clientId: "previous-owner",
+  };
+  previous.submit(request);
+  previous.next();
+  previous.markDispatch("epoch-job");
+  previous.block("epoch-job", { code: "EPOCH_UNKNOWN" });
+  const layer = "admission-epochs/previous-epoch";
+  const snapshot = structuredClone(previous.data);
+  const bytes = Buffer.from(JSON.stringify(snapshot));
+  const layerDirectory = path.join(f.directory, layer);
+  fs.mkdirSync(layerDirectory, { recursive: true, mode: 0o700 });
+  const layerFile = path.join(layerDirectory, "queue-state.json");
+  fs.writeFileSync(layerFile, bytes, { mode: 0o600 });
+  const archive = path.join(f.directory, "runtime-rebaselines/owned-test-root");
+  const frozenFile = path.join(archive, "epoch-snapshot.json");
+  fs.writeFileSync(frozenFile, bytes, { mode: 0o600 });
+  f.root.record.layers[layer] = {
+    dispositions: { "epoch-job": { outcome: "unknown" } },
+  };
+  f.root.record.frozen[layer + "/queue-state.json"] = {
+    path: frozenFile,
+    sha256: sha(bytes),
+  };
+  f.root.frozenBaseline.snapshots[layer] = snapshot;
+  f.root.currentFiles[layer + "/queue-state.json"] = bytes;
+  const recordFile = path.join(archive, "record.json");
+  fs.writeFileSync(recordFile, JSON.stringify(f.root.record));
+  fs.writeFileSync(
+    path.join(f.directory, "runtime-rebaseline-head.json"),
+    JSON.stringify({
+      version: 1,
+      newHead: f.root.record.receipt.newHead,
+      record: { path: recordFile, sha256: sha(JSON.stringify(f.root.record)) },
+    }),
+  );
+  const state = openRuntimeRootState({
+    root: f.root,
+    assertBrokerOwner() {},
+    assertVerifiedRoot() {},
+    assertNativeModelGrant() {},
+    stateOptions: { now: () => 200 },
+  });
+  assert.equal(state.lookup("epoch-job").state, "needs_reconciliation");
+  assert.equal(state.isHistorical("epoch-job"), true);
+  assert.equal(state.findAnyRequest("stranger", "epoch-request"), null);
+  assert.equal(
+    state.findAnyRequest("previous-owner", "epoch-request").id,
+    "epoch-job",
+  );
+  for (const method of [
+    "submit",
+    "submitDocumentInspection",
+    "submitDocumentContinuation",
+  ])
+    assert.throws(() => state[method](request, {}), {
+      code: "HISTORICAL_REQUEST_QUARANTINED",
+    });
+  assert.deepEqual(fs.readFileSync(layerFile), bytes);
+  assert.equal(state.data.jobs["epoch-job"], undefined);
+  assert.equal(
+    state.documentConflicts({ creationId: "unrelated-doc" }).length,
+    2,
+  );
+});
+
+for (const denyVerification of [false, true]) {
+  test(`actual serve ${denyVerification ? "refuses unverified roots before any writer or legacy read" : "projects a verified root under its writer claim before grant"}`, (t) => {
+    const f = fixture(t);
+    const rootFile = path.join(f.directory, "test-approved-root.json");
+    fs.writeFileSync(rootFile, JSON.stringify(f.root), { mode: 0o600 });
+    const legacyFile = path.join(f.directory, "isolated-admission-epoch.json");
+    fs.writeFileSync(legacyFile, "deliberately-invalid-legacy-pointer", {
+      mode: 0o600,
+    });
+    const code = `
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const directory = ${JSON.stringify(f.directory)};
+const root = JSON.parse(fs.readFileSync(${JSON.stringify(rootFile)}, "utf8"));
+for (const key of Object.keys(root.currentFiles))
+  if (root.currentFiles[key]) root.currentFiles[key] = Buffer.from(root.currentFiles[key].data);
+let verified = 0, grants = 0, sdk = 0;
+const neverSDK = () => { sdk++; throw new Error("SDK must not run"); };
+const wiring = {
+  nativeProvision: {},
+  assertVerifiedRoot(actual) { assert.equal(actual, directory); assert.equal(verified, 1); },
+  async verifyRuntimeRootBeforeRestore(context) {
+    assert.equal(context.directory, directory);
+    assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false);
+    verified++;
+    if (${denyVerification})
+      throw Object.assign(new Error("native verification denied"), { code: "ROOT_NATIVE_VERIFY_DENIED" });
+    return root;
+  },
+};
+require("./src/queue-runtime-physical-wiring.js").createRuntimeRootPhysicalWiring = () => wiring;
+require("./src/dist/node-adapters/execution/physical-generation-profile.js")
+  .physicalBrokerPortsFromEnvironment = (_environment, dependencies) => {
+    assert.equal(dependencies.runtimeRootFactory({}), wiring);
+    return {
+      verifyRuntimeRootBeforeRestore: wiring.verifyRuntimeRootBeforeRestore,
+      authorizePhysicalRequest: neverSDK, bindPhysicalTurn: neverSDK,
+      withPhysicalTurn: neverSDK, physicalTurnQuiescence: neverSDK,
+      async preparePhysicalGeneration(context) {
+        context.assertBrokerOwner();
+        assert.equal(verified, 1);
+        const owner = JSON.parse(fs.readFileSync(path.join(directory, "broker.lock"), "utf8"));
+        assert.equal(owner.nonce, context.owner.nonce);
+        const state = JSON.parse(fs.readFileSync(path.join(directory, "queue-state.json"), "utf8"));
+        assert.equal(state.appliedRuntimeRetirement.rootHead, root.record.receipt.newHead);
+        assert.equal(state.active, null);
+        assert.equal(state.jobs["original-job"].state, "needs_reconciliation");
+        grants++;
+        throw Object.assign(new Error("deliberate stop before any native grant"), { code: "ROOT_STARTUP_TEST_STOP" });
+      },
+    };
+  };
+process.env.FMCAD_PHYSICAL_OPERATOR_PROFILE = "test-only-stub-not-a-production-profile";
+const { serve } = require("./src/queue-broker.js");
+(async () => {
+  await assert.rejects(serve({ backend: "addin", routing: "queue", transport: "node",
+    url: "http://127.0.0.1:8765/mcp" }, {
+    confirmOwnership: true, dir: directory, createBackend: neverSDK,
+  }), { code: ${JSON.stringify(denyVerification ? "ROOT_NATIVE_VERIFY_DENIED" : "ROOT_STARTUP_TEST_STOP")} });
+  assert.equal(verified, 1);
+  assert.equal(grants, ${denyVerification ? 0 : 1});
+  assert.equal(sdk, 0);
+  assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false);
+  console.log("ROOT_VERIFIED_CLAIMED_PROJECTED_BEFORE_GRANT");
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+`;
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const result = spawnSync(process.execPath, ["-e", code], {
+      cwd: path.join(__dirname, ".."),
+      env,
+      encoding: "utf8",
+      timeout: 20000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.match(result.stdout, /ROOT_VERIFIED_CLAIMED_PROJECTED_BEFORE_GRANT/);
+    assert.equal(
+      fs.readFileSync(legacyFile, "utf8"),
+      "deliberately-invalid-legacy-pointer",
+    );
+    if (denyVerification) assert.deepEqual(fs.readFileSync(f.file), f.bytes);
+  });
+}
+
 test("changed current bytes between native view and claim refuse before projection", (t) => {
   const f = fixture(t);
   const factory = f.factory();

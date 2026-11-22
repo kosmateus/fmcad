@@ -511,6 +511,11 @@ function commandEntry(argv: string[]) {
 }
 
 export async function serve(cfg: P.Config, options: P.Options = {}) {
+  let runtimeRootWiring:
+    import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
+  let verifyRuntimeRootBeforeRestore:
+    ((context: import("../queue-runtime-physical-wiring").RuntimeRootVerificationContext) =>
+      Promise<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot | undefined>) | undefined;
   if (process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined) {
     if ([
       options.bindPhysicalTurn,
@@ -525,9 +530,24 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
     const physical = load(
       "./dist/node-adapters/execution/physical-generation-profile",
-    ).physicalBrokerPortsFromEnvironment();
+    ).physicalBrokerPortsFromEnvironment<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot>(
+      process.env,
+      fs.existsSync(path.join(path.resolve(options.dir || queueDirectory()), "runtime-rebaseline-head.json")) ||
+      fs.existsSync(path.join(path.resolve(options.dir || queueDirectory()), "runtime-rebaseline-publication.json"))
+        ? {
+            runtimeRootFactory(profile) {
+              const { createRuntimeRootPhysicalWiring } = runtimeRequire(
+                "./queue-runtime-physical-wiring",
+              ) as typeof import("../queue-runtime-physical-wiring");
+              runtimeRootWiring = createRuntimeRootPhysicalWiring(profile);
+              return runtimeRootWiring;
+            },
+          }
+        : {},
+    );
     if (!physical)
       fail("PHYSICAL_CAPABILITY_REQUIRED", "Private physical capabilities are unavailable");
+    verifyRuntimeRootBeforeRestore = physical.verifyRuntimeRootBeforeRestore;
     options = {
       ...options,
       preparePhysicalGeneration: physical.preparePhysicalGeneration,
@@ -648,12 +668,28 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ?.preparationConcurrency,
   );
   const configHash = brokerConfigHash(pinned);
-  const backendScope = resolveBackendHead(dir, () =>
-    openIsolatedEpoch(dir, { recover: false }),
-  );
+  // A consumed native root has its own authority. Verify it before touching any
+  // legacy selector or restoring jobs; marker presence alone is never approval.
+  const approvedRuntimeRoot = await verifyRuntimeRootBeforeRestore?.({
+    directory: dir, buildHash: codeHash, configHash,
+  });
+  if (!approvedRuntimeRoot &&
+    (fs.existsSync(path.join(dir, "runtime-rebaseline-head.json")) ||
+     fs.existsSync(path.join(dir, "runtime-rebaseline-publication.json"))))
+    fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Use the private native-authenticated runtime-root startup");
+  if (approvedRuntimeRoot &&
+    [options.backendTransition, options.atomicMigrationNonce,
+      options.epochRuntimeUpgradeNonce, options.deadEpochSuccessorNonce].some(
+      (value) => value !== undefined,
+    ))
+    fail("PHYSICAL_CAPABILITY_CONFLICT", "Native runtime-root startup cannot also claim a legacy transition");
+  const backendScope = approvedRuntimeRoot
+    ? { current: undefined, retired: undefined }
+    : resolveBackendHead(dir, () => openIsolatedEpoch(dir, { recover: false }));
   const effectiveBackend = backendScope.current;
   let identityFile =
-    backendScope.retired?.identityFile || path.join(dir, "instance.json");
+    approvedRuntimeRoot ? path.join(dir, "runtime-rebaseline-current-instance.json")
+      : backendScope.retired?.identityFile || path.join(dir, "instance.json");
   let oldIdentity = fs.existsSync(identityFile)
     ? readJson<P.Identity>(identityFile)
     : null;
@@ -788,6 +824,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     current: P.State,
     permittedBuildHash = codeHash,
   ) {
+    if (approvedRuntimeRoot) {
+      if (!runtimeRootWiring || current.admissionMode !== "runtime-rebaseline")
+        fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Native runtime-root state is required");
+      runtimeRootWiring.assertVerifiedRoot(dir);
+      return;
+    }
     const currentScope = resolveBackendHead(dir, () => current);
     if (
       !same(currentScope.current?.head, effectiveBackend?.head) ||
@@ -827,6 +869,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ? effectiveBackend.identity.buildHash
         : codeHash,
     );
+  if (!approvedRuntimeRoot)
   (runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
     ) as
     typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataReopen(
@@ -878,7 +921,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
   });
   const { owner: marker, lock, close } = lifetime;
-  try {
+  async function preparePhysicalGeneration() {
+   try {
     lifetime.assertOwner();
     await options.preparePhysicalGeneration?.({
       directory: dir, owner: marker, buildHash: codeHash, configHash,
@@ -889,6 +933,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     lifetime.abortBeforeInitialize();
     throw error;
   }
+  }
+  if (!approvedRuntimeRoot) await preparePhysicalGeneration();
   const { successorRuntime, migrationSnapshotHash } = startupClaims;
   const executionRecords = createBrokerRecords(dir);
   const currentAuditScopeFile = path.join(
@@ -906,7 +952,26 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     physicalCatalogDirectory: dir,
     onCommittedSnapshot: phaseTimings.queueCommitted,
   };
-  const state = openIsolatedEpoch(
+   let state: P.State;
+   try {
+   state = approvedRuntimeRoot
+     ? (runtimeRequire("./queue-runtime-root-state") as typeof import("../queue-runtime-root-state"))
+       .openRuntimeRootState({
+         root: approvedRuntimeRoot,
+         assertVerifiedRoot(directory) {
+           if (!runtimeRootWiring)
+             fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Native runtime-root authority is missing");
+           runtimeRootWiring.assertVerifiedRoot(directory);
+         },
+         assertBrokerOwner: lifetime.assertOwner,
+         assertNativeModelGrant(clientId, tokenHash) {
+           if (clientHashes()[clientId] !== tokenHash)
+             fail("NOT_AUTHORIZED", "The runtime-root principal is no longer registered");
+           currentCheckpointGeneration();
+         },
+         stateOptions: measuredStateOptions,
+       }) as unknown as P.State
+     : openIsolatedEpoch(
     dir,
     migrationSnapshotHash
       ? {
@@ -915,7 +980,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           expectedSnapshotHash: migrationSnapshotHash,
         }
       : measuredStateOptions,
-  );
+   );
+   } catch (error) {
+     lifetime.abortBeforeInitialize();
+     throw error;
+   }
+   // Project the authenticated existing snapshot under the real writer claim
+   // before issuing a new physical grant or admitting any client operation.
+   if (approvedRuntimeRoot) await preparePhysicalGeneration();
   function assertPhysicalIsolationAuthority() {
     if (!physicalIsolation && Object.keys(state.data.quarantined ?? {}).length)
       fail("PHYSICAL_CAPABILITY_REQUIRED",
@@ -943,6 +1015,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
   const frozenMetadataAuthority = successorRuntime?.authorityEntry ?? state.epoch?.succession;
   function admitEpochRequest(request: P.Request | undefined) {
+    if (approvedRuntimeRoot) {
+      const { admitRuntimeRootRequest } = runtimeRequire(
+        "./queue-runtime-root-state",
+      ) as typeof import("../queue-runtime-root-state");
+      if (!admitRuntimeRootRequest(state, request, clientHashes()))
+        fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "An explicit native runtime-root model grant is required");
+      return null;
+    }
     if (!state.epoch) return null;
     if (frozenMetadataScope === undefined)
       return epochAdmission(state, request, clientHashes());
@@ -1273,7 +1353,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     expectedContextEpoch: number,
   ) {
     resetFence();
-    if (state.epoch && job) admitEpochRequest(job.request);
+    if ((state.epoch || approvedRuntimeRoot) && job) admitEpochRequest(job.request);
     if (buildHash() !== codeHash)
       fail("BUILD_CHANGED", "Executable changed during local preparation");
     if (job && expectedContextEpoch !== (state.data.contextEpoch || 0))
@@ -1904,7 +1984,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       buildHash: codeHash, backend: "addin", payload,
       argv: commands.cadWorkerPolicyArguments(decoded),
     };
-    if (state.epoch) admitEpochRequest(request);
+    if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
     const status = state.submitDocumentInspection(request, fence);
     const jobId = status["id"];
     if (typeof jobId !== "string") fail("STORAGE_UNAVAILABLE", "Inspection admission lost its job identity");
@@ -3432,7 +3512,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     origin?: P.Origin,
     rawMetadata = false,
   ): Promise<P.PreparedCall> {
-    const epochPolicy = state.epoch
+    // User jobs need the explicit root grant. Broker-owned startup metadata has
+    // no client request and remains bound by its private administrative scope
+    // and the native physical grant at the dispatch boundary.
+    const epochPolicy = state.epoch || (approvedRuntimeRoot && job.request)
       ? admitEpochRequest(job.request)
       : null;
     const contextEpoch = state.data.contextEpoch || 0;
@@ -3807,7 +3890,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       fence(prepared) {
         try {
           assertResetSubmissionOpen(dir);
-          if (state.epoch) admitEpochRequest(context.job.request);
+          if (state.epoch || approvedRuntimeRoot) admitEpochRequest(context.job.request);
           if (
             prepared.record.binding.jobId !== context.job.id ||
             !sameInstance(prepared.record.instance, instance)
@@ -5797,7 +5880,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             clientId, requestId: request.requestId, kind: request.kind,
             metadata: request.kind === "rpc" && isAddinMetadata(rpcPayload(r.rpc?.payload || r.payload)),
           });
-        if (state.epoch) {
+        if (state.epoch || approvedRuntimeRoot) {
           if (own(r, "isolatedEpoch"))
             fail(
               "INVALID_REQUEST",
@@ -5810,7 +5893,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "Historical request IDs cannot be reused in a new epoch",
             );
           admitEpochRequest(request);
-          request.isolatedEpoch = state.epoch.epochId;
+          if (state.epoch) request.isolatedEpoch = state.epoch.epochId;
         }
         if (
           !Number.isSafeInteger(request.timeoutMs) ||
@@ -6169,7 +6252,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           verifyAcceptance();
           const accept = () => {
             verifyAcceptance();
-            if (state.epoch) admitEpochRequest(request);
+            if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
             if (!existing)
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",
