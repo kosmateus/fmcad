@@ -18,6 +18,7 @@ export const queueRuntimeModules = [
   "queue-state",
   "queue-runtime-retirement",
   "queue-runtime-root-state",
+  "queue-runtime-rebaseline-writer",
   "queue-audit-response-proof",
   "queue-atomic-migration-stop",
   "queue-atomic-audit-upgrade",

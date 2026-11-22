@@ -24,6 +24,7 @@
     "tests/param-checkpoint-readback.test.ts",
     "tests/param-checkpoint-guard.test.ts",
     "tests/runtime-rebaseline-native.test.ts",
+    "tests/runtime-rebaseline-writer.test.ts",
     "tests/runtime-verification-realm.test.ts",
     "tests/addin-admission-client.test.ts",
     "tests/python-source-codec.test.ts",

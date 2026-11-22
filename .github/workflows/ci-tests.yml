@@ -155,6 +155,7 @@ jobs:
       - run: node --test tests/runtime-retirement-bootstrap.test.cjs
       - run: node --test tests/document-continuation.test.cjs
       - run: node --test dist/tests/runtime-rebaseline-native.test.js
+      - run: node --test dist/tests/runtime-rebaseline-writer.test.js
       - run: node --test dist/tests/runtime-verification-realm.test.js
       - run: node --test dist/tests/param-checkpoint-guard.test.js dist/tests/param-checkpoint-readback.test.js
       - run: node --test dist/tests/runtime-upgrade-lineage.test.js

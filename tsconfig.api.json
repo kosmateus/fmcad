@@ -13,6 +13,7 @@
     "src/composition/queue-public-python-result.ts",
     "src/queue-backend-transition.ts",
     "src/queue-runtime-rebaseline.ts",
+    "src/queue-runtime-rebaseline-writer.ts",
     "src/queue-runtime-physical-wiring.ts",
     "src/queue-broker-ports.ts",
     "src/queue-broker-modules.ts",
