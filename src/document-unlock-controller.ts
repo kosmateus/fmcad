@@ -4,8 +4,9 @@ import type {
   DocumentObservation,
   DocumentInspection,
 } from "@fmcad/core";
-import { quarantineTargetConflicts } from "@fmcad/core";
-import { hash as canonicalHash } from "../packages/core/src/application/cad/json";
+import { createRequire } from "node:module";
+const { hash: canonicalHash } = createRequire(__filename)("./dist/core/application/cad/json") as
+  typeof import("../packages/core/src/application/cad/json");
 import type {
   createDocumentUnlockAdmission,
   CurrentUnlockTarget,
@@ -192,10 +193,7 @@ export function createDocumentUnlockController(
       targetFor(target),
       ports.generation(),
     );
-    const blockers = quarantineTargetConflicts(
-      ports.domain.data,
-      marker.target,
-    ).map((value) => ({
+    const blockers = ports.domain.documentConflicts(marker.target).map((value) => ({
       jobId: value.jobId,
       requestId: value.requestId,
       originalHash: value.jobHash,
@@ -286,6 +284,8 @@ export function createDocumentUnlockController(
         )
           code = "NOT_AUTHORIZED";
         if (code === "DOCUMENT_UNLOCK_STALE") code = "DOCUMENT_STATE_CHANGED";
+        if (["CORRUPT_STATE", "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH"].includes(code))
+          code = "STORAGE_UNAVAILABLE";
         return serializeDocumentUnlockError({
           ...resolution,
           code,

@@ -2,18 +2,30 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { createRequire } from "node:module";
 import type { DocumentObservation, QueueJob, QueuePhysicalBinding, PreparedPythonArtifact } from "@fmcad/core";
-import { decodeCadWorkerInvocation } from "../packages/core/src/application/cad/worker-command";
-import { hash as canonicalHash } from "../packages/core/src/application/cad/json";
-import { parseNativeResult } from "../packages/core/src/application/cad/native-result";
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
-import { pythonArtifactManifest, retainPythonOrigin } from "../packages/node-adapters/src/python/context-binding";
-import { createDocumentCheckpointProducer, type CheckpointRpc } from "../packages/node-adapters/src/execution/document-checkpoint-producer";
-import { createDocumentObservationStore, type ObservationProof } from "../packages/node-adapters/src/execution/document-observation-store";
+import type { CheckpointRpc } from "../packages/node-adapters/src/execution/document-checkpoint-producer";
+import type { ObservationProof } from "../packages/node-adapters/src/execution/document-observation-store";
 import type { BrokerRecords, RpcRecord, RemoteReceipt } from "../packages/node-adapters/src/persistence/broker-records";
-import { readBytes, MAX_JSON_RECORD_BYTES } from "../packages/node-adapters/src/persistence/records";
-import { validRelease } from "../packages/core/src/domain/queue-quarantine";
 import { decodeDocumentCheckpointReadback } from "./document-checkpoint-readback";
+const load = createRequire(__filename);
+const { decodeCadWorkerInvocation } = load("./dist/core/application/cad/worker-command") as
+  typeof import("../packages/core/src/application/cad/worker-command");
+const { hash: canonicalHash } = load("./dist/core/application/cad/json") as
+  typeof import("../packages/core/src/application/cad/json");
+const { parseNativeResult } = load("./dist/core/application/cad/native-result") as
+  typeof import("../packages/core/src/application/cad/native-result");
+const { pythonArtifactManifest, retainPythonOrigin } = load("./dist/python/context-binding") as
+  typeof import("../packages/node-adapters/src/python/context-binding");
+const { createDocumentCheckpointProducer } = load("./dist/node-adapters/execution/document-checkpoint-producer") as
+  typeof import("../packages/node-adapters/src/execution/document-checkpoint-producer");
+const { createDocumentObservationStore } = load("./dist/node-adapters/execution/document-observation-store") as
+  typeof import("../packages/node-adapters/src/execution/document-observation-store");
+const { readBytes, MAX_JSON_RECORD_BYTES } = load("./dist/node-adapters/persistence/records") as
+  typeof import("../packages/node-adapters/src/persistence/records");
+const { validRelease } = load("./dist/core/domain/queue-quarantine") as
+  typeof import("../packages/core/src/domain/queue-quarantine");
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 function reject(): never {

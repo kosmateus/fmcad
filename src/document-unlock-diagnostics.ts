@@ -622,5 +622,7 @@ export function serializeDocumentUnlockError(
   };
 }
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
-import { hash as canonicalHash } from "../packages/core/src/application/cad/json";
+import { createRequire } from "node:module";
+const { hash: canonicalHash } = createRequire(__filename)("./dist/core/application/cad/json") as
+  typeof import("../packages/core/src/application/cad/json");
 import { decodeDocumentCheckpointReadback } from "./document-checkpoint-readback";

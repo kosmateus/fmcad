@@ -391,3 +391,43 @@ test("global raw quarantine without runtime retirement proof refuses before iden
   assert.equal(f.counts().probes, 0);
   assert.equal(f.counts().reads, 0);
 });
+
+test("exact accepted request authenticates history without minting a current target after generation change", async (t) => {
+  const f = fixture(t);
+  await f.controller.handle(inspect, actor);
+  const command = { action: "accept" as const, target, requestId: "accepted-history",
+    observationId: "observation-A" };
+  await f.controller.handle(command, actor);
+  const before = f.counts();
+  const heads = structuredClone(f.domain.data.documentCheckpoints!.heads);
+  f.setGeneration("physical-generation-B");
+  f.ports.probeIdentity = async () => { assert.fail("History must not probe current CAD"); };
+  f.ports.verifyObservation = () => { assert.fail("History must not execute fresh read verification"); };
+  const result = await f.controller.handle(command, actor) as {
+    previousAcceptance: { currentStateVerified: boolean }; state: string; observed?: unknown;
+  };
+  assert.equal(result.previousAcceptance.currentStateVerified, false);
+  assert.equal(result.state, "inspection_required");
+  assert.equal(result.observed, undefined);
+  assert.equal(f.counts().probes, before.probes);
+  assert.equal(f.counts().reads, before.reads);
+  assert.equal(f.counts().verifications, before.verifications + 1);
+  assert.deepEqual(f.domain.data.documentCheckpoints!.heads, heads);
+});
+
+test("revoked actor cannot retrieve an accepted historical receipt or parameters", async (t) => {
+  const f = fixture(t);
+  await f.controller.handle(inspect, actor);
+  const command = { action: "accept" as const, target, requestId: "revoked-history",
+    observationId: "observation-A" };
+  await f.controller.handle(command, actor);
+  const before = f.counts();
+  delete f.clients[actor.clientId];
+  const result = await f.controller.handle(command, actor) as {
+    error: { code: string }; previousAcceptance?: unknown; observed?: unknown;
+  };
+  assert.equal(result.error.code, "NOT_AUTHORIZED");
+  assert.equal(result.previousAcceptance, undefined);
+  assert.equal(result.observed, undefined);
+  assert.deepEqual(f.counts(), before);
+});

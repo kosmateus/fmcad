@@ -94,13 +94,13 @@ const { createBrokerRecords } = runtimeRequire(
   "./dist/node-adapters/persistence/broker-records",
 ) as typeof import("../../packages/node-adapters/src/persistence/broker-records");
 const { createBrokerCheckpointEvidence, checkpointGeneration } = runtimeRequire(
-  "./dist/document-checkpoint-broker",
+  "./document-checkpoint-broker",
 ) as typeof import("../document-checkpoint-broker");
 const { createDocumentUnlockAdmission } = runtimeRequire(
-  "./dist/document-unlock-admission",
+  "./document-unlock-admission",
 ) as typeof import("../document-unlock-admission");
 const { createDocumentUnlockController } = runtimeRequire(
-  "./dist/document-unlock-controller",
+  "./document-unlock-controller",
 ) as typeof import("../document-unlock-controller");
 const { decodeDocumentUnlockRequest } = runtimeRequire(
   "./dist/core/application/document-unlock",
@@ -1296,7 +1296,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
   type ProductGrant = BrokerGrant<P.LaneContext>;
-  const { quarantineTarget, quarantineTargetConflicts, validRelease } = runtimeRequire(
+  const { quarantineTarget, validRelease } = runtimeRequire(
     "./dist/core/domain/queue-quarantine",
   ) as typeof import("../../packages/core/src/domain/queue-quarantine");
   let quiescencePending = false;
@@ -1800,7 +1800,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const checkpointEvidence = createBrokerCheckpointEvidence({
     directory: dir, buildHash: codeHash, records: executionRecords,
     readJob: (id) => required(state.data.jobs[id]),
-    recheck: assertCheckpointOwner,
+    recheck() {
+      assertCheckpointOwner();
+      // Revalidate the actual current private authorization too, not just the
+      // local owner marker. Historical reads still use their original binding.
+      currentCheckpointGeneration();
+    },
     currentGeneration: currentCheckpointGeneration,
     compile: (operation, data, context, pathMapper, guard, privateReadback) =>
       (runtimeRequire("./dist/composition/cad") as typeof import("./cad")).prepareCadScript(
@@ -1825,7 +1830,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
   });
   function checkpointConflicts(target: import("@fmcad/core").QueueIsolationTarget | null) {
-    return quarantineTargetConflicts(state.data, target);
+    return state.documentConflicts(target);
   }
   async function probeCheckpointIdentity(actor: CheckpointActor,
     selector: import("../document-unlock-admission").UnlockTargetSelector) {
@@ -2006,7 +2011,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ...(target.docFileId === undefined ? {} : { fileId: target.docFileId }),
       });
       const unfenced = !!(state.data.blocked || state.data.localUnknown || state.data.controlBlocked);
-      const raw = conflicts.some((entry) => entry.target === null);
+      const raw = conflicts.some((entry) => entry.target === null &&
+        (!("fenceKind" in entry) || entry.fenceKind !== "runtime_retired"));
       const observed = observation && checkpointViews.getStore()?.states.get(observation.id);
       const accepted = observation && Object.values(state.data.documentCheckpoints?.acceptances ?? {})
         .some((entry) => entry.observationId === observation.id);
@@ -2017,7 +2023,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         executionFence: unfenced ? "unknown" : "released",
         disclosableBlockers: conflicts.map((entry) => ({
           jobId: entry.jobId, requestId: entry.requestId,
-          scope: entry.target ? "document" as const : "global" as const,
+          scope: "fenceKind" in entry && entry.fenceKind === "runtime_retired" ? "runtime" as const :
+            entry.target ? "document" as const : "global" as const,
           executionFence: "released" as const,
         })),
         ...(observation && observed ? { currentObservation: {
