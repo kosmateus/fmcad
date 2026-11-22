@@ -126,7 +126,7 @@ export interface NativeRuntimeRebaselineOptions {
   pins: NativeRuntimeRebaselinePins;
   native: Omit<
     NativePhysicalGenerationProvisionOptions,
-    "getVerifiedActivation"
+    "getVerifiedActivation" | "assertBrokerOwner"
   >;
   runtimeVersion: string;
   originalEvidence: NativeRebaselineOriginalEvidence;
@@ -724,6 +724,42 @@ function authenticatedCompletion(
   publication: NativeRuntimeActivationPublication,
   terminal: Record<string, unknown>,
 ): NativeRuntimeActivationCompletion {
+  const authenticated = authenticateRuntimeConsumedReceipt(
+    key,
+    fenceBinding,
+    requestId,
+    publication,
+    terminal,
+  );
+  const receiptRef = immutable(
+    pinned.evidenceDirectory,
+    `${requestId}-native-consumed.json`,
+    authenticated.receiptBytes,
+  );
+  const attestationRef = immutable(
+    pinned.evidenceDirectory,
+    `${requestId}-completion.json`,
+    authenticated.attestationBytes,
+  );
+  return {
+    binding: authenticated.binding,
+    evidence: [receiptRef, attestationRef],
+    nativeReceipt: {
+      kind: "native-runtime-rebaseline-consume-v1",
+      reference: receiptRef,
+    },
+  };
+}
+
+/** Literal receipt authentication shared by writer and read-only QUERY.
+ * Deliberately no filesystem writes, output directory or publication port. */
+export function authenticateRuntimeConsumedReceipt(
+  key: Buffer,
+  fenceBinding: Record<string, unknown>,
+  requestId: string,
+  publication: NativeRuntimeActivationPublication,
+  terminal: Record<string, unknown>,
+) {
   const publicationJson = JSON.stringify(publication);
   const publicationDigest = sha(Buffer.from(publicationJson));
   const receiptJson = terminal["receiptJson"];
@@ -762,22 +798,16 @@ function authenticatedCompletion(
     })
   )
     refuse();
-  const receiptRef = immutable(
-    pinned.evidenceDirectory,
-    `${requestId}-native-consumed.json`,
-    Buffer.from(receiptJson),
-  );
-  const attestationRef = immutable(
-    pinned.evidenceDirectory,
-    `${requestId}-completion.json`,
-    Buffer.from(JSON.stringify(binding)),
-  );
   return {
     binding,
-    evidence: [receiptRef, attestationRef],
-    nativeReceipt: {
-      kind: "native-runtime-rebaseline-consume-v1",
-      reference: receiptRef,
+    receiptBytes: Buffer.from(receiptJson),
+    attestationBytes: Buffer.from(JSON.stringify(binding)),
+    activation: {
+      requestId,
+      fenceNonce: String(fenceBinding["fenceNonce"]),
+      newHead: binding.newHead,
+      publicationDigest,
+      receiptDigest: sha(Buffer.from(receiptJson)),
     },
   };
 }

@@ -105,6 +105,59 @@ export interface RuntimeRebaselineAuthorityPorts {
   ): Promise<T>;
 }
 const authorities = new WeakMap<object, RuntimeRebaselineAuthorityPorts>();
+export interface RuntimeRebaselineReaderPorts {
+  store: string;
+  pins: RuntimePins;
+  /** Authenticated native QUERY of the exact existing consumed publication.
+   * No writer, publication lease, issuance or persistence port is available. */
+  verifyConsumed(
+    publication: RuntimeActivationPublication,
+    completion: RuntimeActivationCompletion,
+  ): Promise<void>;
+}
+const readers = new WeakMap<object, RuntimeRebaselineReaderPorts>();
+declare const readerBrand: unique symbol;
+export interface RuntimeRebaselineReaderAuthority {
+  readonly [readerBrand]: true;
+}
+export function createRuntimeRebaselineReaderAuthority(
+  ports: RuntimeRebaselineReaderPorts,
+): RuntimeRebaselineReaderAuthority {
+  if (
+    typeof ports.verifyConsumed !== "function" ||
+    !same(Object.keys(ports.pins).sort(), [
+      "admissionStore",
+      "build",
+      "endpoint",
+      "generation",
+      "handoffId",
+      "process",
+      "source",
+    ]) ||
+    !same(Object.keys(ports.pins.generation).sort(), ["epoch", "instance"]) ||
+    !same(Object.keys(ports.pins.process).sort(), ["birth", "pid"]) ||
+    ![
+      ports.pins.admissionStore,
+      ports.pins.build,
+      ports.pins.endpoint,
+      ports.pins.handoffId,
+      ports.pins.source,
+      ports.pins.generation.epoch,
+      ports.pins.generation.instance,
+      ports.pins.process.birth,
+    ].every((value) => typeof value === "string" && value.length > 0) ||
+    !Number.isSafeInteger(ports.pins.process.pid) ||
+    ports.pins.process.pid <= 0 ||
+    fs.realpathSync(ports.store) !== path.resolve(ports.store)
+  )
+    fail(
+      "NOT_AUTHORIZED",
+      "A canonical store and private consumed verifier are required",
+    );
+  const capability = Object.freeze({}) as RuntimeRebaselineReaderAuthority;
+  readers.set(capability, { ...ports, pins: structuredClone(ports.pins) });
+  return capability;
+}
 declare const authorityBrand: unique symbol;
 export interface RuntimeRebaselineAuthority {
   readonly [authorityBrand]: true;
@@ -154,6 +207,15 @@ interface RebaselineRecord {
   carriedExposures: Data;
   layers: ReturnType<typeof scopedState>["layers"];
   receipt: RuntimeRebaselineReceipt;
+}
+export interface ApprovedRuntimeRebaselineRoot {
+  record: RebaselineRecord;
+  /** Original immutable baseline only, never a replacement for evolved state. */
+  snapshot: Data;
+  snapshots: Record<string, Data>;
+  /** Stable current canonical byteview, NOT renewed retirement authority.
+   * Present for the read-only flow; restore must preserve these later jobs. */
+  currentFiles?: Readonly<Record<string, Buffer | null>>;
 }
 const sha = (bytes: string | Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -702,8 +764,8 @@ function completed(record: RebaselineRecord): boolean {
 /** Only a completed, native-consumed root authorizes ordinary bootstrap. */
 export async function runtimeRebaselineRoot(
   directory: string,
-  authority: RuntimeRebaselineAuthority,
-) {
+  authority: RuntimeRebaselineAuthority | RuntimeRebaselineReaderAuthority,
+): Promise<ApprovedRuntimeRebaselineRoot | null> {
   const root = readRuntimeRebaselineRoot(directory);
   if (!root) {
     assertNoPendingRuntimePublication(directory);
@@ -715,6 +777,8 @@ export async function runtimeRebaselineRoot(
       "Local head is published but native consume requires same-ID resume",
     );
   assertNoPendingRuntimePublication(directory);
+  const reader = readers.get(authority);
+  if (reader) return approveReadOnlyRoot(directory, root, reader);
   const ports = authorities.get(authority);
   if (!ports || fs.realpathSync(ports.store) !== root.record.store)
     fail(
@@ -740,6 +804,71 @@ export async function runtimeRebaselineRoot(
       return current;
     },
   );
+}
+async function approveReadOnlyRoot(
+  directory: string,
+  root: NonNullable<ReturnType<typeof readRuntimeRebaselineRoot>>,
+  ports: RuntimeRebaselineReaderPorts,
+) {
+  if (
+    fs.realpathSync(ports.store) !== root.record.store ||
+    !same(
+      Object.fromEntries(
+        Object.keys(ports.pins).map((key) => [
+          key,
+          (root.record.binding as unknown as Data)[key],
+        ]),
+      ),
+      ports.pins,
+    )
+  )
+    fail(
+      "NOT_AUTHORIZED",
+      "Consumed reader is not bound to this store/runtime",
+    );
+  const publication = publicationFor(root.record);
+  const completion = readCompletion(root.record);
+  const references = [
+    ...activationReferences(root.record),
+    ...completion.evidence,
+    completion.nativeReceipt.reference,
+    ref(completionFile(root.record)),
+  ];
+  const currentView = readLiteralRuntimeHead(directory);
+  function assertCurrent() {
+    assertNoPendingRuntimePublication(directory);
+    const current = readRuntimeRebaselineRoot(directory);
+    if (!current || !same(current, root))
+      fail(
+        "RUNTIME_BARRIER_CHANGED",
+        "Consumed root changed during verification",
+      );
+    for (const reference of references) verify(reference);
+    const head = readLiteralRuntimeHead(directory);
+    if (
+      head.store !== publication.store ||
+      head.device !== publication.storeDevice ||
+      head.inode !== publication.storeInode ||
+      head.files["runtime-rebaseline-head.json"]?.toString("utf8") !==
+        publication.activationBytes ||
+      !same(head, currentView)
+    )
+      fail(
+        "RUNTIME_BARRIER_CHANGED",
+        "Consumed root no longer has its exact NEW inputs",
+      );
+  }
+  assertCurrent();
+  flushReferences(root.record.store, references);
+  await ports.verifyConsumed(
+    structuredClone(publication),
+    structuredClone(completion),
+  );
+  // No await or mutation after this final synchronous verification and re-fsync.
+  assertCurrent();
+  flushReferences(root.record.store, references);
+  assertCurrent();
+  return { ...root, currentFiles: currentView.files };
 }
 function readCompletion(record: RebaselineRecord): RuntimeActivationCompletion {
   const value = optional(completionFile(record));
