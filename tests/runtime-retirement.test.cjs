@@ -201,6 +201,23 @@ test("runtime-retired raw exposure allows bounded inspection, not fake per-turn 
   assert.equal(conflicts[0].fenceKind, "runtime_retired");
   assert.equal(conflicts[0].target, null);
   assert.equal(policy.documentConflictAllowsInspection(conflicts[0]), true);
+  assert.equal(policy.documentConflictFence(conflicts[0]), "runtime_retired");
+  const { serializeDocumentUnlockStatus } = require("../dist/src/document-unlock-diagnostics.js");
+  const actual = serializeDocumentUnlockStatus({
+    target: { docId: "doc-A" }, state: "inspection_required",
+    executionFence: policy.documentConflictFence(conflicts[0]),
+    disclosableBlockers: [{
+      jobId: conflicts[0].jobId, scope: "runtime",
+      executionFence: policy.documentConflictFence(conflicts[0]),
+    }],
+  });
+  assert.equal(actual.state, "inspection_required");
+  assert.equal(actual.executionFence, "runtime_retired");
+  assert.equal(actual.blockers[0].executionFence, "runtime_retired");
+  assert.notEqual(actual.executionFence, "released");
+  const forged = structuredClone(conflicts[0]);
+  assert.equal(policy.documentConflictAllowsInspection(forged), false);
+  assert.equal(policy.documentConflictFence(forged), "released");
   assert.deepEqual(next.quarantined, undefined);
   assert.equal(
     policy.documentConflictAllowsInspection({ target: null }),

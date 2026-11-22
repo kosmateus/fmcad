@@ -178,6 +178,32 @@ function checkpointFixture() {
   };
 }
 
+test("server checkpoint refusal is immutable even when no conflict remains and after restoration", () => {
+  let serial = 0;
+  let failWrite = false;
+  const options = {
+    now: () => 100, newId: () => `refusal-${++serial}`,
+    hash: (value: string) => createHash("sha256").update(value).digest("hex"),
+    commit: () => { if (failWrite) throw new Error("Owned refusal ENOSPC"); },
+  };
+  const domain = new QueueDomain(options);
+  const input = request(["cad", "param", "apply", "--doc-id", "document-A"]);
+  const refused = domain.refuseDocumentContinuation(input);
+  assert.equal(refused["state"], "failed");
+  assert.equal(refused["code"], "DOCUMENT_UNLOCK_REQUIRED");
+  const saved = structuredClone(domain.data);
+  const restored = new QueueDomain({ ...options, snapshot: saved, recover: true });
+  assert.equal(restored.submit(input)["id"], refused["id"]);
+  assert.equal(restored.submit(input)["state"], "failed");
+  assert.equal(restored.next(), null);
+  assert.throws(() => restored.submit({ ...input, timeoutMs: 2000 }), { code: "REQUEST_CONFLICT" });
+  assert.equal(restored.submit({ ...input, requestId: "genuinely-new-id" })["state"], "queued");
+  failWrite = true;
+  const before = structuredClone(domain.data);
+  assert.throws(() => domain.refuseDocumentContinuation({ ...input, requestId: "failed-durable-refusal" }), /ENOSPC/);
+  assert.deepEqual(domain.data, before);
+});
+
 test("successor accepts its own readback without adopting the vanished author's identity or deleting UNKNOWN exposure", () => {
   const { domain, observation, acceptance } = checkpointFixture();
   const old = JSON.stringify(domain.data.quarantined);

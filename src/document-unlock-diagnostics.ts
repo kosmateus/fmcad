@@ -10,7 +10,7 @@ export type DocumentUnlockState =
   | "target_unavailable";
 
 export type DocumentUnlockScope = "document" | "runtime" | "global" | "unknown";
-export type DocumentUnlockExecutionFence = "active" | "released" | "unknown";
+export type DocumentUnlockExecutionFence = "active" | "released" | "runtime_retired" | "unknown";
 export type DocumentUnlockCoverage =
   "document_identity" | "document_version" | "parameter_readback";
 
@@ -44,8 +44,10 @@ export interface DocumentUnlockServerResolution {
   readonly state?: DocumentUnlockState;
   /** Already filtered to blockers visible in this actor's authorized scope. */
   readonly disclosableBlockers?: readonly DocumentUnlockResolvedBlocker[];
-  /** Represents one or more hidden blockers, without identifying them. */
+  /** Scope or barrier requires an operator, independently of job visibility. */
   readonly hasOperatorOnlyBlocker?: boolean;
+  /** Hidden job identifiers do not invalidate an authorized document read. */
+  readonly hasUndisclosedBlockers?: boolean;
   /** Fence for this exact target, when the actor may see it. */
   readonly executionFence?: DocumentUnlockExecutionFence;
   /** Include only a current observation for this exact target. */
@@ -229,6 +231,7 @@ function safeFence(fence: unknown): DocumentUnlockExecutionFence | undefined {
   switch (fence) {
     case "active":
     case "released":
+    case "runtime_retired":
     case "unknown":
       return fence;
     default:
@@ -268,7 +271,7 @@ function safeBlockers(
       executionFence: safeFence(blocker.executionFence) ?? "unknown",
     };
   });
-  if (resolution.hasOperatorOnlyBlocker === true)
+  if (resolution.hasOperatorOnlyBlocker === true || resolution.hasUndisclosedBlockers === true)
     blockers.push({ visibility: "operator_only" });
   return blockers;
 }
@@ -365,20 +368,18 @@ function resolvedState(resolution: DocumentUnlockServerResolution): {
   const blockerFences = (resolution.disclosableBlockers ?? []).map(
     (blocker) => safeFence(blocker.executionFence) ?? "unknown",
   );
-  const fence =
-    suppliedFence === "active" || blockerFences.includes("active")
-      ? "active"
-      : suppliedFence === "released" &&
-          blockerFences.every((blockerFence) => blockerFence === "released")
-        ? "released"
-        : "unknown";
+  const fences = [suppliedFence ?? "unknown", ...blockerFences];
+  const fence: DocumentUnlockExecutionFence = fences.includes("active") ? "active" :
+    fences.every((value) => value === "released" || value === "runtime_retired")
+      ? fences.includes("runtime_retired") ? "runtime_retired" : "released"
+      : "unknown";
   let state = safeState(resolution.state);
 
   if (resolution.hasOperatorOnlyBlocker === true || state === "scope_unproven")
     state = "scope_unproven";
   else if (
     state !== "target_unavailable" &&
-    (state === "execution_unfenced" || fence !== "released")
+    (state === "execution_unfenced" || (fence !== "released" && fence !== "runtime_retired"))
   )
     state = "execution_unfenced";
 
