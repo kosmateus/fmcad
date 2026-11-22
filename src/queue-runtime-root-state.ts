@@ -49,6 +49,7 @@ export function openRuntimeRootState(options: {
   const directory = options.root.record.store;
   const retirement = createApprovedRuntimeRetirement(options);
   const history = new Map<string, QueueDomain>();
+  const outcomes = new Map<string, string>();
   const requests = new Map<string, QueueDomain>();
   const historicalStates: QueueDomain[] = [];
   const stateOptions = {
@@ -80,6 +81,17 @@ export function openRuntimeRootState(options: {
         );
       history.set(job.id, historical);
       requests.set(job.requestId, historical);
+      const outcome = ["succeeded", "failed", "cancelled", "expired"].includes(
+        job.state,
+      )
+        ? job.state
+        : options.root.record.layers[layer]?.dispositions[job.id]?.outcome;
+      if (!outcome)
+        refused(
+          "RUNTIME_RETIREMENT_CHANGED",
+          "Historical work has no immutable outcome classification",
+        );
+      outcomes.set(job.id, outcome);
     }
   }
   // Refuse ambiguity before the first projection can write.
@@ -138,8 +150,9 @@ export function openRuntimeRootState(options: {
           return historical
             ? {
                 ...historical.status(id),
-                quarantined: true,
-                historicalOutcome: "unknown",
+                quarantined: outcomes.get(id!) === "unknown",
+                historicalOutcome: outcomes.get(id!),
+                historicalModelValidation: "not_performed",
               }
             : current.status(id);
         };
@@ -148,7 +161,7 @@ export function openRuntimeRootState(options: {
           ...current.summary(),
           admissionScope: "native-approved-runtime-root",
           retiredEpochCount: historicalStates.length,
-          historicalOutcome: "unknown",
+          historicalModelValidation: "not_performed",
         });
       const value: unknown = Reflect.get(target, key, target);
       if (typeof value !== "function") return value;

@@ -511,11 +511,9 @@ function commandEntry(argv: string[]) {
 }
 
 function hasRuntimeRootEvidence(directory: string): boolean {
-  for (const name of ["runtime-rebaseline-head.json", "runtime-rebaseline-publication.json", "runtime-rebaselines"]) {
-    try { fs.lstatSync(path.join(directory, name)); return true; }
-    catch (error) { if (errorInfo(error).code !== "ENOENT") throw error; }
-  }
-  return false;
+  return (runtimeRequire("./dist/node-adapters/execution/physical-generation-profile") as
+    typeof import("../../packages/node-adapters/src/execution/physical-generation-profile"))
+    .hasRuntimeRootEvidence(directory);
 }
 export async function serve(cfg: P.Config, options: P.Options = {}) {
   let runtimeRootWiring:
@@ -929,7 +927,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   try {
   async function preparePhysicalGeneration() {
     lifetime.assertOwner();
-    if (options.preparePhysicalGeneration) physicalGrantState = "unknown";
+    if (options.preparePhysicalGeneration) {
+      lifetime.beginPhysicalProvisioning();
+      physicalGrantState = "unknown";
+    }
     try {
     await options.preparePhysicalGeneration?.({
       directory: dir, owner: marker, buildHash: codeHash, configHash,
@@ -8001,7 +8002,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   };
   } catch (error) {
     try {
-      if (physicalGrantState === "not_attempted") lifetime.abortBeforeInitialize();
+      if (physicalGrantState === "not_attempted")
+        lifetime.abortBeforeInitialize({ grantIssuance: "notStarted" });
       else lifetime.retainBeforeInitializeFailure({
         code: errorInfo(error).code || "BROKER_STARTUP_FAILED",
         grantIssuance: physicalGrantState,

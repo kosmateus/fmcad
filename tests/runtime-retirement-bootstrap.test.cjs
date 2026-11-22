@@ -235,7 +235,7 @@ test("runtime root admission is explicit and does not derive modeling rights fro
   );
 });
 
-function historicalFixture(t) {
+function historicalFixture(t, completed = false) {
   const f = fixture(t);
   const previous = new QueueDomain({
     now: () => 100,
@@ -250,7 +250,8 @@ function historicalFixture(t) {
   previous.submit(request);
   previous.next();
   previous.markDispatch("epoch-job");
-  previous.block("epoch-job", { code: "EPOCH_UNKNOWN" });
+  if (completed) previous.finish("epoch-job", { state: "succeeded" });
+  else previous.block("epoch-job", { code: "EPOCH_UNKNOWN" });
   const layer = "admission-epochs/previous-epoch";
   const snapshot = structuredClone(previous.data);
   const bytes = Buffer.from(JSON.stringify(snapshot));
@@ -262,7 +263,7 @@ function historicalFixture(t) {
   const frozenFile = path.join(archive, "epoch-snapshot.json");
   fs.writeFileSync(frozenFile, bytes, { mode: 0o600 });
   f.root.record.layers[layer] = {
-    dispositions: { "epoch-job": { outcome: "unknown" } },
+    dispositions: completed ? {} : { "epoch-job": { outcome: "unknown" } },
   };
   f.root.record.frozen[layer + "/queue-state.json"] = {
     path: frozenFile,
@@ -336,6 +337,29 @@ test("runtime root keeps other layers read-only and fences every submission entr
   assert.deepEqual(fs.readFileSync(f.file), currentRoot);
   assert.deepEqual(fs.readFileSync(layerFile), changed);
 });
+test("successful immutable historical jobs retain their actual outcome instead of becoming UNKNOWN", (t) => {
+  const f = historicalFixture(t, true);
+  const {
+    openRuntimeRootState,
+  } = require("../src/queue-runtime-root-state.js");
+  const state = openRuntimeRootState({
+    root: f.root,
+    assertBrokerOwner() {},
+    assertVerifiedRoot() {},
+    assertNativeModelGrant() {},
+    stateOptions: { now: () => 200 },
+  });
+  const job = state.status("epoch-job");
+  assert.equal(job.state, "succeeded");
+  assert.equal(job.historicalOutcome, "succeeded");
+  assert.equal(job.quarantined, false);
+  assert.equal(job.historicalModelValidation, "not_performed");
+  assert.equal(state.isHistorical("epoch-job"), true);
+  assert.throws(() => state.submit(f.request), {
+    code: "HISTORICAL_REQUEST_QUARANTINED",
+  });
+  assert.deepEqual(fs.readFileSync(f.layerFile), f.bytes);
+});
 
 for (const mode of [
   "before-grant",
@@ -344,6 +368,8 @@ for (const mode of [
   "unknown-grant",
   "backend-failure",
   "history-ipc",
+  "kill-provision",
+  "empty-archive",
 ]) {
   const denyVerification = ["verification-denied", "missing-head"].includes(
     mode,
@@ -353,6 +379,15 @@ for (const mode of [
     const f = mode === "history-ipc" ? historicalFixture(t) : fixture(t);
     const rootFile = path.join(f.directory, "test-approved-root.json");
     fs.writeFileSync(rootFile, JSON.stringify(f.root), { mode: 0o600 });
+    if (mode === "empty-archive") {
+      fs.unlinkSync(path.join(f.directory, "runtime-rebaseline-head.json"));
+      fs.rmSync(path.join(f.directory, "runtime-rebaselines"), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(f.directory, "runtime-rebaselines"), {
+        mode: 0o700,
+      });
+    }
     if (mode === "missing-head") {
       fs.writeFileSync(
         path.join(
@@ -410,6 +445,11 @@ require("./src/dist/node-adapters/execution/physical-generation-profile.js")
         assert.equal(state.active, null);
         assert.equal(state.jobs["original-job"].state, "needs_reconciliation");
         grants++;
+        if (${mode === "kill-provision"}) {
+          console.log("ISSUER_ENTERED_BEFORE_SIGKILL");
+          process.kill(process.pid, "SIGKILL");
+          await new Promise(() => {});
+        }
         if (${mode === "backend-failure" || mode === "history-ipc"}) return;
         if (${mode === "unknown-grant"})
           throw Object.assign(new Error("uncertain grant fixture"), {
@@ -472,9 +512,9 @@ const { serve } = require("./src/queue-broker.js");
         { code: "REQUEST_CONFLICT" });
       console.log("REAL_IPC_HISTORY_OWNER_EXPECTED_AND_FOREIGN_CHECKED");
     } finally { await broker.close(); }
-  } else await assert.rejects(start(), { code: ${JSON.stringify(denyVerification ? "ROOT_NATIVE_VERIFY_DENIED" : mode === "unknown-grant" ? "PHYSICAL_GENERATION_REJECTED" : mode === "backend-failure" ? "BACKEND_FACTORY_FAILED" : "ROOT_STARTUP_TEST_STOP")} });
-  assert.equal(verified, 1);
-  assert.equal(grants, ${denyVerification ? 0 : 1});
+  } else await assert.rejects(start(), ${mode === "empty-archive" ? '{ name: "SyntaxError" }' : `{ code: ${JSON.stringify(denyVerification ? "ROOT_NATIVE_VERIFY_DENIED" : mode === "unknown-grant" ? "PHYSICAL_GENERATION_REJECTED" : mode === "backend-failure" ? "BACKEND_FACTORY_FAILED" : "ROOT_STARTUP_TEST_STOP")} }`});
+  assert.equal(verified, ${mode === "empty-archive" ? 0 : 1});
+  assert.equal(grants, ${denyVerification || mode === "empty-archive" ? 0 : 1});
   assert.equal(sdk, 0);
   assert.equal(fs.existsSync(path.join(directory, "broker.lock")), ${uncertainGrant});
   if (${uncertainGrant}) {
@@ -486,7 +526,7 @@ const { serve } = require("./src/queue-broker.js");
     assert.deepEqual(lifecycle.owner, owner);
     assert.equal(lifecycle.grantIssuance, ${JSON.stringify(mode === "backend-failure" ? "issued" : "unknown")});
   }
-  console.log("ROOT_VERIFIED_CLAIMED_PROJECTED_BEFORE_GRANT");
+  console.log("ROOT_STARTUP_BOUNDARY_CHECKED");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `;
     const env = { ...process.env };
@@ -497,9 +537,75 @@ const { serve } = require("./src/queue-broker.js");
       encoding: "utf8",
       timeout: 20000,
     });
+    if (mode === "kill-provision") {
+      assert.equal(result.signal, "SIGKILL", result.stderr);
+      assert.match(result.stdout, /ISSUER_ENTERED_BEFORE_SIGKILL/);
+      const owner = JSON.parse(
+        fs.readFileSync(path.join(f.directory, "broker.lock"), "utf8"),
+      );
+      const lifecycle = JSON.parse(
+        fs.readFileSync(
+          path.join(f.directory, `broker-lifecycle-${owner.nonce}.json`),
+          "utf8",
+        ),
+      );
+      assert.deepEqual(lifecycle.owner, owner);
+      assert.equal(lifecycle.stage, "provisioning");
+      assert.equal(lifecycle.grantIssuance, "unknown");
+      assert.equal(lifecycle.safeToRecover, false);
+      const verify = spawnSync(
+        process.execPath,
+        [
+          "-e",
+          `
+const assert = require("node:assert/strict");
+const directory = ${JSON.stringify(f.directory)};
+require("./src/queue-connection.js").queueDirectory = () => directory;
+let reclaims = 0;
+require("./src/queue-instance.js").reclaim = () => {
+  reclaims++;
+  throw new Error("Uncertain physical provisioning must not be reclaimed");
+};
+const { ensureBroker } = require("./src/queue-autostart.js");
+(async () => {
+  await assert.rejects(ensureBroker({
+    routing: "queue", backend: "addin",
+    queue: { autoStart: true, startupTimeoutMs: 150 },
+  }, { clientId: "fixture-successor", clientToken: "private-test-token" }),
+    { code: "BROKER_START_TIMEOUT" });
+  assert.equal(reclaims, 0);
+  console.log("REAL_AUTOSTART_PRESERVES_UNCERTAIN_PROVISIONING");
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+`,
+        ],
+        {
+          cwd: path.join(__dirname, ".."),
+          env,
+          encoding: "utf8",
+          timeout: 10000,
+        },
+      );
+      assert.equal(verify.status, 0, verify.stderr);
+      assert.match(
+        verify.stdout,
+        /REAL_AUTOSTART_PRESERVES_UNCERTAIN_PROVISIONING/,
+      );
+      assert.deepEqual(
+        JSON.parse(
+          fs.readFileSync(path.join(f.directory, "broker.lock"), "utf8"),
+        ),
+        owner,
+      );
+      return;
+    }
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
-    assert.match(result.stdout, /ROOT_VERIFIED_CLAIMED_PROJECTED_BEFORE_GRANT/);
+    assert.match(result.stdout, /ROOT_STARTUP_BOUNDARY_CHECKED/);
+    if (mode === "history-ipc")
+      assert.match(
+        result.stdout,
+        /REAL_IPC_HISTORY_OWNER_EXPECTED_AND_FOREIGN_CHECKED/,
+      );
     assert.equal(
       fs.readFileSync(legacyFile, "utf8"),
       "deliberately-invalid-legacy-pointer",

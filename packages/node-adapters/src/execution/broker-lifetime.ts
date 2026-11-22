@@ -151,6 +151,7 @@ export function claimBrokerLifetime({
   const diagnosticPath = join(dir, `broker-startup-${owner.nonce}.result.json`);
   let publishReady: (() => void) | undefined;
   let phase: Phase = "claimed";
+  let physicalProvisioning = false;
   let runtime: Awaited<ReturnType<typeof listenBrokerIpc>> | undefined;
   let endpoint: Stats | undefined;
   let ports: DrainPorts | undefined;
@@ -172,16 +173,54 @@ export function claimBrokerLifetime({
     unlinkSync(lock);
     syncDirectory(dir);
   }
-  function abortBeforeInitialize() {
+  function abortBeforeInitialize(refusal?: { grantIssuance: "notStarted" }) {
     if (phase !== "claimed" || runtime || ports)
       failure(
         "BROKER_LIFETIME_STATE",
         "Only a claim with no physical initialization may be abandoned",
       );
     assertOwner();
+    if (physicalProvisioning) {
+      if (refusal?.grantIssuance !== "notStarted")
+        failure(
+          "BROKER_LIFETIME_STATE",
+          "A physical provisioning attempt needs an explicit not-started refusal",
+        );
+      durable(lifecycleFile, {
+        owner,
+        buildHash,
+        configHash,
+        receipt,
+        stage: "rejected",
+        grantIssuance: "notStarted",
+        safeToRecover: true,
+      });
+    }
     disposeClient();
     releaseLock();
     phase = "closed";
+  }
+  function beginPhysicalProvisioning() {
+    if (phase !== "claimed" || physicalProvisioning)
+      failure(
+        "BROKER_LIFETIME_STATE",
+        "Physical provisioning may begin only once",
+      );
+    assertOwner();
+    durable(
+      lifecycleFile,
+      {
+        owner,
+        buildHash,
+        configHash,
+        receipt,
+        stage: "provisioning",
+        grantIssuance: "unknown",
+        safeToRecover: false,
+      },
+      true,
+    );
+    physicalProvisioning = true;
   }
 
   /** An issued or uncertain physical grant must retain its exact owner and
@@ -206,7 +245,7 @@ export function claimBrokerLifetime({
           : "BROKER_STARTUP_FAILED",
         grantIssuance: failure.grantIssuance,
       },
-      true,
+      !physicalProvisioning,
     );
     phase = "failed";
   }
@@ -241,8 +280,12 @@ export function claimBrokerLifetime({
       assertOwner();
       durable(
         lifecycleFile,
-        { ...lifecycle, stage: recovery ? "recovery" : "starting" },
-        true,
+        {
+          ...lifecycle,
+          stage: recovery ? "recovery" : "starting",
+          ...(physicalProvisioning ? { grantIssuance: "issued" } : {}),
+        },
+        !physicalProvisioning,
       );
       const result = await identify({ binding, receipt, diagnosticPath });
       assertOwner();
@@ -491,6 +534,7 @@ export function claimBrokerLifetime({
 
   return {
     abortBeforeInitialize,
+    beginPhysicalProvisioning,
     retainBeforeInitializeFailure,
     owner,
     lock,

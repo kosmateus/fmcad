@@ -40,24 +40,47 @@ export interface VerifiedPhysicalOperatorProfile {
   readonly runtime: Readonly<Omit<PhysicalGenerationDescriptor, "brokerOwner">>;
   readonly nativeProvision: PhysicalRuntimeRootAuthorization["nativeProvision"];
 }
-function assertNoRootWithoutAuthority(directory: string) {
+export function hasRuntimeRootEvidence(directory: string): boolean {
   for (const name of [
     "runtime-rebaseline-head.json",
     "runtime-rebaseline-publication.json",
-    "runtime-rebaselines",
   ])
     try {
       fs.lstatSync(path.join(directory, name));
-      throw Object.assign(
-        new Error("A trusted runtime root operator controller is required"),
-        {
-          code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
-          notStarted: true,
-        },
-      );
+      return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+  const archive = path.join(directory, "runtime-rebaselines");
+  let entries: fs.Dirent[];
+  try {
+    const info = fs.lstatSync(archive);
+    if (!info.isDirectory() || info.isSymbolicLink()) rejected();
+    entries = fs.readdirSync(archive, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) rejected();
+    try {
+      fs.lstatSync(path.join(archive, entry.name, "completion.json"));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return false;
+}
+function assertNoRootWithoutAuthority(directory: string) {
+  if (hasRuntimeRootEvidence(directory))
+    throw Object.assign(
+      new Error("A trusted runtime root operator controller is required"),
+      {
+        code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
+        notStarted: true,
+      },
+    );
 }
 
 function rejected(): never {
