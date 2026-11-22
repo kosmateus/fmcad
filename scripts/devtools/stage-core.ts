@@ -115,11 +115,15 @@ export function stageCore(root: string, identityOnly = false): void {
       filter: (source) => !source.endsWith(".tsbuildinfo"),
     },
   );
-  for (const name of fs.readdirSync(path.join(root, "src/dist/fusion-transport"))) {
+  for (const name of fs.readdirSync(
+    path.join(root, "src/dist/fusion-transport"),
+  )) {
     if (!/\.(js|d\.ts)$/.test(name)) continue;
     const file = path.join(root, "src/dist/fusion-transport", name);
-    fs.writeFileSync(file,
-      fs.readFileSync(file, "utf8").replaceAll('"@fmcad/core"', '"../core"'));
+    fs.writeFileSync(
+      file,
+      fs.readFileSync(file, "utf8").replaceAll('"@fmcad/core"', '"../core"'),
+    );
   }
   fs.cpSync(
     path.join(root, "packages/node-adapters/dist/telemetry"),
