@@ -527,6 +527,24 @@ test("frozen snapshot tamper is not converted into an empty or ordinary root", a
   });
 });
 
+test("the approved activation pointer must retain its exact consumed bytes", async () => {
+  for (const change of ["whitespace", "version", "extra"]) {
+    const f = fixture();
+    await rebaselineRuntime(f.dir, f.request(), f.authority);
+    const file = path.join(f.dir, "runtime-rebaseline-head.json");
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (change === "version") value.version = 999;
+    if (change === "extra") value.untrustedAuthority = true;
+    fs.writeFileSync(
+      file,
+      JSON.stringify(value) + (change === "whitespace" ? " " : ""),
+    );
+    assert.throws(() => runtimeRebaselineRoot(f.dir), {
+      code: "RUNTIME_BARRIER_CHANGED",
+    });
+  }
+});
+
 test("ordinary root does not resolve the impossible historical bridge again", async () => {
   const f = fixture();
   await rebaselineRuntime(f.dir, f.request(), f.authority);
@@ -559,6 +577,16 @@ test("symlink destination is refused before writing foreign evidence", async () 
   });
   assert.deepEqual(fs.readdirSync(foreign), []);
   assert.equal(runtimeRebaselineRoot(f.dir), null);
+});
+
+test("symlink artifact parent is refused before creating a foreign request directory", async () => {
+  const f = fixture(),
+    foreign = fs.mkdtempSync(path.join(os.tmpdir(), "foreign-parent-"));
+  fs.symlinkSync(foreign, path.join(f.dir, "runtime-rebaselines"));
+  await assert.rejects(rebaselineRuntime(f.dir, f.request(), f.authority), {
+    code: "STORAGE_UNAVAILABLE",
+  });
+  assert.deepEqual(fs.readdirSync(foreign), []);
 });
 
 test("loss at the publication authority after the parent precheck cannot publish", async () => {

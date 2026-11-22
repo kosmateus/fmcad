@@ -340,6 +340,13 @@ function readRuntimeRebaselineRoot(directory: string): {
     record.store !== store ||
     record.storeDevice !== stat.dev ||
     record.storeInode !== stat.ino ||
+    pointer["version"] !== 1 ||
+    active.toString("utf8") !==
+      JSON.stringify({
+        version: 1,
+        newHead: record.receipt.newHead,
+        record: { path: reference.path, sha256: reference.sha256 },
+      }) ||
     reference.path !==
       path.join(
         store,
@@ -672,6 +679,10 @@ export async function rebaselineRuntime(
       "runtime-rebaselines",
       request.requestId,
     );
+    const parent = path.dirname(destination);
+    fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+    if (fs.realpathSync(parent) !== parent)
+      fail("STORAGE_UNAVAILABLE", "Rebaseline parent escaped canonical store");
     fs.mkdirSync(destination, { recursive: true, mode: 0o700 });
     if (fs.realpathSync(destination) !== destination)
       fail(
