@@ -143,7 +143,7 @@ jobs:
       - run: node --test dist/tests/frozen-metadata-profile.test.js
       - run: node --test dist/tests/physical-generation-grant.test.js dist/tests/physical-generation-transport.test.js
       - run: node --test dist/tests/physical-generation-provision.test.js
-      - run: node --test dist/tests/physical-generation-profile.test.js
+      - run: node --test dist/tests/physical-generation-profile.test.js dist/tests/runtime-root-physical-wiring.test.js
       - run: node --test dist/tests/document-unlock-domain.test.js
       - run: node --test dist/tests/document-observation-store.test.js
       - run: node --test dist/tests/document-unlock-diagnostics.test.js

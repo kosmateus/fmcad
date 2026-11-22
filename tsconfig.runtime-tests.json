@@ -16,6 +16,7 @@
     "tests/physical-generation-grant.test.ts",
     "tests/physical-generation-provision.test.ts",
     "tests/physical-generation-profile.test.ts",
+    "tests/runtime-root-physical-wiring.test.ts",
     "tests/document-unlock-domain.test.ts",
     "tests/document-observation-store.test.ts",
     "tests/param-checkpoint-readback.test.ts",
