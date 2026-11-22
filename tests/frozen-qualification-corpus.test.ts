@@ -10,6 +10,7 @@ const repository = process.cwd();
 for (const scenario of [
   "missing fixture",
   "changed fixture",
+  "changed compiled fixture",
   "changed test and manifest",
 ]) {
   test(`installed frozen qualification refuses ${scenario} before issuing a flag`, (t) => {
@@ -29,6 +30,11 @@ for (const scenario of [
     );
     if (scenario === "missing fixture") fs.unlinkSync(fixture);
     else if (scenario === "changed fixture") fs.appendFileSync(fixture, " ");
+    else if (scenario === "changed compiled fixture")
+      fs.appendFileSync(
+        path.join(runtime, "tests/fixtures/closed-scratch-artifacts.cjs"),
+        " ",
+      );
     else {
       const file = "tests/frozen-inline-observer.test.js";
       fs.appendFileSync(
@@ -71,7 +77,9 @@ for (const scenario of [
         ? /Installed runtime differs from its staged fingerprint/
         : scenario === "missing fixture"
           ? /frozen-inline-observer-evidence\.json/
-          : /Frozen test corpus changed: tests\/fixtures\/frozen-inline-observer-evidence\.json/,
+          : scenario === "changed compiled fixture"
+            ? /Frozen test corpus changed: tests\/fixtures\/closed-scratch-artifacts\.cjs/
+            : /Frozen test corpus changed: tests\/fixtures\/frozen-inline-observer-evidence\.json/,
     );
     assert.equal(
       fs.existsSync(path.join(output, "installed-qualification.json")),
