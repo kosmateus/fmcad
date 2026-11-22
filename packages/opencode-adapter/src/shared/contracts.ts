@@ -33,4 +33,8 @@ export interface Invocation {
   directory: string;
   signal: AbortSignal;
   authorize(resource: string, metadata: Record<string, unknown>): Promise<void>;
+  authorizeControl(
+    resource: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void>;
 }

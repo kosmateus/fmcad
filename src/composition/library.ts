@@ -3,11 +3,13 @@ import {
   resolveFmcadConfiguration,
   id,
   decodeCadWorkerInvocation,
+  decodeDocumentUnlockRequest,
   decodePublicResult,
 } from "../../packages/core/src";
 import type {
   CatalogInvocation,
   CadWorkerInvocation,
+  DocumentUnlockRequest,
   FmcadOptions,
   FmcadServices,
   ExecutionReceipt,
@@ -145,6 +147,11 @@ export function createFmcad(options: FmcadOptions): FmcadServices {
         throw new Error("Unsupported control action");
       token(request.jobId, "jobId");
       return ready().control(request.action, request.jobId);
+    },
+    async documentUnlock(request: DocumentUnlockRequest) {
+      live();
+      const input = decodeDocumentUnlockRequest(snapshot(request));
+      return ready().documentUnlock(input);
     },
     async stage(jobId: string): Promise<StageServices> {
       token(jobId, "jobId");
