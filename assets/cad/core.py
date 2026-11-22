@@ -807,6 +807,34 @@ def _cad_param_checkpoint(ctx: 'CadContext') -> 'JsonRecord':
             'parameters': parameters}
 
 
+def _cad_checkpoint_canonical_json(value: object) -> str:
+    def tagged(item: object) -> 'JsonValue':
+        if item is None:
+            return ['null']
+        if type(item) is bool:
+            return ['boolean', item]
+        if isinstance(item, str):
+            return ['string', item]
+        if type(item) in (int, float):
+            # The broker JSON round-trip uses JavaScript numbers; keep booleans
+            # distinct while normalizing its finite numeric representation.
+            number = float(_cad_cast('int | float', item))
+            if not math.isfinite(number):
+                raise ValueError('Non-finite JSON number')
+            if number == 0:
+                number = 0.0
+            return ['number', number]
+        if isinstance(item, list):
+            return ['array', [tagged(element) for element in item]]
+        if isinstance(item, dict):
+            if any(not isinstance(key, str) for key in item):
+                raise TypeError('JSON object keys must be strings')
+            return ['object', [[key, tagged(item[key])] for key in sorted(item)]]
+        raise TypeError('Unsupported JSON value')
+
+    return json.dumps(tagged(value), separators=(',', ':'), allow_nan=False)
+
+
 def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
     def changed(reason: str) -> None:
         raise RuntimeError('DOCUMENT_STATE_CHANGED: ' + reason)
@@ -857,7 +885,7 @@ def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
             elif not isinstance(value, str) or parameter['valueUnits'] is not None:
                 changed('Accepted text parameter inspection is malformed')
             names.add(parameter['name'])
-        json.dumps(parameters, allow_nan=False)
+        expected_json = _cad_checkpoint_canonical_json(expected)
     except (OverflowError, TypeError, ValueError):
         changed('Accepted full parameter inspection is not valid JSON')
     try:
@@ -868,7 +896,11 @@ def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
         changed('Current document checkpoint could not be read')
     except Exception:
         changed('Current document checkpoint could not be read')
-    if current != expected:
+    try:
+        current_json = _cad_checkpoint_canonical_json(current)
+    except (OverflowError, TypeError, ValueError):
+        changed('Current document checkpoint is not valid JSON')
+    if current_json != expected_json:
         changed('Document or full parameter inspection no longer matches the accepted checkpoint')
 
 

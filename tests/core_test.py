@@ -739,6 +739,70 @@ class CoreTests(unittest.TestCase):
         parameter.value += 0.1
         self.assert_checkpoint_rejects_without_writes(guard)
 
+    def test_checkpoint_rejects_boolean_to_number_metadata_change_before_expression_write(self):
+        self.apply([{'name': 'size', 'expression': '1 mm', 'unit': 'mm',
+                     'metadata': {'protected': True}}])
+        guard = self.checkpoint()
+        parameter = self.parameters.itemByName('size')
+        parameter.attributes.add('fmcad.parameter', 'metadata', '{"protected":1}')
+        writes = list(self.parameters.writes)
+
+        with self.assertRaisesRegex(RuntimeError, '^DOCUMENT_STATE_CHANGED:'):
+            self.ctx.call('param.apply', {
+                'parameters': [{'name': 'size', 'expression': '2 mm', 'unit': 'mm'}],
+                'overwrite': True,
+                '_fmcadCheckpointGuard': guard})
+
+        self.assertEqual(parameter.expression, '1 mm')
+        self.assertEqual(self.parameters.writes, writes)
+
+    def test_checkpoint_canonicalizes_object_order_and_detects_nested_json_type_change(self):
+        self.apply([{'name': 'size', 'expression': '1 mm', 'unit': 'mm',
+                     'metadata': {'protected': True}}])
+        parameter = self.parameters.itemByName('size')
+        attribute = parameter.attributes.itemByName('fmcad.parameter', 'metadata')
+        attribute.value = '{"protected":true,"nested":{"items":[true,null,"text"],"map":{"label":"word"}}}'
+        guard = self.checkpoint()
+
+        attribute.value = '{"nested":{"map":{"label":"word"},"items":[true,null,"text"]},"protected":true}'
+        result = self.ctx.call('param.apply', {
+            'parameters': [{'name': 'size', 'expression': '2 mm', 'unit': 'mm'}],
+            'overwrite': True, 'confirm': True, '_fmcadCheckpointGuard': guard})
+        self.assertTrue(result['parameters'][0]['changed'])
+        self.assertEqual(parameter.expression, '2 mm')
+
+        guard = self.checkpoint()
+        attribute = parameter.attributes.itemByName('fmcad.parameter', 'metadata')
+        attribute.value = '{"protected":true,"nested":{"items":[1,null,"text"],"map":{"label":"word"}}}'
+        writes = list(self.parameters.writes)
+        with self.assertRaisesRegex(RuntimeError, '^DOCUMENT_STATE_CHANGED:'):
+            self.ctx.call('param.apply', {
+                'parameters': [{'name': 'size', 'expression': '3 mm', 'unit': 'mm'}],
+                'overwrite': True, 'confirm': True, '_fmcadCheckpointGuard': guard})
+        self.assertEqual(parameter.expression, '2 mm')
+        self.assertEqual(self.parameters.writes, writes)
+
+    def test_checkpoint_uses_json_number_semantics_and_rejects_non_finite_values(self):
+        self.apply([{'name': 'size', 'expression': '10 mm', 'unit': 'mm'}])
+        guard = self.checkpoint()
+        self.assertEqual(guard['parameters'][0]['value'], 1.0)
+        guard['parameters'][0]['value'] = 1
+        result = self.ctx.call('param.apply', {
+            'parameters': [{'name': 'size', 'expression': '20 mm', 'unit': 'mm'}],
+            'overwrite': True, '_fmcadCheckpointGuard': guard})
+        self.assertTrue(result['parameters'][0]['changed'])
+        self.assertEqual(self.parameters.itemByName('size').expression, '20 mm')
+
+        guard = self.checkpoint()
+        guard['parameters'][0]['metadata']['invalid'] = float('nan')
+        writes = list(self.parameters.writes)
+        with self.assertRaisesRegex(RuntimeError, '^DOCUMENT_STATE_CHANGED:'):
+            self.ctx.call('param.apply', {
+                'parameters': [{'name': 'size', 'expression': '30 mm', 'unit': 'mm'}],
+                'overwrite': True, '_fmcadCheckpointGuard': guard})
+        self.assertEqual(self.parameters.itemByName('size').expression, '20 mm')
+        self.assertEqual(self.parameters.writes, writes)
+
     def test_checkpoint_rejects_changed_model_parameter_and_parameter_inventory(self):
         user_parameter = self.parameters.add('user_size', '1 mm', 'mm', '')
         model_parameter = Entity('ModelParameter', 'model_size')
@@ -884,6 +948,32 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(result['value'], 'hello')
         with self.assertRaisesRegex(ValueError, 'Text parameters'):
             self.apply([{'name': 'note', 'expression': "'updated'"}], overwrite=True)
+
+    def test_checkpoint_allows_numeric_apply_with_text_parameter_and_rejects_stale_text(self):
+        self.apply([{'name': 'size', 'expression': '1 mm', 'unit': 'mm'}])
+        note = Entity('UserParameter', 'note')
+        note.expression = "'hello'"
+        note.unit, note.comment, note.textValue = 'Text', '', 'hello'
+        self.parameters.items.append(note)
+
+        guard = self.checkpoint()
+        result = self.ctx.call('param.apply', {
+            'parameters': [{'name': 'size', 'expression': '2 mm', 'unit': 'mm'}],
+            'overwrite': True,
+            '_fmcadCheckpointGuard': guard})
+        self.assertTrue(result['parameters'][0]['changed'])
+        self.assertEqual(self.parameters.itemByName('size').expression, '2 mm')
+
+        guard = self.checkpoint()
+        note.textValue = 'changed'
+        writes = list(self.parameters.writes)
+        with self.assertRaisesRegex(RuntimeError, '^DOCUMENT_STATE_CHANGED:'):
+            self.ctx.call('param.apply', {
+                'parameters': [{'name': 'size', 'expression': '3 mm', 'unit': 'mm'}],
+                'overwrite': True,
+                '_fmcadCheckpointGuard': guard})
+        self.assertEqual(self.parameters.itemByName('size').expression, '2 mm')
+        self.assertEqual(self.parameters.writes, writes)
 
     def test_geometry_filter_cylinder_and_plane(self):
         body = self.body()

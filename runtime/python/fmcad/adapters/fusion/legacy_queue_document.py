@@ -68,8 +68,9 @@ def _qd_design_state(doc: '_qd_core.Document', seen: set[str]) -> dict[str, obje
         for feature in _qd_items(component.features.deriveFeatures):
             if not feature.isSuppressed:
                 derive_refs.append(feature.documentReference)
-    parameters: list[dict[str, object]] = [{'name': p.name, 'expression': p.expression, 'value': p.value, 'unit': p.unit}
-                  for p in sorted(_qd_items(design.allParameters), key=lambda p: p.name)]
+    parameters: list[dict[str, object]] = [{'name': p.name, 'expression': p.expression,
+                                           'value': p.textValue if p.unit.lower() == 'text' else p.value, 'unit': p.unit}
+                   for p in sorted(_qd_items(design.allParameters), key=lambda p: p.name)]
     references: list[tuple[str, int, dict[str, object]]] = []
     # allDocumentReferences includes nested ordinary references. Derive features
     # are added explicitly because some SDK builds omit parameter-only Derives.

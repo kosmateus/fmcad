@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
@@ -77,6 +78,72 @@ function artifact(
   );
 }
 
+const fixtureSetup = `
+import json, sys
+sys.path.insert(0, ${JSON.stringify(path.join(root, "tests"))})
+import core_test as fixture
+case = fixture.CoreTests()
+case.setUp()
+case.doc.name = "Checkpoint target"
+case.doc.creationId = "creation-1"
+case.doc.dataFile.id = "file-1"
+case.doc.dataFile.versionNumber = 7
+`;
+
+function checkpointGuard(setup: string): ParamCheckpointGuardV1 {
+  const result = spawnSync(
+    "python3",
+    [
+      "-B",
+      "-c",
+      `${fixtureSetup}\n${setup}\nprint(json.dumps(case.checkpoint(), allow_nan=False))`,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout) as ParamCheckpointGuardV1;
+}
+
+function executeArtifact(
+  prepared: PreparedPythonArtifact,
+  setup: string,
+  mutation: string,
+): { error: string | null; expression: string; writes: string[] } {
+  const program = `${fixtureSetup}
+import contextlib, io, json, types
+${setup}
+adsk = types.ModuleType("adsk")
+adsk.core = types.ModuleType("adsk.core")
+adsk.fusion = types.ModuleType("adsk.fusion")
+adsk.core.Application = types.SimpleNamespace(get=lambda: case.app)
+adsk.core.ValueInput = types.SimpleNamespace(createByString=lambda value: value)
+adsk.fusion.Design = types.SimpleNamespace(cast=lambda product: product)
+sys.modules.update({"adsk": adsk, "adsk.core": adsk.core, "adsk.fusion": adsk.fusion})
+namespace = {}
+exec(compile(sys.stdin.read(), "<compiled-param-apply>", "exec"), namespace)
+${mutation}
+parameter = case.parameters.itemByName("size")
+error = None
+try:
+    with contextlib.redirect_stdout(io.StringIO()):
+        namespace["run"]("context")
+except Exception as caught:
+    error = str(caught)
+print(json.dumps({"error": error, "expression": parameter.expression, "writes": case.parameters.writes}))
+`;
+  const result = spawnSync("python3", ["-B", "-c", program], {
+    cwd: root,
+    input: prepared.script,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout) as {
+    error: string | null;
+    expression: string;
+    writes: string[];
+  };
+}
+
 test("checkpoint guard is compiler-injected, source-bound and minimal to param.apply", () => {
   const ordinary = artifact(data());
   const accepted = artifact(data(), guard);
@@ -106,6 +173,63 @@ test("checkpoint guard is compiler-injected, source-bound and minimal to param.a
       ordinary.request as { data: Record<string, unknown> }
     ).data["_fmcadCheckpointGuard"],
   );
+});
+
+test("compiled param.apply rejects protected metadata changing from boolean to number before writes", () => {
+  const setup = `case.apply([{
+    "name": "size", "expression": "1 mm", "unit": "mm",
+    "metadata": {"protected": True}
+}])`;
+  const checkpoint = checkpointGuard(setup);
+  const compiled = artifact(
+    {
+      parameters: [{ name: "size", expression: "2 mm", unit: "mm" }],
+      overwrite: true,
+    },
+    checkpoint,
+  );
+  const result = executeArtifact(
+    compiled,
+    setup,
+    `case.parameters.itemByName("size").attributes.itemByName(
+    "fmcad.parameter", "metadata"
+).value = '{"protected":1}'`,
+  );
+
+  assert.match(result.error ?? "", /DOCUMENT_STATE_CHANGED/);
+  assert.equal(result.expression, "1 mm");
+  assert.deepEqual(result.writes, ["size"]);
+});
+
+test("compiled param.apply accepts unchanged text parameters and rejects stale text", () => {
+  const setup = `case.apply([{
+    "name": "size", "expression": "1 mm", "unit": "mm"
+}])
+note = fixture.Entity("UserParameter", "note")
+note.expression = "'hello'"
+note.unit, note.comment, note.textValue = "Text", "", "hello"
+case.parameters.items.append(note)`;
+  const checkpoint = checkpointGuard(setup);
+  const compiled = artifact(
+    {
+      parameters: [{ name: "size", expression: "2 mm", unit: "mm" }],
+      overwrite: true,
+    },
+    checkpoint,
+  );
+
+  const accepted = executeArtifact(compiled, setup, "");
+  assert.equal(accepted.error, null);
+  assert.equal(accepted.expression, "2 mm");
+
+  const stale = executeArtifact(
+    compiled,
+    setup,
+    `case.parameters.itemByName("note").textValue = "changed"`,
+  );
+  assert.match(stale.error ?? "", /DOCUMENT_STATE_CHANGED/);
+  assert.equal(stale.expression, "1 mm");
+  assert.deepEqual(stale.writes, ["size"]);
 });
 
 test("clients cannot supply the compiler-owned parameter checkpoint field", () => {
