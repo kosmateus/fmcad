@@ -1,11 +1,64 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
 import { prepareBrokerPhysicalGeneration } from "./physical-generation-broker";
 import {
   createNativePhysicalGenerationProvision,
   type NativePhysicalGenerationProvisionOptions,
 } from "./physical-generation-provision";
+import type { PhysicalGenerationDescriptor } from "./physical-generation";
+import type { PhysicalGenerationClaim } from "./physical-generation-broker";
+
+/** Programmatic trusted composition only. No profile/ENV field can create this
+ * closure; native consume authentication must have preceded assertVerifiedRoot. */
+export interface PhysicalRootVerificationContext {
+  directory: string;
+  buildHash: string;
+  configHash: string;
+}
+export interface PhysicalRuntimeRootAuthorization<ApprovedRoot = unknown> {
+  readonly nativeProvision: Omit<
+    NativePhysicalGenerationProvisionOptions,
+    "getVerifiedActivation" | "assertBrokerOwner"
+  >;
+  assertVerifiedRoot(directory: string): void;
+  verifyRuntimeRootBeforeRestore(
+    context: PhysicalRootVerificationContext,
+  ): Promise<ApprovedRoot>;
+  getVerifiedActivation(
+    descriptor: PhysicalGenerationDescriptor,
+  ): ReturnType<
+    NonNullable<
+      NativePhysicalGenerationProvisionOptions["getVerifiedActivation"]
+    >
+  >;
+}
+export interface VerifiedPhysicalOperatorProfile {
+  readonly clientId: string;
+  readonly transport: "node" | "windows-curl";
+  readonly runtime: Readonly<Omit<PhysicalGenerationDescriptor, "brokerOwner">>;
+  readonly nativeProvision: PhysicalRuntimeRootAuthorization["nativeProvision"];
+}
+function assertNoRootWithoutAuthority(directory: string) {
+  for (const name of [
+    "runtime-rebaseline-head.json",
+    "runtime-rebaseline-publication.json",
+    "runtime-rebaselines",
+  ])
+    try {
+      fs.lstatSync(path.join(directory, name));
+      throw Object.assign(
+        new Error("A trusted runtime root operator controller is required"),
+        {
+          code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
+          notStarted: true,
+        },
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+}
 
 function rejected(): never {
   throw Object.assign(
@@ -87,10 +140,14 @@ function readProfile(file: string): unknown {
 
 /** Broker-only composition input. It is deliberately separate from public
  * fmcad configuration and cannot supply a broker owner, token or capability. */
-export function physicalBrokerPortsFromEnvironment(
+export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   dependencies: {
     provisionFactory?: typeof createNativePhysicalGenerationProvision;
+    runtimeRoot?: PhysicalRuntimeRootAuthorization<ApprovedRoot>;
+    runtimeRootFactory?: (
+      profile: VerifiedPhysicalOperatorProfile,
+    ) => PhysicalRuntimeRootAuthorization<ApprovedRoot>;
   } = {},
 ) {
   const file = environment["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
@@ -188,15 +245,70 @@ export function physicalBrokerPortsFromEnvironment(
         build: text(physical, "build"),
       },
     };
-    const provider = (
-      dependencies.provisionFactory ?? createNativePhysicalGenerationProvision
-    )(options);
-    return prepareBrokerPhysicalGeneration({
+    const factory =
+      dependencies.provisionFactory ?? createNativePhysicalGenerationProvision;
+    if (dependencies.runtimeRoot && dependencies.runtimeRootFactory) rejected();
+    Object.freeze(options.installedPackageFiles);
+    Object.freeze(options);
+    Object.freeze(descriptor.generation);
+    Object.freeze(descriptor.physicalRuntime);
+    Object.freeze(descriptor);
+    const runtimeRoot =
+      dependencies.runtimeRootFactory?.(
+        Object.freeze({
+          clientId,
+          transport,
+          runtime: descriptor,
+          nativeProvision: options,
+        }),
+      ) ?? dependencies.runtimeRoot;
+    if (runtimeRoot && !isDeepStrictEqual(options, runtimeRoot.nativeProvision))
+      rejected();
+    // Legacy generations keep the existing path. An approved-root issuer is
+    // constructed only under the actual post-claim owner.
+    let provider = runtimeRoot ? undefined : factory(options);
+    const preparedPhysical = prepareBrokerPhysicalGeneration({
       runtime: descriptor,
       clientId,
       transport,
-      provision: provider.provision,
+      provision: (descriptor) => {
+        if (!provider) rejected();
+        return provider.provision(descriptor);
+      },
     });
+    let attempted = false;
+    return {
+      ...preparedPhysical,
+      async verifyRuntimeRootBeforeRestore(
+        context: PhysicalRootVerificationContext,
+      ) {
+        if (runtimeRoot)
+          return runtimeRoot.verifyRuntimeRootBeforeRestore(context);
+        assertNoRootWithoutAuthority(context.directory);
+        return undefined;
+      },
+      async preparePhysicalGeneration(context: PhysicalGenerationClaim) {
+        if (attempted) rejected();
+        attempted = true;
+        context.assertBrokerOwner();
+        if (runtimeRoot) {
+          runtimeRoot.assertVerifiedRoot(context.directory);
+          const assertBrokerOwner = () => {
+            context.assertBrokerOwner();
+            runtimeRoot.assertVerifiedRoot(context.directory);
+          };
+          provider = factory({
+            ...options,
+            getVerifiedActivation: runtimeRoot.getVerifiedActivation,
+            assertBrokerOwner,
+          });
+        } else {
+          // Presence is a refusal signal, never proof of authorization.
+          assertNoRootWithoutAuthority(context.directory);
+        }
+        await preparedPhysical.preparePhysicalGeneration(context);
+      },
+    };
   } catch {
     return rejected();
   }

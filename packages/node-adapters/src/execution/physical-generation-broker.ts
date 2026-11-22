@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { PhysicalGenerationProvisionError } from "./physical-generation-provision";
 import {
   createPhysicalGenerationAuthorization,
   validatePhysicalGenerationDescriptor,
@@ -69,9 +70,11 @@ export function prepareBrokerPhysicalGeneration(options: {
       validatePhysicalGenerationDescriptor(descriptor, options.transport);
       // A provisioning callback may be asynchronous. It receives a copy, not
       // the descriptor used to pin the resulting private file.
+      let provisionReturned = false;
       try {
         issuanceAttempted = true;
         const grant = await options.provision(structuredClone(descriptor));
+        provisionReturned = true;
         context.assertBrokerOwner();
         const candidate = createPhysicalGenerationAuthorization({
           ...grant,
@@ -84,7 +87,15 @@ export function prepareBrokerPhysicalGeneration(options: {
         candidate.headers(descriptor.endpointURL);
         context.assertBrokerOwner();
         authorization = candidate;
-      } catch {
+      } catch (error) {
+        // Only the private provider's typed refusal can prove no issuance.
+        // Never reinterpret errors after it returned a potentially issued file.
+        if (
+          !provisionReturned &&
+          error instanceof PhysicalGenerationProvisionError &&
+          error.grantIssuance === "notStarted"
+        )
+          issuanceAttempted = false;
         // The operator may include credentials/private paths in its exception.
         // Preserve uncertainty by refusing retries, not by returning that error.
         unavailable();
