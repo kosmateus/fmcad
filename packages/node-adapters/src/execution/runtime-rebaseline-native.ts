@@ -52,6 +52,7 @@ export interface NativeRuntimeRebaselineRequest {
 
 export interface NativeRuntimeBarrierLease {
   readonly initiatorOperatorId: string;
+  readonly fenceState: "pending" | "consumed";
   assertWriterAndProvisionLock(): void;
   verifyCurrentBarrier(): Promise<{
     binding: NativeRuntimeBarrierBinding;
@@ -89,6 +90,7 @@ export interface NativeRuntimeRebaselineAuthorityPorts {
   pins: NativeRuntimeRebaselinePins;
   withExclusiveBarrier<T>(
     request: NativeRuntimeRebaselineRequest,
+    invokeMode: "publish-or-resume" | "verify-completed",
     work: (lease: NativeRuntimeBarrierLease) => Promise<T>,
   ): Promise<T>;
 }
@@ -129,7 +131,9 @@ export interface NativeRuntimeRebaselineOptions {
 
 const nativeFenceScript = `${nativePhysicalGuard}
 from lib.physical_authority import _read_private_bytes,private_directory
-operator=json.loads(_read_private_bytes(Path(e["operatorFile"])).decode("utf-8"))
+from lib.admission_json import decode_json
+private_directory(Path(e["operatorFile"]).parent)
+operator=decode_json(_read_private_bytes(Path(e["operatorFile"])).decode("utf-8"))
 if Path(operator["database"]).resolve()!=Path(e["admissionStore"]).resolve():
     deny("NATIVE_ADMISSION_STORE_CHANGED")
 expected_runtime={"handoffId":e["runtimePins"]["handoffId"],"generation":d["generation"],
@@ -168,10 +172,14 @@ with os.fdopen(fd,"wb") as f:
     os.fsync(f.fileno())
 if _read_private_bytes(request)!=raw:
     deny("NATIVE_REQUEST_CHANGED")
-# The CLI authenticates the separate operator carrier, SAME store registered
-# runtime, current generation and persistent fence in its own transaction.
-sys.argv=["lib.rebaseline_fence",e["action"],"--operator-file",e["operatorFile"],"--request",str(request)]
-runpy.run_module("lib.rebaseline_fence",run_name="__main__")
+# Construct the private capability from the SAME verified bytes, never reopen
+# its pathname in a CLI. The supported module still performs its own native
+# process/store/registration/fence transaction checks.
+from lib.rebaseline_fence import OperatorAuthority,begin_fence,query_fence,consume_fence
+authority=OperatorAuthority(operator)
+operation={"begin":begin_fence,"query":query_fence,"consume":consume_fence}[e["action"]]
+result=operation(authority,decode_json(raw.decode("utf-8")))
+print(json.dumps(result,sort_keys=True,ensure_ascii=True))
 `;
 
 async function nativeFence(
@@ -318,14 +326,22 @@ function privateBytes(reference: NativeRebaselineReference): Buffer {
     !reference ||
     typeof reference.path !== "string" ||
     typeof reference.sha256 !== "string" ||
-    !/^[a-f0-9]{64}$/.test(reference.sha256) ||
-    fs.realpathSync(reference.path) !== reference.path
+    !/^[a-f0-9]{64}$/.test(reference.sha256)
   )
     refuse();
-  privateDirectory(path.dirname(reference.path));
+  return readPrivateRegular(reference.path, reference.sha256);
+}
+
+function readPrivateRegular(
+  file: string,
+  expectedSha?: string,
+  sync = false,
+): Buffer {
+  if (fs.realpathSync(file) !== file) refuse();
+  privateDirectory(path.dirname(file));
   const fd = fs.openSync(
-    reference.path,
-    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+    file,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
   );
   try {
     const before = fs.fstatSync(fd, { bigint: true });
@@ -334,7 +350,7 @@ function privateBytes(reference: NativeRebaselineReference): Buffer {
       before.nlink !== 1n ||
       before.uid !== BigInt(process.getuid?.() ?? -1) ||
       (before.mode & 0o077n) !== 0n ||
-      before.size > 64n * 1024n * 1024n
+      before.size > 128n * 1024n * 1024n
     )
       refuse();
     const buffer = Buffer.alloc(Number(before.size) + 1);
@@ -345,8 +361,9 @@ function privateBytes(reference: NativeRebaselineReference): Buffer {
       count += read;
     }
     const bytes = buffer.subarray(0, count);
+    if (sync) fs.fsyncSync(fd);
     const after = fs.fstatSync(fd, { bigint: true });
-    const named = fs.lstatSync(reference.path, { bigint: true });
+    const named = fs.lstatSync(file, { bigint: true });
     if (
       before.dev !== after.dev ||
       before.ino !== after.ino ||
@@ -356,7 +373,7 @@ function privateBytes(reference: NativeRebaselineReference): Buffer {
       before.ctimeNs !== after.ctimeNs ||
       after.dev !== named.dev ||
       after.ino !== named.ino ||
-      sha(bytes) !== reference.sha256
+      (expectedSha !== undefined && sha(bytes) !== expectedSha)
     )
       refuse("RUNTIME_BARRIER_CHANGED");
     return bytes;
@@ -400,10 +417,8 @@ function originalFacts(options: NativeRuntimeRebaselineOptions) {
     Number(retired["oldPid"]) <= 0 ||
     typeof retired["oldBirth"] !== "string" ||
     !retired["oldBirth"] ||
-    !Number.isSafeInteger(cold["pid"]) ||
-    Number(cold["pid"]) <= 0 ||
-    typeof cold["birth"] !== "string" ||
-    !cold["birth"] ||
+    cold["pid"] !== pins.process.pid ||
+    cold["birth"] !== pins.process.birth ||
     typeof cold["exe"] !== "string" ||
     completed["state"] !== "completed" ||
     committed["state"] !== "committed" ||
@@ -432,30 +447,34 @@ function originalFacts(options: NativeRuntimeRebaselineOptions) {
 }
 
 function currentFile(file: string): Buffer | null {
-  let info: fs.Stats;
   try {
-    info = fs.lstatSync(file);
+    return readPrivateRegular(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
-  }
-  if (!info.isFile() || info.isSymbolicLink()) refuse();
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-  try {
-    const held = fs.fstatSync(fd);
-    if (held.dev !== info.dev || held.ino !== info.ino) refuse();
-    return fs.readFileSync(fd);
-  } finally {
-    fs.closeSync(fd);
   }
 }
 
 function syncDirectory(directory: string): void {
   const fd = fs.openSync(
     directory,
-    fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW,
+    fs.constants.O_RDONLY |
+      fs.constants.O_DIRECTORY |
+      fs.constants.O_NOFOLLOW |
+      fs.constants.O_NONBLOCK,
   );
   try {
+    const info = fs.fstatSync(fd, { bigint: true });
+    const named = fs.lstatSync(directory, { bigint: true });
+    if (
+      !info.isDirectory() ||
+      info.uid !== BigInt(process.getuid?.() ?? -1) ||
+      (info.mode & 0o077n) !== 0n ||
+      info.dev !== named.dev ||
+      info.ino !== named.ino ||
+      fs.realpathSync(directory) !== directory
+    )
+      refuse();
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -463,19 +482,8 @@ function syncDirectory(directory: string): void {
 }
 
 function syncReference(reference: NativeRebaselineReference): void {
-  privateBytes(reference);
-  const fd = fs.openSync(
-    reference.path,
-    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
-  );
-  try {
-    const info = fs.fstatSync(fd);
-    if (!info.isFile() || sha(fs.readFileSync(fd)) !== reference.sha256)
-      refuse();
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
+  if (!/^[a-f0-9]{64}$/.test(reference.sha256)) refuse();
+  readPrivateRegular(reference.path, reference.sha256, true);
   syncDirectory(path.dirname(reference.path));
 }
 
@@ -496,6 +504,7 @@ function publishPosix(
   request: NativeRuntimeRebaselineRequest,
   publication: NativeRuntimeActivationPublication,
   assertHeld: () => void,
+  requireExistingNew = false,
 ): void {
   assertHeld();
   privateDirectory(options.store);
@@ -582,6 +591,7 @@ function publishPosix(
     current["runtime-rebaseline-head.json"]?.equals(
       Buffer.from(publication.activationBytes),
     ) ?? false;
+  if (requireExistingNew && !alreadyNew) refuse("RUNTIME_BARRIER_CHANGED");
   const manifest = Object.fromEntries(
     headInputs.map((name) => [
       name,
@@ -799,12 +809,13 @@ function nativeRuntimeRebaselineAuthorityPorts(
     store: pinned.store,
     operatorId: pinned.operatorId,
     pins: structuredClone(pinned.pins),
-    async withExclusiveBarrier(request, work) {
+    async withExclusiveBarrier(request, invokeMode, work) {
       const intent = structuredClone(request);
       if (
         !/^[A-Za-z0-9_-]{1,128}$/.test(intent.requestId) ||
         !/^[a-f0-9]{64}$/.test(intent.expectedHead) ||
-        intent.handoffId !== pinned.pins.handoffId
+        intent.handoffId !== pinned.pins.handoffId ||
+        !["publish-or-resume", "verify-completed"].includes(invokeMode)
       )
         refuse();
       return writer.withExclusiveWriter(async (writerLease) => {
@@ -833,7 +844,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
             value["version"] !== 1
           )
             refuse();
-        } else {
+        } else if (invokeMode === "publish-or-resume") {
           immutable(
             pinned.store,
             "runtime-rebaseline-publication.json",
@@ -855,7 +866,8 @@ function nativeRuntimeRebaselineAuthorityPorts(
             state: "absent",
             requestId: intent.requestId,
           })
-        )
+        ) {
+          if (invokeMode === "verify-completed") refuse();
           observed = await nativeFence(pinned, facts.retiredProcess, "begin", {
             ...intent,
             store: {
@@ -866,7 +878,10 @@ function nativeRuntimeRebaselineAuthorityPorts(
             writerGeneration: writerLease.generation,
             intentReferences: facts.references,
           });
+        }
         const fenceBinding = object(observed["binding"]);
+        let phase = observed["state"] as "pending" | "consumed";
+        if (invokeMode === "verify-completed" && phase !== "consumed") refuse();
         const storeInfo = fs.statSync(pinned.store);
         if (
           observed["kind"] !== "fmcad-provision-fence" ||
@@ -901,8 +916,17 @@ function nativeRuntimeRebaselineAuthorityPorts(
           !fenceBinding["writerGeneration"]
         )
           refuse();
-        const fenceReference = immutable(
-          pinned.evidenceDirectory,
+        const intentEvidence = (name: string, bytes: Buffer) => {
+          if (phase === "pending")
+            return immutable(pinned.evidenceDirectory, name, bytes);
+          const reference = {
+            path: path.join(pinned.evidenceDirectory, name),
+            sha256: sha(bytes),
+          };
+          privateBytes(reference);
+          return reference;
+        };
+        const fenceReference = intentEvidence(
           `${intent.requestId}-native-intent.json`,
           Buffer.from(JSON.stringify(fenceBinding)),
         );
@@ -915,8 +939,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
           admissionCount: 0,
           writerGeneration: fenceBinding["writerGeneration"],
         };
-        const bindingReference = immutable(
-          pinned.evidenceDirectory,
+        const bindingReference = intentEvidence(
           `${intent.requestId}-barrier.json`,
           Buffer.from(JSON.stringify(binding)),
         );
@@ -927,13 +950,13 @@ function nativeRuntimeRebaselineAuthorityPorts(
           writerLease.assertHeld();
           // Presence alone is not native authority. It prevents a fresh Linux
           // writer from changing local metadata after this parent dies.
-          if (!settled) {
+          if (!settled && invokeMode === "publish-or-resume") {
             const value = currentFile(markerFile);
             if (!value || !existingMarker(value, intent)) refuse();
           }
         };
         const verify = async () => {
-          if (settled) refuse();
+          if (settled || phase !== "pending") refuse();
           assertHeld();
           originalFacts(pinned);
           const current = await nativeFence(
@@ -944,7 +967,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
           );
           if (
             !isDeepStrictEqual(current["binding"], fenceBinding) ||
-            !["pending", "consumed"].includes(String(current["state"]))
+            current["state"] !== "pending"
           )
             refuse();
           assertHeld();
@@ -957,52 +980,115 @@ function nativeRuntimeRebaselineAuthorityPorts(
             ]),
           };
         };
+        const queryCompletion = async (
+          publication: NativeRuntimeActivationPublication,
+        ) => {
+          assertHeld();
+          const terminal = await nativeFence(
+            pinned,
+            facts.retiredProcess,
+            "query",
+            { requestId: intent.requestId },
+          );
+          return authenticatedCompletion(
+            pinned,
+            key,
+            fenceBinding,
+            intent.requestId,
+            publication,
+            terminal,
+          );
+        };
+        const assertExistingNew = (
+          publication: NativeRuntimeActivationPublication,
+        ) => {
+          assertHeld();
+          privateDirectory(pinned.store);
+          const info = fs.statSync(pinned.store);
+          if (
+            publication.store !== pinned.store ||
+            publication.storeDevice !== info.dev ||
+            publication.storeInode !== info.ino ||
+            publication.activationFile !==
+              path.join(pinned.store, "runtime-rebaseline-head.json") ||
+            !currentFile(publication.activationFile)?.equals(
+              Buffer.from(publication.activationBytes),
+            )
+          )
+            refuse("RUNTIME_BARRIER_CHANGED");
+          privateBytes(publication.record);
+        };
         try {
           return await work({
             initiatorOperatorId: fenceBinding["initiatorOperatorId"],
+            get fenceState() {
+              return phase;
+            },
             assertWriterAndProvisionLock: assertHeld,
             verifyCurrentBarrier: verify,
             async publishActivation(publication) {
               publication = structuredClone(publication);
-              await verify();
-              publishPosix(pinned, intent, publication, assertHeld);
+              if (invokeMode !== "publish-or-resume") refuse();
+              if (phase === "pending") await verify();
+              else {
+                assertExistingNew(publication);
+                await queryCompletion(publication);
+              }
+              publishPosix(
+                pinned,
+                intent,
+                publication,
+                assertHeld,
+                phase === "consumed",
+              );
             },
             async consumeActivation(publication) {
               publication = structuredClone(publication);
-              await verify();
+              if (invokeMode !== "publish-or-resume") refuse();
+              let completion: NativeRuntimeActivationCompletion | undefined;
+              if (phase === "pending") await verify();
+              else {
+                assertExistingNew(publication);
+                completion = await queryCompletion(publication);
+              }
               // Resume exact NEW re-fsyncs instead of depending on old ACKs.
-              publishPosix(pinned, intent, publication, assertHeld);
-              const publicationJson = JSON.stringify(publication);
-              const publicationDigest = sha(Buffer.from(publicationJson));
-              const mac = createHmac("sha256", key)
-                .update("fmcad-posix-publication-v1\0")
-                .update(
-                  pythonEncoding({ binding: fenceBinding, publicationDigest }),
-                )
-                .digest("hex");
-              await nativeFence(pinned, facts.retiredProcess, "consume", {
-                requestId: intent.requestId,
-                fenceNonce: fenceBinding["fenceNonce"],
-                publicationJson,
-                attestation: { keyId: pinned.publicationAuthority.keyId, mac },
-              });
-              const terminal = await nativeFence(
+              publishPosix(
                 pinned,
-                facts.retiredProcess,
-                "query",
-                { requestId: intent.requestId },
-              );
-              const completion = authenticatedCompletion(
-                pinned,
-                key,
-                fenceBinding,
-                intent.requestId,
+                intent,
                 publication,
-                terminal,
+                assertHeld,
+                phase === "consumed",
               );
+              if (phase === "pending") {
+                const publicationJson = JSON.stringify(publication);
+                const publicationDigest = sha(Buffer.from(publicationJson));
+                const mac = createHmac("sha256", key)
+                  .update("fmcad-posix-publication-v1\0")
+                  .update(
+                    pythonEncoding({
+                      binding: fenceBinding,
+                      publicationDigest,
+                    }),
+                  )
+                  .digest("hex");
+                await nativeFence(pinned, facts.retiredProcess, "consume", {
+                  requestId: intent.requestId,
+                  fenceNonce: fenceBinding["fenceNonce"],
+                  publicationJson,
+                  attestation: {
+                    keyId: pinned.publicationAuthority.keyId,
+                    mac,
+                  },
+                });
+                completion = await queryCompletion(publication);
+              }
+              if (!completion) refuse();
+              phase = "consumed";
               assertHeld();
-              fs.unlinkSync(markerFile);
-              syncDirectory(pinned.store);
+              if (fs.existsSync(markerFile)) {
+                fs.unlinkSync(markerFile);
+                syncDirectory(pinned.store);
+              }
               settled = true;
               return completion;
             },
@@ -1044,7 +1130,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
               // ordinary work. Core re-fsyncs completion/dependencies before
               // this final authenticated query, then this marker may settle.
               assertHeld();
-              if (!settled) {
+              if (!settled && fs.existsSync(markerFile)) {
                 fs.unlinkSync(markerFile);
                 syncDirectory(pinned.store);
                 settled = true;
@@ -1090,41 +1176,49 @@ export function createNativeRuntimeRebaselineAuthorityPorts(
     };
     return {
       ...ports,
-      async withExclusiveBarrier(request, work) {
+      async withExclusiveBarrier(request, invokeMode, work) {
         let callbackFailed = false;
         let callbackError: unknown;
         try {
-          return await ports.withExclusiveBarrier(request, async (lease) => {
-            try {
-              return await work({
-                initiatorOperatorId: lease.initiatorOperatorId,
-                assertWriterAndProvisionLock() {
-                  try {
-                    lease.assertWriterAndProvisionLock();
-                  } catch (error) {
-                    if (error instanceof NativeRuntimeBarrierError) throw error;
-                    throw new NativeRuntimeBarrierError(
-                      "RUNTIME_BARRIER_UNPROVEN",
-                    );
-                  }
-                },
-                verifyCurrentBarrier: () =>
-                  nativeOperation(() => lease.verifyCurrentBarrier()),
-                publishActivation: (publication) =>
-                  nativeOperation(() => lease.publishActivation(publication)),
-                consumeActivation: (publication) =>
-                  nativeOperation(() => lease.consumeActivation(publication)),
-                verifyNativeConsumeReceipt: (publication, completion) =>
-                  nativeOperation(() =>
-                    lease.verifyNativeConsumeReceipt(publication, completion),
-                  ),
-              });
-            } catch (error) {
-              callbackFailed = true;
-              callbackError = error;
-              throw error;
-            }
-          });
+          return await ports.withExclusiveBarrier(
+            request,
+            invokeMode,
+            async (lease) => {
+              try {
+                return await work({
+                  initiatorOperatorId: lease.initiatorOperatorId,
+                  get fenceState() {
+                    return lease.fenceState;
+                  },
+                  assertWriterAndProvisionLock() {
+                    try {
+                      lease.assertWriterAndProvisionLock();
+                    } catch (error) {
+                      if (error instanceof NativeRuntimeBarrierError)
+                        throw error;
+                      throw new NativeRuntimeBarrierError(
+                        "RUNTIME_BARRIER_UNPROVEN",
+                      );
+                    }
+                  },
+                  verifyCurrentBarrier: () =>
+                    nativeOperation(() => lease.verifyCurrentBarrier()),
+                  publishActivation: (publication) =>
+                    nativeOperation(() => lease.publishActivation(publication)),
+                  consumeActivation: (publication) =>
+                    nativeOperation(() => lease.consumeActivation(publication)),
+                  verifyNativeConsumeReceipt: (publication, completion) =>
+                    nativeOperation(() =>
+                      lease.verifyNativeConsumeReceipt(publication, completion),
+                    ),
+                });
+              } catch (error) {
+                callbackFailed = true;
+                callbackError = error;
+                throw error;
+              }
+            },
+          );
         } catch (error) {
           if (callbackFailed && error === callbackError) throw error;
           if (error instanceof NativeRuntimeBarrierError) throw error;
