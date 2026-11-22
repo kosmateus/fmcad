@@ -18,6 +18,11 @@ import { validQuarantine,
 import { documentConflicts, documentConflictAllowsInspection } from "./document-conflicts";
 import { runtimeRetiredJob, projectRuntimeRetirement, type RuntimeRetirementAuthority } from "./runtime-retirement";
 import {
+  validDocumentContinuation, verifiedDocumentContinuation,
+  isDocumentContinuationAuthority, createDocumentContinuationAuthority,
+  type DocumentContinuation, type DocumentContinuationAuthority,
+} from "./document-continuation";
+import {
   documentTargetKey,
   validDocumentObservation,
   validDocumentCheckpoints,
@@ -40,6 +45,7 @@ const STATES = new Set([
 export const terminal = (state: string) => TERMINAL.has(state);
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const retirements = new WeakMap<QueueDomain, RuntimeRetirementAuthority>();
+const continuations = new WeakMap<QueueDomain, Map<string, DocumentContinuationAuthority>>();
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
@@ -117,6 +123,71 @@ function documentInspectionAllowed(d: QueueSnapshot, job: QueueJob, hash: (value
   return conflicts.every(documentConflictAllowsInspection) &&
     marker.blockersDigest === hash(canonical(conflicts)) &&
     (d.documentCheckpoints?.heads[documentTargetKey(marker.target)] ?? null) === marker.priorCheckpointId;
+}
+function validContinuationJob(job: QueueJob) {
+  const marker = job.documentContinuation;
+  const invocation = cadInvocation(job.request);
+  const target = quarantineTarget(job.request);
+  const argv = job.request.argv?.[0] === "cad"
+    ? job.request.argv.slice(1) : job.request.argv;
+  return !!marker && validDocumentContinuation(marker) &&
+    !job.documentInspection && job.request.kind === "command" &&
+    marker.actorClientId === job.clientId && marker.requestHash === job.hash &&
+    !!target && canonical(target) === canonical(marker.target) &&
+    argv?.[0] === "param" && argv[1] === "apply" &&
+    invocation?.["kind"] === "cad" && invocation["version"] === 1 &&
+    invocation?.["operation"] === "param.apply" &&
+    invocation["docId"] === marker.target.creationId &&
+    invocation["docFileId"] === marker.target.fileId &&
+    invocation["component"] === undefined && invocation["preview"] !== true &&
+    plain(invocation["data"]);
+}
+function documentContinuationAllowed(
+  d: QueueSnapshot, job: QueueJob, hash: (value: string) => string,
+  retirement: RuntimeRetirementAuthority | undefined,
+  authority: DocumentContinuationAuthority | undefined,
+  domain: QueueDomain,
+) {
+  if (!validContinuationJob(job) || !isDocumentContinuationAuthority(authority, domain) ||
+    d.blocked || d.localUnknown || d.controlBlocked) return false;
+  const marker = job.documentContinuation!;
+  let current: DocumentContinuation;
+  try {
+    current = verifiedDocumentContinuation(authority, domain);
+  } catch (error) {
+    const code = plain(error) ? error["code"] : undefined;
+    if (typeof code === "string" &&
+      ["NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED", "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+        "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED",
+        "DOCUMENT_CONTINUATION_UNPROVEN", "DOCUMENT_STATE_CHANGED"].includes(code))
+      return false;
+    // Namespace/owner/durability failures are not per-job expiration.
+    throw error;
+  }
+  if (canonical(current) !== canonical(marker)) return false;
+  const identity = { ...job.request };
+  delete identity.description;
+  if (hash(canonical(identity)) !== marker.requestHash) return false;
+  const records = d.documentCheckpoints;
+  const observation = records?.observations[marker.observationId];
+  const acceptance = records?.acceptances[marker.acceptanceId];
+  if (!observation || !acceptance ||
+    records!.heads[documentTargetKey(marker.target)] !== marker.acceptanceId ||
+    acceptance.actorClientId !== job.clientId ||
+    observation.actorClientId !== job.clientId ||
+    acceptance.observationId !== marker.observationId ||
+    acceptance.observationDigest !== hash(canonical(observation)) ||
+    observation.generation !== marker.generation ||
+    observation.stateDigest !== marker.stateDigest ||
+    canonical(observation.target) !== canonical(marker.target)) return false;
+  const conflicts = documentConflicts(d, marker.target, retirement, canonical);
+  if (!conflicts.every(documentConflictAllowsInspection) ||
+    hash(canonical(conflicts)) !== marker.blockersDigest) return false;
+  const blockers = conflicts.map((item) => ({
+    jobId: item.jobId, requestId: item.requestId, originalHash: item.jobHash,
+    catalogDigest: item.catalogDigest, barrierRef: item.evidenceReference,
+  }));
+  return canonical(blockers) === canonical(observation.blockers);
 }
 function workflowObservationFor(d: QueueSnapshot, id: string) {
   const observer = d.jobs[id];
@@ -306,6 +377,8 @@ export class QueueDomain {
     for (const job of jobs) {
       if (job.documentInspection !== undefined && !validDocumentInspection(job))
         fail("CORRUPT_STATE", "Invalid broker-authored document inspection marker");
+      if (job.documentContinuation !== undefined && !validContinuationJob(job))
+        fail("CORRUPT_STATE", "Invalid broker-authored document continuation marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id))
@@ -440,6 +513,11 @@ export class QueueDomain {
         throw error;
       }
       this.data = draft;
+      const capabilities = continuations.get(this);
+      if (capabilities)
+        for (const id of capabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state))
+            capabilities.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -607,7 +685,7 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
-      if (job.documentInspection && !documentInspectionAllowed(d, job, this.hash, retirements.get(this))) {
+      if ((job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job)) {
         this._refuseDocumentConflict(d, job, time);
         job.code = "CHECKPOINT_CHANGED";
         continue;
@@ -657,6 +735,46 @@ export class QueueDomain {
 
   submitDocumentInspection(request: unknown, marker: DocumentInspection) {
     return this._submit(request, undefined, copy(marker));
+  }
+  submitDocumentContinuation(
+    request: unknown, authority: DocumentContinuationAuthority,
+  ) {
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const marker = verifiedDocumentContinuation(authority, this);
+    const result = this._submit(request, undefined, undefined, { marker, authority });
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) &&
+      ["queued", "preparing", "processing"].includes(job.state) && job.documentContinuation &&
+      canonical(job.documentContinuation) === canonical(marker)) {
+      let capabilities = continuations.get(this);
+      if (!capabilities) continuations.set(this, capabilities = new Map());
+      capabilities.set(job.id, authority);
+    }
+    return result;
+  }
+  /** Private server composition binds the capability to this exact queue. */
+  createDocumentContinuationAuthority(verify: () => DocumentContinuation) {
+    return createDocumentContinuationAuthority(this, verify);
+  }
+  _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
+    if (job.documentInspection)
+      return documentInspectionAllowed(d, job, this.hash, retirements.get(this));
+    if (job.documentContinuation)
+      return documentContinuationAllowed(d, job, this.hash,
+        retirements.get(this), continuations.get(this)?.get(job.id), this);
+    return !documentConflicts(d, quarantineTarget(job.request),
+      retirements.get(this), canonical).length;
+  }
+  /** Preparation and dispatch compare their independently compiled guarded
+   * source. This grants neither an active SDK slot nor dispatch authority. */
+  assertDocumentContinuation(id: string, sourceHash: string) {
+    const job = this._job(this.data, id);
+    if (!["preparing", "processing", "queued", "running", "sending"].includes(job.state) ||
+      !job.documentContinuation || job.documentContinuation.sourceHash !== sourceHash ||
+      !this._documentJobAllowed(this.data, job))
+      fail("CHECKPOINT_CHANGED", "A fresh accepted checkpoint and exact guarded program are required");
+    return copy(job.documentContinuation);
   }
 
   assertDocumentProbeAllowed() {
@@ -710,7 +828,8 @@ export class QueueDomain {
   }
 
   // Internal server entrypoint; inspection markers are not decoded from RPC.
-  _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection) {
+  _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
+    continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority }) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -828,10 +947,14 @@ export class QueueDomain {
         state: "queued", submittedAt: time, queueDeadline: null,
         timeoutMs: r.timeoutMs, sequenceId: null, sequenceState: null,
         ...(inspection ? { documentInspection: inspection } : {}),
+        ...(continuation ? { documentContinuation: copy(continuation.marker) } : {}),
       };
       if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash, retirements.get(this)))
         fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
-      if (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection) {
+      if (continuation && !documentContinuationAllowed(d, inspectionCandidate, this.hash,
+        retirements.get(this), continuation.authority, this))
+        fail("DOCUMENT_CONTINUATION_UNPROVEN", "Continuation requires the current accepted state and exact private guard");
+      if (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation) {
         const refused: QueueJob = {
           id: preparedId ?? this.newId(), requestId: r.requestId,
           clientId: r.clientId, kind: r.kind, request: r, hash,
@@ -914,6 +1037,7 @@ export class QueueDomain {
         sequenceState: seq ? "queued" : null,
       };
       if (inspection) job.documentInspection = inspection;
+      if (continuation) job.documentContinuation = copy(continuation.marker);
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
       if (sequenceParent && sequenceMode === "automatic") {
@@ -1017,7 +1141,7 @@ export class QueueDomain {
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
         (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
-          (!!job.documentInspection && !documentInspectionAllowed(d, job, this.hash, retirements.get(this))),
+          (!!(job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -1037,7 +1161,7 @@ export class QueueDomain {
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
-        (!!job.documentInspection && !documentInspectionAllowed(d, job, this.hash, retirements.get(this))) ||
+        (!!(job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -1048,9 +1172,7 @@ export class QueueDomain {
           !(job.sequenceMode === "automatic"
             ? this._automaticMatches(d, job, time)
             : this._matches(d, r, time))) ||
-        (canGrant && (job.documentInspection
-          ? documentInspectionAllowed(d, job, this.hash, retirements.get(this))
-          : !documentConflicts(d, quarantineTarget(job.request), retirements.get(this), canonical).length) &&
+        (canGrant && this._documentJobAllowed(d, job) &&
           (!d.lease ||
             (r.sequence &&
               r.sequence.action !== "begin" &&
@@ -1069,9 +1191,7 @@ export class QueueDomain {
       const eligible = Object.values(d.jobs).filter(
         (j) =>
           j.state === "queued" &&
-          (j.documentInspection
-            ? documentInspectionAllowed(d, j, this.hash, retirements.get(this))
-            : !documentConflicts(d, quarantineTarget(j.request), retirements.get(this), canonical).length) &&
+          this._documentJobAllowed(d, j) &&
           (!d.lease ||
             (j.request.sequence &&
               j.request.sequence.action !== "begin" &&
@@ -1219,7 +1339,7 @@ export class QueueDomain {
         "Finish with succeeded, failed or needs_reconciliation",
       );
     const record = JSON.parse(canonical(details)) as QueueDetails;
-    return this._commit((d) => {
+    const result = this._commit((d) => {
       const job = this._active(d, id);
       const time = this._time();
       Object.assign(job, { state, details: record, revision: ++d.revision });
@@ -1284,6 +1404,8 @@ export class QueueDomain {
       }
       return this._public(job);
     });
+    continuations.get(this)?.delete(id);
+    return result;
   }
 
   markDispatch(id: string, details: QueueDetails = {}, physical?: QueuePhysicalDispatch) {
@@ -1292,8 +1414,7 @@ export class QueueDomain {
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
     return this._commit((d) => {
       const job = this._active(d, id);
-      if ((job.documentInspection && !documentInspectionAllowed(d, job, this.hash, retirements.get(this))) ||
-        (!job.documentInspection && documentConflicts(d, quarantineTarget(job.request), retirements.get(this), canonical).length))
+      if (!this._documentJobAllowed(d, job))
         fail("DOCUMENT_UNLOCK_REQUIRED", "Document conflict changed before dispatch; inspect and explicitly accept the current state");
       const old = job.dispatch || {
         dispatchCount: 0,
@@ -1371,8 +1492,8 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
-      if (job.documentInspection && !documentInspectionAllowed(d, job, this.hash, retirements.get(this)))
-        fail("DOCUMENT_UNLOCK_REQUIRED", "Inspection fence changed before the system-read boundary");
+      if ((job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job))
+        fail("DOCUMENT_UNLOCK_REQUIRED", "Document fence changed before the system-read boundary");
       this._appendPhysicalDispatch(job, entry);
       return this._public(job);
     });
@@ -1418,7 +1539,7 @@ export class QueueDomain {
       for (const waiting of Object.values(d.jobs))
         if (["queued", "preparing", "processing"].includes(waiting.state) &&
           documentConflicts(d, quarantineTarget(waiting.request), retirements.get(this), canonical).length &&
-          !documentInspectionAllowed(d, waiting, this.hash, retirements.get(this)))
+          !this._documentJobAllowed(d, waiting))
           this._refuseDocumentConflict(d, waiting, this._time());
       return this._public(job);
     });
@@ -1438,6 +1559,7 @@ export class QueueDomain {
       sequenceState: job.sequenceId ? "ended" : null,
       details: {
         executionOutcome: started ? "previous_turns_complete_current_not_started" : "not_started",
+        mayHaveMutated: started,
         userScriptSubmitted: !!job.dispatch?.rpcCount,
         rpcCount: job.dispatch?.rpcCount ?? 0,
         completedCount: job.dispatch?.completedCount ?? 0,
