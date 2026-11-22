@@ -94,6 +94,7 @@ if(envelope.action==="grant"){
  if(mode==="malformed-ack"){console.log("{broken");return;}
  if(mode==="pending-ack"){console.log(JSON.stringify({state:"pending",handoffId:envelope.descriptor.handoffId}));return;}
  if(mode==="duplicate-ack"){console.log('{"state":"unknown","state":"granted","handoffId":'+JSON.stringify(envelope.descriptor.handoffId)+'}');return;}
+ if(mode==="invalid-utf8-ack"){process.stdout.write(Buffer.concat([Buffer.from('{"state":"granted","handoffId":"'),Buffer.from([255]),Buffer.from('"}')]));return;}
  console.log(JSON.stringify({state:"granted",handoffId:envelope.descriptor.handoffId}));return;
 }
 if(envelope.action==="verify"){
@@ -259,6 +260,25 @@ test(
         error.grantIssuance === "notStarted",
     );
     assert.equal(f.records().length, 0);
+  },
+);
+
+test(
+  "invalid UTF-8 acknowledgment cannot alias a replacement-character handoff",
+  platformOptions,
+  async (t) => {
+    const f = fixture("invalid-utf8-ack");
+    t.after(f.cleanup);
+    const request = structuredClone(descriptor);
+    request.handoffId = "\ufffd";
+    const port = createNativePhysicalGenerationProvision(f.options);
+    await assert.rejects(
+      port.provision(request),
+      (error: unknown) =>
+        error instanceof PhysicalGenerationProvisionError &&
+        error.grantIssuance === "unknown",
+    );
+    assert.equal(fs.readdirSync(f.linux).length, 0);
   },
 );
 

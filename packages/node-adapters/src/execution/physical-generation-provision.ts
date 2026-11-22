@@ -245,7 +245,7 @@ export function createNativePhysicalGenerationProvision(
               stdio: ["pipe", "pipe", "ignore"],
             },
           );
-          let output = "";
+          let output = Buffer.alloc(0);
           let overflow = false;
           const timer = setTimeout(() => {
             child.kill();
@@ -255,7 +255,7 @@ export function createNativePhysicalGenerationProvision(
             if (output.length + data.length > 4096) {
               overflow = true;
               child.kill();
-            } else output += data.toString("utf8");
+            } else output = Buffer.concat([output, data]);
           });
           child.stdin.on("error", () => {});
           child.once("error", () => {
@@ -266,7 +266,18 @@ export function createNativePhysicalGenerationProvision(
             clearTimeout(timer);
             if (code !== 0 || overflow)
               reject(new Error("Private subprocess failed"));
-            else resolve(output.trim());
+            else {
+              try {
+                resolve(
+                  new TextDecoder("utf-8", {
+                    fatal: true,
+                    ignoreBOM: true,
+                  }).decode(output),
+                );
+              } catch {
+                reject(new Error("Invalid private subprocess output"));
+              }
+            }
           });
           child.stdin.end(
             JSON.stringify({ pins: pinned, descriptor: snapshot, ...action }),
@@ -290,11 +301,13 @@ export function createNativePhysicalGenerationProvision(
         );
         const request = path.win32.join(nativeDirectory, "request.json");
         const output = path.win32.join(nativeDirectory, "grant.json");
-        const requestDigest = await invoke({
-          action: "prepare",
-          attempt,
-          descriptorRaw: raw.toString("utf8"),
-        });
+        const requestDigest = (
+          await invoke({
+            action: "prepare",
+            attempt,
+            descriptorRaw: raw.toString("utf8"),
+          })
+        ).trim();
         if (requestDigest !== digest(raw))
           throw new Error("Descriptor digest mismatch");
         issuanceStarted = true;
@@ -317,7 +330,9 @@ export function createNativePhysicalGenerationProvision(
             snapshot.handoffId
         )
           throw new Error("Unbound grant acknowledgment");
-        const grantDigest = await invoke({ action: "verify", attempt, output });
+        const grantDigest = (
+          await invoke({ action: "verify", attempt, output })
+        ).trim();
         if (!validSha(grantDigest)) throw new Error("Invalid grant digest");
         const rawGrant = readMappedFile(
           path.posix.join(pinned.mappedPrivateDirectory, attempt, "grant.json"),
