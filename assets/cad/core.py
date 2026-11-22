@@ -777,6 +777,101 @@ def _cad_param_inspect(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
     return {'parameters': [_cad_parameter_info(ctx, p) for p in parameters]}
 
 
+def _cad_param_checkpoint(ctx: 'CadContext') -> 'JsonRecord':
+    captured = _qd_capture(ctx.app, {'creationId': ctx.doc.creationId})
+    if not isinstance(captured, dict) or captured.get('status') != 'complete':
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Current document and dependency snapshot is unavailable')
+    state = captured.get('state')
+    identity = state.get('identity') if isinstance(state, dict) else None
+    fingerprint = captured.get('fingerprint')
+    if not isinstance(identity, dict) or 'dataFileError' in identity:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
+    identity_fields = {'creationId', 'name', 'fileId', 'version', 'isSaved', 'isModified'}
+    if set(identity) != identity_fields or identity.get('creationId') != ctx.doc.creationId or \
+            not isinstance(identity.get('creationId'), str) or not identity['creationId'] or \
+            not isinstance(identity.get('name'), str) or not identity['name'] or \
+            identity.get('name') != ctx.doc.name or type(identity.get('isSaved')) is not bool or \
+            type(identity.get('isModified')) is not bool:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is malformed or changed')
+    file_id, version = identity.get('fileId'), identity.get('version')
+    if (file_id is not None and (not isinstance(file_id, str) or not file_id)) or \
+            (version is not None and (type(version) is not int or version < 1)) or \
+            ((file_id is None) != (version is None)) or \
+            (identity['isSaved'] and (file_id is None or version is None)):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Saved document file/version identity is unavailable')
+    if not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Document fingerprint is unavailable')
+    parameters = _cad_param_inspect(ctx, {'includeModel': True})['parameters']
+    return {'schema': 'fmcad.param-checkpoint-v1',
+            'document': {'identity': identity, 'fingerprint': fingerprint},
+            'parameters': parameters}
+
+
+def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
+    def changed(reason: str) -> None:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: ' + reason)
+
+    if not isinstance(expected, dict) or set(expected) != {'schema', 'document', 'parameters'} or \
+            expected.get('schema') != 'fmcad.param-checkpoint-v1':
+        changed('Accepted parameter checkpoint is malformed')
+    document = expected.get('document')
+    if not isinstance(document, dict) or set(document) != {'identity', 'fingerprint'}:
+        changed('Accepted document checkpoint is malformed')
+    identity = document.get('identity')
+    fields = {'creationId', 'name', 'fileId', 'version', 'isSaved', 'isModified'}
+    if not isinstance(identity, dict) or set(identity) != fields or \
+            not isinstance(identity.get('creationId'), str) or not identity['creationId'] or \
+            not isinstance(identity.get('name'), str) or not identity['name'] or \
+            type(identity.get('isSaved')) is not bool or type(identity.get('isModified')) is not bool:
+        changed('Accepted document identity is malformed')
+    file_id, version = identity.get('fileId'), identity.get('version')
+    if (file_id is not None and (not isinstance(file_id, str) or not file_id)) or \
+            (version is not None and (type(version) is not int or version < 1)) or \
+            ((file_id is None) != (version is None)) or \
+            (identity['isSaved'] and (file_id is None or version is None)):
+        changed('Accepted saved document file/version identity is malformed')
+    fingerprint = document.get('fingerprint')
+    if not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+        changed('Accepted document fingerprint is malformed')
+    parameters = expected.get('parameters')
+    parameter_fields = {'name', 'expression', 'unit', 'value', 'valueType',
+                        'valueUnits', 'comment', 'metadata'}
+    if not isinstance(parameters, list):
+        changed('Accepted full parameter inspection is malformed')
+    names: set[str] = set()
+    try:
+        for parameter in parameters:
+            if not isinstance(parameter, dict) or set(parameter) != parameter_fields or \
+                    not isinstance(parameter.get('name'), str) or not parameter['name'] or \
+                    parameter['name'] in names or not isinstance(parameter.get('expression'), str) or \
+                    not isinstance(parameter.get('unit'), str) or \
+                    parameter.get('valueType') not in ('numeric', 'text') or \
+                    (parameter.get('valueUnits') is not None and not isinstance(parameter.get('valueUnits'), str)) or \
+                    not isinstance(parameter.get('comment'), str) or not isinstance(parameter.get('metadata'), dict):
+                changed('Accepted full parameter inspection is malformed')
+            value = parameter['value']
+            if parameter['valueType'] == 'numeric':
+                if type(value) not in (int, float) or not math.isfinite(value) or \
+                        parameter['valueUnits'] != 'Fusion internal units (cm, rad, kg, s)':
+                    changed('Accepted numeric parameter inspection is malformed')
+            elif not isinstance(value, str) or parameter['valueUnits'] is not None:
+                changed('Accepted text parameter inspection is malformed')
+            names.add(parameter['name'])
+        json.dumps(parameters, allow_nan=False)
+    except (OverflowError, TypeError, ValueError):
+        changed('Accepted full parameter inspection is not valid JSON')
+    try:
+        current = _cad_param_checkpoint(ctx)
+    except RuntimeError as error:
+        if str(error).startswith('DOCUMENT_STATE_CHANGED:'):
+            raise
+        changed('Current document checkpoint could not be read')
+    except Exception:
+        changed('Current document checkpoint could not be read')
+    if current != expected:
+        changed('Document or full parameter inspection no longer matches the accepted checkpoint')
+
+
 def _cad_param_dependencies(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
     _cad_fields(data, optional=('name',))
     parameters = _cad_items(ctx.design.allParameters)
@@ -795,7 +890,7 @@ def _cad_param_dependencies(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecor
 
 
 def _cad_param_apply(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
-    _cad_fields(data, ('parameters',), ('overwrite', 'confirm'))
+    _cad_fields(data, ('parameters',), ('overwrite', 'confirm', '_fmcadCheckpointGuard'))
     specifications = data['parameters']
     if not isinstance(specifications, list) or not specifications:
         raise ValueError('parameters must be a nonempty array')
@@ -897,6 +992,8 @@ def _cad_param_apply(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
                 raise ValueError('metadata.tolerance must be a nonnegative expression in parameter units')
             if evaluate(tolerance, spec['unit'], spec['unit'] == '')[1] < 0:
                 raise ValueError('metadata.tolerance cannot be negative')
+    if '_fmcadCheckpointGuard' in data:
+        _cad_param_assert_checkpoint(ctx, data['_fmcadCheckpointGuard'])
     result: list[JsonValue] = []
     for name in order:
         spec = pending[name]

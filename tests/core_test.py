@@ -262,9 +262,11 @@ class Datums(Items):
 
 def component(name):
     result = Entity('Component', name)
+    result.id, result.revisionId = 'id-' + name, 'revision-' + name
     for prop in ('bRepBodies', 'sketches', 'features', 'constructionPlanes', 'constructionAxes',
                  'constructionPoints', 'allOccurrences'):
         setattr(result, prop, Items())
+    result.features.deriveFeatures = Items()
     for short, prop, kind, normal in (
             ('XY', 'xYConstructionPlane', 'ConstructionPlane', [0, 0, 1]),
             ('XZ', 'xZConstructionPlane', 'ConstructionPlane', [0, -1, 0]),
@@ -299,6 +301,8 @@ def load_core(app):
         exec(compile(SOURCE.read_text(), str(SOURCE), 'exec'), module.__dict__)
         identity = SOURCE.with_name('identity.py')
         exec(compile(identity.read_text(), str(identity), 'exec'), module.__dict__)
+        queue_document = ROOT / 'runtime/python/fmcad/adapters/fusion/legacy_queue_document.py'
+        exec(compile(queue_document.read_text(), str(queue_document), 'exec'), module.__dict__)
         entity = SOURCE.with_name('entity.py')
         exec(compile(entity.read_text(), str(entity), 'exec'), module.__dict__)
     return module
@@ -321,10 +325,14 @@ class CoreTests(unittest.TestCase):
             self.requests.append(kind)
             return self.design
 
-        self.doc = types.SimpleNamespace(name='Test', products=types.SimpleNamespace(itemByProductType=product),
-            dataFile=types.SimpleNamespace(parentProject=types.SimpleNamespace(id='project-from-test')))
+        self.doc = types.SimpleNamespace(name='Test', creationId='document-from-test', isSaved=True,
+            isModified=False, allDocumentReferences=Items(), documentReferences=Items(),
+            products=types.SimpleNamespace(itemByProductType=product),
+            dataFile=types.SimpleNamespace(id='file-from-test', versionNumber=1,
+                parentProject=types.SimpleNamespace(id='project-from-test')))
         self.app = types.SimpleNamespace(documents=Items([self.doc]), activeDocument=self.doc,
             userInterface=types.SimpleNamespace(activeSelections=Items()))
+        self.design.timeline = types.SimpleNamespace(count=0, markerPosition=0)
         self.core = load_core(self.app)
         self.ctx = self.core.CadContext('Test')
         self.register(self.root, self.child)
@@ -372,6 +380,17 @@ class CoreTests(unittest.TestCase):
 
     def apply(self, specifications, **kwargs):
         return self.ctx.call('param.apply', dict(parameters=specifications, **kwargs))
+
+    def checkpoint(self):
+        return self.core._cad_param_checkpoint(self.ctx)
+
+    def assert_checkpoint_rejects_without_writes(self, guard, parameters=None):
+        writes = list(self.parameters.writes)
+        with self.assertRaisesRegex(RuntimeError, '^DOCUMENT_STATE_CHANGED:'):
+            self.ctx.call('param.apply', {
+                'parameters': parameters or [{'name': 'later', 'expression': '2 mm', 'unit': 'mm'}],
+                '_fmcadCheckpointGuard': guard})
+        self.assertEqual(self.parameters.writes, writes)
 
     def test_constructor_exact_signature_and_nonactive_document(self):
         self.app.activeDocument = object()
@@ -677,6 +696,89 @@ class CoreTests(unittest.TestCase):
             self.apply([{'name': 'good', 'expression': '10 mm', 'unit': 'mm'},
                         {'name': 'bad', 'expression': '10 deg', 'unit': 'mm'}])
         self.assertEqual(self.parameters.count, 0)
+
+    def test_accepted_parameter_checkpoint_allows_one_write_without_yield(self):
+        guard = self.checkpoint()
+        events = []
+        capture = self.core._qd_capture
+        inspect = self.core._cad_param_inspect
+        add = self.parameters.add
+        self.core._qd_capture = lambda app, selector: (
+            events.append(('document-read', dict(selector))) or capture(app, selector))
+        self.core._cad_param_inspect = lambda ctx, data: (
+            events.append(('parameter-read', dict(data))) or inspect(ctx, data))
+        self.parameters.add = lambda *args: (
+            events.append(('write', args[0])) or add(*args))
+        self.app.userInterface.doEvents = lambda: events.append(('yield',))
+        alias = types.SimpleNamespace(creationId='same-name-alias', name='Test')
+        self.app.documents.items.append(alias)
+        self.app.activeDocument = alias
+        result = self.ctx.call('param.apply', {
+            'parameters': [{'name': 'accepted', 'expression': '2 mm', 'unit': 'mm'}],
+            '_fmcadCheckpointGuard': guard})
+        self.assertEqual(result['parameters'][0]['name'], 'accepted')
+        self.assertEqual([event[0] for event in events],
+                         ['document-read', 'parameter-read', 'write'])
+        self.assertEqual(events[0], ('document-read', {'creationId': 'document-from-test'}))
+        self.assertEqual(events[1], ('parameter-read', {'includeModel': True}))
+        self.assertEqual(self.parameters.writes, ['accepted'])
+
+    def test_checkpoint_rejects_changed_parameter_expression_and_metadata(self):
+        self.apply([{'name': 'size', 'expression': '1 mm', 'unit': 'mm',
+                     'metadata': {'source': 'fixture'}}])
+        guard = self.checkpoint()
+        parameter = self.parameters.itemByName('size')
+        parameter.expression = '2 mm'
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        parameter.attributes.add('fmcad.parameter', 'metadata', '{"source":"changed"}')
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        parameter.value += 0.1
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+    def test_checkpoint_rejects_changed_model_parameter_and_parameter_inventory(self):
+        user_parameter = self.parameters.add('user_size', '1 mm', 'mm', '')
+        model_parameter = Entity('ModelParameter', 'model_size')
+        model_parameter.expression, model_parameter.unit = '2 mm', 'mm'
+        model_parameter.value, model_parameter.comment = 0.2, ''
+        self.design.allParameters = Items([user_parameter, model_parameter])
+        self.design.userParameters = Items([user_parameter])
+        guard = self.checkpoint()
+        model_parameter.expression = '3 mm'
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        self.design.allParameters.items.remove(model_parameter)
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        self.design.allParameters.items.append(model_parameter)
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+    def test_checkpoint_rejects_document_version_identity_and_malformed_guard(self):
+        guard = self.checkpoint()
+        self.design.timeline.markerPosition += 1
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        self.doc.dataFile.versionNumber += 1
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        self.doc.creationId = 'replacement-document'
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        guard = self.checkpoint()
+        self.doc.dataFile = None
+        self.assert_checkpoint_rejects_without_writes(guard)
+
+        self.assert_checkpoint_rejects_without_writes(
+            {'schema': 'forged'},
+            [{'name': 'first', 'expression': '2 mm', 'unit': 'mm'},
+             {'name': 'second', 'expression': '3 mm', 'unit': 'mm'}])
 
     def test_forward_parameter_dependencies_and_created_refs(self):
         result = self.apply([{'name': 'outer', 'expression': '2 * wall', 'unit': 'mm'},
