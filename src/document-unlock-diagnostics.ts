@@ -135,7 +135,8 @@ export type DocumentUnlockKnownErrorCode =
   | "NOT_AUTHORIZED"
   | "STORAGE_UNAVAILABLE"
   | "SDK_TURN_ACTIVE"
-  | "SDK_QUIESCENCE_UNPROVEN";
+  | "SDK_QUIESCENCE_UNPROVEN"
+  | "REQUEST_CONFLICT";
 
 export interface DocumentUnlockErrorResolution extends DocumentUnlockServerResolution {
   /** A code only; raw Error, message, stack, cause and details are not inputs. */
@@ -177,6 +178,8 @@ const SAFE_ERROR_MESSAGES: Record<DocumentUnlockKnownErrorCode, string> = {
   SDK_TURN_ACTIVE: "A Fusion SDK turn is still active for this scope.",
   SDK_QUIESCENCE_UNPROVEN:
     "It is not proven that the earlier Fusion SDK turn can no longer change the model.",
+  REQUEST_CONFLICT:
+    "This request ID is already bound to different content. Use a fresh request ID for any new request; do not retry the same ID with changed content.",
 };
 
 function validIdentifier(value: unknown): value is string {
@@ -321,10 +324,10 @@ function commandNext(
     "document-unlock",
     "--action",
     action,
-    ...(target.docId === undefined ? [] : ["--doc-id", target.docId]),
+    ...(target.docId === undefined ? [] : [`--doc-id=${target.docId}`]),
     ...(target.docFileId === undefined
       ? []
-      : ["--doc-file-id", target.docFileId]),
+      : [`--doc-file-id=${target.docFileId}`]),
     ...(requiredFreshRequestId
       ? ["--request-id", FRESH_REQUEST_ID_PLACEHOLDER]
       : []),
@@ -369,7 +372,10 @@ function resolvedState(resolution: DocumentUnlockServerResolution): {
 
   if (resolution.hasOperatorOnlyBlocker === true || state === "scope_unproven")
     state = "scope_unproven";
-  else if (state === "execution_unfenced" || fence !== "released")
+  else if (
+    state !== "target_unavailable" &&
+    (state === "execution_unfenced" || fence !== "released")
+  )
     state = "execution_unfenced";
 
   return { state, fence, target };
@@ -496,6 +502,11 @@ function nextForError(
       "repair_canonical_store",
       "Repair or restore the canonical durable store. Do not clear it, replace it with an empty store, or retry an uncertain mutation.",
     );
+  if (code === "REQUEST_CONFLICT")
+    return operatorNext(
+      "review_original_request_without_replay",
+      "Check the original request's durable status before retrying. This result does not establish whether it ran.",
+    );
   const state = resolution.state ? safeState(resolution.state) : undefined;
   const fence = safeFence(resolution.executionFence);
   if (
@@ -552,7 +563,10 @@ export function serializeDocumentUnlockError(
 ): DocumentUnlockPublicError {
   const code = knownErrorCode(resolution.code);
   const target =
-    code === undefined || code === "NOT_AUTHORIZED" || !resolution.target
+    code === undefined ||
+    code === "NOT_AUTHORIZED" ||
+    code === "REQUEST_CONFLICT" ||
+    !resolution.target
       ? undefined
       : copyTarget(resolution.target);
   const blockers = target === undefined ? undefined : safeBlockers(resolution);

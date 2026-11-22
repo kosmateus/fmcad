@@ -115,6 +115,7 @@ test("status next covers each state without treating a checkpoint as geometry pr
   const unavailable = status("target_unavailable", {
     executionFence: "released",
   });
+  assert.equal(unavailable.state, "target_unavailable");
   assert.equal(
     unavailable.next.kind === "operator_action" && unavailable.next.action,
     "choose_verified_target",
@@ -130,6 +131,23 @@ test("status next covers each state without treating a checkpoint as geometry pr
       ? unavailable.next.instruction
       : "",
     /cannot recover unsaved geometry/,
+  );
+
+  const unavailableWithoutFence = status("target_unavailable", {
+    executionFence: "unknown",
+  });
+  assert.equal(unavailableWithoutFence.state, "target_unavailable");
+  assert.equal(unavailableWithoutFence.executionFence, "unknown");
+  assert.equal(
+    unavailableWithoutFence.next.kind === "operator_action" &&
+      unavailableWithoutFence.next.action,
+    "choose_verified_target",
+  );
+  assert.match(
+    unavailableWithoutFence.next.kind === "operator_action"
+      ? unavailableWithoutFence.next.instruction
+      : "",
+    /does not prove deletion/,
   );
 });
 
@@ -162,20 +180,48 @@ test("strict next request templates carry exact targets and separate CLI argumen
       "document-unlock",
       "--action",
       "inspect",
-      "--doc-id",
-      awkwardId,
+      `--doc-id=${awkwardId}`,
       "--request-id",
       "REPLACE_WITH_FRESH_REQUEST_ID",
     ],
   });
   assert.equal(Array.isArray(result.next.cli.arguments), true);
-  assert.equal(result.next.cli.arguments.includes(awkwardId), true);
+  assert.equal(
+    result.next.cli.arguments.includes(`--doc-id=${awkwardId}`),
+    true,
+  );
   assert.equal("shellCommand" in result.next.cli, false);
   const roundTripped = JSON.parse(JSON.stringify(result)) as typeof result;
   assert.deepEqual(roundTripped.target, { docId: awkwardId });
   assert.equal(
-    roundTripped.next.kind === "command" && roundTripped.next.cli.arguments[5],
-    awkwardId,
+    roundTripped.next.kind === "command" && roundTripped.next.cli.arguments[4],
+    `--doc-id=${awkwardId}`,
+  );
+});
+
+test("CLI target flags keep IDs beginning with dashes in one argv element", () => {
+  const targetWithLeadingDashes = { docId: "--fixture-id" };
+  const result = serializeDocumentUnlockStatus({
+    state: "inspection_required",
+    target: targetWithLeadingDashes,
+    executionFence: "released",
+  });
+
+  assert.deepEqual(
+    result.next.kind === "command" ? result.next.mcp.arguments.target : null,
+    targetWithLeadingDashes,
+  );
+  assert.deepEqual(
+    result.next.kind === "command" ? result.next.cli.arguments : null,
+    [
+      "queue",
+      "document-unlock",
+      "--action",
+      "inspect",
+      "--doc-id=--fixture-id",
+      "--request-id",
+      "REPLACE_WITH_FRESH_REQUEST_ID",
+    ],
   );
 });
 
@@ -239,6 +285,7 @@ test("known errors are mapped to static safe messages and concrete next actions"
     "STORAGE_UNAVAILABLE",
     "SDK_TURN_ACTIVE",
     "SDK_QUIESCENCE_UNPROVEN",
+    "REQUEST_CONFLICT",
   ] as const;
   const expectedNext = {
     DOCUMENT_UNLOCK_REQUIRED: "status",
@@ -250,6 +297,7 @@ test("known errors are mapped to static safe messages and concrete next actions"
     STORAGE_UNAVAILABLE: "repair_canonical_store",
     SDK_TURN_ACTIVE: "status",
     SDK_QUIESCENCE_UNPROVEN: "establish_runtime_barrier",
+    REQUEST_CONFLICT: "review_original_request_without_replay",
   } as const;
   for (const code of codes) {
     const result = serializeDocumentUnlockError({
@@ -310,6 +358,34 @@ test("known errors are mapped to static safe messages and concrete next actions"
   assert.equal(active.next.kind, "command");
   if (active.next.kind === "command")
     assert.equal(active.next.action, "status");
+
+  const conflict = serializeDocumentUnlockError({
+    code: "REQUEST_CONFLICT",
+    target,
+    currentRequestId: "PRIVATE_CONFLICT_REQUEST_ID",
+    disclosableBlockers: [
+      {
+        jobId: "PRIVATE_CONFLICT_JOB",
+        requestId: "PRIVATE_CONFLICT_BLOCKER",
+        scope: "document",
+        executionFence: "released",
+      },
+    ],
+  });
+  assert.equal(conflict.error.code, "REQUEST_CONFLICT");
+  assert.match(conflict.error.message, /request ID.*different content/i);
+  assert.match(conflict.error.message, /fresh request ID/i);
+  assert.equal(conflict.target, undefined);
+  assert.equal(conflict.blockers, undefined);
+  assert.equal(conflict.requestId, undefined);
+  assert.equal(
+    conflict.next.kind === "operator_action" && conflict.next.action,
+    "review_original_request_without_replay",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(conflict),
+    /PRIVATE_CONFLICT_(?:REQUEST_ID|JOB|BLOCKER)/,
+  );
 });
 
 test("unknown Throwable details and unauthorized targets are never serialized", () => {
