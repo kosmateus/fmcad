@@ -47,10 +47,10 @@ interface Anchor {
   pinned: string;
   original: fs.Stats;
 }
-function anchor(named: string): Anchor {
-  const original = privateStat(fs.lstatSync(named), true);
+function anchor(named: string, through = named): Anchor {
+  const original = privateStat(fs.lstatSync(through), true);
   const fd = fs.openSync(
-    named,
+    through,
     fs.constants.O_RDONLY |
       fs.constants.O_DIRECTORY |
       fs.constants.O_NOFOLLOW |
@@ -218,16 +218,19 @@ function access(store: string, initialize: boolean): RuntimeVerificationRealm {
       }
     } else if (!exists(realmName)) refuse("MISSING");
     checkAnchor(root);
-    const realm = anchor(realmName);
+    // Never re-resolve the store path to open its child. A store rename/swap
+    // after checkAnchor(root) must not select a different, foreign realm.
+    const realm = anchor(realmName, path.join(root.pinned, REALM));
     opened.push(realm.fd);
     if (initialize) {
       // A metadata record without a key is never a reason to rotate/create one.
-      if (
-        !exists(path.join(realm.named, KEY)) &&
-        exists(path.join(realm.named, METADATA))
-      )
-        refuse("INCOMPLETE");
-      createOnce(realm, KEY, () => randomBytes(32));
+      const keyExisted = exists(path.join(realm.pinned, KEY));
+      if (!keyExisted) {
+        if (exists(path.join(realm.pinned, METADATA))) refuse("INCOMPLETE");
+        createOnce(realm, KEY, () => randomBytes(32));
+      }
+      // If an observed existing key vanishes, the readonly open below refuses.
+      // It must never fall through to O_CREAT and silently rotate the key.
     }
     if (!exists(path.join(realm.named, KEY))) refuse("INCOMPLETE");
     const key = openFile(realm, KEY);

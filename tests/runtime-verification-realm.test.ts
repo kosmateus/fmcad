@@ -595,3 +595,78 @@ test("store and realm directory substitution cannot redirect writes to foreign e
     false,
   );
 });
+
+test("store substitution immediately before child anchor cannot create a key in foreign realm", (t) => {
+  const f = fixture(t);
+  const backup = f.root + ".original";
+  t.after(() => fs.rmSync(backup, { recursive: true, force: true }));
+  const output = child(
+    f.root,
+    "init",
+    `
+    const original=fs.lstatSync;
+    let swapped=false;
+    fs.lstatSync=(file,...rest)=>{
+      if(!swapped&&String(file).endsWith('/runtime-verification')){
+        swapped=true;
+        fs.renameSync(store,store+'.original');
+        fs.mkdirSync(store,{mode:0o700});
+        fs.mkdirSync(store+'/runtime-verification',{mode:0o700});
+        fs.writeFileSync(store+'/runtime-verification/foreign.txt','foreign unchanged',{mode:0o600});
+      }
+      return original(file,...rest);
+    };
+  `,
+  ).stdout;
+  assert.equal(
+    JSON.parse(output).error.code,
+    "RUNTIME_VERIFICATION_REALM_UNSAFE",
+  );
+  assert.deepEqual(fs.readdirSync(f.realm), ["foreign.txt"]);
+  assert.equal(
+    fs.readFileSync(path.join(f.realm, "foreign.txt"), "utf8"),
+    "foreign unchanged",
+  );
+  assert.equal(fs.existsSync(f.key), false);
+  assert.equal(fs.existsSync(f.metadata), false);
+});
+
+test("observed existing key vanishing cannot invoke O_CREAT or RNG or replace the key", (t) => {
+  const f = fixture(t);
+  initializeRuntimeVerificationRealm(f.root);
+  const before = snapshot([f.metadata]);
+  const oldKey = hash(fs.readFileSync(f.key));
+  const output = child(
+    f.root,
+    "init",
+    `
+    const stat=fs.lstatSync,open=fs.openSync,random=crypto.randomBytes;
+    let removed=false,creates=0,rng=0;
+    fs.lstatSync=(file,...rest)=>{
+      const result=stat(file,...rest);
+      if(!removed&&String(file).endsWith('/verification.key')){
+        removed=true;
+        fs.renameSync(store+'/runtime-verification/verification.key',store+'/runtime-verification/retired.key');
+      }
+      return result;
+    };
+    fs.openSync=(file,flags,...rest)=>{
+      if(String(file).endsWith('/verification.key')&&(flags&fs.constants.O_CREAT)) creates++;
+      return open(file,flags,...rest);
+    };
+    crypto.randomBytes=(...args)=>{rng++;return random(...args)};
+    process.on('exit',()=>console.log(JSON.stringify({creates,rng})));
+  `,
+  )
+    .stdout.trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(output[0].error.code, "RUNTIME_VERIFICATION_REALM_INCOMPLETE");
+  assert.deepEqual(output[1], { creates: 0, rng: 0 });
+  assert.equal(fs.existsSync(f.key), false);
+  assert.equal(
+    hash(fs.readFileSync(path.join(f.realm, "retired.key"))),
+    oldKey,
+  );
+  assert.deepEqual(snapshot([f.metadata]), before);
+});
