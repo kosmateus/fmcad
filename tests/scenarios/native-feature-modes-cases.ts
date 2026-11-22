@@ -55,11 +55,12 @@ export async function guardedFeatureModeProbeSource(
   identity: { name: string; creationId: string },
   guard: () => Promise<Record<string, unknown> | undefined>,
   body: string,
+  admission?: FeatureProbeAdmission,
 ): Promise<string> {
   const current = await guard();
   assert.ok(current, "Feature probe requires a verified current inventory");
   const foreign = featureModeForeignInventory(identity, current);
-  return featureModeProbeSource(identity, foreign, body);
+  return featureModeProbeSource(identity, foreign, body, admission);
 }
 export function featureModeProbeSource(
   identity: { name: string; creationId: string },
@@ -80,23 +81,25 @@ if (
 ):
     ${emit(`dict(creationId=doc.creationId, admission=dict(status='inventory-changed', requestId=${JSON.stringify(admission.requestId)}, mutationStarted=False, bodyCalls=0))`)}
     return`
-    : `assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(foreign)}, 'Other document state changed'`;
-  const guardedBody = admission
-    ? `try:\n${body
-        .split("\n")
-        .map((line) => "    " + line)
-        .join(
-          "\n",
-        )}\nfinally:\n    assert [d for d in documents() if d['creationId'] != doc.creationId] == _feature_before, 'Other document state changed during feature probe'`
-    : body;
+    : `_feature_before = [d for d in documents() if d['creationId'] != doc.creationId]
+assert _feature_before == ${py(foreign)}, 'Other document state changed'`;
+  const guardedBody = `try:\n${body
+    .split("\n")
+    .map((line) => "    " + line)
+    .join(
+      "\n",
+    )}\nfinally:\n    assert app.activeDocument == doc, 'Owned target changed during feature probe'\n    assert [d for d in documents() if d['creationId'] != doc.creationId] == _feature_before, 'Other document state changed during feature probe'`;
   return program(
     `import adsk.core, adsk.fusion, json, math
 app = adsk.core.Application.get()
 def documents():
     return sorted([dict(name=d.name, creationId=d.creationId, saved=d.isSaved, modified=d.isModified) for d in app.documents], key=lambda d: d['creationId'])
 matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)} and d.name == ${JSON.stringify(identity.name)}]
-assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None and app.activeDocument == matches[0], 'Owned active unsaved document guard failed'
+assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None, 'Owned active unsaved document guard failed'
 doc = matches[0]
+if app.activeDocument != doc:
+    assert doc.activate(), 'Owned target could not be activated'
+assert app.activeDocument == doc, 'Owned active unsaved document guard failed'
 ${guard}
 ${guardedBody}`,
     `from typing import TypeAlias

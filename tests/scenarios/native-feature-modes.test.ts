@@ -108,7 +108,7 @@ test("feature readmission requires the exact settled no-body receipt", () => {
   );
 });
 
-test("feature probe binds the proven current inventory and rejects unproven or later changes", async () => {
+test("feature probe admits receipt-bound peer transitions and rejects unproven changes", async () => {
   const identity = { name: "Owned", creationId: "own" };
   const closed = {
     name: "ClosedPeer",
@@ -142,7 +142,12 @@ test("feature probe binds the proven current inventory and rejects unproven or l
     );
     return current;
   };
-  const execute = (source: string, foreign: unknown[]) =>
+  const execute = (
+    source: string,
+    foreign: unknown[],
+    activeCreationId = identity.creationId,
+    ownedIdentity = identity,
+  ) =>
     spawnSync(
       "python3",
       [
@@ -154,10 +159,14 @@ core = types.ModuleType('adsk.core')
 fusion = types.ModuleType('adsk.fusion')
 adsk.core, adsk.fusion = core, fusion
 sys.modules.update({'adsk': adsk, 'adsk.core': core, 'adsk.fusion': fusion})
-own = types.SimpleNamespace(name='Owned', creationId='own', isSaved=False, isModified=True, dataFile=None)
+own = types.SimpleNamespace(name=${JSON.stringify(ownedIdentity.name)}, creationId=${JSON.stringify(ownedIdentity.creationId)}, isSaved=False, isModified=True, dataFile=None)
 rows = json.loads(${JSON.stringify(JSON.stringify(foreign))})
-docs = [types.SimpleNamespace(name=d['name'], creationId=d['creationId'], isSaved=d['saved'], isModified=d['modified']) for d in rows]
-app = types.SimpleNamespace(documents=[own] + docs, activeDocument=own)
+docs = [types.SimpleNamespace(name=d['name'], creationId=d['creationId'], isSaved=d['saved'], isModified=d['modified'], dataFile=None) for d in rows]
+app = types.SimpleNamespace(documents=[own] + docs, activeDocument=None)
+all_docs = app.documents
+for document in all_docs:
+    document.activate = lambda document=document: (setattr(app, 'activeDocument', document) is None)
+app.activeDocument = next((d for d in all_docs if d.creationId == ${JSON.stringify(activeCreationId)}), None)
 core.Application = types.SimpleNamespace(get=lambda: app)
 exec(${JSON.stringify(source)})
 run('')
@@ -165,22 +174,28 @@ run('')
       ],
       { encoding: "utf8" },
     );
-  const stale = execute(featureModeProbeSource(identity, [closed], "pass"), [
-    opened,
-  ]);
+  const stale = execute(
+    featureModeProbeSource(identity, [closed], 'print("BODY_EXECUTED")'),
+    [opened],
+  );
   assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, /Other document state changed/);
-  const source = await guardedFeatureModeProbeSource(identity, guard, "pass");
+  assert.match(stale.stderr, /Other document state changed/u);
+  const source = await guardedFeatureModeProbeSource(
+    identity,
+    guard,
+    'print("BODY_EXECUTED")',
+  );
   const accepted = execute(source, [opened]);
   assert.equal(accepted.status, 0, accepted.stderr);
+  assert.match(accepted.stdout, /BODY_EXECUTED/u);
   for (const later of [
     [],
     [{ ...opened, modified: false }],
     [opened, closed],
   ]) {
-    const rejected = execute(source, later);
-    assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /Other document state changed/);
+    const nextTurn = execute(source, later);
+    assert.notEqual(nextTurn.status, 0);
+    assert.match(nextTurn.stderr, /Other document state changed/u);
   }
   await assert.rejects(
     guardedFeatureModeProbeSource(
@@ -200,6 +215,45 @@ run('')
   await assert.rejects(
     guardedFeatureModeProbeSource(identity, async () => undefined, "pass"),
     /verified current inventory/,
+  );
+  const nextTurn = await guardedFeatureModeProbeSource(
+    identity,
+    guard,
+    'print("BODY_EXECUTED"); print("TARGET=" + app.activeDocument.creationId)',
+    {
+      requestId: "next-probe",
+      peers: [{ creationId: opened.creationId, name: opened.name }],
+    },
+  );
+  const peerTransition = execute(nextTurn, [opened]);
+  assert.equal(peerTransition.status, 0, peerTransition.stderr);
+  assert.match(peerTransition.stdout, /BODY_EXECUTED/u);
+  assert.match(peerTransition.stdout, /TARGET=own/u);
+  const peerActivation = execute(nextTurn, [opened], opened.creationId);
+  assert.equal(peerActivation.status, 0, peerActivation.stderr);
+  assert.match(peerActivation.stdout, /TARGET=own/u);
+  const wrongTarget = execute(nextTurn, [opened], opened.creationId, {
+    ...identity,
+    creationId: "foreign-target",
+  });
+  assert.notEqual(wrongTarget.status, 0);
+  assert.match(
+    wrongTarget.stderr,
+    /Owned active unsaved document guard failed/u,
+  );
+  assert.doesNotMatch(wrongTarget.stdout, /BODY_EXECUTED/u);
+  const inTurnForeignMutation = execute(
+    await guardedFeatureModeProbeSource(
+      identity,
+      async () => current,
+      "app.documents[1].isModified = False",
+    ),
+    [opened],
+  );
+  assert.notEqual(inTurnForeignMutation.status, 0);
+  assert.match(
+    inTurnForeignMutation.stderr,
+    /Other document state changed during feature probe/u,
   );
   const admission = {
     requestId: "original-probe",
