@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import childProcess, { type SpawnOptions } from "node:child_process";
 import test from "node:test";
 import { physicalBrokerPortsFromEnvironment } from "../packages/node-adapters/src/execution/physical-generation-profile";
 import type { PhysicalGenerationDescriptor } from "../packages/node-adapters/src/execution/physical-generation";
+import {
+  DEFAULT_ADDIN_SETTINGS,
+  type FmcadConfiguration,
+} from "../packages/core/src/domain/config";
 
 const linux = {
   skip: process.platform !== "linux" && "Linux/WSL private physical profile",
@@ -71,6 +76,111 @@ test("ordinary public configuration does not provide physical operator authority
   );
   assert.equal(factories, 0);
 });
+
+test(
+  "normal broker autostart forwards only the private profile path, not arbitrary environment",
+  linux,
+  async (t) => {
+    const f = fixture(t);
+    const changes: Record<string, string | undefined> = {
+      XDG_STATE_HOME: path.join(f.root, "state"),
+      XDG_CONFIG_HOME: path.join(f.root, "config"),
+      XDG_DATA_HOME: path.join(f.root, "data"),
+      XDG_CACHE_HOME: path.join(f.root, "cache"),
+      FMCAD_CONFIG: undefined,
+      FMCAD_PHYSICAL_OPERATOR_PROFILE: f.file,
+      FMCAD_PROFILE_TEST_SECRET: "must-not-reach-the-daemon",
+    };
+    const old = Object.fromEntries(
+      Object.keys(changes).map((key) => [key, process.env[key]]),
+    );
+    for (const [key, value] of Object.entries(changes))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    t.after(() => {
+      for (const [key, value] of Object.entries(old))
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+    });
+    const root = path.resolve(__dirname, "../..");
+    const load = createRequire(path.join(root, "package.json"));
+    const modulePath = path.join(root, "src/queue-autostart.js");
+    const autostart: Pick<
+      typeof import("../src/entrypoints/queue-autostart"),
+      "ensureBroker"
+    > = load(modulePath);
+    const connection: { queueDirectory(): string } = load(
+      path.join(root, "src/queue-connection.js"),
+    );
+    assert.ok(
+      connection.queueDirectory().startsWith(f.root + path.sep),
+      "Only the owned fixture queue may be used",
+    );
+    const captured = path.join(f.root, "daemon-environment.json");
+    const originalSpawn = childProcess.spawn;
+    let starts = 0;
+    let closed: Promise<unknown> | undefined;
+    t.mock.method(
+      childProcess,
+      "spawn",
+      (executable: string, args: readonly string[], options: SpawnOptions) => {
+        assert.equal(executable, process.execPath);
+        const nonce = args[1];
+        assert.ok(nonce && /^[a-f0-9-]{36}$/.test(nonce));
+        starts++;
+        const child = originalSpawn(
+          process.execPath,
+          [
+            "-e",
+            `
+      const fs=require("node:fs");
+      const autostart=require(process.argv[1]);
+      fs.writeFileSync(process.argv[3], JSON.stringify({
+        profile:process.env.FMCAD_PHYSICAL_OPERATOR_PROFILE ?? null,
+        unrelatedSecret:process.env.FMCAD_PROFILE_TEST_SECRET ?? null
+      }), {mode:0o600,flag:"wx"});
+      autostart.startupResult(process.cwd(),process.argv[2],
+        {state:"failed",code:"OFFLINE_ENV_CAPTURED",message:"Owned environment-only fixture"});
+      autostart.releaseStart(process.cwd(),process.argv[2]);
+    `,
+            modulePath,
+            nonce,
+            captured,
+          ],
+          options,
+        );
+        closed = new Promise((resolve) => child.once("close", resolve));
+        t.after(() => {
+          if (child.exitCode === null) child.kill("SIGKILL");
+        });
+        return child;
+      },
+    );
+    const cfg: FmcadConfiguration = {
+      ...DEFAULT_ADDIN_SETTINGS,
+      backend: "addin",
+      routing: "queue",
+      url: "http://127.0.0.1:1/mcp",
+      queue: { autoStart: true, autoRecover: false, startupTimeoutMs: 10000 },
+      controlCenter: { port: 4748 },
+    };
+    await assert.rejects(
+      autostart.ensureBroker(cfg, {
+        clientId: "environment-fixture",
+        clientToken: "offline-logical-client-token",
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        Reflect.get(error, "code") === "OFFLINE_ENV_CAPTURED",
+    );
+    await closed;
+    assert.equal(starts, 1);
+    assert.deepEqual(JSON.parse(fs.readFileSync(captured, "utf8")), {
+      profile: f.file,
+      unrelatedSecret: null,
+    });
+  },
+);
 
 test(
   "private FIFO profile is rejected without blocking or constructing an issuer",

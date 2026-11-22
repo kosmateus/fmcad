@@ -223,6 +223,7 @@ function launch(
       "XDG_CACHE_HOME",
       "XDG_DATA_HOME",
       "FMCAD_CONFIG",
+      "FMCAD_PHYSICAL_OPERATOR_PROFILE",
       "FMCAD_PYTHON",
       "WSL_DISTRO_NAME",
       "TMPDIR",
