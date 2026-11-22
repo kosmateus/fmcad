@@ -59,7 +59,20 @@ def _fmcad_query_runtime_root(authority, request):
                 if row[4] == "consumed":
                     # Validate the stored originals before _response MACs them.
                     receipt = decode_json(row[6])
+                    if row[6] != _encode(receipt):
+                        refuse()
                     _exact(receipt, ("kind", "version", "fence", "activation", "consumedBy"))
+                    if (not isinstance(receipt["consumedBy"], str) or not receipt["consumedBy"]
+                            or not _table(store, "provision_fence_audit")):
+                        refuse()
+                    # Match the original consume, not a later consume-resume
+                    # or the operator performing this read of the old root.
+                    consumers = store._db.execute(
+                        "SELECT operator_id,writer_generation FROM provision_fence_audit "
+                        "WHERE request_id=? AND action='consume'", (request_id,),
+                    ).fetchall()
+                    if consumers != [(receipt["consumedBy"], "")]:
+                        refuse()
                     approval = receipt["activation"]
                     _exact(approval, ("requestId", "fenceNonce", "newHead",
                                       "publicationDigest", "record", "initiatorOperatorId"))

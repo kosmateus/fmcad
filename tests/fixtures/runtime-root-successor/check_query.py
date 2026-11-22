@@ -270,6 +270,48 @@ class SuccessorQuery(unittest.TestCase):
         with self.assertRaises(AdmissionError):
             self.query()
 
+    def test_noncanonical_original_receipt_refused_before_signer(self):
+        self.handoff(1)
+        self.store._db.execute(
+            "UPDATE provision_fences SET receipt_json=' ' || receipt_json")
+        with patch.object(native, "_response", wraps=native._response) as signer:
+            with self.assertRaises(AdmissionError):
+                self.query()
+            signer.assert_not_called()
+
+    def test_changed_consumer_without_original_consume_audit_refused_before_signer(self):
+        self.handoff(1)
+        receipt = json.loads(self.original["receiptJson"])
+        receipt["consumedBy"] = "tampered-consumer"
+        self.store._db.execute(
+            "UPDATE provision_fences SET receipt_json=?", (_encode(receipt),))
+        with patch.object(native, "_response", wraps=native._response) as signer:
+            with self.assertRaises(AdmissionError):
+                self.query()
+            signer.assert_not_called()
+
+    def test_original_consumer_need_not_be_current_query_operator(self):
+        self.handoff(1)
+        self.authority.operator_id = "different-current-query-operator"
+        self.unchanged_original(self.query())
+
+    def test_consume_resume_audit_cannot_replace_original_consume(self):
+        self.handoff(1)
+        self.store._db.execute(
+            "UPDATE provision_fence_audit SET action='consume-resume' WHERE action='consume'")
+        with patch.object(native, "_response", wraps=native._response) as signer:
+            with self.assertRaises(AdmissionError):
+                self.query()
+            signer.assert_not_called()
+
+    def test_noncanonical_direct_receipt_also_refused_before_signer(self):
+        self.store._db.execute(
+            "UPDATE provision_fences SET receipt_json=receipt_json || ' '")
+        with patch.object(native, "_response", wraps=native._response) as signer:
+            with self.assertRaises(AdmissionError):
+                self.query()
+            signer.assert_not_called()
+
     def test_named_database_swap_during_query_refused(self):
         self.handoff(1)
         replacement = self.root / "replacement.sqlite"
