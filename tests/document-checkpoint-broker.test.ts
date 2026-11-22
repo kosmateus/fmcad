@@ -23,7 +23,11 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 async function fixture(t: TestContext, foreignConflict = false) {
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
+  const previousData = process.env["XDG_DATA_HOME"];
+  const previousConfig = process.env["XDG_CONFIG_HOME"];
   process.env["XDG_STATE_HOME"] = home;
+  process.env["XDG_DATA_HOME"] = path.join(home, "data");
+  process.env["XDG_CONFIG_HOME"] = path.join(home, "config");
   process.chdir(home);
   const { resolveFmcadConfiguration } = load("./dist/core") as {
     resolveFmcadConfiguration(value: unknown): P.Config;
@@ -36,7 +40,7 @@ async function fixture(t: TestContext, foreignConflict = false) {
   const dir = queueDirectory();
   const instance = { pid: 991, birth: "synthetic-checkpoint-991", version: "fixture",
     activeCommand: "SelectCommand", documents: [] };
-  let expression = "10 mm", identityCalls = 0, products = 0, queries = 0;
+  let expression = "10 mm", identityCalls = 0, products = 0, queries = 0, writes = 0;
   let unknownHistory = false, revoked = false, wrongReply = false;
   let cancelledRead = false;
   let failOutcome = false;
@@ -88,7 +92,7 @@ async function fixture(t: TestContext, foreignConflict = false) {
         requestHash: job.hash, physicalTurns: [proof] },
     });
   }
-  function checkpoint() {
+  function checkpoint(): import("../packages/node-adapters/src/python/cad-script").ParamCheckpointGuardV1 {
     return {
       schema: "fmcad.param-checkpoint-v1",
       document: {
@@ -132,11 +136,37 @@ async function fixture(t: TestContext, foreignConflict = false) {
     } else {
       products++;
       productJobs.push((JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as { active: string }).active);
-      assert.ok(script!.includes("result = _cad_param_checkpoint(ctx)"),
-        "owned unlock read must execute the actual private compiler callback");
-      stdout = "FMCAD_RESULT " + JSON.stringify({
-        success: true, operation: "param.inspect", result: failOutcome ? {} : checkpoint(), created: [],
-      });
+      const snapshot = JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as {
+        active: string; jobs: Record<string, { documentContinuation?: { sourceHash: string } }>;
+      };
+      const continuation = snapshot.jobs[snapshot.active]?.documentContinuation;
+      if (continuation) {
+        const compiler = load("./dist/composition/cad") as typeof import("../src/composition/cad");
+        const guarded = compiler.prepareCadScript("param.apply",
+          { parameters: [{ expression: "20 mm", name: "length" }] },
+          { doc: "Owned A", docId: "doc-A", docFileId: "file-A", preview: false }, undefined, checkpoint());
+        assert.equal(continuation.sourceHash, hash(guarded.script),
+          "the actual accepted job must bind the default compiler's guarded source");
+        const folder = path.join(dir, "jobs", snapshot.active);
+        const rpc = fs.readdirSync(folder).filter((name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json")
+          .map((name) => record(JSON.parse(fs.readFileSync(path.join(folder, name), "utf8"))))
+          .find((value) => `fmcad:${record(value["binding"])["rpcId"]}` === payload.id);
+        assert.ok(rpc, "the actual wire request must have its durable RPC record");
+        const binding = record(rpc["binding"]), scope = record(binding["documentScope"]);
+        assert.equal(scope["sourceHash"], hash(guarded.script));
+        assert.equal(scope["wireSourceHash"], binding["sourceHash"]);
+        writes++;
+        expression = "20 mm";
+        stdout = "FMCAD_RESULT " + JSON.stringify({
+          success: true, operation: "param.apply", result: { parameters: checkpoint().parameters }, created: [],
+        });
+      } else {
+        assert.ok(script!.includes("result = _cad_param_checkpoint(ctx)"),
+          "owned unlock read must execute the actual private compiler callback");
+        stdout = "FMCAD_RESULT " + JSON.stringify({
+          success: true, operation: "param.inspect", result: failOutcome ? {} : checkpoint(), created: [],
+        });
+      }
       if (failOutcome) {
         const snapshot = JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as { active: string };
         // Real filesystem refusal, not a replacement of durable() or controller.
@@ -159,6 +189,10 @@ async function fixture(t: TestContext, foreignConflict = false) {
       process.chdir(cwd);
       if (previous === undefined) delete process.env["XDG_STATE_HOME"];
       else process.env["XDG_STATE_HOME"] = previous;
+      if (previousData === undefined) delete process.env["XDG_DATA_HOME"];
+      else process.env["XDG_DATA_HOME"] = previousData;
+      if (previousConfig === undefined) delete process.env["XDG_CONFIG_HOME"];
+      else process.env["XDG_CONFIG_HOME"] = previousConfig;
     }
     if (broker) fs.rmSync(home, { recursive: true, force: true });
   });
@@ -199,7 +233,7 @@ async function fixture(t: TestContext, foreignConflict = false) {
     throw error;
   }
   return {
-    dir, checkpoint, counts: () => ({ identityCalls, products, queries }),
+    dir, checkpoint, counts: () => ({ identityCalls, products, queries }), writes: () => writes,
     change() { expression = "20 mm"; },
     historyUnknown(value: boolean) { unknownHistory = value; },
     cancelledRead(value: boolean) { cancelledRead = value; },
@@ -248,7 +282,7 @@ test("actual status IPC hides a foreign actor's retained conflicting job identif
     assert.equal(JSON.stringify(owned).includes("private-foreign-request"), true,
       "the actual owner can see its retained conflicting request");
     const result = record(await client.documentUnlock({ action: "status", target }));
-    assert.equal(result["state"], "scope_unproven", JSON.stringify(result));
+    assert.equal(result["state"], "inspection_required", JSON.stringify(result));
     assert.deepEqual(result["blockers"], [{ visibility: "operator_only" }]);
     assert.equal(JSON.stringify(result).includes("private-foreign-request"), false);
     const snapshot = JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")) as {
@@ -270,6 +304,7 @@ test("actual authenticated IPC shows the same full observed parameters, fresh ac
     }));
     assert.equal(inspected["error"], undefined, JSON.stringify(inspected));
     assert.deepEqual(inspected["observed"], f.checkpoint());
+    assert.ok(inspected["observation"], JSON.stringify(inspected));
     const observationId = record(inspected["observation"])["observationId"];
     const afterInspect = f.counts();
     assert.equal(afterInspect.products - before.products, 1);
@@ -290,6 +325,50 @@ test("actual authenticated IPC shows the same full observed parameters, fresh ac
     assert.equal(f.counts().products, beforeRetry.products);
     assert.ok(f.counts().queries > beforeRetry.queries,
       "history is authenticated against the original native turn without a CAD probe");
+  });
+
+test("actual public IPC routes a fresh accepted continuation through the normal worker and guarded physical source",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("successor-writer");
+    const original = Object.values(record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")))["jobs"] as Record<string, unknown>)
+      .map(record).find((job) => job["requestId"] === "private-foreign-request");
+    assert.ok(original);
+    const payload = {
+      version: 1, kind: "cad", operation: "param.apply",
+      doc: "Owned A", docId: "doc-A", docFileId: "file-A",
+      data: { parameters: [{ name: "length", expression: "20 mm" }] },
+    };
+    const commands = load("./dist/core/application/cad/worker-command") as
+      typeof import("../packages/core/src/application/cad/worker-command");
+    const input = { kind: "command", payload, cwd: f.dir, timeoutMs: 45000,
+      argv: commands.cadWorkerPolicyArguments(commands.decodeCadWorkerInvocation(payload)) };
+    const refused = await client.submit({ ...input, requestId: "before-explicit-accept" });
+    assert.equal(refused.state, "failed");
+    assert.equal(f.writes(), 0);
+    const inspected = record(await client.documentUnlock({
+      action: "inspect", target, requestId: "inspect-for-worker",
+    }));
+    assert.equal(inspected["error"], undefined, JSON.stringify(inspected));
+    assert.ok(inspected["observation"], JSON.stringify(inspected));
+    const observationId = record(inspected["observation"])["observationId"];
+    const accepted = record(await client.documentUnlock({
+      action: "accept", target, requestId: "accept-for-worker", observationId,
+    }));
+    assert.equal(accepted["state"], "checkpoint_current", JSON.stringify(accepted));
+    const admitted = await client.submit({ ...input, requestId: "fresh-guarded-worker" });
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    assert.equal(f.writes(), 1);
+    const readback = record(await client.documentUnlock({
+      action: "inspect", target, requestId: "readback-after-worker",
+    }));
+    assert.equal(readback["error"], undefined, JSON.stringify(readback));
+    assert.equal(record(readback["observed"])["schema"], "fmcad.param-checkpoint-v1");
+    const parameters = record(readback["observed"])["parameters"] as unknown[];
+    assert.equal(record(parameters[0])["expression"], "20 mm");
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+    assert.equal(f.productJobs().includes(String(original["id"])), false, "the original UNKNOWN is never replayed");
   });
 
 test("fresh accept refuses a real changed readback and preserves the original observation",

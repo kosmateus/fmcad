@@ -1413,6 +1413,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ) {
     settleTurn(grant, () => {
       state.finish(grant.jobId, details);
+      continuation.forget(grant.jobId);
+      continuationJobs.delete(grant.jobId);
     });
   }
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
@@ -1921,6 +1923,66 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return required(options.physicalTurnQuiescence)(binding);
     },
   });
+  const continuation = (
+    runtimeRequire("./document-continuation-broker") as
+      typeof import("../document-continuation-broker")
+  ).createDocumentContinuationBroker({
+    domain: state as unknown as import("@fmcad/core").QueueDomain,
+    currentGeneration: currentCheckpointGeneration,
+    recheck(actor, target) {
+      assertCheckpointOwner();
+      if (!target.creationId)
+        fail("DOCUMENT_TARGET_UNAVAILABLE", "Continuation requires an exact creationId");
+      checkpointAdmission.authorizeStatus(actor, {
+        docId: target.creationId,
+        ...(target.fileId === undefined ? {} : { docFileId: target.fileId }),
+      }).recheck();
+      const commands = runtimeRequire("./dist/core/application/cad/worker-command") as
+        typeof import("../../packages/core/src/application/cad/worker-command");
+      // Check actual model policy without pretending a retained checkpoint is
+      // a new identity probe. The in-SDK guard will verify the current CAD state.
+      const epoch = state.epoch;
+      const payload = {
+        version: 1, kind: "cad", operation: "param.apply",
+        docId: target.creationId,
+        // The isolated policy requires its exact known name. Ordinary admission
+        // uses this non-executed label only to form a valid typed policy request;
+        // it is not an alias/existence proof for the actual CAD invocation.
+        doc: epoch?.document.creationId === target.creationId
+          ? epoch.document.name : target.creationId,
+        ...(target.fileId === undefined ? {} : { docFileId: target.fileId }),
+        data: { parameters: [] },
+      };
+      const decoded = commands.decodeCadWorkerInvocation(payload);
+      admitEpochRequest({
+        kind: "command", clientId: actor.clientId, ownerToken: actor.clientTokenHash,
+        requestId: "continuation-model-admission", timeoutMs: 1, cwd: dir, payload,
+        argv: commands.cadWorkerPolicyArguments(decoded),
+      });
+    },
+    verifyObservation: (observation, actor) =>
+      checkpointActor.run(actor, () => checkpointEvidence.verify(observation)),
+  });
+  const continuationJobs = new Set<string>();
+  function acceptedContinuationTarget(request: P.Request) {
+    if (request.kind !== "command" || !physicalIsolation) return null;
+    const commands = runtimeRequire("./dist/core/application/cad/worker-command") as
+      typeof import("../../packages/core/src/application/cad/worker-command");
+    const decoded = commands.decodeCadWorkerInvocation(request.payload);
+    const invocation = decoded.kind === "cad-command" ? decoded.invocation :
+      decoded.kind === "cad" ? decoded : null;
+    if (!invocation || invocation.operation !== "param.apply" ||
+      !invocation.docId || invocation.preview === true || invocation.component !== undefined)
+      return null;
+    const target = { creationId: invocation.docId,
+      ...(invocation.docFileId === undefined ? {} : { fileId: invocation.docFileId }) };
+    const { documentTargetKey } = runtimeRequire("./dist/core/domain/document-checkpoint") as
+      typeof import("../../packages/core/src/domain/document-checkpoint");
+    const records = state.data.documentCheckpoints;
+    const head = records?.heads[documentTargetKey(target)];
+    return head && records?.acceptances[head]?.actorClientId === request.clientId &&
+      state.documentConflicts(target).length ? target : null;
+  }
   function checkpointConflicts(target: import("@fmcad/core").QueueIsolationTarget | null) {
     return state.documentConflicts(target);
   }
@@ -2136,7 +2198,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           accepted && observed ? "checkpoint_current" :
           conflicts.length || observation ? "inspection_required" : "clear",
         executionFence: unfenced ? "unknown" : "released",
-        hasOperatorOnlyBlocker: visible.length !== conflicts.length,
+        hasUndisclosedBlockers: visible.length !== conflicts.length,
         disclosableBlockers: visible.map((entry) => ({
           jobId: entry.jobId, requestId: entry.requestId,
           scope: "fenceKind" in entry && entry.fenceKind === "runtime_retired" ? "runtime" as const :
@@ -2450,20 +2512,26 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertPhysicalIsolationAuthority();
       const job = required(state.data.jobs[message.jobId]);
       const turn = brokerExecution.createTurnIdentity(job.id);
-      const compiled = physicalIsolation && job.request.kind === "command" &&
-        quarantineTarget(job.request) ? constrainedCadProgram(job) : null;
-      if (compiled && (message.method !== "callTool" ||
+      const guarded = job.documentContinuation
+        ? await continuation.prepareWorker(
+            job as unknown as import("@fmcad/core").QueueJob,
+            { method: message.method, args: message.args }, turn,
+          )
+        : null;
+      const compiled = guarded ?? (physicalIsolation && job.request.kind === "command" &&
+        quarantineTarget(job.request) ? constrainedCadProgram(job) : null);
+      if (compiled && !guarded && (message.method !== "callTool" ||
           (message.args[1] && message.args[1] !== "fusion_mcp_execute") ||
           object(object(message.args[0])["object"])["script"] !== compiled.script))
         fail("PHYSICAL_SCOPE_MISMATCH", "Actual pre-wrapper source differs from the broker-compiled constrained program");
       const envelope = compiled ? {
         featureType:"script",object:{script:compiled.script,readOnly:compiled.readOnly},
       } : null;
-      if (compiled && (message.args.length !== 3 ||
+      if (compiled && !guarded && (message.args.length !== 3 ||
           message.args[1] !== "fusion_mcp_execute" || !same(message.args[0],envelope)))
         fail("PHYSICAL_ENVELOPE_MISMATCH",
           "Actual call differs from the compiled CAD envelope, including featureType and readOnly");
-      if (compiled && !same(message.args[2],compiled.manifest))
+      if (compiled && !guarded && !same(message.args[2],compiled.manifest))
         fail("PHYSICAL_PROVENANCE_MISMATCH",
           "Actual inventory differs from the trusted compiler artifact provenance");
       const adapterArgs = compiled
@@ -2700,7 +2768,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const job = grant.context.job;
     const constrainedTarget = quarantineTarget(job.request);
     if (constrainedTarget && !prepared.metadataProof) {
-      const compiled = constrainedCadProgram(job);
+      const compiled = job.documentContinuation
+        ? continuation.expectedProduct(
+            job as unknown as import("@fmcad/core").QueueJob, grant.turn,
+          )
+        : constrainedCadProgram(job);
       const scope = object(prepared.record.binding["documentScope"]);
       if (scope["producer"] !== "compiled-cad-v1" ||
           scope["operation"] !== compiled.operation ||
@@ -6261,6 +6333,30 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             resetFence();
           };
           verifyAcceptance();
+          const target = !existing && acceptedContinuationTarget(request);
+          let preparedContinuation:
+            import("../document-continuation-broker").PreparedDocumentContinuationSubmission | undefined;
+          if (target) {
+            try {
+              // The normal worker reads the canonically persisted request.
+              // Match its object key order before compiling exact source bytes.
+              const { clone } = runtimeRequire("./dist/core/application/cad/json") as
+                typeof import("../../packages/core/src/application/cad/json");
+              preparedContinuation = await continuation.prepareSubmit(
+                clone(request) as unknown as import("@fmcad/core").QueueRequest,
+                { clientId, clientTokenHash: required(clientHashes()[clientId]) },
+              );
+            } catch (error) {
+              const code = errorInfo(error).code;
+              if (["DOCUMENT_CONTINUATION_UNPROVEN", "DOCUMENT_STATE_CHANGED",
+                "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED"].includes(code ?? ""))
+                throw Object.assign(new Error(
+                  "The accepted document checkpoint is no longer current. Use fmcad_document_unlock or fmcad queue document-unlock --action inspect with the same document pins, explicitly accept the observed state, then submit a fresh requestId.",
+                ), { code: "DOCUMENT_UNLOCK_REQUIRED", notStarted: true });
+              throw error;
+            }
+            verifyAcceptance();
+          }
           const accept = () => {
             verifyAcceptance();
             if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
@@ -6268,8 +6364,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",
               ).retainAdmission(dir, request);
-            const job = state.submit(request, preparedId);
+            const job = (preparedContinuation
+              ? preparedContinuation.submit() : state.submit(request, preparedId)) as P.PublicJob;
             const admitted = state.data.jobs[job.id];
+            if (admitted?.documentContinuation) continuationJobs.add(job.id);
             writeRequestTrace(admitted?.request ?? request, clientId, {
               stage: "request-accepted",
               status: "passed",
@@ -7856,7 +7954,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       maintain() {
         if (!schedulingOpen()) return;
         void quarantineReleasedTurn();
-      if (!canSelect()) state.next({ grant: false });
+       if (!canSelect()) state.next({ grant: false });
+        for (const id of continuationJobs) {
+          const job = state.data.jobs[id];
+          if (!job || ["succeeded", "failed", "cancelled", "expired", "needs_reconciliation"].includes(job.state)) {
+            continuation.forget(id);
+            continuationJobs.delete(id);
+          }
+        }
         // Only outstanding prepared plans, never retained terminal history.
         for (const id of localPlans.keys()) {
           const job = state.data.jobs[id];

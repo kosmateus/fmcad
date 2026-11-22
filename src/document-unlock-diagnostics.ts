@@ -44,8 +44,10 @@ export interface DocumentUnlockServerResolution {
   readonly state?: DocumentUnlockState;
   /** Already filtered to blockers visible in this actor's authorized scope. */
   readonly disclosableBlockers?: readonly DocumentUnlockResolvedBlocker[];
-  /** Represents one or more hidden blockers, without identifying them. */
+  /** Scope or barrier requires an operator, independently of job visibility. */
   readonly hasOperatorOnlyBlocker?: boolean;
+  /** Hidden job identifiers do not invalidate an authorized document read. */
+  readonly hasUndisclosedBlockers?: boolean;
   /** Fence for this exact target, when the actor may see it. */
   readonly executionFence?: DocumentUnlockExecutionFence;
   /** Include only a current observation for this exact target. */
@@ -268,7 +270,7 @@ function safeBlockers(
       executionFence: safeFence(blocker.executionFence) ?? "unknown",
     };
   });
-  if (resolution.hasOperatorOnlyBlocker === true)
+  if (resolution.hasOperatorOnlyBlocker === true || resolution.hasUndisclosedBlockers === true)
     blockers.push({ visibility: "operator_only" });
   return blockers;
 }

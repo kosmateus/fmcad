@@ -61,6 +61,36 @@ function status(
   return serializeDocumentUnlockStatus({ state, target, ...extra });
 }
 
+test("hidden job namespaces preserve a verified document observation without weakening scope or barrier denial", () => {
+  const facts = {
+    target, state: "inspection_required" as const, executionFence: "released" as const,
+    hasUndisclosedBlockers: true,
+    currentObservation: {
+      observationId: "authorized-successor-observation",
+      coverage: ["document_identity", "parameter_readback"] as const,
+    },
+  };
+  const result = serializeDocumentUnlockStatus(facts);
+  assert.equal(result.state, "inspection_required");
+  assert.deepEqual(result.blockers, [{ visibility: "operator_only" }]);
+  assert.equal(result.observation?.observationId, "authorized-successor-observation");
+  assert.equal(result.next.kind === "command" && result.next.action, "accept");
+  const accepted = serializeDocumentUnlockStatus({ ...facts, state: "checkpoint_current" });
+  assert.equal(accepted.state, "checkpoint_current");
+  assert.equal(accepted.next.kind, "continue");
+  assert.deepEqual(accepted.blockers, [{ visibility: "operator_only" }]);
+  for (const extra of [
+    { hasOperatorOnlyBlocker: true },
+    { state: "scope_unproven" as const },
+    { executionFence: "active" as const },
+    { executionFence: "unknown" as const },
+  ]) {
+    const refused = serializeDocumentUnlockStatus({ ...facts, ...extra });
+    assert.equal(refused.observation, undefined);
+    assert.notEqual(refused.next.kind === "command" && refused.next.action, "accept");
+  }
+});
+
 test("status next covers each state without treating a checkpoint as geometry proof", () => {
   assert.deepEqual(status("clear", { executionFence: "released" }).next, {
     kind: "continue",
