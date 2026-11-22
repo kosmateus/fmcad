@@ -534,8 +534,14 @@ for (const successor of [
   });
 }
 
-for (const swap of ["owner", "identical-bytes", "namespace"] as const) {
-  test(`guarded reclaim rechecks ${swap} after archive and before head publication or unlink`, async (t) => {
+for (const swap of [
+  "owner",
+  "identical-bytes",
+  "namespace",
+  "recovery",
+  "recovery-before-pin",
+] as const) {
+  test(`guarded reclaim rechecks ${swap} at claim or publication boundaries`, async (t) => {
     const f = fixture(t);
     const dead = spawnSync(
       process.execPath,
@@ -572,8 +578,21 @@ for (const swap of ["owner", "identical-bytes", "namespace"] as const) {
       let changed=false,entered=false,nextBytes,held=store;
       records.durable=(file,...args)=>{
         const result=original(file,...args);
+        if(!changed&&kind==="recovery-before-pin"&&path.basename(file)==="recovery.lock"){
+          changed=true;
+          nextBytes=fs.readFileSync(path.join(store,"broker.lock"));
+          fs.renameSync(path.join(store,"recovery.lock"),path.join(store,"original-recovery.json"));
+          fs.writeFileSync(path.join(store,"recovery.lock"),"foreign-recovery-before-pin",{mode:0o600});
+          return result;
+        }
         if(!changed&&path.basename(file).startsWith("reclaimed-")){
           changed=true;
+          if(kind==="recovery"){
+            nextBytes=fs.readFileSync(path.join(store,"broker.lock"));
+            fs.renameSync(path.join(store,"recovery.lock"),path.join(store,"original-recovery.json"));
+            fs.writeFileSync(path.join(store,"recovery.lock"),"foreign-recovery-owner",{mode:0o600});
+            return result;
+          }
           const next=kind==="owner"?{...old,nonce:require("node:crypto").randomUUID()}:old;
           nextBytes=Buffer.from(JSON.stringify(next));
           if(kind==="namespace"){
@@ -594,7 +613,10 @@ for (const swap of ["owner", "identical-bytes", "namespace"] as const) {
           assert.equal(fs.existsSync(path.join(held,"broker-reclaimed-head.json")),false);
           for(const file of fs.readdirSync(held).filter(name=>name.startsWith("reclaimed-")))
             assert.deepEqual(JSON.parse(fs.readFileSync(path.join(held,file),"utf8")),old);
-          assert.equal(fs.existsSync(path.join(held,"recovery.lock")),false);
+          if(kind==="recovery"||kind==="recovery-before-pin")
+            assert.equal(fs.readFileSync(path.join(held,"recovery.lock"),"utf8"),
+              kind==="recovery"?"foreign-recovery-owner":"foreign-recovery-before-pin");
+          else assert.equal(fs.existsSync(path.join(held,"recovery.lock")),false);
           if(kind==="namespace")
             assert.equal(fs.readFileSync(path.join(store,"recovery.lock"),"utf8"),"unrelated-recovery");
           process.stdout.write(error.code);
@@ -622,6 +644,65 @@ for (const swap of ["owner", "identical-bytes", "namespace"] as const) {
         fs.readFileSync(path.join(f.store + "-original", "queue-state.json")),
         f.snapshot,
       );
+  });
+}
+
+for (const verdict of ["pending", "rejected", "value"] as const) {
+  test(`guarded reclaim refuses a ${verdict} guard result before archive without unhandled rejection`, async (t) => {
+    const f = fixture(t);
+    const dead = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const {claimBrokerLifetime}=require(process.argv[1]),{processBirth}=require(process.argv[2]);
+      const store=process.argv[3];
+      claimBrokerLifetime({dir:store,socket:store+"/queue.sock",buildHash:process.argv[4],
+        configHash:process.argv[5],processBirth,disposeClient(){}});
+    `,
+        lifetimeModule,
+        instanceModule,
+        f.store,
+        buildHash,
+        configHash,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    assert.equal(dead.status, 0, dead.stderr);
+    const result = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path");
+      const {reclaim}=require(process.argv[1]),store=process.argv[2],kind=process.argv[3];
+      const bytes=fs.readFileSync(path.join(store,"broker.lock"));
+      let unhandled=false;
+      process.on("unhandledRejection",()=>{unhandled=true});
+      let denied=false;
+      try {
+        reclaim(store,undefined,()=>kind==="pending"?new Promise(()=>{}):
+          kind==="rejected"?Promise.reject(new Error("private guard rejection")):42);
+      } catch(error) { assert.equal(error.code,"INVALID_RECLAIM_GUARD");denied=true; }
+      setImmediate(()=>{
+        assert.equal(denied,true);
+        assert.equal(unhandled,false);
+        assert.deepEqual(fs.readFileSync(path.join(store,"broker.lock")),bytes);
+        assert.equal(fs.readdirSync(store).some(name=>name.startsWith("reclaimed-")),false);
+        assert.equal(fs.existsSync(path.join(store,"broker-reclaimed-head.json")),false);
+        assert.equal(fs.existsSync(path.join(store,"recovery.lock")),false);
+        process.stdout.write("DENIED_SYNCHRONOUSLY");
+      });
+    `,
+        instanceModule,
+        f.store,
+        verdict,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(result.stdout, "DENIED_SYNCHRONOUSLY");
+    f.preserved();
   });
 }
 

@@ -254,9 +254,61 @@ export function createQueueInstance(
         );
       // An exclusive recovery claim prevents two recovery commands removing a new lock.
       const claim = path.join(operationDir, "recovery.lock");
-      durable(claim, { pid: process.pid, birth: processBirth() }, true);
+      const recoveryOwner = {
+        pid: process.pid,
+        birth: processBirth(),
+        ...(assertReclaimable ? { nonce: randomUUID() } : {}),
+      };
+      durable(claim, recoveryOwner, true);
       let ownerFd: number | undefined;
+      let recoveryFd: number | undefined;
+      let assertRecoveryClaim: (() => void) | undefined;
       try {
+        if (assertReclaimable) {
+          recoveryFd = fs.openSync(
+            claim,
+            fs.constants.O_RDONLY |
+              fs.constants.O_NOFOLLOW |
+              fs.constants.O_NONBLOCK,
+          );
+          const identity = fs.fstatSync(recoveryFd, { bigint: true });
+          const bytes = readBytes(claim, MAX_JSON_RECORD_BYTES);
+          assertRecoveryClaim = () => {
+            const held = fs.fstatSync(recoveryFd!, { bigint: true });
+            const named = fs.lstatSync(claim, { bigint: true });
+            if (
+              !held.isFile() ||
+              named.isSymbolicLink() ||
+              held.uid !== BigInt(process.getuid!()) ||
+              (held.mode & 0o077n) !== 0n
+            )
+              fail(
+                "LOCK_CHANGED",
+                "Recovery ownership changed during recovery",
+              );
+            for (const key of [
+              "dev",
+              "ino",
+              "size",
+              "mtimeNs",
+              "ctimeNs",
+            ] as const)
+              if (held[key] !== identity[key] || named[key] !== identity[key])
+                fail(
+                  "LOCK_CHANGED",
+                  "Recovery ownership changed during recovery",
+                );
+            if (
+              !bytes.equals(Buffer.from(JSON.stringify(recoveryOwner))) ||
+              !readBytes(claim, MAX_JSON_RECORD_BYTES).equals(bytes)
+            )
+              fail(
+                "LOCK_CHANGED",
+                "Recovery ownership changed during recovery",
+              );
+          };
+          assertRecoveryClaim();
+        }
         // A graceful close must not race with a new serve while recovery owns the directory.
         const current = readJson(file);
         if (JSON.stringify(current) !== JSON.stringify(marker))
@@ -272,6 +324,7 @@ export function createQueueInstance(
           const identity = fs.fstatSync(ownerFd, { bigint: true });
           const bytes = readBytes(file, MAX_JSON_RECORD_BYTES);
           assertGuarded = () => {
+            assertRecoveryClaim!();
             const held = fs.fstatSync(ownerFd!, { bigint: true });
             const named = fs.lstatSync(file, { bigint: true });
             if (!held.isFile() || named.isSymbolicLink())
@@ -293,7 +346,16 @@ export function createQueueInstance(
               !isDeepStrictEqual(readJson(file), marker)
             )
               fail("LOCK_CHANGED", "Broker ownership changed during recovery");
-            assertReclaimable(current);
+            const verdict: unknown = assertReclaimable(current);
+            if (verdict !== undefined) {
+              // Never await a guard or permit an async admission to outlive the
+              // claim. Observe a rejected Promise without leaking its contents.
+              void Promise.resolve(verdict).catch(() => {});
+              fail(
+                "INVALID_RECLAIM_GUARD",
+                "Administrative reclaim admission must be synchronous",
+              );
+            }
           };
           assertGuarded();
         }
@@ -347,7 +409,17 @@ export function createQueueInstance(
         try {
           if (ownerFd !== undefined) fs.closeSync(ownerFd);
         } finally {
-          fs.unlinkSync(claim);
+          if (!assertReclaimable) fs.unlinkSync(claim);
+          else {
+            try {
+              if (assertRecoveryClaim) {
+                assertRecoveryClaim();
+                fs.unlinkSync(claim);
+              }
+            } finally {
+              if (recoveryFd !== undefined) fs.closeSync(recoveryFd);
+            }
+          }
         }
       }
     }
