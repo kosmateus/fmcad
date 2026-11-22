@@ -76,6 +76,7 @@ export function validDocumentObservation(
       value["priorCheckpointId"] === null || text(value["priorCheckpointId"])
     ) ||
     !object(value["target"]) ||
+    !text(value["target"]["creationId"]) ||
     !object(value["readback"]) ||
     !fields(value["readback"], "reference,sha256,probeRequestId") ||
     !text(value["readback"]["reference"]) ||
@@ -214,7 +215,8 @@ export function documentTargetKey(target: QueueIsolationTarget): string {
       code: "INVALID_DOCUMENT_TARGET",
     });
   return JSON.stringify({
-    ...(target.creationId ? { creationId: target.creationId } : {}),
-    ...(target.fileId ? { fileId: target.fileId } : {}),
+    ...(target.creationId
+      ? { creationId: target.creationId }
+      : { fileId: target.fileId }),
   });
 }

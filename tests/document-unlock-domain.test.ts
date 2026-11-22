@@ -116,6 +116,7 @@ test("unproven document and DataFile aliases remain conflicts until identity is 
 
 function checkpointFixture() {
   let number = 0;
+  let now = 100;
   let failWrite = false;
   const snapshot = initialQueueSnapshot();
   // Release-proof authentication is exercised by the existing quarantine suite.
@@ -124,7 +125,7 @@ function checkpointFixture() {
   const domain = new QueueDomain({
     snapshot,
     recover: false,
-    now: () => 100,
+    now: () => now,
     newId: () => "checkpoint-" + ++number,
     hash: (value) => createHash("sha256").update(value).digest("hex"),
     commit: () => {
@@ -168,6 +169,9 @@ function checkpointFixture() {
     domain,
     observation,
     acceptance,
+    setNow: (value: number) => {
+      now = value;
+    },
     failWrite: () => {
       failWrite = true;
     },
@@ -436,6 +440,8 @@ function recoveryReadFixture() {
     ...request(["param", "inspect", "--doc-id", "document-A"]),
     requestId: "new-recovery-inspection",
     payload: {
+      version: 1,
+      docId: "document-A",
       kind: "cad",
       operation: "param.inspect",
       data: { includeModel: true },
@@ -467,12 +473,26 @@ test("only the server-authored full inspection can read through its own document
 
 test("the privileged inspection marker cannot admit a mutation or filtered parameter read", () => {
   for (const payload of [
-    { kind: "cad", operation: "param.apply", data: { includeModel: true } },
-    { kind: "cad", operation: "param.inspect", data: { includeModel: false } },
+    {
+      version: 1,
+      kind: "cad",
+      operation: "param.apply",
+      docId: "document-A",
+      data: { includeModel: true },
+    },
+    {
+      version: 1,
+      kind: "cad",
+      operation: "param.inspect",
+      docId: "document-A",
+      data: { includeModel: false },
+    },
     {
       kind: "cad",
       operation: "param.inspect",
       data: { includeModel: true, names: ["hidden"] },
+      version: 1,
+      docId: "document-A",
     },
   ]) {
     const { domain, input, marker } = recoveryReadFixture();
@@ -499,4 +519,144 @@ test("a changed conflict set invalidates an inspection before the actual dispatc
     code: "DOCUMENT_UNLOCK_REQUIRED",
   });
   assert.equal(domain.data.jobs[id]!.dispatch, undefined);
+});
+
+test("creation-only and creation-plus-file aliases compete for one checkpoint head", () => {
+  const { domain, observation, acceptance } = checkpointFixture();
+  domain.recordDocumentObservation(observation);
+  domain.recordDocumentObservation({
+    ...observation,
+    id: "observation-alias",
+    requestId: "inspect-alias",
+    target: { creationId: "document-A", fileId: "saved-file-A" },
+  });
+  domain.acceptDocumentObservation(acceptance);
+  assert.throws(
+    () =>
+      domain.acceptDocumentObservation({
+        ...acceptance,
+        observationId: "observation-alias",
+        requestId: "accept-alias",
+      }),
+    { code: "CHECKPOINT_CHANGED" },
+  );
+  assert.equal(Object.keys(domain.data.documentCheckpoints!.heads).length, 1);
+});
+
+test("removing the last conflict invalidates a queued inspection instead of bypassing its marker", () => {
+  const { domain, input, marker, original } = recoveryReadFixture();
+  const read = domain.submitDocumentInspection(input, marker);
+  const id = read["id"];
+  assert.ok(typeof id === "string");
+  domain.resolve(original.id, { state: "succeeded" });
+  assert.equal(domain.next(), null);
+  assert.equal(domain.data.jobs[id]!.state, "failed");
+  assert.equal(domain.data.jobs[id]!.code, "CHECKPOINT_CHANGED");
+  assert.equal(domain.data.jobs[id]!.dispatch, undefined);
+});
+
+test("a new head does not leave an old inspection queued without a deadline", () => {
+  const { domain, input, marker } = recoveryReadFixture();
+  const read = domain.submitDocumentInspection(input, marker);
+  const id = read["id"];
+  assert.ok(typeof id === "string");
+  const template = checkpointFixture().observation;
+  const blockers = Object.values(domain.data.quarantined!).map((item) => ({
+    jobId: item.jobId,
+    requestId: item.requestId,
+    originalHash: item.jobHash,
+    catalogDigest: item.catalogDigest,
+    barrierRef: item.evidenceReference,
+  }));
+  domain.recordDocumentObservation({ ...template, blockers });
+  domain.acceptDocumentObservation({
+    observationId: template.id,
+    requestId: "other-accept",
+    actorClientId: template.actorClientId,
+    generation: template.generation,
+    observedStateDigest: template.stateDigest,
+  });
+  assert.equal(domain.next(), null);
+  assert.equal(domain.data.jobs[id]!.state, "failed");
+  assert.equal(domain.data.jobs[id]!.code, "CHECKPOINT_CHANGED");
+});
+
+test("a stale inspection cannot record a system read after its final blocker disappears", () => {
+  const { domain, input, marker, original } = recoveryReadFixture();
+  const read = domain.submitDocumentInspection(input, marker);
+  const id = read["id"];
+  assert.ok(typeof id === "string");
+  assert.equal(domain.next()?.id, id);
+  const entry = structuredClone(
+    domain.data.jobs[original.id]!.physicalDispatches![0]!,
+  );
+  domain.resolve(original.id, { state: "succeeded" });
+  assert.throws(() => domain.recordPhysicalDispatch(id, entry), {
+    code: "DOCUMENT_UNLOCK_REQUIRED",
+  });
+  assert.throws(() => domain.markDispatch(id), {
+    code: "DOCUMENT_UNLOCK_REQUIRED",
+  });
+  assert.equal(domain.data.jobs[id]!.physicalDispatches, undefined);
+});
+
+test("inspection argv and payload must describe the same exact read, not a mutation or another target", () => {
+  for (const argv of [
+    ["param", "apply", "--doc-id", "document-A"],
+    ["param", "inspect", "--doc-id", "different-document"],
+  ]) {
+    const { domain, input, marker } = recoveryReadFixture();
+    assert.throws(
+      () => domain.submitDocumentInspection({ ...input, argv }, marker),
+      {
+        code: "DOCUMENT_INSPECTION_UNPROVEN",
+      },
+    );
+  }
+  const { domain, input, marker } = recoveryReadFixture();
+  assert.throws(
+    () =>
+      domain.submitDocumentInspection(
+        {
+          ...input,
+          payload: {
+            version: 1,
+            kind: "cad",
+            operation: "param.inspect",
+            docId: "different-document",
+            data: { includeModel: true },
+          },
+        },
+        marker,
+      ),
+    { code: "DOCUMENT_INSPECTION_UNPROVEN" },
+  );
+  domain.data.quarantined!["raw"] = exposure("raw", null);
+  assert.throws(
+    () =>
+      domain.documentInspectionFence(
+        { creationId: "document-A" },
+        "generation",
+      ),
+    {
+      code: "UNKNOWN_SCOPE_UNPROVEN",
+    },
+  );
+});
+
+test("a backward clock cannot publish an acceptance that its own restore decoder rejects", () => {
+  const { domain, observation, acceptance, setNow } = checkpointFixture();
+  domain.recordDocumentObservation(observation);
+  setNow(50);
+  const result = domain.acceptDocumentObservation(acceptance);
+  assert.equal(result.acceptedAt, observation.createdAt);
+  const snapshot = structuredClone(domain.data);
+  delete snapshot.quarantined;
+  const restored = new QueueDomain({
+    snapshot,
+    now: () => 50,
+    newId: () => "unused",
+    hash: (value) => createHash("sha256").update(value).digest("hex"),
+  });
+  assert.deepEqual(restored.acceptDocumentObservation(acceptance), result);
 });
