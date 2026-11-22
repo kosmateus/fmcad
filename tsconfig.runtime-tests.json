@@ -11,6 +11,7 @@
     "tests/document-unlock-admission.test.ts",
     "tests/document-unlock-diagnostics.test.ts",
     "tests/document-unlock-controller.test.ts",
+    "tests/document-checkpoint-broker.test.ts",
     "tests/physical-generation-transport.test.ts",
     "tests/physical-generation-grant.test.ts",
     "tests/physical-generation-provision.test.ts",

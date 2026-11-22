@@ -92,7 +92,8 @@
     "src/document-unlock-admission.ts",
     "src/document-checkpoint-readback.ts",
     "src/document-unlock-diagnostics.ts",
-    "src/document-unlock-controller.ts"
+    "src/document-unlock-controller.ts",
+    "src/document-checkpoint-broker.ts"
   ],
   "references": [
     {

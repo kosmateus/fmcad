@@ -5,6 +5,7 @@ import type {
   DocumentInspection,
 } from "@fmcad/core";
 import { quarantineTargetConflicts } from "@fmcad/core";
+import { hash as canonicalHash } from "../packages/core/src/application/cad/json";
 import type {
   createDocumentUnlockAdmission,
   CurrentUnlockTarget,
@@ -47,6 +48,9 @@ export interface DocumentUnlockControllerPorts {
     observation: DocumentObservation,
     target: CurrentUnlockTarget,
   ): void | Promise<void>;
+  /** Authenticate historical source/native evidence without a current CAD
+   * identity/read probe. This returns history, never fresh continuation rights. */
+  verifyStoredObservation(observation: DocumentObservation): void | Promise<void>;
   /** Authorize/filter all metadata before constructing the public DTO. */
   resolution(
     actor: UnlockPrincipal,
@@ -99,7 +103,6 @@ export function createDocumentUnlockController(
         ports.resolution(actor, metadata.selector),
       );
     }
-    ports.domain.assertDocumentProbeAllowed();
     ports.domain.rememberDocumentUnlockRequest(actor.clientId, request);
     const records = ports.domain.data.documentCheckpoints;
     const acceptance = Object.values(records?.acceptances ?? {}).find(
@@ -129,6 +132,28 @@ export function createDocumentUnlockController(
       (!selected || selected.actorClientId !== actor.clientId)
     )
       refused("NOT_AUTHORIZED");
+
+    if (request.action === "accept" && acceptance) {
+      if (!selected || acceptance.actorClientId !== actor.clientId ||
+          acceptance.observationId !== selected.id ||
+          acceptance.observationDigest !== canonicalHash(selected))
+        refused("REQUEST_CONFLICT");
+      await ports.verifyStoredObservation(selected);
+      metadata.recheck();
+      // Do not mint a current target from historical identity or repeat a CAD
+      // read for an already committed request. The result is explicitly history.
+      const { currentObservation, ...history } = ports.resolution(actor, request.target);
+      void currentObservation;
+      return {
+        ...serializeDocumentUnlockStatus({ ...history, state: "inspection_required" }),
+        previousAcceptance: {
+          checkpointId: acceptance.id, observationId: selected.id,
+          acceptedAt: acceptance.acceptedAt, acceptedBy: actor.clientId,
+          currentStateVerified: false as const,
+        },
+      };
+    }
+    ports.domain.assertDocumentProbeAllowed();
 
     const ticket = ports.admission.beginProbe(metadata.selector);
     metadata.recheck();
