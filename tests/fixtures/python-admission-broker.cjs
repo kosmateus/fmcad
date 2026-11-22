@@ -91,8 +91,11 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
   const calls=[],clients=[],pendingProductReceipts=[];
+  let toolPreparations=0;
   let active=0,maximum=0,products=0,fingerprint='A-1',documentIdentity=initialDocumentIdentity,observe=async()=>{},observeProduct=async()=>{},observeProtocol=initialObserveProtocol||(async()=>{});
   const physical=createBrokerTransport(cfg,{version:'test',requestTimeout:s=>s.timeoutMs,bridgeSource:()=>{throw Error('No add-in bridge');}});
+  const originalPrepare=physical.prepareCallTool;
+  physical.prepareCallTool=function(...args){toolPreparations++;return Reflect.apply(originalPrepare,this,args);};
   physical._post=async payload=>{
     calls.push(payload);active++;maximum=Math.max(maximum,active);
     try {
@@ -144,7 +147,12 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
         {context:artifact.context,request:artifact.request});
       const manifest=pythonArtifactManifest(artifact);
       const sentManifest=variant==='scope-manifest'?{...manifest,sha256:'f'.repeat(64)}:manifest;
-      const result=await backend.callTool({featureType:'script',object:{script:artifact.script,readOnly:!invocation||invocation.operation==='param.inspect'}},'fusion_mcp_execute',sentManifest);
+      const envelope={featureType:'script',object:{script:artifact.script,readOnly:!invocation||invocation.operation==='param.inspect'}};
+      if(variant==='envelope-feature')envelope.featureType='box';
+      if(variant==='envelope-readonly')envelope.object.readOnly=true;
+      if(variant==='envelope-missing-readonly')delete envelope.object.readOnly;
+      if(variant==='envelope-extra')envelope.object.foreign='unowned transport option';
+      const result=await backend.callTool(envelope,'fusion_mcp_execute',sentManifest);
       onOutcome(${JSON.stringify(unknownLocalOutcome)}&&(source.includes('LOCAL_UNKNOWN')||request.requestId==='local-workflow-a')?{outcome:'unknown'}:{fixture:true});process.stdout.write(result.text+'\\n');return result.failed?1:0;
     }}).then(code=>{process.exitCode=code},error=>{process.stderr.write(error.message+'\\n');process.exitCode=1});
   `);
@@ -173,7 +181,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     testCheckPrepared:prepared=>observe(prepared),
     ...(typedService?{spawnWorker(executable,args,options){return spawn(executable,[worker,args[1]],options);}}:{}),
   });
-  return {home,dir,cfg,calls,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
+  return {home,dir,cfg,calls,toolPreparations:()=>toolPreparations,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
     publishProductReceipts(){for(const receipt of pendingProductReceipts)fs.writeFileSync(receipt.file,JSON.stringify(receipt.value));},
     pauseNextPeerChecker(){
       if(!slowPeerChecker)throw Error('Slow peer checker is not enabled');

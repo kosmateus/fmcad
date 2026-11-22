@@ -17,6 +17,7 @@ require(
   path.join(root, "dist/tests/runtime-test-environment"),
 ).isolateRuntimeTestEnvironment(evidenceRoot);
 let quarantinedSnapshot;
+let isolationConfig;
 const bindPhysicalTurn = (request) => ({
   version: 1,
   grantDigest: "a".repeat(64),
@@ -96,6 +97,7 @@ test("a released UNKNOWN compiled document mutation permits another process and 
     },
   });
   const a = await f.client("unknown-owner-a");
+  isolationConfig=f.cfg;
   const source = f.script(
     "isolation.py",
     'def run(context: str) -> None:\n    print("ISOLATION")\n',
@@ -533,6 +535,25 @@ test("restoration preserves UNKNOWN quarantine and permits only independently pi
     "queued",
     "a version change does not evade the DataFile conflict",
   );
+});
+
+test("CR2 capability: restored quarantine cannot authorize SDK without current private ports",async t=>{
+  assert(quarantinedSnapshot);
+  const dir=fs.mkdtempSync("/tmp/opencode/unknown-no-capability-");
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.cpSync(path.join(evidenceRoot,"queue"),dir,{recursive:true});
+  let constructed=0;
+  const {serve}=require(path.join(root,"dist/src/queue-broker"));
+  await assert.rejects(serve(isolationConfig,{
+    dir,confirmOwnership:true,
+    createBackend(){constructed++;throw Error("restored quarantine must not activate a fallback transport");},
+  }),{code:"PHYSICAL_CAPABILITY_REQUIRED"});
+  assert.equal(constructed,0,"no guard, initialization, read or product SDK without current capability");
+  const {QueueState}=require(path.join(root,"dist/src/queue-state"));
+  const readonly=new QueueState(dir,{recover:false});
+  const original=Object.values(readonly.data.jobs).find(job=>job.requestId==="unknown-original-a");
+  assert.equal(original.state,"needs_reconciliation");
+  assert(readonly.data.quarantined[original.id],"read-only historical inspection remains available");
 });
 
 test("physical generation provisioning failure releases only its uninitialized owner and sends zero SDK", async (t) => {

@@ -865,6 +865,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       : measuredStateOptions,
   );
+  function assertPhysicalIsolationAuthority() {
+    if (!physicalIsolation && Object.keys(state.data.quarantined ?? {}).length)
+      fail("PHYSICAL_CAPABILITY_REQUIRED",
+        "Persisted quarantine permits only historical inspection without current physical capabilities");
+  }
+  try {
+    assertPhysicalIsolationAuthority();
+  } catch (error) {
+    lifetime.abortBeforeInitialize();
+    throw error;
+  }
   const metadataSuccessorAuthority = successorRuntime?.authority ??
     (state.epoch?.succession
       ? (runtimeRequire("./queue-epoch-lineage",
@@ -1475,19 +1486,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (!candidate) fail("PHYSICAL_BINDING_MISSING", "System read has no exact physical binding",
         );
       const physical = pinPhysicalTurn(candidate, request);
+      const currentJob = jobId ? state.data.jobs[jobId] : undefined;
+      const catalogIndex = currentJob && state.data.active === currentJob.id &&
+        ["running","sending"].includes(currentJob.state)
+        ? (currentJob.physicalDispatchCount ?? currentJob.physicalDispatches?.length ?? 0) + 1
+        : undefined;
       durable(path.join(privateDirectory(path.join(dir, "physical-reads")), hash(physicalRequestId) + ".json",
         ), {
         version: 1, purpose, request, physicalTurn: physical,
+        ...(catalogIndex === undefined ? {} : {catalogIndex}),
         receiptPath: probe.receiptPath ?? null,
       }, true,
       );
-      const currentJob = jobId ? state.data.jobs[jobId] : undefined;
-      if (
-        currentJob &&
-        state.data.active === currentJob.id &&
-        ["running", "sending"].includes(currentJob.state)
-      )
-        registerPhysicalDispatch(currentJob, request, physical);
+      if (currentJob && catalogIndex !== undefined)
+        registerPhysicalDispatch(currentJob, request, physical, catalogIndex);
       return required(options.withPhysicalTurn)(physical, send);
     };
   }
@@ -1977,6 +1989,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       phaseTimings.localPhase(state.epoch?.root ?? dir, job, phase);
     },
     async checkSdkRequest(message, signal) {
+      assertPhysicalIsolationAuthority();
       const job = required(state.data.jobs[message.jobId]);
       const turn = brokerExecution.createTurnIdentity(job.id);
       const compiled = physicalIsolation && job.request.kind === "command" &&
@@ -1985,6 +1998,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           (message.args[1] && message.args[1] !== "fusion_mcp_execute") ||
           object(object(message.args[0])["object"])["script"] !== compiled.script))
         fail("PHYSICAL_SCOPE_MISMATCH", "Actual pre-wrapper source differs from the broker-compiled constrained program");
+      const envelope = compiled ? {
+        featureType:"script",object:{script:compiled.script,readOnly:compiled.readOnly},
+      } : null;
+      if (compiled && (message.args.length !== 3 ||
+          message.args[1] !== "fusion_mcp_execute" || !same(message.args[0],envelope)))
+        fail("PHYSICAL_ENVELOPE_MISMATCH",
+          "Actual call differs from the compiled CAD envelope, including featureType and readOnly");
+      const adapterArgs = compiled
+        ? [envelope,"fusion_mcp_execute",structuredClone(message.args[2])]
+        : message.args;
       const compiledScope = compiled ? {
         producer:"compiled-cad-v1", operation:compiled.operation,sourceHash:hash(compiled.script),
         buildHash:codeHash,target:compiled.target,
@@ -1998,7 +2021,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (prepare) {
         const send = await preparingJob.run({ job, turn, ...(compiledScope ? {compiledScope} : {}) }, () =>
           preparingSignal.run(signal, () =>
-            prepare.apply(client, message.args),
+            prepare.apply(client, adapterArgs),
           ),
         );
         if (phased.pending(job.id)?.message !== message)
@@ -2200,9 +2223,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     for (const key of ["doc", "docId", "docFileId", "component", "projectId"] as const)
       if (invocation[key] !== undefined) compilerContext[key] = invocation[key];
     const expected = prepareCadScript(invocation.operation, invocation.data, compilerContext);
+    const catalog = runtimeRequire("./catalog/index") as {
+      catalog: Record<string,{readOnly?: boolean}>;
+    };
     return {
       script: expected.script, operation: invocation.operation,
       target: quarantineTarget(job.request),
+      readOnly: catalog.catalog[invocation.operation]?.readOnly === true,
     };
   }
   function bindProductPhysicalTurn(grant: ProductGrant, prepared: P.PreparedCall,
@@ -2237,23 +2264,30 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Product SDK dispatch has no original physical binding",
       );
     const physical = pinPhysicalTurn(binding, request, instance);
-    registerPhysicalDispatch(job, request, physical);
+    const current = required(state.data.jobs[job.id]);
+    const catalogIndex = (current.physicalDispatchCount ?? current.physicalDispatches?.length ?? 0) + 1;
+    prepared.record["physicalCatalogIndex"] = catalogIndex;
     prepared.record.binding["physicalTurn"] = physical;
+    return {request,physical,catalogIndex};
   }
   function registerPhysicalDispatch(
     job: P.Job,
     request: P.PhysicalTurnRequest,
     physical: P.PhysicalTurnBinding,
+    catalogIndex: number,
+    dispatch?: {rpcCount:number;completedCount:number;rpcId:string},
   ) {
-    const body = { request, physical, target: quarantineTarget(job.request) };
+    const body = { request, physical, target: quarantineTarget(job.request), catalogIndex };
     const intentReference = `physical-turn-${hash(physical.turnId)}.json`;
     const file = path.join(privateDirectory(jobDir(job.id)), intentReference);
     durable(file, body, true);
-    state.recordPhysicalDispatch(job.id, {
+    const entry = {
       ...body,
       intentReference,
       intentDigest: hash(fs.readFileSync(file)),
-    });
+    };
+    if (dispatch) state.markDispatch(job.id,dispatch,entry);
+    else state.recordPhysicalDispatch(job.id,entry);
   }
   function nativeActivity(context: P.Context) {
     if (context.nativeActivityId) return;
@@ -3474,15 +3508,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           const before = state.status(context.job.id).dispatch;
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
-          bindProductPhysicalTurn(grant, prepared);
+          const physical = bindProductPhysicalTurn(grant, prepared);
           const journal = executionRecords.createRpcIntent(context.job.id, record,
           );
           context.turnRpcs.push({ record, journal });
-          state.markDispatch(context.job.id, {
+          const dispatch = {
             rpcCount: count,
             completedCount: before?.completedCount || 0,
             rpcId,
-          });
+          };
+          if (physical)
+            registerPhysicalDispatch(context.job,physical.request,physical.physical,physical.catalogIndex,dispatch);
+          else state.markDispatch(context.job.id,dispatch);
           context.dispatched = true;
           Object.assign(prepared, { journal, dispatchRemaining });
           if (context.job.kind === "rpc") {
@@ -3511,6 +3548,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       },
       send: async (prepared) => {
+        assertPhysicalIsolationAuthority();
         const startedAt = Date.now();
         debugDispatchStarted.set(prepared, startedAt);
         writeRequestTrace(context.job.request, context.job.clientId, {

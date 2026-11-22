@@ -1132,7 +1132,7 @@ export class QueueDomain {
     });
   }
 
-  markDispatch(id: string, details: QueueDetails = {}) {
+  markDispatch(id: string, details: QueueDetails = {}, physical?: QueuePhysicalDispatch) {
     const record = JSON.parse(canonical(details)) as QueueDetails;
     if (!record || Array.isArray(record) || typeof record !== "object")
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
@@ -1156,6 +1156,7 @@ export class QueueDomain {
           "INVALID_DISPATCH",
           "RPC counters must be monotonic and completedCount <= rpcCount",
         );
+      if (physical) this._appendPhysicalDispatch(job, physical);
       job.dispatch = {
         rpcState: record.rpcState ?? record.state ?? "sending",
         dispatchCount: old.dispatchCount + 1,
@@ -1213,6 +1214,17 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
+      this._appendPhysicalDispatch(job, entry);
+      return this._public(job);
+    });
+  }
+  _appendPhysicalDispatch(job: QueueJob, entry: QueuePhysicalDispatch) {
+    if (entry.catalogIndex !== undefined) {
+      const previous = job.physicalDispatchCount ?? job.physicalDispatches?.length ?? 0;
+      if (entry.catalogIndex !== previous + 1)
+        fail("PHYSICAL_BINDING_MISMATCH", "Physical catalog admission index must be monotonic");
+      job.physicalDispatchCount = entry.catalogIndex;
+    }
       if (
         !validPhysicalDispatch(job, entry) ||
         job.physicalDispatches?.some(
@@ -1224,8 +1236,6 @@ export class QueueDomain {
           "Physical intent must bind one original job and turn",
         );
       (job.physicalDispatches ??= []).push(copy(entry));
-      return this._public(job);
-    });
   }
 
   /** Release only physical ownership. This never settles or rewrites the job's

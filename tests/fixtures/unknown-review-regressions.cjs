@@ -7,6 +7,11 @@ const { createHash, randomUUID } = require("node:crypto");
 const root =
   process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE ||
   path.resolve(__dirname, "../..");
+require(
+  path.join(root, "dist/tests/runtime-test-environment"),
+).isolateRuntimeTestEnvironment(
+  fs.mkdtempSync("/tmp/opencode/unknown-review-environment-"),
+);
 const { QueueDomain } = require(
   path.join(root, "dist/packages/core/src/domain/queue"),
 );
@@ -116,10 +121,6 @@ test("CR1 incomplete physical capabilities fail before constructing a backend", 
   assert.equal(constructed, 0);
 });
 test("CR1 an unbound product cannot borrow a released preflight binding", async (t) => {
-  const home = fs.mkdtempSync("/tmp/opencode/unknown-partial-");
-  require(
-    path.join(root, "dist/tests/runtime-test-environment"),
-  ).isolateRuntimeTestEnvironment(home);
   const fixture = require("./python-admission-broker.cjs");
   const f = await fixture(t, {
     typedService: true,
@@ -384,5 +385,241 @@ test("CR4 bounded CAD scope is fenced against altered source, manifest, paramete
       0,
       variant + " must not borrow scope from its public DTO or manifest",
     );
+  }
+});
+
+test("CR2 envelope: exact compiled bytes cannot authorize a foreign feature or readOnly flag", async (t) => {
+  const f = await require("./python-admission-broker.cjs")(t, {
+    typedService: true,
+    scopedService: true,
+    scopedVariants: true,
+    bindPhysicalTurn: bindingFor,
+    withPhysicalTurn: async (_binding, send) => send(),
+    physicalTurnQuiescence: async (binding) => release(binding),
+  });
+  const client = await f.client("envelope-negative-owner");
+  const service = require(
+    path.join(root, "dist/src/dist/composition/cad-service"),
+  );
+  for (const variant of [
+    "envelope-readonly",
+    "envelope-feature",
+    "envelope-missing-readonly",
+    "envelope-extra",
+  ]) {
+    const bounded = service.fromParsedCommand({
+      kind: "cad",
+      operation: "param.apply",
+      data: {
+        parameters: [
+          { name: "envelope_width", expression: "12 mm", unit: "mm" },
+        ],
+      },
+      context: { doc: "A", docId: "A" },
+      json: true,
+    });
+    const preparations = f.toolPreparations(),
+      calls = f.calls.length;
+    const accepted = await client.submit({
+      ...bounded,
+      kind: "command",
+      requestId: variant,
+      cwd: f.home,
+      backend: "addin",
+      timeoutMs: 120000,
+    });
+    const result = await client.wait(accepted.id);
+    assert.equal(result.job.state, "failed", variant + JSON.stringify(result));
+    assert.match(result.stderr, /compiled CAD envelope/i, variant);
+    assert.equal(
+      f.toolPreparations(),
+      preparations,
+      variant + " cannot enter an adapter or guard",
+    );
+    assert.equal(
+      f.calls.length,
+      calls,
+      variant + " cannot send SDK, including a guard",
+    );
+    assert.equal(f.products(), 0);
+  }
+});
+
+test("CR2 publication: process death between original intent and catalog writes remains recoverable", async (t) => {
+  const { promisify } = require("node:util"),
+    { execFile } = require("node:child_process");
+  for (const boundary of ["before-original-rpc", "after-prepared-mirror"]) {
+    const home = fs.mkdtempSync("/tmp/opencode/unknown-publication-crash-");
+    const child = `
+      const fs=require('node:fs'),path=require('node:path');
+      const root=${JSON.stringify(root)},home=${JSON.stringify(home)},boundary=${JSON.stringify(boundary)};
+      require(path.join(root,'dist/tests/runtime-test-environment')).isolateRuntimeTestEnvironment(home);
+      const bind=${bindingFor.toString()};
+      (async()=>{
+        const f=await require(${JSON.stringify(path.join(__dirname, "python-admission-broker.cjs"))})({after(){}},{
+          typedService:true,scopedService:true,fixtureHome:home,bindPhysicalTurn:bind,
+          withPhysicalTurn:async(_binding,send)=>send(),
+          physicalTurnQuiescence:async binding=>({state:'unknown',binding}),
+        });
+        const a=await f.client('publication-owner');
+        const link=fs.linkSync;
+        fs.linkSync=function(source,destination,...args){
+          const file=String(destination);
+          const before=boundary==='before-original-rpc'&&/\\/jobs\\/[^/]+\\/rpc-[^/]+\\.json$/.test(file);
+          const after=boundary==='after-prepared-mirror'&&/\\/jobs\\/[^/]+\\/physical-turn-[a-f0-9]+\\.json$/.test(file)&&
+            JSON.parse(fs.readFileSync(source)).request?.kind==='product';
+          if(after)Reflect.apply(link,fs,[source,destination,...args]);
+          if(before||after){
+            fs.writeFileSync(path.join(home,'publication-marker.json'),JSON.stringify({
+              dir:f.dir,id:path.basename(path.dirname(file)),products:f.products(),boundary,file,
+            }));
+            process.exit(0);
+          }
+          return Reflect.apply(link,fs,[source,destination,...args]);
+        };
+        const bounded=require(path.join(root,'dist/src/dist/composition/cad-service')).fromParsedCommand({
+          kind:'cad',operation:'param.apply',data:{parameters:[{name:'publication_width',expression:'12 mm',unit:'mm'}]},
+          context:{doc:'A',docId:'A'},json:true});
+        await a.submit({...bounded,kind:'command',requestId:'publication-original-a',cwd:home,backend:'addin',timeoutMs:120000});
+        await new Promise(()=>{});
+      })().catch(error=>{console.error(error);process.exit(1)});
+    `;
+    await promisify(execFile)(process.execPath, ["-e", child], {
+      cwd: root,
+      timeout: 120000,
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+    });
+    const marker = JSON.parse(
+      fs.readFileSync(path.join(home, "publication-marker.json")),
+    );
+    assert.equal(
+      marker.products,
+      0,
+      boundary + " must kill before the original SDK send",
+    );
+    const snapshotPath = path.join(marker.dir, "queue-state.json");
+    const original = JSON.parse(fs.readFileSync(snapshotPath)).jobs[marker.id];
+    const immutable = new Map();
+    for (const [directory, filter] of [
+      [
+        path.join(marker.dir, "jobs", marker.id),
+        (name) =>
+          /^(rpc-[a-f0-9-]{36}|physical-turn-[a-f0-9]{64})\.json$/.test(name),
+      ],
+      [
+        path.join(marker.dir, "physical-reads"),
+        (name) => name.endsWith(".json"),
+      ],
+    ])
+      for (const name of fs.readdirSync(directory).filter(filter)) {
+        const file = path.join(directory, name);
+        immutable.set(file, hash(fs.readFileSync(file)));
+      }
+    const { QueueState } = require(path.join(root, "dist/src/queue-state"));
+    assert.doesNotThrow(
+      () => new QueueState(marker.dir, { recover: false }),
+      boundary + " must not turn a never-sent intent into corrupt global state",
+    );
+    require(path.join(root, "dist/src/queue-broker")).reclaim(marker.dir);
+    const cleanups = [];
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      for (const action of cleanups) await action();
+    };
+    t.after(cleanup);
+    const fixtureHooks = {
+      after(action) {
+        cleanups.push(action);
+      },
+      diagnostic(message) {
+        t.diagnostic(message);
+      },
+    };
+    const f = await require("./python-admission-broker.cjs")(fixtureHooks, {
+      typedService: true,
+      scopedService: true,
+      fixtureHome: home,
+      initialDocumentIdentity: "B",
+      bindPhysicalTurn: (request) => ({
+        ...bindingFor(request),
+        grantDigest: "b".repeat(64),
+      }),
+      withPhysicalTurn: async (_binding, send) => send(),
+      physicalTurnQuiescence: async (binding) => {
+        assert(
+          original.physicalDispatches.some(
+            (entry) => entry.physical.turnId === binding.turnId,
+          ),
+          "a prepared never-dispatched product cannot acquire a fabricated native release proof",
+        );
+        return release(binding);
+      },
+    });
+    const b = await f.client("publication-independent-owner");
+    const bounded = require(
+      path.join(root, "dist/src/dist/composition/cad-service"),
+    ).fromParsedCommand({
+      kind: "cad",
+      operation: "param.apply",
+      data: {
+        parameters: [
+          { name: "publication_width", expression: "12 mm", unit: "mm" },
+        ],
+      },
+      context: { doc: "B", docId: "B" },
+      json: true,
+    });
+    const accepted = await b.submit({
+      ...bounded,
+      kind: "command",
+      requestId: "publication-independent-b",
+      cwd: home,
+      backend: "addin",
+      timeoutMs: 120000,
+    });
+    const abort = new AbortController(),
+      timeout = setTimeout(() => abort.abort(), 120000);
+    try {
+      assert.equal(
+        (await b.wait(accepted.id, { signal: abort.signal })).job.state,
+        "succeeded",
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+    const after = JSON.parse(fs.readFileSync(snapshotPath));
+    assert.equal(after.jobs[marker.id].state, "needs_reconciliation");
+    assert.equal(after.jobs[marker.id].hash, original.hash);
+    assert.equal(after.jobs[marker.id].dispatch?.rpcCount ?? 0, 0);
+    assert.equal(f.products(), 1, "only new B may execute a product");
+    for (const [file, digest] of immutable)
+      assert.equal(
+        hash(fs.readFileSync(file)),
+        digest,
+        "restart must preserve original intent bytes: " + file,
+      );
+    const retained = fs.mkdtempSync(
+      "/tmp/opencode/unknown-publication-evidence-",
+    );
+    fs.writeFileSync(
+      path.join(retained, "queue-state.json"),
+      JSON.stringify(after),
+    );
+    fs.cpSync(path.join(marker.dir, "jobs"), path.join(retained, "jobs"), {
+      recursive: true,
+    });
+    fs.cpSync(
+      path.join(marker.dir, "physical-reads"),
+      path.join(retained, "physical-reads"),
+      { recursive: true },
+    );
+    t.diagnostic(
+      boundary +
+        ": original UNKNOWN and all original files retained at " +
+        retained,
+    );
+    await cleanup();
   }
 });

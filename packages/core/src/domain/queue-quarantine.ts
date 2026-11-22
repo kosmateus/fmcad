@@ -127,6 +127,8 @@ export function validPhysicalDispatch(
 ): boolean {
   if (
     !entry ||
+    (entry.catalogIndex !== undefined &&
+      (!Number.isSafeInteger(entry.catalogIndex) || entry.catalogIndex < 1)) ||
     !record(entry.request) ||
     !physicalBinding(entry.physical) ||
     entry.request.jobId !== job.id ||
@@ -211,6 +213,10 @@ export function validQuarantine(
     record.binding["clientId"] === job.clientId &&
     Array.isArray(catalog) &&
     catalog.length > 0 &&
+    (job.physicalDispatchCount === undefined
+      ? catalog.every(entry=>entry.catalogIndex === undefined)
+      : job.physicalDispatchCount === catalog.length &&
+        catalog.every((entry,index)=>entry.catalogIndex === undefined || entry.catalogIndex === index+1)) &&
     catalog.every((entry) => validPhysicalDispatch(job, entry)) &&
     new Set(catalog.map((entry) => entry.physical.turnId)).size ===
       catalog.length &&

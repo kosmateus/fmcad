@@ -116,6 +116,7 @@ export interface QueueJob {
   workflowObservation?: AtomicWorkflowObservation | undefined;
   /** Broker-authored complete catalog, registered durably before SDK dispatch. */
   physicalDispatches?: QueuePhysicalDispatch[];
+  physicalDispatchCount?: number;
 }
 export interface QueueLease {
   id: string;
@@ -152,6 +153,7 @@ export interface QueuePhysicalBinding {
   target: string;
 }
 export interface QueuePhysicalDispatch {
+  catalogIndex?: number;
   request: {
     kind?: "product" | "system-read";
     brokerNonce?: string;

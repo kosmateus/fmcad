@@ -158,6 +158,7 @@ export interface RemoteReceipt extends Binding {
   instance: Instance;
 }
 export interface RecordEvidence {
+  physicalCatalogIndex?: number;
   binding: Binding;
   instance: Instance;
   receipt?: string;

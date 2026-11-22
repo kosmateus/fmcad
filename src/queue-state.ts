@@ -12,6 +12,8 @@ const { QueueDomain, terminal, validateQueueOptions } = load(
 const { createSnapshotStore, readBytes, MAX_JSON_RECORD_BYTES } = load(
   "./dist/node-adapters/persistence/records",
 ) as typeof import("../packages/node-adapters/src/persistence/records");
+const { validPhysicalDispatch } = load("./dist/core/domain/queue-quarantine") as
+  typeof import("../packages/core/src/domain/queue-quarantine");
 export { terminal };
 export interface QueueStateOptions extends Partial<
   Omit<QueueDomainOptions, "snapshot" | "newId" | "hash" | "commit">
@@ -24,40 +26,45 @@ export interface QueueStateOptions extends Partial<
 function assertPhysicalCatalog(snapshot: QueueSnapshot, directory: string) {
   try {
     for (const job of Object.values(snapshot.jobs)) {
-      const entries = job.physicalDispatches;
-      if (!entries?.length) {
-        if (snapshot.quarantined?.[job.id])
-          throw Error("Missing physical catalog");
-        continue;
-      }
+      const entries = job.physicalDispatches ?? [];
+      if (job.physicalDispatchCount === undefined &&
+          entries.some(entry=>entry.catalogIndex !== undefined))
+        throw Error("Indexed physical catalog lost its admission counter");
+      if (job.physicalDispatchCount !== undefined &&
+          (!Number.isSafeInteger(job.physicalDispatchCount) ||
+           job.physicalDispatchCount !== entries.length))
+        throw Error("Physical catalog lost an admitted turn");
+      if (!entries.length && snapshot.quarantined?.[job.id])
+        throw Error("Missing physical catalog");
       if (path.basename(job.id) !== job.id)
         throw Error("Foreign physical catalog");
       const root = path.join(directory, "jobs", job.id);
-      const files = fs
-        .readdirSync(root)
+      const files = (fs.existsSync(root) ? fs.readdirSync(root) : [])
         .filter((name) => /^physical-turn-[a-f0-9]{64}\.json$/.test(name));
-      if (
-        files.length !== entries.length ||
-        files.some(
-          (name) => !entries.some((entry) => entry.intentReference === name),
-        )
-      )
+      if (entries.some(entry => !files.includes(entry.intentReference)))
         throw Error("Physical catalog is incomplete");
-      for (const entry of entries) {
-        if (!/^physical-turn-[a-f0-9]{64}\.json$/.test(entry.intentReference))
-          throw Error("Foreign intent path");
+      for (const name of files) {
+        const file = path.join(root,name);
+        const bytes = readBytes(file, MAX_JSON_RECORD_BYTES, fs, file);
+        const body = JSON.parse(bytes.toString("utf8"));
+        const digest = createHash("sha256").update(bytes).digest("hex");
+        const committed = entries.find(entry=>entry.intentReference===name);
+        const entry = committed ?? {...body,intentReference:name,intentDigest:digest};
+        if (!validPhysicalDispatch(job,entry))
+          throw Error("Invalid original physical intent");
+        if (!committed && (!Number.isSafeInteger(entry.catalogIndex) ||
+            entry.catalogIndex <= (job.physicalDispatchCount ?? entries.length)))
+          throw Error("Physical intent lacks proof of uncommitted preparation");
         if (typeof entry.physical?.turnId !== "string" ||
             !/^[A-Za-z0-9_-]{1,256}$/.test(entry.physical.turnId))
           throw Error("Foreign original RPC path");
-        const file = path.join(root, entry.intentReference);
-        const bytes = readBytes(file, MAX_JSON_RECORD_BYTES, fs, file);
         if (
-          createHash("sha256").update(bytes).digest("hex") !==
-            entry.intentDigest ||
-          !isDeepStrictEqual(JSON.parse(bytes.toString("utf8")), {
+          digest !== entry.intentDigest ||
+          !isDeepStrictEqual(body, {
             request: entry.request,
             physical: entry.physical,
             target: entry.target,
+            ...(entry.catalogIndex === undefined ? {} : {catalogIndex:entry.catalogIndex}),
           })
         )
           throw Error("Original physical intent changed");
@@ -72,6 +79,15 @@ function assertPhysicalCatalog(snapshot: QueueSnapshot, directory: string) {
             !isDeepStrictEqual(original.binding.physicalTurn, entry.physical)
           )
             throw Error("Physical turn differs from original RPC");
+          if (entry.catalogIndex !== undefined &&
+              original.physicalCatalogIndex !== entry.catalogIndex)
+            throw Error("Original RPC catalog admission index changed");
+          // Catalog admission and rpcCount are one atomic snapshot commit.
+          // A prepared original with a later index never crossed that boundary
+          // and therefore could not reach send. Do not invent a native proof.
+          if (!committed && (!Number.isSafeInteger(original.dispatchIndex) ||
+              original.dispatchIndex <= (job.dispatch?.rpcCount ?? 0)))
+            throw Error("Dispatched physical intent is missing from its catalog");
           if (job.request.kind === "command" && entry.target) {
             const scope = original.binding.documentScope;
             if (scope?.producer !== "compiled-cad-v1" ||
@@ -89,7 +105,8 @@ function assertPhysicalCatalog(snapshot: QueueSnapshot, directory: string) {
           const original = JSON.parse(readBytes(file,MAX_JSON_RECORD_BYTES,fs,file).toString("utf8"));
           if (original?.version !== 1 ||
               !isDeepStrictEqual(original.request,entry.request) ||
-              !isDeepStrictEqual(original.physicalTurn,entry.physical))
+              !isDeepStrictEqual(original.physicalTurn,entry.physical) ||
+              original.catalogIndex !== entry.catalogIndex)
             throw Error("Physical read differs from its original intent");
         }
       }
