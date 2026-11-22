@@ -8,6 +8,8 @@
     "sourceMap": false
   },
   "include": [
+    "tests/physical-generation-transport.test.ts",
+    "tests/physical-generation-grant.test.ts",
     "tests/addin-admission-client.test.ts",
     "tests/python-source-codec.test.ts",
     "tests/python-public-source-selection.test.ts",

@@ -40,8 +40,20 @@ function post(
   sessionId: string | undefined,
   options: RequestOptions,
 ) {
+  const authorizedHeaders = dependencies.authorizePhysicalRequest?.(server.url);
+  const privateNames = new Set(
+    Object.keys(authorizedHeaders ?? {}).map((name) => name.toLowerCase()),
+  );
   const requestServer = {
     ...server,
+    headers: {
+      ...Object.fromEntries(
+        Object.entries(server.headers ?? {}).filter(
+          ([name]) => !privateNames.has(name.toLowerCase()),
+        ),
+      ),
+      ...authorizedHeaders,
+    },
     timeoutMs: dependencies.requestTimeout(server),
   };
   const request = { ...options, sessionId };

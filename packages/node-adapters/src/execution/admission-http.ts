@@ -21,7 +21,14 @@ const maxBuffer = 16 * 1024 * 1024;
 /** Selection and validation are local and happen once, before any intent. */
 export function createAdmissionRequest(
   config: AdmissionTransport = {},
-  dependencies: { spawn?: Spawn; fetch?: typeof fetch } = {},
+  dependencies: {
+    spawn?: Spawn;
+    fetch?: typeof fetch;
+    /** Private broker capability; not part of the admission envelope. */
+    authorizePhysicalRequest?: (
+      endpoint: string,
+    ) => Readonly<Record<string, string>>;
+  } = {},
 ): AdmissionRequest {
   const transport = config.transport ?? "node";
   if (transport !== "node" && transport !== "windows-curl")
@@ -39,6 +46,7 @@ export function createAdmissionRequest(
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
             "Content-Length": String(body.byteLength),
+            ...dependencies.authorizePhysicalRequest?.(endpoint),
           },
           body,
           timeoutMs,
@@ -51,6 +59,7 @@ export function createAdmissionRequest(
   }
   const fetchOnce = dependencies.fetch ?? globalThis.fetch;
   return async ({ endpoint, token, body, timeoutMs }) => {
+    const physicalHeaders = dependencies.authorizePhysicalRequest?.(endpoint);
     // An explicit plain Agent bypasses both env proxy selection and the global
     // dispatcher. Its lifetime is one operation, including errors and aborts.
     const dispatcher = new Agent({ connections: 1, pipelining: 1 });
@@ -60,6 +69,7 @@ export function createAdmissionRequest(
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
+        ...physicalHeaders,
       },
       body: Buffer.from(body),
       signal: AbortSignal.timeout(timeoutMs),
