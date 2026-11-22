@@ -7,8 +7,10 @@ import type {
   QueueDetails,
   SequenceMode,
   AtomicWorkflowObservation,
+  QueueQuarantine,
 } from "./queue-model";
 import { initialQueueSnapshot } from "./queue-model";
+import { conflictsWithQuarantine, validQuarantine } from "./queue-quarantine";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "expired"]);
 const STATES = new Set([
@@ -254,8 +256,15 @@ export class QueueDomain {
       if (job.workflowObservation && !workflowObservationFor(d, job.id))
         fail("CORRUPT_STATE", "Scoped workflow observation marker does not match its blocked owner job");
     }
+    if (d.quarantined !== undefined &&
+        (!plain(d.quarantined) || Object.entries(d.quarantined).some(
+          ([id, record]) => !Object.hasOwn(d.jobs, id) || !plain(record) || record.jobId !== id ||
+            !validQuarantine(d.jobs[id]!, record),
+        )))
+      fail("CORRUPT_STATE", "Invalid UNKNOWN dispatch quarantine");
     const uncertain = jobs.filter((j) =>
-      ["running", "sending", "needs_reconciliation"].includes(j.state),
+      ["running", "sending", "needs_reconciliation"].includes(j.state) &&
+      !Object.hasOwn(d.quarantined ?? {}, j.id),
     );
     const activeObservation = d.active ? workflowObservationFor(d, d.active) : null;
     let recoveryChanged = false;
@@ -872,7 +881,7 @@ export class QueueDomain {
           !(job.sequenceMode === "automatic"
             ? this._automaticMatches(d, job, time)
             : this._matches(d, r, time))) ||
-        (canGrant &&
+        (canGrant && !conflictsWithQuarantine(d, job.request) &&
           (!d.lease ||
             (r.sequence &&
               r.sequence.action !== "begin" &&
@@ -891,6 +900,7 @@ export class QueueDomain {
       const eligible = Object.values(d.jobs).filter(
         (j) =>
           j.state === "queued" &&
+          !conflictsWithQuarantine(d, j.request) &&
           (!d.lease ||
             (j.request.sequence &&
               j.request.sequence.action !== "begin" &&
@@ -1181,6 +1191,22 @@ export class QueueDomain {
     return this.finish(id, {
       state: "needs_reconciliation",
       reason: JSON.parse(canonical(reason)),
+    });
+  }
+
+  /** Release only physical ownership. This never settles or rewrites the job's
+   * UNKNOWN outcome, original request, hash, dispatch or receipt. */
+  quarantineUnknown(id: string, record: QueueQuarantine) {
+    return this._commit((d) => {
+      const job = this._job(d, id);
+      if (d.active !== id || d.blocked?.id !== id ||
+          d.localUnknown || !validQuarantine(job, record))
+        fail("RECONCILIATION_REQUIRED", "Quarantine must bind the exact blocked UNKNOWN");
+      (d.quarantined ??= {})[id] = copy(record);
+      d.active = null;
+      d.blocked = null;
+      if (d.lease?.clientId === job.clientId) d.lease = null;
+      return this._public(job);
     });
   }
 

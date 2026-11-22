@@ -85,7 +85,11 @@ export interface RecoveryAuditPorts {
   begin(): void;
   end(): void;
   admit<T>(send: () => Promise<T>): Promise<T>;
-  post(payload: AuditRpc, sessionId?: string): Promise<AuditResponse>;
+  post(payload: AuditRpc, sessionId?: string, physicalContext?: {
+    binding: Record<string, unknown>;
+    documentSelector: {creationId: string} | undefined;
+    receiptPath: string;
+  }): Promise<AuditResponse>;
   check(
     payload: AuditRpc,
     artifact: PreparedPythonArtifact,
@@ -547,7 +551,16 @@ export function createRecoveryAudit(
           );
           scope.sent = true;
         },
-        send: (value) => p.post(value.outgoing, sessionId),
+        send: (value) => {
+          const resolved = record(prepared.identity) && record(prepared.identity["resolvedIdentity"])
+            ? prepared.identity["resolvedIdentity"] : null;
+          return p.post(value.outgoing, sessionId, {
+            binding: value.record.binding,
+            receiptPath: value.record.receipt,
+            documentSelector: resolved && typeof resolved["creationId"] === "string"
+              ? {creationId: resolved["creationId"]} : undefined,
+          });
+        },
         settle(value, response) {
           // Observed transport bytes are evidence, not a terminal SDK receipt.
           // Keep them even when matching/remote validation subsequently fails.

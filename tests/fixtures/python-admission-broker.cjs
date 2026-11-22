@@ -79,7 +79,7 @@ const {resolveFmcadConfiguration} = load('dist/core');
 /** Real checker, transport preparation, broker IPC and worker processes. The
  * physical port records requests and emits synthetic receipts; it never runs
  * Python, contacts Fusion or makes a model/geometry correctness claim. */
-module.exports = async function fixture(t, {typedService = false, slowPeerChecker = false} = {}) {
+module.exports = async function fixture(t, {typedService = false, slowPeerChecker = false, physicalTurnQuiescence, bindPhysicalTurn, withPhysicalTurn, observeProtocol: initialObserveProtocol, unknownLocalOutcome = false} = {}) {
   const home=fs.mkdtempSync('/tmp/opencode/admission-ports-');
   const oldState=process.env.XDG_STATE_HOME, oldCwd=process.cwd();
   process.env.XDG_STATE_HOME=home;process.chdir(home);
@@ -91,7 +91,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
   const calls=[],clients=[];
-  let active=0,maximum=0,products=0,fingerprint='A-1',observe=async()=>{},observeProduct=async()=>{},observeProtocol=async()=>{};
+  let active=0,maximum=0,products=0,fingerprint='A-1',documentIdentity='A',observe=async()=>{},observeProduct=async()=>{},observeProtocol=initialObserveProtocol||(async()=>{});
   const physical=createBrokerTransport(cfg,{version:'test',requestTimeout:s=>s.timeoutMs,bridgeSource:()=>{throw Error('No add-in bridge');}});
   physical._post=async payload=>{
     calls.push(payload);active++;maximum=Math.max(maximum,active);
@@ -104,7 +104,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
       let text='{}';
       if(script) {
         const observation={...instance,
-          documentState:{status:'complete',fingerprint,state:{identity:{creationId:'A'},references:[]}}};
+          documentState:{status:'complete',fingerprint,state:{identity:{creationId:documentIdentity},references:[]}}};
         const receipts=nativeReceipts(script,home,observation);
         const probe=receipts.some(receipt=>receipt.value.probeObservation);
         if(!probe) {products++;await observeProduct(script);}
@@ -123,9 +123,10 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     const {preparePythonArtifact,pythonArtifactManifest}=require(${JSON.stringify(path.join(packageRoot,'dist/src/python'))});
     require(${JSON.stringify(path.join(packageRoot,'dist/src/queue-worker'))}).run(process.argv[2],{async execute(request,backend,onOutcome){
       const filename=request.argv[1];
-      const artifact=preparePythonArtifact([{id:'fixture',filename,source:fs.readFileSync(filename,'utf8'),role:'user'}]);
+      const source=fs.readFileSync(filename,'utf8');
+      const artifact=preparePythonArtifact([{id:'fixture',filename,source,role:'user'}]);
       const result=await backend.callTool({featureType:'script',object:{script:artifact.script,readOnly:true}},'fusion_mcp_execute',pythonArtifactManifest(artifact));
-      onOutcome({fixture:true});process.stdout.write(result.text+'\\n');return result.failed?1:0;
+      onOutcome(${JSON.stringify(unknownLocalOutcome)}&&source.includes('LOCAL_UNKNOWN')?{outcome:'unknown'}:{fixture:true});process.stdout.write(result.text+'\\n');return result.failed?1:0;
     }}).then(code=>{process.exitCode=code},error=>{process.stderr.write(error.message+'\\n');process.exitCode=1});
   `);
   let broker;
@@ -145,6 +146,9 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     fs.rmSync(home,{recursive:true,force:true});
   });
   broker=await serve(cfg,{dir,confirmOwnership:true,pollMs:5,createBackend:()=>physical,
+    ...(physicalTurnQuiescence?{physicalTurnQuiescence}:{}),
+    ...(bindPhysicalTurn?{bindPhysicalTurn}:{}),
+    ...(withPhysicalTurn?{withPhysicalTurn}:{}),
     // This physical fixture writes receipts locally without executing Fusion.
     nativePath:value=>value,
     testCheckPrepared:prepared=>observe(prepared),
@@ -158,6 +162,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     },
     resumePeerChecker,
     fingerprint(value){fingerprint=value;},observe(value){observe=value;},
+    documentIdentity(value){documentIdentity=value;},
     observeProduct(value){observeProduct=value;},
     observeProtocol(value){observeProtocol=value;},
     script(name,source){const file=path.join(home,name);fs.writeFileSync(file,source);return file;},

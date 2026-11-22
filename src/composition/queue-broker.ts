@@ -12,6 +12,7 @@ import type { BrokerGrant } from "../../packages/core/src/application/broker-ses
 import {
   addinMetadataSelector,
   createBrokerLane,
+  pinPhysicalTurn,
   isAddinMetadata,
   matchMetadataEvidence,
   matchRetainedMetadataEvidence,
@@ -517,6 +518,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     cfg.backend,
     createAddinAdmission,
     { transport: cfg.transport, curlPath: admissionCurlPath },
+    options.authorizePhysicalRequest,
   );
   if (!options.createBackend)
     assertPlatformCapability(detectPlatform(), "fusion");
@@ -804,6 +806,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
   });
   const { owner: marker, lock, close } = lifetime;
+  try {
+    await options.preparePhysicalGeneration?.({
+      directory: dir, owner: marker, buildHash: codeHash, configHash,
+    });
+  } catch (error) {
+    lifetime.abortBeforeInitialize();
+    throw error;
+  }
   const { successorRuntime, migrationSnapshotHash } = startupClaims;
   const executionRecords = createBrokerRecords(dir);
   const currentAuditScopeFile = path.join(
@@ -975,6 +985,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           version: load("../package.json").version,
           requestTimeout: load("./request-timeout").requestTimeout,
           bridgeSource: load("./addin-bridge").addinBridgeSource,
+          ...(options.authorizePhysicalRequest
+            ? { authorizePhysicalRequest: options.authorizePhysicalRequest } : {}),
         },
       );
     });
@@ -1189,6 +1201,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
   type ProductGrant = BrokerGrant<P.LaneContext>;
+  type BoundPhysicalTurn = {
+    physical: P.PhysicalTurnBinding;
+    request: P.PhysicalTurnRequest;
+    target: P.IsolationTarget | null;
+  };
+  const physicalBindings = new Map<string, Map<string, BoundPhysicalTurn>>();
+  let quiescencePending = false;
+  let nextQuiescenceCheck = 0;
   const { createBrokerSession } = runtimeRequire(
     "./dist/core/application/broker-session",
   ) as typeof import("../../packages/core/src/application/broker-session");
@@ -1211,6 +1231,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     settleTurn(grant, () => {
       state.finish(grant.jobId, details);
     });
+    physicalBindings.delete(grant.jobId);
   }
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
   const probeSendScope = new AsyncLocalStorage<{
@@ -1399,9 +1420,47 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     typeof client.withRequest === "function"
       ? client.withRequest(settings, action)
       : action();
+  function systemReadTurn(probe: P.ProbeOptions, purpose: string) {
+    let consumed = false;
+    const physicalRequestId = typeof probe.binding?.rpcId === "string"
+      ? probe.binding.rpcId : randomUUID();
+    const selector = probe.documentSelector ?? {metadataOnly: true as const};
+    const jobId = typeof probe.binding?.jobId === "string" ? probe.binding.jobId : undefined;
+    const job = jobId ? state.data.jobs[jobId] : undefined;
+    const request: P.PhysicalTurnRequest = Object.freeze({
+      kind: "system-read", brokerNonce: marker.nonce, jobId: jobId ?? "system:" + marker.nonce,
+      requestId: physicalRequestId, clientId: "broker:" + marker.nonce,
+      requestHash: hash(canonical({purpose, physicalRequestId, selector, buildHash: codeHash})),
+      grantGeneration: lane.snapshot().generation,
+      physicalRequestId, documentSelector: Object.freeze({...selector}),
+    });
+    return async <T>(send: () => Promise<T>): Promise<T> => {
+      if (!options.bindPhysicalTurn || !options.withPhysicalTurn) return send();
+      if (consumed) fail("PHYSICAL_BINDING_REUSED", "A system read may be dispatched only once");
+      consumed = true;
+      const candidate = options.bindPhysicalTurn(request);
+      if (!candidate) fail("PHYSICAL_BINDING_MISSING", "System read has no exact physical binding");
+      const physical = pinPhysicalTurn(candidate, request);
+      durable(path.join(privateDirectory(path.join(dir, "physical-reads")), hash(physicalRequestId) + ".json"), {
+        version: 1, purpose, request, physicalTurn: physical,
+        receiptPath: probe.receiptPath ?? null,
+      }, true);
+      if (job) {
+        const turns = physicalBindings.get(job.id) ?? new Map<string, BoundPhysicalTurn>();
+        if (turns.has(physicalRequestId)) fail("PHYSICAL_BINDING_REUSED", "System read identity was already bound");
+        const target: P.IsolationTarget = {};
+        if (selector.creationId) target.creationId = selector.creationId;
+        if (selector.fileId) target.fileId = selector.fileId;
+        turns.set(physicalRequestId, {physical, request, target: Object.keys(target).length ? target : null});
+        physicalBindings.set(job.id, turns);
+      }
+      return options.withPhysicalTurn(physical, send);
+    };
+  }
   // Transitional probe orchestration still adjusts its client timeout. Give it
   // invocation-local settings, never the immutable physical adapter config.
   const instanceProbe = (options: P.ProbeOptions) => {
+    const read = systemReadTurn(options, "instance-probe");
     const server = { timeoutMs: client.server.timeoutMs };
     const port: {
       server: { timeoutMs: number };
@@ -1413,7 +1472,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         withRequest({ timeoutMs: server.timeoutMs }, () => {
           // Without a prepared wire call, entry to the injected tool port is
           // the last boundary where the broker can prove the probe was unsent.
-          return sendProbe(() => client.callTool(...args));
+          return read(() => sendProbe(() => client.callTool(...args)));
         }),
     };
     if (client.prepareCallTool)
@@ -1427,7 +1486,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 send.dispatchBoundary !== "broker-post"
               )
                 send.fence();
-              return sendProbe(send, send.dispatchBoundary);
+               return read(() => sendProbe(send, send.dispatchBoundary));
             }),
           { fence: () => send.fence() },
         );
@@ -1467,6 +1526,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           fail("WORKER_CLOSED", "Local worker closed during preparation");
       },
       prepare(binding, receiptPath, diagnosticPath) {
+        const read = systemReadTurn({
+          binding, receiptPath, documentSelector: selector,
+        }, "job-flight");
         const server = { timeoutMs: Math.min(client.server.timeoutMs, 15000) };
         const prepare = () =>
           preparingJob.run(false, () =>
@@ -1483,7 +1545,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                       withRequest({ timeoutMs: server.timeoutMs }, () => {
                         if (send.dispatchBoundary !== "broker-post")
                           send.fence();
-                        return sendProbe(send, send.dispatchBoundary);
+                        return read(() => sendProbe(send, send.dispatchBoundary));
                       }),
                     { fence: () => send.fence() },
                   );
@@ -1961,6 +2023,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       diagnostics();
     },
     onUnknown(job, reason) {
+      if (state.data.quarantined?.[job.id]) return;
       const turnGrant = lane.currentGrant();
       if (turnGrant?.jobId === job.id && state.data.active === job.id)
         hold(turnGrant, reason);
@@ -2007,6 +2070,85 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       })
     )
       diagnostics();
+  }
+  async function quarantineReleasedTurn() {
+    const port = options.physicalTurnQuiescence;
+    const context = lane.heldContext();
+    const job = context?.job ?? (state.data.blocked ? state.data.jobs[state.data.blocked.id] : undefined);
+    if (!port || quiescencePending || Date.now() < nextQuiescenceCheck || !job || context?.executing ||
+        state.data.controlBlocked || state.data.localUnknown ||
+        state.data.blocked?.id !== job.id) return;
+    const turns = physicalBindings.get(job.id);
+    if (!turns?.size) return;
+    const originals = [...turns.values()];
+    const original = originals[0]!;
+    const request = {
+      jobId: job.id, requestId: job.requestId,
+      clientId: job.clientId, requestHash: job.hash,
+    };
+    const recoveryHold = lane.captureRecovery();
+    quiescencePending = true;
+    nextQuiescenceCheck = Date.now() + 250;
+    try {
+      const proofs = await Promise.all(originals.map(async (entry) => {
+        const proof = await port(entry.physical);
+        if (proof.state !== "released" || !same(proof.binding, entry.physical) ||
+            typeof proof.evidenceDigest !== "string" ||
+            !/^[a-f0-9]{64}$/.test(proof.evidenceDigest) ||
+            proof.physicalEvidenceReference !== "fmcad-physical-turn:sha256:" + proof.evidenceDigest)
+          return null;
+        return proof;
+      }));
+      recoveryHold.assertCurrent();
+      if (lane.heldContext() !== context || context?.executing ||
+          state.data.blocked?.id !== job.id ||
+          turns.size !== originals.length || proofs.some((proof) => !proof)) return;
+      const proof = proofs[0]!;
+      recoveryHold.settle(() => state.quarantineUnknown(request.jobId, {
+        jobId: request.jobId, requestId: request.requestId,
+        clientId: request.clientId, jobHash: request.requestHash,
+        target: original.target,
+        evidenceReference: proof.physicalEvidenceReference,
+        evidenceDigest: proof.evidenceDigest,
+        binding: { ...request, physicalTurns: proofs },
+      }));
+      physicalBindings.delete(request.jobId);
+      diagnostics();
+    } catch {
+      // No proof, stale grant, or failed durable publication never authorizes
+      // releasing ownership or rewriting the UNKNOWN result.
+    } finally {
+      quiescencePending = false;
+    }
+  }
+  function bindProductPhysicalTurn(grant: ProductGrant, prepared: P.PreparedCall) {
+    if (!options.withPhysicalTurn) return;
+    const job = grant.context.job;
+    const selector = prepared.metadataProof
+      ? addinMetadataSelector(prepared.outgoing)
+      : documentSelector(job);
+    const request: P.PhysicalTurnRequest = Object.freeze({
+      kind: "product", brokerNonce: marker.nonce,
+      jobId: job.id, requestId: job.requestId, clientId: job.clientId,
+      requestHash: job.hash, grantGeneration: grant.generation,
+      physicalRequestId: prepared.rpcId,
+      documentSelector: selector ? Object.freeze({ ...selector }) : undefined,
+    });
+    const binding = options.bindPhysicalTurn?.(request);
+    if (!binding) return;
+    const physical = pinPhysicalTurn(binding, request, instance);
+    const target: P.IsolationTarget = {};
+    if (selector && "creationId" in selector && typeof selector.creationId === "string")
+      target.creationId = selector.creationId;
+    if (selector && "fileId" in selector && typeof selector.fileId === "string")
+      target.fileId = selector.fileId;
+    const turns = physicalBindings.get(job.id) ?? new Map<string, BoundPhysicalTurn>();
+    if ([...physicalBindings.values()].some((existing) =>
+      [...existing.values()].some((entry) => entry.physical.turnId === physical.turnId)))
+      fail("PHYSICAL_BINDING_REUSED", "Physical turn identity cannot be reused");
+    turns.set(prepared.rpcId, {physical, request, target: Object.keys(target).length ? target : null});
+    physicalBindings.set(job.id, turns);
+    prepared.record.binding["physicalTurn"] = physical;
   }
   function nativeActivity(context: P.Context) {
     if (context.nativeActivityId) return;
@@ -2649,9 +2791,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         scope.rpcJournal = journal;
       },
       send(prepared) {
-        return withRequest({ timeoutMs: prepared.dispatchTimeoutMs }, () =>
-          originalPost(prepared.outgoing, sessionId),
-        );
+        const read = systemReadTurn({
+          binding: prepared.record.binding,
+          receiptPath: required(prepared.record.receipt),
+          documentSelector: {creationId: scope.prepared.identity.resolvedIdentity.creationId},
+        }, "atomic-holder-status");
+        return read(() => withRequest({ timeoutMs: prepared.dispatchTimeoutMs }, () =>
+          originalPost(prepared.outgoing, sessionId)));
       },
       settle(prepared, response: P.Response) {
         scope.assertGrant();
@@ -3206,6 +3352,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           const before = state.status(context.job.id).dispatch;
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
+          bindProductPhysicalTurn(grant, prepared);
           const journal = executionRecords.createRpcIntent(context.job.id, record);
           context.turnRpcs.push({ record, journal });
           state.markDispatch(context.job.id, {
@@ -3259,7 +3406,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           if (prepared.metadataProof)
             assertFrozenMetadataObservation(context.job.request, prepared.metadataProof.wire,
               required(ready?.kind === "owned" ? ready.metadataObservation : undefined));
-          const response = prepared.metadataProof
+          const sendPhysical = async () => prepared.metadataProof
             ? await postAddinAdmission(
                 required(admission).scope,
                 prepared.metadataProof.wire,
@@ -3269,7 +3416,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             : await withRequest(
                 { timeoutMs: required(prepared.dispatchRemaining) },
                 () => originalPost(prepared.outgoing, sessionId, requestOptions),
-              );
+               );
+          const bound = physicalBindings.get(context.job.id)?.get(prepared.rpcId)?.physical;
+          const response = bound && options.withPhysicalTurn
+            ? await options.withPhysicalTurn(bound, sendPhysical)
+            : await sendPhysical();
           if (prepared.metadataProof) receivedAdmission = response;
           writeRequestTrace(context.job.request, context.job.clientId, {
             stage: "sdk-dispatch",
@@ -4145,8 +4296,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
     admit: (send) => gate.administrative(() => gate.run(send)),
     check: (payload, artifact) => pythonAdmission.check(payload, artifact),
-    post: (payload, sessionId) =>
-      withRequest({ timeoutMs: 30000 }, () => originalPost(payload, sessionId)),
+    post: (payload, sessionId, physicalContext) => {
+      if (["initialize", "notifications/initialized"].includes(payload.method))
+        return withRequest({ timeoutMs: 30000 }, () => originalPost(payload, sessionId));
+      if (!physicalContext)
+        fail("PHYSICAL_BINDING_MISSING", "Audit SDK dispatch requires its original read binding");
+      const read = systemReadTurn(physicalContext, "atomic-recovery-audit");
+      return read(() => withRequest({ timeoutMs: 30000 }, () => originalPost(payload, sessionId)));
+    },
     match: (response, payload) => matching(client, response, payload),
     remoteReceipt: (record) => remoteReceipt(record, false),
     sendScript: (scope, script) =>
@@ -6897,6 +7054,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ).createBrokerScheduler<P.Job>({
       maintain() {
         if (!schedulingOpen()) return;
+        void quarantineReleasedTurn();
+        for (const id of physicalBindings.keys()) {
+          const job = state.data.jobs[id];
+          if (!job || state.data.quarantined?.[id] ||
+              ["succeeded", "failed", "cancelled", "expired"].includes(job.state))
+            physicalBindings.delete(id);
+        }
         if (!canSelect()) state.next({ grant: false });
         // Only outstanding prepared plans, never retained terminal history.
         for (const id of localPlans.keys()) {

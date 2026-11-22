@@ -172,6 +172,14 @@ export function claimBrokerLifetime({
     unlinkSync(lock);
     syncDirectory(dir);
   }
+  function abortBeforeInitialize() {
+    if (phase !== "claimed" || runtime || ports)
+      failure("BROKER_LIFETIME_STATE", "Only a claim with no physical initialization may be abandoned");
+    assertOwner();
+    disposeClient();
+    releaseLock();
+    phase = "closed";
+  }
 
   async function initialize<T>(
     {
@@ -452,6 +460,7 @@ export function claimBrokerLifetime({
   }
 
   return {
+    abortBeforeInitialize,
     owner,
     lock,
     initialize,

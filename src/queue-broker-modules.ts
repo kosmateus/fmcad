@@ -97,6 +97,7 @@ export function provisionAddinMetadata(
   backend: string | undefined,
   prepare: typeof createAddinAdmission,
   transport?: AdmissionTransport,
+  authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>,
 ) {
   if (config === undefined) return null;
   if (
@@ -112,7 +113,10 @@ export function provisionAddinMetadata(
     (pin) => typeof pin !== "string" || !pin.trim(),
   ))
     refuse("INVALID_ADMISSION_PROVISIONING", "ADDIN metadata provisioning is incomplete");
-  const requestPort = createAdmissionRequest(transport);
+  const dependencies: NonNullable<Parameters<typeof createAdmissionRequest>[1]> & {
+    authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>;
+  } = authorizePhysicalRequest ? {authorizePhysicalRequest} : {};
+  const requestPort = createAdmissionRequest(transport, dependencies);
 
   return {
     bind(
@@ -264,6 +268,37 @@ export function usesRetainedMetadataEvidence(
 type Grant = BrokerGrant<P.LaneContext>;
 type Hold = BrokerHold<P.LaneContext>;
 
+/** Copy only token-free, exact physical identity fields before durable use. */
+export function pinPhysicalTurn(
+  binding: P.PhysicalTurnBinding,
+  request: P.PhysicalTurnRequest,
+  runtime?: Pick<P.Instance, "pid" | "birth" | "version">,
+): P.PhysicalTurnBinding {
+  let targetMatches = false;
+  try { targetMatches = isDeepStrictEqual(JSON.parse(binding.target), request.documentSelector ?? null); }
+  catch { /* Refuse below. */ }
+  if (!targetMatches || binding.version !== 1 || !/^[a-f0-9]{64}$/.test(binding.grantDigest) ||
+      binding.turnId !== request.physicalRequestId ||
+      !Number.isSafeInteger(binding.physicalRuntime?.pid) || binding.physicalRuntime.pid <= 0 ||
+      (runtime && (binding.physicalRuntime.pid !== runtime.pid ||
+        binding.physicalRuntime.birth !== runtime.birth || binding.physicalRuntime.version !== runtime.version)) ||
+      ![binding.generation?.instance, binding.generation?.epoch,
+        binding.physicalRuntime.birth, binding.physicalRuntime.version,
+        binding.physicalRuntime.source, binding.physicalRuntime.build].every(
+          (value) => typeof value === "string" && value.length > 0))
+    refuse("PHYSICAL_BINDING_MISMATCH", "Physical binding must identify the exact original dispatch");
+  return Object.freeze({
+    version: 1, grantDigest: binding.grantDigest,
+    generation: Object.freeze({instance: binding.generation.instance, epoch: binding.generation.epoch}),
+    physicalRuntime: Object.freeze({
+      pid: binding.physicalRuntime.pid, birth: binding.physicalRuntime.birth,
+      version: binding.physicalRuntime.version, source: binding.physicalRuntime.source,
+      build: binding.physicalRuntime.build,
+    }),
+    turnId: binding.turnId, target: binding.target,
+  });
+}
+
 /** Runtime routing for existing grant capabilities; the session still owns
  * eligibility, and the caller owns durable domain/receipt transitions. */
 export function createBrokerLane(
@@ -289,6 +324,7 @@ export function createBrokerLane(
         ? null
         : current?.context.worker ?? held?.context?.worker ?? null,
     heldWorker: () => held?.context?.worker ?? null,
+    heldContext: () => held?.context ?? null,
     heldReason() {
       const reason = ports.durableHoldReason();
       return (
@@ -415,7 +451,11 @@ export interface AuditPorts {
     payload: P.Rpc,
     artifact?: PreparedPythonArtifact,
   ): Promise<P.Certificate>;
-  post(payload: P.Rpc, sessionId?: string): Promise<P.Response>;
+  post(payload: P.Rpc, sessionId?: string, physicalContext?: {
+    binding: Record<string, unknown>;
+    documentSelector: {creationId: string} | undefined;
+    receiptPath: string;
+  }): Promise<P.Response>;
   match(response: P.Response, payload: P.Rpc): P.Reply | null;
   remoteReceipt(record: {
     receipt?: string;

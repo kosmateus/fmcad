@@ -130,6 +130,21 @@ export interface QueueBlock {
   reason: unknown;
   at: number;
 }
+/** Retained UNKNOWN outcome whose physical dispatch has been permanently revoked. */
+export interface QueueIsolationTarget {
+  creationId?: string;
+  fileId?: string;
+}
+export interface QueueQuarantine {
+  jobId: string;
+  requestId: string;
+  clientId: string;
+  jobHash: string;
+  target: QueueIsolationTarget | null;
+  evidenceReference: string;
+  evidenceDigest: string;
+  binding: Record<string, unknown>;
+}
 export interface QueueSnapshot {
   version: 1;
   paused: boolean;
@@ -140,6 +155,7 @@ export interface QueueSnapshot {
   lease: QueueLease | null;
   jobs: Record<string, QueueJob>;
   lastClient: string | null;
+  quarantined?: Record<string, QueueQuarantine>;
   localUnknown?: QueueBlock | undefined;
   controlBlocked?: unknown;
   controlGeneration?: number | undefined;

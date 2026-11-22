@@ -10,6 +10,28 @@ import { createHash, randomUUID } from "node:crypto";
 import Module, { createRequire } from "node:module";
 import { isolateRuntimeTestEnvironment } from "./runtime-test-environment.js";
 
+test("public broker isolates released UNKNOWN across processes without weakening active-turn fences", async (t) => {
+  const env = { ...process.env };
+  delete env["NODE_TEST_CONTEXT"];
+  const child = spawn(process.execPath, [
+    "--test", "--test-force-exit",
+    path.resolve(__dirname, "../../tests/fixtures/unknown-request-isolation.cjs"),
+  ], { stdio: ["ignore", "pipe", "pipe"], env });
+  let stdout = "", stderr = "";
+  child.stdout.on("data", (data: Buffer) => {stdout += data.toString();});
+  child.stderr.on("data", (data: Buffer) => {stderr += data.toString();});
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  t.diagnostic(stdout);
+  if (stderr) t.diagnostic(stderr);
+  assert.equal(code, 0, stdout + stderr);
+  assert.match(stdout, /(?:#|ℹ) tests 5(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) pass 5(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) fail 0(?:\r?\n|$)/);
+});
+
 type ClientAuth = { clientId: string; clientToken: string };
 type QueueJob = {
   id: string;
