@@ -465,157 +465,9 @@ export function matching(
   return reply;
 }
 
-function responseForCaller(
-  response: P.Response,
-  request: P.Rpc,
-  reply: P.Reply | null,
-  publicPythonValue?: Record<string, unknown>,
-) {
-  if (publicPythonValue && reply && !reply.error) {
-    reply = {
-      ...reply,
-      result: {
-        isError: false,
-        content: [{ type: "text", text: JSON.stringify(publicPythonValue) }],
-      },
-    };
-  }
-  if (
-    request.method === "tools/call" &&
-    request.params?.name === "execute_python" &&
-    reply &&
-    !reply.error
-  ) {
-    const result = object(reply.result);
-    const content = result["content"];
-    if (
-      Array.isArray(content) &&
-      content.length === 1 &&
-      object(content[0])["type"] === "text"
-    ) {
-      // Native Fusion wraps printed JSON in {success,message}; our public
-      // execute_python contract exposes the captured stdout/stderr directly.
-      // Keep received-response and native receipts untouched. Only the caller's
-      // response is adapted, after exact wire identity and receipt settlement.
-      try {
-        const outer = object(JSON.parse(String(object(content[0])["text"])));
-        if (outer["success"] === true && typeof outer["message"] === "string") {
-          const value = object(JSON.parse(outer["message"]));
-          if (
-            typeof value["success"] === "boolean" &&
-            typeof value["stdout"] === "string" &&
-            typeof value["stderr"] === "string"
-          ) {
-            reply = {
-              ...reply,
-              result: {
-                ...result,
-                isError: value["success"] !== true,
-                content: [{ type: "text", text: JSON.stringify(value) }],
-              },
-            };
-          }
-        }
-      } catch {
-        /* Not the native compatibility envelope; preserve the reply. */
-      }
-    }
-  }
-  return own(request, "id")
-    ? { ...response, raw: JSON.stringify({ ...reply, id: request.id }) }
-    : response;
-}
-
-function boundPublicPythonValue(
-  record: P.RecordEvidence,
-  receipt: P.RemoteReceipt,
-  request: P.Rpc,
-  reply: P.Reply | null,
-): Record<string, unknown> {
-  const schema = "fmcad-public-python-result-v1";
-  const result = object(receipt["publicPythonResult"]);
-  const value = object(result["value"]);
-  const allowed = new Set([
-    ...Object.keys(record.binding),
-    "terminal",
-    "outcome",
-    "instance",
-    "publicPythonResult",
-  ]);
-  if (
-    record.binding["publicPythonResultSchema"] !== schema ||
-    request.params?.name !== "execute_python" ||
-    typeof request.params.arguments?.code !== "string" ||
-    hash(request.params.arguments.code) !== record.binding.sourceHash ||
-    !Object.entries(record.binding).every(([key, expected]) =>
-      same(receipt[key], expected),
-    ) ||
-    Object.keys(receipt).some((key) => !allowed.has(key)) ||
-    receipt.terminal !== true ||
-    receipt.outcome !== "succeeded" ||
-    Object.keys(result).length !== 2 ||
-    result["schema"] !== schema ||
-    Object.keys(value).length !== 3 ||
-    value["success"] !== true ||
-    typeof value["stdout"] !== "string" ||
-    typeof value["stderr"] !== "string" ||
-    !reply ||
-    reply.error ||
-    object(reply.result)["isError"] === true
-  )
-    fail(
-      "RECEIPT_MISMATCH",
-      "Fresh public Python result is incomplete or differs from its exact native binding",
-    );
-  const content = object(reply.result)["content"];
-  if (
-    Object.keys(object(reply.result)).some(
-      (key) => !["content", "isError"].includes(key),
-    )
-  )
-    fail(
-      "UNKNOWN_RPC",
-      "Public Python native response has an unsupported result envelope",
-    );
-  if (
-    !Array.isArray(content) ||
-    content.length !== 1 ||
-    object(content[0])["type"] !== "text"
-  )
-    fail(
-      "UNKNOWN_RPC",
-      "Public Python native response has no canonical result envelope",
-    );
-  let outer: Record<string, unknown>;
-  try {
-    outer = object(JSON.parse(String(object(content[0])["text"])));
-  } catch {
-    fail("UNKNOWN_RPC", "Public Python native response is malformed");
-  }
-  if (
-    Object.keys(outer).length !== 2 ||
-    outer["success"] !== true ||
-    typeof outer["message"] !== "string"
-  )
-    fail(
-      "UNKNOWN_RPC",
-      "Public Python native response conflicts with its terminal result",
-    );
-  if (outer["message"]) {
-    let wireValue: unknown;
-    try {
-      wireValue = JSON.parse(outer["message"]);
-    } catch {
-      fail("UNKNOWN_RPC", "Public Python wire result is malformed");
-    }
-    if (!same(wireValue, value))
-      fail(
-        "RECEIPT_MISMATCH",
-        "Public Python wire result conflicts with its bound native result",
-      );
-  }
-  return value;
-}
+const { responseForCaller, decodeBoundPublicPythonResponse, verifyBoundRemoteReceipt } =
+  runtimeRequire("./dist/composition/queue-public-python-result") as
+    typeof import("./queue-public-python-result");
 
 function privateDirectory(dir: string) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -2286,19 +2138,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
       }
     }
-    const binding = record.binding;
-    if (
-      value.terminal !== true ||
-      !["succeeded", "failed"].includes(value.outcome) ||
-      !["jobId", "rpcId", "requestHash", "buildHash", "sourceHash"].every(
-        (key) => value[key] === binding[key],
-      ) ||
-      !sameInstance(value.instance, record.instance)
-    )
-      fail(
-        "RECEIPT_MISMATCH",
-        "Receipt is not terminal or bound to the original request/instance/build",
-      );
+    verifyBoundRemoteReceipt(record, value);
     if (requireIdle && !idle(value.instance))
       fail(
         "NATIVE_RECEIPT_REQUIRED",
@@ -3609,17 +3449,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           sdkVersion: instance.version,
           stdoutObservation: "not_observed",
         });
-        const publicValue =
-          record.binding["publicPythonResultSchema"] &&
+        const callerResponse = prepared.metadataProof
+          ? { status: response.status, raw: "" } : response;
+        const returned = record.binding["publicPythonResultSchema"] &&
           receipt?.outcome === "succeeded"
-            ? boundPublicPythonValue(record, receipt, payload, reply)
-            : undefined;
-        const returned = responseForCaller(
-          prepared.metadataProof ? { status: response.status, raw: "" } : response,
-          payload,
-          reply,
-          publicValue,
-        );
+          ? decodeBoundPublicPythonResponse(record, receipt, payload, callerResponse, reply)
+          : responseForCaller(callerResponse, payload, reply);
         const declaration = nativeReceipts.start(record);
         const nativeEnd = declaration
           ? nativeReceipts.completion(record, declaration)

@@ -164,16 +164,14 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
           } else if (payload["method"] === "tools/list")
             result = {
               tools: [
-                { name: "fusion_mcp_execute", inputSchema: { type: "object" } },
+                { name: "execute_python", inputSchema: { type: "object" } },
               ],
             };
           else {
             assert.equal(payload["method"], "tools/call");
             const params = object(payload["params"]);
-            assert.equal(params["name"], "fusion_mcp_execute");
-            const script = object(object(params["arguments"])["object"])[
-              "script"
-            ];
+            assert.equal(params["name"], "execute_python");
+            const script = object(params["arguments"])["code"];
             assert.equal(typeof script, "string");
             const units = (
               load(
@@ -234,13 +232,21 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
                 },
               });
             }
+            const output = code.includes("FMCAD_QUEUE_INSTANCE")
+              ? {
+                  success: true,
+                  stdout: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(current),
+                  stderr: "",
+                }
+              : {
+                  success: true,
+                  stdout: "FUSION_ADDIN_STDIO_OK\n",
+                  stderr: "",
+                };
             result = {
-              content: [
-                {
-                  type: "text",
-                  text: JSON.stringify({ success: true, message: "" }),
-                },
-              ],
+              content: [{ type: "text", text: JSON.stringify(output) }],
+              structuredContent: output,
+              isError: false,
             };
           }
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -256,19 +262,43 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
       await once(server, "listening");
       const address = server.address();
       assert.ok(address && typeof address !== "string");
+      const url = `http://127.0.0.1:${address.port}/mcp`;
       const cfg = {
         ...f.cfg,
-        backend: "mcp",
-        url: `http://127.0.0.1:${address.port}/mcp`,
-        tool: "fusion_mcp_execute",
+        backend: "addin",
+        url,
+        tool: "execute_python",
         routing: "queue",
         transport: "node",
+        backends: {
+          addin: {
+            url,
+            tool: "execute_python",
+            timeoutMs: f.cfg["timeoutMs"],
+            headers: f.cfg["headers"],
+            transport: "node",
+            protocolVersion: f.cfg["protocolVersion"],
+          },
+        },
         queue: { autoStart: true, autoRecover: true, startupTimeoutMs: 60000 },
       };
       const config = path.join(base, "config.json");
-      fs.writeFileSync(config, JSON.stringify(cfg));
+      fs.writeFileSync(
+        config,
+        JSON.stringify({
+          backend: cfg.backend,
+          routing: cfg.routing,
+          backends: cfg.backends,
+          queue: cfg.queue,
+        }),
+      );
       const hash = qi.buildHash();
-      const configHash = qi.brokerConfigHash(cfg);
+      const { loadConfig } = load(
+        "../src/config",
+      ) as typeof import("../src/composition/library-configuration");
+      // Bind the same resolved physical configuration used by the public client,
+      // including platform defaults; the persisted file is not a flat adapter.
+      const configHash = qi.brokerConfigHash(loadConfig({ config }).cfg);
       const historicalIdentityFile = path.join(f.dir, "instance.json");
       qi.durable(historicalIdentityFile, {
         ...read(historicalIdentityFile),
@@ -354,7 +384,7 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
               ...process.env,
               XDG_STATE_HOME: stateHome,
               FMCAD_CONFIG: config,
-              FMCAD_BACKEND: "mcp",
+              FMCAD_BACKEND: "addin",
               FMCAD_PROJECT_DIRECTORY: base,
             },
             stdio: ["pipe", "pipe", "pipe"],

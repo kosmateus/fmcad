@@ -23,12 +23,12 @@ const dependencies = {
   bridgeSource: () =>
     assert.fail("Metadata discovery must not prepare add-in Python"),
 };
-function clientFor(backend = "mcp") {
+function clientFor(backend = "addin") {
   return createBrokerTransport({ ...cfg, backend }, dependencies);
 }
 
 const cfg: FmcadConfiguration = {
-  backend: "mcp",
+  backend: "addin",
   routing: "queue",
   queue: { autoStart: false },
   controlCenter: { port: 4748 },
@@ -76,31 +76,42 @@ function fakePost(
 
 // The public compatibility clients intentionally reject SDK/discovery execution.
 // Exercise the current private transport selected by broker composition.
-for (const backend of ["mcp", "addin"])
-  test(`${backend} broker transport parses initialize metadata without extra requests`, async () => {
-    const client = clientFor(backend);
-    const calls = fakePost(client, metadata, backend === "addin");
-    assert.deepEqual(await client.listTools(), [{ name: "fixture-tool" }]);
-    assert.deepEqual(client.serverInfo, {
-      name: "fixture-backend",
-      version: "fixture-version",
-    });
-    assert.equal(client.negotiatedProtocolVersion, "2025-06-18");
-    assert.deepEqual(calls, [
-      ["initialize", undefined],
-      ["notifications/initialized", "private-session"],
-      ["tools/list", "private-session"],
-    ]);
+test("retired MCP broker transport is refused before issuing a request", () => {
+  assert.throws(
+    () => createBrokerTransport({ ...cfg, backend: "mcp" }, dependencies),
+    {
+      code: "UNSUPPORTED_BACKEND",
+      message: /Unsupported physical backend/,
+    },
+  );
+});
+
+test("add-in broker transport parses initialize metadata without extra requests", async () => {
+  const client = clientFor();
+  const calls = fakePost(client, metadata, true);
+  assert.deepEqual(await client.listTools(), [{ name: "fixture-tool" }]);
+  assert.deepEqual(client.serverInfo, {
+    name: "fixture-backend",
+    version: "fixture-version",
   });
+  assert.equal(client.negotiatedProtocolVersion, "2025-06-18");
+  assert.deepEqual(calls, [
+    ["initialize", undefined],
+    ["notifications/initialized", "private-session"],
+    ["tools/list", "private-session"],
+  ]);
+});
 
 test("initialization clears previous metadata and retains only nonempty strings", async () => {
-  const client = clientFor();
   for (const result of [
     metadata,
     {},
     { serverInfo: { name: 123, version: " " } },
     { serverInfo: { name: "partial", version: null } },
   ]) {
+    const client = clientFor();
+    client.serverInfo = { name: "stale", version: "stale" };
+    client.negotiatedProtocolVersion = "stale";
     fakePost(client, result);
     await client._openSession();
     assert.deepEqual(
@@ -121,8 +132,8 @@ test("initialization clears previous metadata and retains only nonempty strings"
 for (const failure of ["http", "rpc", "parse", "transport"])
   test(`failed ${failure} initialization clears metadata before request`, async () => {
     const client = clientFor();
-    fakePost(client, metadata);
-    await client._openSession();
+    client.serverInfo = { name: "stale", version: "stale" };
+    client.negotiatedProtocolVersion = "stale";
     client._post = async () => {
       assert.equal(client.serverInfo, undefined);
       assert.equal(client.negotiatedProtocolVersion, undefined);
@@ -207,10 +218,11 @@ for (const result of [
     const lines = stdout.trim().split("\n");
     assert.match(text(lines[0]), /^CONFIG /);
     assert.match(text(lines[1]), /^BACKEND /);
-    assert.match(text(lines[2]), /^SERVER /);
-    assert.equal(lines[3], "MCP_OK tools=1 (fixture-tool)");
+    assert.match(text(lines[2]), /^CAPABILITIES .*"backend":"addin"/);
+    assert.match(text(lines[3]), /^SERVER /);
+    assert.equal(lines[4], "MCP_OK tools=1 (fixture-tool)");
     assert.deepEqual(
-      JSON.parse(text(lines[2]).slice(7)),
+      JSON.parse(text(lines[3]).slice(7)),
       result === metadata
         ? {
             name: "fixture-backend",
