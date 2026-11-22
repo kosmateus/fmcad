@@ -251,6 +251,8 @@ export function createDocumentUnlockAdmission(
       const context = checkContext(actor, original);
       const epoch = context.state.epoch;
       if (epoch && context.state.admissionMode !== "normal-multidocument") {
+        // Authenticate namespace access before revealing selector membership.
+        admit(context, actor, "status", epoch.document);
         // This is the existing unsaved isolated namespace, not a CAD probe.
         if (
           selected.docId !== epoch.document.creationId ||
@@ -260,7 +262,6 @@ export function createDocumentUnlockAdmission(
             "EPOCH_SCOPE_REQUIRED",
             "Metadata status is restricted to the exact isolated document namespace",
           );
-        admit(context, actor, "status", epoch.document);
       } else {
         // Existing ordinary admission has no extra per-document approval gate.
         // An unresolved pair of IDs remains only a selector, never an alias proof.

@@ -196,6 +196,36 @@ test("broker-only status still requires the exact current isolated namespace and
     });
 });
 
+test("unauthorized status cannot enumerate isolated document membership from denial shape", (t) => {
+  const f = fixture(t);
+  const fetch = t.mock.method(globalThis, "fetch", () => {
+    throw new Error("Denied status must never send an SDK/HTTP request");
+  });
+  function denied(docId: string) {
+    try {
+      f.admission.authorizeStatus(f.principal(), { docId });
+    } catch (error) {
+      assert.ok(error instanceof Error);
+      return {
+        name: error.name,
+        message: error.message,
+        code: Reflect.get(error, "code"),
+        fields: Object.keys(error).sort(),
+      };
+    }
+    assert.fail("An actor without a grant must be denied");
+  }
+  const foreign = denied("foreign-document-guess");
+  const current = denied(f.observed.creationId);
+  assert.deepEqual(current, foreign);
+  assert.equal(current.code, "EPOCH_CLIENT_NOT_GRANTED");
+  assert.equal(fetch.mock.callCount(), 0);
+  const published = JSON.stringify(current);
+  assert.ok(!published.includes(f.observed.creationId));
+  assert.ok(!published.includes(f.observed.fingerprint));
+  assert.ok(!published.includes(f.pointer.ownerTokenHash));
+});
+
 test("broker-only normal status preserves unresolved IDs without pretending to probe aliases", (t) => {
   const f = fixture(t);
   f.normal();
