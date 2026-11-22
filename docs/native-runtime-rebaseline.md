@@ -34,11 +34,15 @@ await runtimeRebaselineRoot(options.store, authority);
 const provision = createNativePhysicalGenerationProvision({
   ...nativeOptions,
   getVerifiedActivation: ports.getVerifiedActivation,
+  assertBrokerOwner: () => context.assertBrokerOwner(),
 });
 ```
 
-Normal composition must still enforce its broker-owner assertion before issuing
-a grant. `getVerifiedActivation(descriptor)` does not acquire another writer
+Normal composition forwards its actual synchronous, maintained broker-owner
+assertion. The provisioner rechecks it after the activation lookup, after native
+preparation and immediately before grant spawn. Loss before that spawn refuses
+as `notStarted`; uncertainty after a grant process started remains `unknown`.
+`getVerifiedActivation(descriptor)` does not acquire another writer
 lease or issue a grant. It becomes usable only after the core has re-fsynced its
 completion dependencies and verified the original native consume receipt.
 Each read rechecks the exact current pointer, descriptor/store/runtime binding,
