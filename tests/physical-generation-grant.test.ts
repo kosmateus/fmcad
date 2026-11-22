@@ -77,6 +77,7 @@ for (const outcome of [
   "owner-changed",
   "wrong-grant",
   "operator-failed",
+  "issued-file-unavailable",
 ] as const) {
   test(`claimed broker publishes private capability only after verified provisioning: ${outcome}`, async (t) => {
     const f = fixture(t);
@@ -110,6 +111,7 @@ for (const outcome of [
               token: f.secret,
             }),
           );
+        if (outcome === "issued-file-unavailable") fs.unlinkSync(f.grantFile);
         return { grantFile: f.grantFile, grantDigest: f.options.grantDigest };
       },
     });
@@ -142,6 +144,8 @@ for (const outcome of [
         prepared.preparePhysicalGeneration(context),
         (error: unknown) => {
           assert.ok(error instanceof Error);
+          assert.equal("notStarted" in error, false);
+          assert.equal(Reflect.get(error, "grantIssuance"), "unknown");
           if (outcome === "operator-failed") {
             assert.equal(
               error.message,
@@ -234,6 +238,66 @@ test("physical capability pins exact grant bytes and preserves exact target stri
     f.secret,
   );
   assert.equal(JSON.stringify(binding).includes(f.secret), false);
+});
+
+test("broker ports stay unavailable through asynchronous grant preparation and bind the actual send", async (t) => {
+  const f = fixture(t);
+  let finishProvision: (() => void) | undefined;
+  const wait = new Promise<void>((resolve) => {
+    finishProvision = resolve;
+  });
+  const prepared = prepareBrokerPhysicalGeneration({
+    runtime: f.expected,
+    clientId: f.expected.brokerOwner.clientId,
+    async provision() {
+      await wait;
+      return { grantFile: f.grantFile, grantDigest: f.options.grantDigest };
+    },
+  });
+  const request = {
+    physicalRequestId: "broker-port-send",
+    documentSelector: { creationId: "target" },
+  };
+  assert.throws(() =>
+    prepared.authorizePhysicalRequest(f.expected.endpointURL),
+  );
+  assert.throws(() => prepared.bindPhysicalTurn(request));
+  const preparation = prepared.preparePhysicalGeneration({
+    directory: f.root,
+    owner: f.expected.brokerOwner,
+    buildHash: "a".repeat(64),
+    configHash: "b".repeat(64),
+    assertBrokerOwner: f.options.assertBrokerOwner,
+  });
+  assert.throws(() =>
+    prepared.authorizePhysicalRequest(f.expected.endpointURL),
+  );
+  assert.throws(() => prepared.bindPhysicalTurn(request));
+  assert.ok(finishProvision);
+  finishProvision();
+  await preparation;
+  const binding = prepared.bindPhysicalTurn(request);
+  const result = await prepared.withPhysicalTurn(binding, async () => {
+    await Promise.resolve();
+    const headers = prepared.authorizePhysicalRequest(f.expected.endpointURL);
+    assert.equal(headers["X-Fmcad-Physical-Grant"], f.secret);
+    assert.equal(headers["X-Fmcad-Physical-Turn"], binding.turnId);
+    assert.equal(
+      Buffer.from(
+        headers["X-Fmcad-Physical-Target"] ?? "",
+        "base64url",
+      ).toString("utf8"),
+      binding.target,
+    );
+    return "sent-once";
+  });
+  assert.equal(result, "sent-once");
+  assert.equal(
+    prepared.authorizePhysicalRequest(f.expected.endpointURL)[
+      "X-Fmcad-Physical-Turn"
+    ],
+    undefined,
+  );
 });
 
 test("concurrent physical turns keep the same pinned binding through asynchronous send", async (t) => {
@@ -738,3 +802,42 @@ test("history byte port refuses SDK and current-status routes", () => {
       /exact private control endpoint/,
     );
 });
+
+for (const invalid of [
+  "null-turn",
+  "array-turn",
+  "numeric-turn",
+  "array-digest",
+  "null-digest",
+] as const) {
+  test(`malformed durable history binding is refused before any port: ${invalid}`, async (t) => {
+    const f = fixture(t);
+    let queries = 0;
+    const authorization = createPhysicalGenerationAuthorization(f.options, {
+      request: async () => {
+        queries++;
+        throw new Error("unexpected status query");
+      },
+      historyRequest: async () => {
+        queries++;
+        throw new Error("unexpected history query");
+      },
+    });
+    const binding = authorization.turnBinding(
+      "original",
+      '{"creationId":"doc"}',
+    );
+    binding.grantDigest = "c".repeat(64);
+    if (invalid === "null-turn") Reflect.set(binding, "turnId", null);
+    if (invalid === "array-turn") Reflect.set(binding, "turnId", ["original"]);
+    if (invalid === "numeric-turn") Reflect.set(binding, "turnId", 123);
+    if (invalid === "array-digest")
+      Reflect.set(binding, "grantDigest", ["c".repeat(64)]);
+    if (invalid === "null-digest") Reflect.set(binding, "grantDigest", null);
+    assert.equal(
+      (await authorization.physicalTurnQuiescence(binding)).state,
+      "unknown",
+    );
+    assert.equal(queries, 0);
+  });
+}

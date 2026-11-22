@@ -3,6 +3,7 @@ import {
   createPhysicalGenerationAuthorization,
   validatePhysicalGenerationDescriptor,
   type PhysicalGenerationDescriptor,
+  type PhysicalTurnBinding,
 } from "./physical-generation";
 
 export interface PhysicalGenerationClaim {
@@ -41,6 +42,9 @@ export function prepareBrokerPhysicalGeneration(options: {
       },
     );
   }
+  function current() {
+    return authorization ?? unavailable();
+  }
   return {
     async preparePhysicalGeneration(context: PhysicalGenerationClaim) {
       if (attempted) unavailable();
@@ -65,30 +69,47 @@ export function prepareBrokerPhysicalGeneration(options: {
       validatePhysicalGenerationDescriptor(descriptor, options.transport);
       // A provisioning callback may be asynchronous. It receives a copy, not
       // the descriptor used to pin the resulting private file.
-      let grant: { grantFile: string; grantDigest: string };
       try {
         issuanceAttempted = true;
-        grant = await options.provision(structuredClone(descriptor));
+        const grant = await options.provision(structuredClone(descriptor));
+        context.assertBrokerOwner();
+        const candidate = createPhysicalGenerationAuthorization({
+          ...grant,
+          expected: descriptor,
+          assertBrokerOwner: context.assertBrokerOwner,
+          ...(options.transport ? { transport: options.transport } : {}),
+        });
+        // This entire boundary follows a potentially successful issuance:
+        // missing/private-file and ownership failures are uncertain too.
+        candidate.headers(descriptor.endpointURL);
+        context.assertBrokerOwner();
+        authorization = candidate;
       } catch {
         // The operator may include credentials/private paths in its exception.
         // Preserve uncertainty by refusing retries, not by returning that error.
         unavailable();
       }
-      context.assertBrokerOwner();
-      const candidate = createPhysicalGenerationAuthorization({
-        ...grant,
-        expected: descriptor,
-        assertBrokerOwner: context.assertBrokerOwner,
-        ...(options.transport ? { transport: options.transport } : {}),
-      });
-      // Validate the private file and current owner before publishing any
-      // capability. Creating the object alone does not read/validate the grant.
-      candidate.headers(descriptor.endpointURL);
-      context.assertBrokerOwner();
-      authorization = candidate;
     },
-    authorization() {
-      return authorization ?? unavailable();
+    authorization: current,
+    // These deferred ports are installed before startup but cannot expose a
+    // credential until the real post-claim hook has published the capability.
+    authorizePhysicalRequest(endpoint: string) {
+      return current().headers(endpoint);
+    },
+    bindPhysicalTurn(
+      request: Parameters<
+        ReturnType<
+          typeof createPhysicalGenerationAuthorization
+        >["bindPhysicalTurn"]
+      >[0],
+    ) {
+      return current().bindPhysicalTurn(request);
+    },
+    withPhysicalTurn<T>(binding: PhysicalTurnBinding, send: () => Promise<T>) {
+      return current().withPhysicalTurn(binding, send);
+    },
+    physicalTurnQuiescence(binding: PhysicalTurnBinding) {
+      return current().physicalTurnQuiescence(binding);
     },
   };
 }

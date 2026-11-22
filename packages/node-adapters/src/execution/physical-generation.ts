@@ -159,6 +159,7 @@ export function createPhysicalGenerationAuthorization(
   const grantFile = options.grantFile;
   const grantDigest = options.grantDigest;
   if (
+    typeof grantDigest !== "string" ||
     !/^[a-f0-9]{64}$/.test(grantDigest) ||
     !path.isAbsolute(grantFile) ||
     path.normalize(grantFile) !== grantFile
@@ -232,6 +233,7 @@ export function createPhysicalGenerationAuthorization(
   }
   function turnBinding(turnId: string, target: string): PhysicalTurnBinding {
     if (
+      typeof turnId !== "string" ||
       !/^[\x21-\x7e]{1,256}$/.test(turnId) ||
       typeof target !== "string" ||
       !target
@@ -310,6 +312,7 @@ export function createPhysicalGenerationAuthorization(
       if (
         !current &&
         (original.version !== 1 ||
+          typeof original.grantDigest !== "string" ||
           !/^[a-f0-9]{64}$/.test(original.grantDigest) ||
           original.grantDigest === grantDigest ||
           !Number.isSafeInteger(original.physicalRuntime.pid) ||
