@@ -58,14 +58,14 @@ Możesz zamiast `--doc-file-id` wskazać `--doc-id`. CLI dopuszcza też normalne
 
 Kieruj się polem `next` zwróconym przez brokera; nie odtwarzaj go na podstawie starej rozmowy ani historii innego właściciela. Poniższa tabela opisuje bezpieczny następny krok, nie gwarantuje, że dana odpowiedź wystąpi w każdym backendzie.
 
-| Odpowiedź / kod | Następne działanie |
+| Stan / kod błędu | Następne działanie |
 | --- | --- |
 | `DOCUMENT_UNLOCK_REQUIRED` | Wykonaj `status` dla dokładnego celu; postępuj według aktualnego `next`. |
 | `SDK_TURN_ACTIVE` | Poczekaj na zakończenie aktywnej tury i ponownie sprawdź `status`. Nie przerywaj jej ani nie ponawiaj mutacji. |
 | `SDK_QUIESCENCE_UNPROVEN` | Nie akceptuj stanu. Wymagana jest wiarygodna granica bezczynności SDK; ponownie sprawdź stan po jej potwierdzeniu. |
 | `DOCUMENT_STATE_CHANGED` | Stara obserwacja nie opisuje już bieżącego dokumentu. Wykonaj nowy `status`, a potem wymagane świeże `inspect`. |
 | `CHECKPOINT_CHANGED` | Nie używaj poprzedniego checkpointu. Sprawdź stan i uzyskaj nową obserwację, jeśli broker nadal wymaga inspekcji. |
-| `TARGET_UNAVAILABLE` | Zweryfikuj dokładny identyfikator. Dla istniejącego, zamkniętego pliku wskaż jego `docFileId` i rozpocznij od nowego `status`/`inspect` po bezpiecznym wznowieniu dostępu. |
+| Stan `target_unavailable` / kod błędu `DOCUMENT_TARGET_UNAVAILABLE` | Zweryfikuj dokładny identyfikator. Dla istniejącego, zamkniętego pliku wskaż jego `docFileId` i rozpocznij od nowego `status`/`inspect` po bezpiecznym wznowieniu dostępu. |
 | `UNKNOWN_SCOPE_UNPROVEN` | Nie rozszerzaj uprawnień ani zakresu. Wymagana jest potwierdzona granica dla wskazanego zasobu; sam `--doc A` nie dowodzi, że nieznana praca dotyczy tylko A. |
 | `NOT_AUTHORIZED` | Uzyskaj właściwy grant od uprawnionego właściciela dla tego samego celu i wymaganej czynności. Rejestracja klienta nie nadaje uprawnień. |
 | `STORAGE_UNAVAILABLE` | Wstrzymaj procedurę i zgłoś problem trwałego zapisu operatorowi brokera. Nie ponawiaj `accept` w ciemno. |
