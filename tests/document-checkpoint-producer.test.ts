@@ -10,6 +10,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import type { QueueJob } from "../packages/core/src/domain/queue-model";
+import { canonical as queueCanonical } from "../packages/core/src/domain/queue";
 import { hash as canonicalHash } from "../packages/core/src/application/cad/json";
 import { planCadScript } from "../packages/core/src/application/cad/prepare";
 import { decodeDocumentCheckpointReadback } from "../src/document-checkpoint-readback";
@@ -52,7 +53,7 @@ function fixture(t: { after(fn: () => void): void }) {
     clientId: "reader-A",
     requestId: "probe-A",
     kind: "command",
-    hash: sha256("original-owned-job"),
+    hash: "",
     request: {
       clientId: "reader-A",
       requestId: "probe-A",
@@ -61,6 +62,8 @@ function fixture(t: { after(fn: () => void): void }) {
         "cad",
         "param",
         "inspect",
+        "--doc",
+        "Owned A",
         "--doc-id",
         "doc-A",
         "--doc-file-id",
@@ -69,6 +72,15 @@ function fixture(t: { after(fn: () => void): void }) {
       timeoutMs: 10000,
       cwd: root,
       buildHash,
+      payload: {
+        version: 1,
+        kind: "cad",
+        operation: "param.inspect",
+        data: { includeModel: true },
+        doc: "Owned A",
+        docId: target.creationId,
+        docFileId: target.fileId,
+      },
     },
     order: 1,
     state: "running",
@@ -85,6 +97,7 @@ function fixture(t: { after(fn: () => void): void }) {
       priorCheckpointId: null,
     },
   };
+  job.hash = sha256(queueCanonical(job.request));
   const physicalTurn = {
     version: 1 as const,
     generation: { epoch: "native-epoch-A", instance: "native-instance-A" },
@@ -107,7 +120,7 @@ function fixture(t: { after(fn: () => void): void }) {
     const plan = planCadScript(
       "param.inspect",
       { includeModel: true },
-      { docId: target.creationId, docFileId: target.fileId },
+      { doc: "Owned A", docId: target.creationId, docFileId: target.fileId },
       {
         summary: "Inspect parameters",
         inputs: {},
@@ -188,7 +201,10 @@ function fixture(t: { after(fn: () => void): void }) {
     wire.id = `fmcad:${record.binding.rpcId}`;
     return { compiled: compile(), wrapped, payload: original, wire };
   }
-  const record: RpcRecord & { pythonArtifact?: unknown } = {
+  const record: RpcRecord & {
+    pythonArtifact?: unknown;
+    physicalCatalogIndex: number;
+  } = {
     binding,
     method: "tools/call",
     terminal: false,
@@ -196,6 +212,7 @@ function fixture(t: { after(fn: () => void): void }) {
     receipt: receiptPath,
     request: { jsonrpc: "2.0", method: "tools/call", id: 2 },
     wireRequest: { jsonrpc: "2.0", method: "tools/call", id: "fmcad:rpc-A" },
+    physicalCatalogIndex: 1,
   };
   const expected = prepared(record);
   record.pythonArtifact = {
@@ -416,6 +433,7 @@ function fixture(t: { after(fn: () => void): void }) {
     artifacts: [],
   };
   const roleNames: Record<string, string> = {
+    "job-request": "request.json",
     rpc: "rpc-rpc-A.json",
     response: "received-response-rpc-A.json",
     "physical-intent": intentReference,
@@ -835,6 +853,122 @@ test("a source artifact value detached from its actual bytes is rejected", (t) =
     input = f.input();
   input.artifacts[0]!.value = {};
   assert.throws(() => createDocumentCheckpointProducer(f.ports)(input), {
+    code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
+  });
+});
+
+function rewriteOriginalRequest(
+  f: ReturnType<typeof fixture>,
+  change: (request: QueueJob["request"]) => void,
+  rehash: boolean,
+) {
+  change(f.job.request);
+  f.mutate("job-request", (value) => {
+    value["request"] = copy(f.job.request);
+  });
+  if (!rehash) return;
+  const identity = { ...f.job.request };
+  delete identity.description;
+  f.job.hash = sha256(queueCanonical(identity));
+  const intent = f.job.physicalDispatches![0]!;
+  intent.request.requestHash = f.job.hash;
+  f.mutate("physical-intent", (value) => {
+    (value["request"] as { requestHash: string }).requestHash = f.job.hash;
+  });
+  intent.intentDigest = sha256(
+    fs.readFileSync(path.join(f.jobDirectory, intent.intentReference)),
+  );
+}
+
+for (const rehash of [false, true]) {
+  for (const kind of [
+    "build",
+    "filtered",
+    "partial",
+    "missing-payload",
+    "operation",
+    "project",
+  ]) {
+    test(`original typed request ${kind} is refused even with ${rehash ? "coherently rewritten" : "unchanged"} job hash`, (t) => {
+      const f = fixture(t);
+      rewriteOriginalRequest(
+        f,
+        (request) => {
+          const payload = request.payload!;
+          if (kind === "build") request.buildHash = sha256("foreign-build");
+          if (kind === "filtered")
+            payload["data"] = { includeModel: true, names: ["one"] };
+          if (kind === "partial") payload["data"] = { includeModel: false };
+          if (kind === "missing-payload") delete request.payload;
+          if (kind === "operation") payload["operation"] = "param.apply";
+          if (kind === "project") payload["projectId"] = "foreign-project";
+        },
+        rehash,
+      );
+      assert.throws(
+        () => createDocumentCheckpointProducer(f.ports)(f.input()),
+        { code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH" },
+      );
+    });
+  }
+}
+
+test("canonical job identity cannot be replaced by a caller's arbitrary hash", (t) => {
+  const f = fixture(t);
+  f.job.hash = sha256("not-the-retained-request");
+  f.job.physicalDispatches![0]!.request.requestHash = f.job.hash;
+  f.mutate("physical-intent", (value) => {
+    (value["request"] as { requestHash: string }).requestHash = f.job.hash;
+  });
+  f.job.physicalDispatches![0]!.intentDigest = sha256(
+    fs.readFileSync(
+      path.join(f.jobDirectory, f.job.physicalDispatches![0]!.intentReference),
+    ),
+  );
+  assert.throws(() => createDocumentCheckpointProducer(f.ports)(f.input()), {
+    code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
+  });
+});
+
+for (const kind of ["different", "missing", "rewritten-intent"]) {
+  test(`physical catalog ${kind} index cannot detach the RPC from its admitted intent`, (t) => {
+    const f = fixture(t);
+    if (kind === "rewritten-intent") {
+      f.job.physicalDispatches![0]!.catalogIndex = 7;
+      f.mutate("physical-intent", (value) => {
+        value["catalogIndex"] = 7;
+      });
+      const entry = f.job.physicalDispatches![0]!;
+      entry.intentDigest = sha256(
+        fs.readFileSync(path.join(f.jobDirectory, entry.intentReference)),
+      );
+    } else
+      f.mutate("rpc", (value) => {
+        if (kind === "missing") delete value["physicalCatalogIndex"];
+        else value["physicalCatalogIndex"] = 7;
+      });
+    assert.throws(() => createDocumentCheckpointProducer(f.ports)(f.input()), {
+      code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
+    });
+  });
+}
+
+test("retained job-request artifact must be present and match the original request/build", (t) => {
+  const f = fixture(t),
+    input = f.input();
+  input.artifacts = input.artifacts.filter(
+    (artifact) => artifact.role !== "job-request",
+  );
+  input.proof.artifacts = input.proof.artifacts.filter(
+    (artifact) => artifact.role !== "job-request",
+  );
+  assert.throws(() => createDocumentCheckpointProducer(f.ports)(input), {
+    code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
+  });
+  f.mutate("job-request", (value) => {
+    value["buildHash"] = sha256("other-build");
+  });
+  assert.throws(() => createDocumentCheckpointProducer(f.ports)(f.input()), {
     code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
   });
 });

@@ -6,6 +6,11 @@ import type {
   QueuePhysicalBinding,
   QueuePhysicalDispatch,
 } from "../../../core/src/domain/queue-model";
+import { canonical as queueCanonical } from "../../../core/src/domain/queue";
+import {
+  decodeCadWorkerInvocation,
+  cadWorkerPolicyArguments,
+} from "../../../core/src/application/cad/worker-command";
 import {
   quarantineTarget,
   validPhysicalDispatch,
@@ -180,6 +185,31 @@ export function createDocumentCheckpointProducer(
         !job.documentInspection.target.creationId
       )
         reject();
+      if (job.request.buildHash !== ports.buildHash) reject();
+      const identity = { ...job.request };
+      delete identity.description; // Exact QueueDomain.enqueue identity policy.
+      if (job.hash !== sha256(queueCanonical(identity))) reject();
+      const decoded = decodeCadWorkerInvocation(job.request.payload);
+      const invocation =
+        decoded.kind === "cad-command"
+          ? decoded.invocation
+          : decoded.kind === "cad"
+            ? decoded
+            : null;
+      if (
+        !invocation ||
+        invocation.operation !== "param.inspect" ||
+        invocation.component !== undefined ||
+        invocation.preview === true
+      )
+        reject();
+      requireSame(invocation.data, { includeModel: true });
+      requireSame(
+        cadWorkerPolicyArguments(decoded),
+        job.request.argv?.[0] === "cad"
+          ? job.request.argv
+          : ["cad", ...(job.request.argv ?? [])],
+      );
       const target = quarantineTarget(job.request);
       if (
         !target?.creationId ||
@@ -200,6 +230,7 @@ export function createDocumentCheckpointProducer(
         const { bytes, value, ...source } = artifact;
         requireSame(source, proof.artifacts[index]);
         const names: Record<string, string> = {
+          "job-request": "request.json",
           rpc: `rpc-${proof.rpcId}.json`,
           response: `received-response-${proof.rpcId}.json`,
           "physical-intent": `physical-turn-${sha256(proof.rpcId)}.json`,
@@ -218,6 +249,13 @@ export function createDocumentCheckpointProducer(
         requireSame(decoded, value);
         byRole.set(artifact.role, decoded);
       }
+      const originalJob = object(byRole.get("job-request"));
+      if (
+        originalJob["id"] !== job.id ||
+        originalJob["buildHash"] !== ports.buildHash
+      )
+        reject();
+      requireSame(originalJob["request"], job.request);
       const records = ports.records
         .readRpcRecords(job.id)
         .filter((r) => r.binding.rpcId === proof.rpcId);
@@ -274,6 +312,7 @@ export function createDocumentCheckpointProducer(
         intent.request.kind !== "product"
       )
         reject();
+      requireSame(object(record)["physicalCatalogIndex"], intent.catalogIndex);
       requireSame(byRole.get("physical-intent"), {
         request: intent.request,
         physical: intent.physical,
@@ -316,6 +355,14 @@ export function createDocumentCheckpointProducer(
       )
         reject();
       requireSame(request["data"], { includeModel: true });
+      for (const key of [
+        "doc",
+        "docId",
+        "docFileId",
+        "component",
+        "projectId",
+      ] as const)
+        requireSame(request[key], invocation[key]);
       requireSame(record.request, rpcIdentity(expected.payload));
       requireSame(record.wireRequest, rpcIdentity(expected.wire));
       requireSame(record.method, "tools/call");
