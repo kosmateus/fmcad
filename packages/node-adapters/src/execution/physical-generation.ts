@@ -91,6 +91,50 @@ function releasedDigest(
   return createHash("sha256").update(encoded, "utf8").digest("hex");
 }
 
+/** Shared validation before a local operator can issue a grant. No file I/O. */
+export function validatePhysicalGenerationDescriptor(
+  expected: PhysicalGenerationDescriptor,
+  transport?: "node" | "windows-curl",
+) {
+  const base = new URL(expected.endpointURL);
+  if (
+    base.protocol !== "http:" ||
+    base.port !== "8765" ||
+    !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) ||
+    base.pathname !== "/mcp" ||
+    base.search ||
+    base.hash ||
+    base.username ||
+    base.password
+  )
+    denied();
+  if (
+    (transport !== undefined &&
+      !["node", "windows-curl"].includes(transport)) ||
+    expected.kind !== "fmcad-physical-grant" ||
+    expected.version !== 1 ||
+    !expected.handoffId ||
+    !expected.generation.instance ||
+    !expected.generation.epoch ||
+    !Number.isSafeInteger(expected.brokerOwner.pid) ||
+    expected.brokerOwner.pid <= 0 ||
+    !Number.isSafeInteger(expected.physicalRuntime.pid) ||
+    expected.physicalRuntime.pid <= 0 ||
+    !path.isAbsolute(expected.brokerOwner.queueDirectory) ||
+    [
+      expected.brokerOwner.birth,
+      expected.brokerOwner.nonce,
+      expected.brokerOwner.clientId,
+      expected.physicalRuntime.birth,
+      expected.physicalRuntime.version,
+      expected.physicalRuntime.source,
+      expected.physicalRuntime.build,
+    ].some((value) => typeof value !== "string" || !value)
+  )
+    denied();
+  return base;
+}
+
 /** Only the trusted broker composition constructs this capability. Neither its
  * descriptor nor the grant path is taken from a public request/admission DTO. */
 export function createPhysicalGenerationAuthorization(
@@ -118,42 +162,10 @@ export function createPhysicalGenerationAuthorization(
     path.normalize(grantFile) !== grantFile
   )
     denied();
-  const base = new URL(expected.endpointURL);
-  if (
-    base.protocol !== "http:" ||
-    base.port !== "8765" ||
-    !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) ||
-    base.pathname !== "/mcp" ||
-    base.search ||
-    base.hash ||
-    base.username ||
-    base.password
-  )
-    denied();
-  if (
-    (options.transport !== undefined &&
-      !["node", "windows-curl"].includes(options.transport)) ||
-    expected.kind !== "fmcad-physical-grant" ||
-    expected.version !== 1 ||
-    !expected.handoffId ||
-    !expected.generation.instance ||
-    !expected.generation.epoch ||
-    !Number.isSafeInteger(expected.brokerOwner.pid) ||
-    expected.brokerOwner.pid <= 0 ||
-    !Number.isSafeInteger(expected.physicalRuntime.pid) ||
-    expected.physicalRuntime.pid <= 0 ||
-    !path.isAbsolute(expected.brokerOwner.queueDirectory) ||
-    [
-      expected.brokerOwner.birth,
-      expected.brokerOwner.nonce,
-      expected.brokerOwner.clientId,
-      expected.physicalRuntime.birth,
-      expected.physicalRuntime.version,
-      expected.physicalRuntime.source,
-      expected.physicalRuntime.build,
-    ].some((value) => typeof value !== "string" || !value)
-  )
-    denied();
+  const base = validatePhysicalGenerationDescriptor(
+    expected,
+    options.transport,
+  );
   const uid = process.getuid?.();
   const scope = new AsyncLocalStorage<PhysicalTurnBinding>();
   function token(): string {

@@ -90,7 +90,13 @@ for (const outcome of [
         descriptor.brokerOwner.nonce = "port-mutated-copy";
         await Promise.resolve();
         if (outcome === "operator-failed")
-          throw new Error("local operator refused");
+          throw Object.assign(
+            new Error(`private operator secret: ${f.secret}`),
+            {
+              cause: new Error(f.grantFile),
+              token: f.secret,
+            },
+          );
         if (outcome === "owner-changed") validOwner = false;
         if (outcome === "wrong-grant")
           fs.writeFileSync(
@@ -129,7 +135,22 @@ for (const outcome of [
         prepared.authorization().headers(f.expected.endpointURL),
       );
     } else {
-      await assert.rejects(prepared.preparePhysicalGeneration(context));
+      await assert.rejects(
+        prepared.preparePhysicalGeneration(context),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          if (outcome === "operator-failed") {
+            assert.equal(
+              error.message,
+              "Physical generation has not been prepared",
+            );
+            assert.equal("cause" in error, false);
+            assert.equal(JSON.stringify(error).includes(f.secret), false);
+            assert.equal(error.stack?.includes(f.secret), false);
+          }
+          return true;
+        },
+      );
       assert.throws(() => prepared.authorization(), {
         code: "PHYSICAL_GENERATION_REJECTED",
       });
@@ -142,6 +163,49 @@ for (const outcome of [
       1,
       "uncertain local provisioning must never be retried",
     );
+  });
+}
+
+for (const invalid of [
+  "client",
+  "runtime-pid",
+  "runtime-build",
+  "generation",
+  "handoff",
+  "endpoint",
+  "owner",
+] as const) {
+  test(`invalid grant descriptor refuses the operator before issuance: ${invalid}`, async (t) => {
+    const f = fixture(t);
+    if (invalid === "runtime-pid") f.expected.physicalRuntime.pid = 0;
+    if (invalid === "runtime-build") f.expected.physicalRuntime.build = "";
+    if (invalid === "generation") f.expected.generation.epoch = "";
+    if (invalid === "handoff") f.expected.handoffId = "";
+    if (invalid === "endpoint")
+      f.expected.endpointURL = "http://127.0.0.1:8765/admission/v1";
+    let provisions = 0;
+    const prepared = prepareBrokerPhysicalGeneration({
+      runtime: f.expected,
+      clientId: invalid === "client" ? "" : f.expected.brokerOwner.clientId,
+      async provision() {
+        provisions++;
+        return { grantFile: f.grantFile, grantDigest: f.options.grantDigest };
+      },
+    });
+    await assert.rejects(
+      prepared.preparePhysicalGeneration({
+        directory: f.root,
+        owner: {
+          ...f.expected.brokerOwner,
+          nonce: invalid === "owner" ? "" : f.expected.brokerOwner.nonce,
+        },
+        buildHash: "a".repeat(64),
+        configHash: "b".repeat(64),
+        assertBrokerOwner() {},
+      }),
+    );
+    assert.equal(provisions, 0);
+    assert.throws(() => prepared.authorization());
   });
 }
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import {
   createPhysicalGenerationAuthorization,
+  validatePhysicalGenerationDescriptor,
   type PhysicalGenerationDescriptor,
 } from "./physical-generation";
 
@@ -58,9 +59,17 @@ export function prepareBrokerPhysicalGeneration(options: {
           queueDirectory: context.directory,
         },
       };
+      validatePhysicalGenerationDescriptor(descriptor, options.transport);
       // A provisioning callback may be asynchronous. It receives a copy, not
       // the descriptor used to pin the resulting private file.
-      const grant = await options.provision(structuredClone(descriptor));
+      let grant: { grantFile: string; grantDigest: string };
+      try {
+        grant = await options.provision(structuredClone(descriptor));
+      } catch {
+        // The operator may include credentials/private paths in its exception.
+        // Preserve uncertainty by refusing retries, not by returning that error.
+        unavailable();
+      }
       context.assertBrokerOwner();
       const candidate = createPhysicalGenerationAuthorization({
         ...grant,
