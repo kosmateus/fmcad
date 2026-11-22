@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   createDocumentObservationStore,
@@ -77,7 +77,13 @@ function fixture(t: { after(fn: () => void): void }) {
   };
   const proof: ObservationProof = { ...binding, artifacts: [] };
   for (const [role, value] of Object.entries(files)) {
-    const reference = `jobs/job-a/${role}.json`;
+    const name =
+      role === "rpc"
+        ? "rpc-rpc-a.json"
+        : role === "response"
+          ? "received-response-rpc-a.json"
+          : `physical-turn-${hash(binding.rpcId)}.json`;
+    const reference = `jobs/job-a/${name}`;
     const bytes = JSON.stringify(value);
     fs.writeFileSync(path.join(root, reference), bytes, { mode: 0o600 });
     proof.artifacts.push({ role, reference, sha256: hash(bytes) });
@@ -327,7 +333,7 @@ test("orphan record is evidence only and does not enumerate or authorize checkpo
 
 test("fsync failure never returns a successful reference; exact retry can reconcile", (t) => {
   const f = fixture(t);
-  let fail = true;
+  let fail = false;
   const io = {
     ...fs,
     fsyncSync(fd: number) {
@@ -336,6 +342,7 @@ test("fsync failure never returns a successful reference; exact retry can reconc
     },
   };
   const store = createDocumentObservationStore({ ...f.options, io });
+  fail = true;
   assert.throws(() => store.persist(f.context, f.proof), /disk failure/);
   assert.deepEqual(
     fs.readdirSync(path.join(f.root, "document-observations")),
@@ -461,10 +468,11 @@ test("output directory replacement cannot redirect exclusive publication", (t) =
 
 test("directory fsync fault after exclusive link leaves only an unreferenced orphan", (t) => {
   const f = fixture(t);
+  let armed = false;
   const io = {
     ...fs,
     fsyncSync(fd: number) {
-      if (fs.fstatSync(fd).isDirectory())
+      if (armed && fs.fstatSync(fd).isDirectory())
         throw Object.assign(new Error("directory durability unknown"), {
           code: "EIO",
         });
@@ -472,6 +480,7 @@ test("directory fsync fault after exclusive link leaves only an unreferenced orp
     },
   };
   const store = createDocumentObservationStore({ ...f.options, io });
+  armed = true;
   assert.throws(() => store.persist(f.context, f.proof), /durability unknown/);
   assert.equal(
     fs.readdirSync(path.join(f.root, "document-observations")).length,
@@ -511,10 +520,11 @@ test("stale physical generation/runtime and foreign probe bindings cannot publis
 test("source mutation during durable publication cannot return a reference", (t) => {
   const f = fixture(t);
   let changed = false;
+  let armed = false;
   const io = {
     ...fs,
     fsyncSync(fd: number) {
-      if (!changed && fs.fstatSync(fd).isDirectory()) {
+      if (armed && !changed && fs.fstatSync(fd).isDirectory()) {
         changed = true;
         fs.writeFileSync(
           path.join(f.root, f.proof.artifacts[0]!.reference),
@@ -525,6 +535,251 @@ test("source mutation during durable publication cannot return a reference", (t)
     },
   };
   const store = createDocumentObservationStore({ ...f.options, io });
+  armed = true;
   assert.throws(() => store.persist(f.context, f.proof));
   assert.equal(changed, true);
 });
+
+test("identical copies under noncanonical role names cannot replace original sources", (t) => {
+  for (const role of ["rpc", "response", "physical-intent"]) {
+    const f = fixture(t);
+    const source = f.proof.artifacts.find((a) => a.role === role)!;
+    const original = path.join(f.root, source.reference);
+    const replacement = `jobs/job-a/${role}.json`;
+    fs.renameSync(original, path.join(f.root, replacement));
+    source.reference = replacement;
+    assert.throws(() => f.publish(), /canonical artifact/);
+    assert.equal(fs.existsSync(original), false);
+  }
+});
+
+test("reopen after root fsync failure must resync the existing directory entry", (t) => {
+  const f = fixture(t);
+  const directory = path.join(f.root, "document-observations");
+  fs.rmdirSync(directory);
+  const rootInode = fs.statSync(f.root).ino;
+  let failures = 2;
+  let rootSyncs = 0;
+  const io = {
+    ...fs,
+    fsyncSync(fd: number) {
+      if (fs.fstatSync(fd).ino === rootInode) {
+        rootSyncs++;
+        if (failures-- > 0) throw new Error("root fsync EIO");
+      }
+      fs.fsyncSync(fd);
+    },
+  };
+  assert.throws(
+    () => createDocumentObservationStore({ ...f.options, io }),
+    /root fsync EIO/,
+  );
+  assert.equal(fs.existsSync(directory), true);
+  assert.throws(
+    () => createDocumentObservationStore({ ...f.options, io }),
+    /root fsync EIO/,
+  );
+  const reopened = createDocumentObservationStore({ ...f.options, io });
+  const readback = reopened.persist(f.context, f.proof);
+  reopened.verify({ ...f.context, readback });
+  assert.equal(rootSyncs, 3);
+});
+
+test("last temporary unlink is followed by fsync on the pinned directory", (t) => {
+  const f = fixture(t);
+  const inode = fs.statSync(path.join(f.root, "document-observations")).ino;
+  const events: string[] = [];
+  const io = {
+    ...fs,
+    unlinkSync(file: fs.PathLike) {
+      fs.unlinkSync(file);
+      events.push("unlink");
+    },
+    fsyncSync(fd: number) {
+      fs.fsyncSync(fd);
+      if (fs.fstatSync(fd).ino === inode) events.push("directory-fsync");
+    },
+  };
+  const store = createDocumentObservationStore({ ...f.options, io });
+  store.persist(f.context, f.proof);
+  assert.deepEqual(events, ["directory-fsync", "unlink", "directory-fsync"]);
+});
+
+test("interrupted temporary unlink is reconciled by exact-byte retry without overwriting", (t) => {
+  const f = fixture(t);
+  let armed = true;
+  const io = {
+    ...fs,
+    unlinkSync(file: fs.PathLike) {
+      if (armed) {
+        armed = false;
+        throw new Error("unlink interrupted");
+      }
+      fs.unlinkSync(file);
+    },
+  };
+  const store = createDocumentObservationStore({ ...f.options, io });
+  assert.throws(() => store.persist(f.context, f.proof), /unlink interrupted/);
+  const directory = path.join(f.root, "document-observations");
+  const final = fs
+    .readdirSync(directory)
+    .find((name) => name.endsWith(".json"))!;
+  const file = path.join(directory, final);
+  const before = fs.statSync(file),
+    bytes = fs.readFileSync(file);
+  assert.equal(before.nlink, 2);
+  const recovered = createDocumentObservationStore(f.options);
+  const readback = recovered.persist(f.context, f.proof);
+  assert.equal(fs.statSync(file).ino, before.ino);
+  assert.equal(fs.statSync(file).nlink, 1);
+  assert.deepEqual(fs.readFileSync(file), bytes);
+  assert.deepEqual(fs.readdirSync(directory), [final]);
+  recovered.verify({ ...f.context, readback });
+});
+
+test("restore reconciles only the matching publication temporary hardlink", (t) => {
+  const f = fixture(t);
+  const observation = f.publish();
+  const file = path.join(f.root, observation.readback.reference);
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  fs.linkSync(file, temporary); // Model a resurrected unsynced unlink after crash.
+  const foreign = `${file}.${randomUUID()}.tmp`;
+  fs.writeFileSync(foreign, "unrelated owned file", { mode: 0o600 });
+  createDocumentObservationStore(f.options).verify(observation);
+  assert.equal(fs.existsSync(temporary), false);
+  assert.equal(fs.readFileSync(foreign, "utf8"), "unrelated owned file");
+  assert.equal(fs.statSync(file).nlink, 1);
+});
+
+test("foreign hardlink is not forcibly removed during restore or retry", (t) => {
+  const f = fixture(t);
+  const observation = f.publish();
+  const file = path.join(f.root, observation.readback.reference);
+  const foreign = `${file}.not-a-publication`;
+  fs.linkSync(file, foreign);
+  assert.throws(
+    () => f.store.verify(observation),
+    /foreign or unverified hardlinks/,
+  );
+  assert.throws(
+    () => f.store.persist(f.context, f.proof),
+    /foreign or unverified hardlinks/,
+  );
+  assert.equal(fs.statSync(file).nlink, 2);
+  assert.deepEqual(fs.readFileSync(foreign), fs.readFileSync(file));
+});
+
+test("reopen reasserts final-unlink durability even when visible nlink is already one", (t) => {
+  const f = fixture(t);
+  const inode = fs.statSync(path.join(f.root, "document-observations")).ino;
+  let unlinked = false;
+  const io = {
+    ...fs,
+    unlinkSync(file: fs.PathLike) {
+      fs.unlinkSync(file);
+      unlinked = true;
+    },
+    fsyncSync(fd: number) {
+      if (unlinked && fs.fstatSync(fd).ino === inode)
+        throw new Error("final-unlink fsync EIO");
+      fs.fsyncSync(fd);
+    },
+  };
+  const store = createDocumentObservationStore({ ...f.options, io });
+  assert.throws(
+    () => store.persist(f.context, f.proof),
+    /final-unlink fsync EIO/,
+  );
+  const reference = `document-observations/${hash(f.context.id)}.json`;
+  const file = path.join(f.root, reference);
+  assert.equal(fs.statSync(file).nlink, 1);
+  const observation = {
+    ...f.context,
+    readback: {
+      reference,
+      sha256: hash(fs.readFileSync(file)),
+      probeRequestId: f.proof.probeRequestId,
+    },
+  };
+  // Root initialization can succeed, but visible file bytes cannot bypass the
+  // required child-directory durability reassertion at restore.
+  const reopened = createDocumentObservationStore({ ...f.options, io });
+  assert.throws(() => reopened.verify(observation), /final-unlink fsync EIO/);
+  createDocumentObservationStore(f.options).verify(observation);
+});
+
+for (const variant of ["identity", "permissions", "hardlink"] as const) {
+  test(`another process swapping an opened source ${variant} is rejected at FD boundary`, (t) => {
+    const f = fixture(t);
+    const source = path.join(f.root, f.proof.artifacts[0]!.reference);
+    const job = path.dirname(source),
+      backup = job + ".original";
+    const original = fs.statSync(source);
+    let armed = true,
+      didRead = false,
+      switched = false;
+    const child = (code: string) =>
+      execFileSync(process.execPath, ["-e", code, job, backup, source]);
+    const io = {
+      ...fs,
+      openSync(...args: Parameters<typeof fs.openSync>) {
+        if (args[0] === source && armed) {
+          armed = false;
+          child(`
+            const fs=require('node:fs'),path=require('node:path');
+            const [job,backup,source]=process.argv.slice(1);
+            fs.renameSync(job,backup);
+            fs.cpSync(backup,job,{recursive:true});
+            fs.chmodSync(job,0o700);
+            ${variant === "permissions" ? "fs.chmodSync(source,0o644);" : ""}
+            ${variant === "hardlink" ? "fs.linkSync(source,source+'.link');" : ""}
+          `);
+          switched = true;
+        }
+        return fs.openSync(...args);
+      },
+      readSync: new Proxy(fs.readSync, {
+        apply(target, receiver, args) {
+          if (switched) didRead = true;
+          return Reflect.apply(target, receiver, args);
+        },
+      }),
+      closeSync(fd: number) {
+        fs.closeSync(fd);
+        if (switched) {
+          child(`
+            const fs=require('node:fs');
+            const [job,backup]=process.argv.slice(1);
+            fs.rmSync(job,{recursive:true}); fs.renameSync(backup,job);
+          `);
+          switched = false;
+        }
+      },
+    };
+    const store = createDocumentObservationStore({ ...f.options, io });
+    assert.throws(
+      () => store.persist(f.context, f.proof),
+      variant === "identity"
+        ? /Opened observation inode/
+        : /private, owned and regular/,
+    );
+    assert.equal(didRead, false);
+    const restored = fs.statSync(source);
+    assert.deepEqual(
+      [
+        restored.ino,
+        restored.mode,
+        restored.nlink,
+        restored.mtimeMs,
+        restored.ctimeMs,
+      ],
+      [
+        original.ino,
+        original.mode,
+        original.nlink,
+        original.mtimeMs,
+        original.ctimeMs,
+      ],
+    );
+  });
+}
