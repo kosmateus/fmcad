@@ -262,8 +262,11 @@ export function createRuntimeRootPhysicalWiring(
         frozenBaseline: { snapshot, snapshots },
       };
     } catch (error) {
-      verified = undefined;
-      reader?.ports.invalidate();
+      // An older attempt must not revoke the newer reader generation.
+      if (revision === currentRevision) {
+        verified = undefined;
+        reader?.ports.invalidate();
+      }
       throw error;
     }
   }

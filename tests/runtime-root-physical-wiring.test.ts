@@ -10,6 +10,8 @@ import {
   type NativeRuntimeRebaselineOptions,
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import { claimBrokerLifetime } from "../packages/node-adapters/src/execution/broker-lifetime";
+import { prepareBrokerPhysicalGeneration } from "../packages/node-adapters/src/execution/physical-generation-broker";
+import { PhysicalGenerationProvisionError } from "../packages/node-adapters/src/execution/physical-generation-provision";
 
 const load = createRequire(path.join(process.cwd(), "src/queue-broker.js"));
 const core = load(
@@ -425,6 +427,91 @@ test("an existing completion does not authorize a profile before async root veri
   });
   assert.equal(f.actions().filter((action) => action === "grant").length, 0);
 });
+
+test("concurrent unchanged root reads preserve the newest verification and private issuance", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const physical = f.physical();
+  const results = await Promise.allSettled([
+    physical.verifyRuntimeRootBeforeRestore(f.context),
+    physical.verifyRuntimeRootBeforeRestore(f.context),
+  ]);
+  assert.equal(results[1]!.status, "fulfilled");
+  await physical.preparePhysicalGeneration(f.claim());
+  assert.equal(f.actions().filter((action) => action === "grant").length, 1);
+});
+
+test("archival completion without its head still refuses missing-controller legacy fallback", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  fs.unlinkSync(path.join(f.store, "runtime-rebaseline-head.json"));
+  const physical = physicalBrokerPortsFromEnvironment({
+    FMCAD_PHYSICAL_OPERATOR_PROFILE: f.profile,
+  });
+  assert.ok(physical);
+  await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context), {
+    code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
+  });
+  await assert.rejects(physical.preparePhysicalGeneration(f.claim()), {
+    code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
+  });
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+test("authentic private provider owner loss during prepare stays definitely not started", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const physical = f.physical();
+  await physical.verifyRuntimeRootBeforeRestore(f.context);
+  fs.writeFileSync(f.fault, JSON.stringify({ loseOwnerAfterPrepare: true }));
+  await assert.rejects(
+    physical.preparePhysicalGeneration(f.claim()),
+    (error) =>
+      !!error &&
+      typeof error === "object" &&
+      "notStarted" in error &&
+      error.notStarted === true &&
+      !("grantIssuance" in error),
+  );
+  assert.equal(f.actions().filter((action) => action === "prepare").length, 1);
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+for (const fault of ["public-flags", "typed-error-after-return"] as const)
+  test(`private broker preserves uncertain issuance for ${fault}`, async (t) => {
+    const f = fixture(t);
+    let returned = false;
+    const broker = prepareBrokerPhysicalGeneration({
+      runtime: f.runtime,
+      clientId: "broker-client",
+      async provision() {
+        if (fault === "public-flags")
+          throw Object.assign(new Error("private data"), {
+            notStarted: true,
+            grantIssuance: "notStarted",
+            name: "PhysicalGenerationProvisionError",
+          });
+        returned = true;
+        return {
+          grantFile: path.join(f.directory, "nonexistent"),
+          grantDigest: "a".repeat(64),
+        };
+      },
+    });
+    const claim = f.claim();
+    const actualAssert = claim.assertBrokerOwner;
+    claim.assertBrokerOwner = () => {
+      actualAssert();
+      if (returned) throw new PhysicalGenerationProvisionError("notStarted");
+    };
+    await assert.rejects(broker.preparePhysicalGeneration(claim), (error) => {
+      assert.ok(error instanceof Error);
+      assert.equal(Reflect.get(error, "grantIssuance"), "unknown");
+      assert.equal("notStarted" in error, false);
+      assert.equal(error.message.includes("private data"), false);
+      return true;
+    });
+  });
 
 test("a consumed restore view permits settled mutable projection before a fresh activation query", async (t) => {
   const f = fixture(t);

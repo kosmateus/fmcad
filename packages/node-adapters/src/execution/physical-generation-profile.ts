@@ -44,6 +44,7 @@ function assertNoRootWithoutAuthority(directory: string) {
   for (const name of [
     "runtime-rebaseline-head.json",
     "runtime-rebaseline-publication.json",
+    "runtime-rebaselines",
   ])
     try {
       fs.lstatSync(path.join(directory, name));
