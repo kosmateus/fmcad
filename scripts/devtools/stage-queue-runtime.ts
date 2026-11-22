@@ -148,7 +148,9 @@ export function stageQueueTestFixtures(root: string): void {
     "tests/frozen-metadata-profile.test.js",
     "tests/runtime-upgrade-lineage.test.js",
     "tests/integration/offline-cli.js",
-    ...workspaceNames.map((filename) => `tests/fixtures/${filename}`),
+    ...[...workspaceNames, ...names].map(
+      (filename) => `tests/fixtures/${filename}`,
+    ),
   ]
     .sort()
     .map((file) => {
