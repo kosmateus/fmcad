@@ -75,7 +75,7 @@ export function createDocumentUnlockAdmission(
       context: context.state.data.contextEpoch ?? 0,
     };
   }
-  function beginProbe(selector: UnlockTargetSelector): UnlockProbeTicket {
+  function validateSelector(selector: UnlockTargetSelector) {
     if (
       Object.keys(selector).some(
         (key) => !["docId", "docFileId"].includes(key),
@@ -88,6 +88,9 @@ export function createDocumentUnlockAdmission(
         "DOCUMENT_UNLOCK_TARGET_UNPROVEN",
         "Exact document pins are required",
       );
+  }
+  function beginProbe(selector: UnlockTargetSelector): UnlockProbeTicket {
+    validateSelector(selector);
     const context = current();
     if (context.scope !== "ordinary")
       fail(
@@ -160,29 +163,52 @@ export function createDocumentUnlockAdmission(
     // Copy the trusted principal; subsequent caller mutation cannot change actor.
     const actor = { ...principal };
     function recheck() {
-      const context = current();
-      if (!isDeepStrictEqual(binding(context), original))
-        fail(
-          "DOCUMENT_UNLOCK_STALE",
-          "The current generation or epoch changed",
-        );
-      if (context.scope !== "ordinary")
-        fail(
-          "DOCUMENT_UNLOCK_FROZEN_SCOPE",
-          "Scoped metadata qualification does not authorize document unlocking",
-        );
-      if (
-        !text(actor.clientId) ||
-        !text(actor.clientTokenHash) ||
-        !Object.hasOwn(context.clients, actor.clientId) ||
-        context.clients[actor.clientId] !== actor.clientTokenHash
-      )
-        fail(
-          "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
-          "Current IPC principal is required",
-        );
-      if (!["status", "inspect", "accept"].includes(action))
-        fail("INVALID_REQUEST", "Unknown document unlock action");
+      admit(checkContext(actor, original!), actor, action, target);
+    }
+    recheck();
+    // No job/result/token or historical author identity crosses this boundary.
+    return Object.freeze({ target, recheck });
+  }
+  function checkContext(
+    actor: UnlockPrincipal,
+    original: ReturnType<typeof binding>,
+  ) {
+    const context = current();
+    if (!isDeepStrictEqual(binding(context), original))
+      fail("DOCUMENT_UNLOCK_STALE", "The current generation or epoch changed");
+    if (context.scope !== "ordinary")
+      fail(
+        "DOCUMENT_UNLOCK_FROZEN_SCOPE",
+        "Scoped metadata qualification does not authorize document unlocking",
+      );
+    if (
+      !text(actor.clientId) ||
+      !text(actor.clientTokenHash) ||
+      !Object.hasOwn(context.clients, actor.clientId) ||
+      context.clients[actor.clientId] !== actor.clientTokenHash
+    )
+      fail(
+        "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+        "Current IPC principal is required",
+      );
+    return context;
+  }
+  function admit(
+    context: UnlockAdmissionContext,
+    actor: UnlockPrincipal,
+    action: "status" | "inspect" | "accept",
+    target?: Pick<CurrentUnlockTarget, "name" | "creationId" | "fileId">,
+  ) {
+    if (!["status", "inspect", "accept"].includes(action))
+      fail("INVALID_REQUEST", "Unknown document unlock action");
+    const request: Parameters<typeof epochAdmission>[1] = {
+      kind: "rpc",
+      clientId: actor.clientId,
+      requestId: "document-unlock-admission",
+      timeoutMs: 1,
+      payload: { jsonrpc: "2.0", method: "broker-document-unlock-metadata" },
+    };
+    if (target) {
       const service = load("./cad-service") as {
         decodeInvocation(value: unknown): unknown;
         policyArguments(value: unknown): string[];
@@ -200,23 +226,58 @@ export function createDocumentUnlockAdmission(
           action === "accept" ? { name: "unlock-admission", plane: "XY" } : {},
       };
       const invocation = service.decodeInvocation(payload);
-      const request: Parameters<typeof epochAdmission>[1] = {
-        kind: "command",
-        clientId: actor.clientId,
-        requestId: "document-unlock-admission",
-        timeoutMs: 1,
-        argv: service.policyArguments(invocation),
-        payload,
-      };
-      (
-        load("./queue-isolated-epoch") as {
-          epochAdmission: typeof epochAdmission;
-        }
-      ).epochAdmission(context.state, request, { ...context.clients });
+      request.kind = "command";
+      request.argv = service.policyArguments(invocation);
+      request.payload = payload;
+    }
+    (
+      load("./queue-isolated-epoch") as {
+        epochAdmission: typeof epochAdmission;
+      }
+    ).epochAdmission(context.state, request, { ...context.clients });
+  }
+  /** Broker metadata permission only: does not resolve a document, verify alias
+   * agreement, prove existence or mint a current CAD target. No probe is needed.
+   */
+  function authorizeStatus(
+    principal: UnlockPrincipal,
+    selector: UnlockTargetSelector,
+  ) {
+    validateSelector(selector);
+    const selected = Object.freeze({ ...selector });
+    const original = binding(current());
+    const actor = { ...principal };
+    function recheck() {
+      const context = checkContext(actor, original);
+      const epoch = context.state.epoch;
+      if (epoch && context.state.admissionMode !== "normal-multidocument") {
+        // This is the existing unsaved isolated namespace, not a CAD probe.
+        if (
+          selected.docId !== epoch.document.creationId ||
+          selected.docFileId !== undefined
+        )
+          fail(
+            "EPOCH_SCOPE_REQUIRED",
+            "Metadata status is restricted to the exact isolated document namespace",
+          );
+        admit(context, actor, "status", epoch.document);
+      } else {
+        // Existing ordinary admission has no extra per-document approval gate.
+        // An unresolved pair of IDs remains only a selector, never an alias proof.
+        admit(context, actor, "status");
+      }
     }
     recheck();
-    // No job/result/token or historical author identity crosses this boundary.
-    return Object.freeze({ target, recheck });
+    return Object.freeze({
+      selector: selected,
+      identity: "unverified" as const,
+      recheck,
+    });
   }
-  return Object.freeze({ beginProbe, confirmTarget, authorize });
+  return Object.freeze({
+    beginProbe,
+    confirmTarget,
+    authorize,
+    authorizeStatus,
+  });
 }

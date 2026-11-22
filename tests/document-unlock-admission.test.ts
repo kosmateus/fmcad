@@ -153,6 +153,88 @@ test("registration is not an isolated document grant", (t) => {
     );
 });
 
+test("broker-only status needs no probe or SDK and never produces a resolved identity", (t) => {
+  const f = fixture(t);
+  f.grant();
+  const fetch = t.mock.method(globalThis, "fetch", () => {
+    throw new Error("Status must never send an SDK/HTTP request");
+  });
+  const status = f.admission.authorizeStatus(f.principal(), {
+    docId: f.observed.creationId,
+  });
+  status.recheck();
+  assert.equal(fetch.mock.callCount(), 0);
+  assert.equal(status.identity, "unverified");
+  assert.deepEqual(status.selector, { docId: f.observed.creationId });
+  const json = JSON.stringify(status);
+  assert.ok(!json.includes(f.pointer.ownerTokenHash));
+  assert.ok(!json.includes(f.observed.fingerprint));
+  for (const id of f.pointer.quarantinedJobIds) assert.ok(!json.includes(id));
+  assert.throws(
+    () => f.admission.authorize(f.principal(), "accept", JSON.parse(json)),
+    { code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN" },
+  );
+});
+
+test("broker-only status still requires the exact current isolated namespace and grant", (t) => {
+  const f = fixture(t);
+  assert.throws(
+    () =>
+      f.admission.authorizeStatus(f.principal(), {
+        docId: f.observed.creationId,
+      }),
+    { code: "EPOCH_CLIENT_NOT_GRANTED" },
+  );
+  f.grant();
+  for (const selector of [
+    { docId: "foreign-B" },
+    { docFileId: "saved-B" },
+    { docId: f.observed.creationId, docFileId: "contradictory-file" },
+  ])
+    assert.throws(() => f.admission.authorizeStatus(f.principal(), selector), {
+      code: "EPOCH_SCOPE_REQUIRED",
+    });
+});
+
+test("broker-only normal status preserves unresolved IDs without pretending to probe aliases", (t) => {
+  const f = fixture(t);
+  f.normal();
+  for (const selector of [
+    { docId: "A" },
+    { docFileId: "file-A" },
+    { docId: "A", docFileId: "possibly-unrelated-file-B" },
+  ]) {
+    const status = f.admission.authorizeStatus(f.principal(), selector);
+    status.recheck();
+    assert.equal(status.identity, "unverified");
+    assert.deepEqual(status.selector, selector);
+    assert.throws(
+      () =>
+        f.admission.confirmTarget(
+          JSON.parse(JSON.stringify(status)),
+          f.observed,
+        ),
+      { code: "DOCUMENT_UNLOCK_TARGET_UNPROVEN" },
+    );
+  }
+});
+
+test("broker-only status rechecks revocation, frozen scope and generation before use", (t) => {
+  const f = fixture(t);
+  const grant = f.grant();
+  const status = f.admission.authorizeStatus(f.principal(), {
+    docId: f.observed.creationId,
+  });
+  fs.unlinkSync(grant);
+  assert.throws(status.recheck, { code: "EPOCH_CLIENT_NOT_GRANTED" });
+  f.grant();
+  f.setScope("frozen-metadata");
+  assert.throws(status.recheck, { code: "DOCUMENT_UNLOCK_FROZEN_SCOPE" });
+  f.setScope("ordinary");
+  f.setGeneration("changed-before-metadata-publication");
+  assert.throws(status.recheck, { code: "DOCUMENT_UNLOCK_STALE" });
+});
+
 test("the original owner also needs its current unrotated credential", (t) => {
   const f = fixture(t);
   const owner = f.principal(f.clientId);
@@ -430,6 +512,11 @@ test("bounded native read capability is not a general modeling capability", (t) 
     f.clientId,
   );
   f.admission.authorize(f.principal(), "inspect", f.confirm()).recheck();
+  f.admission
+    .authorizeStatus(f.principal(), {
+      docId: f.observed.creationId,
+    })
+    .recheck();
   assert.throws(
     () => f.admission.authorize(f.principal(), "accept", f.confirm()),
     {
@@ -468,4 +555,11 @@ test("source-pinned fixed-run-only grant cannot become document unlocking", (t) 
         code: "NATIVE_FIXTURE_SCOPE_REQUIRED",
       },
     );
+  assert.throws(
+    () =>
+      f.admission.authorizeStatus(f.principal(), {
+        docId: f.observed.creationId,
+      }),
+    { code: "NATIVE_FIXTURE_SCOPE_REQUIRED" },
+  );
 });
