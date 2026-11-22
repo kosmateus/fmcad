@@ -290,3 +290,5 @@ src/document-unlock-controller.js
 src/document-unlock-controller.d.ts
 src/document-unlock-diagnostics.js
 src/document-unlock-diagnostics.d.ts
+src/queue-runtime-retirement.js
+src/queue-runtime-retirement.d.ts

@@ -84,6 +84,7 @@
     "src/queue-closed-epoch-successor.ts",
     "src/queue-audit-response-proof.ts",
     "src/queue-state.ts",
+    "src/queue-runtime-retirement.ts",
     "src/queue-phased.ts",
     "src/queue-document.ts",
     "src/fusion-reset.ts",

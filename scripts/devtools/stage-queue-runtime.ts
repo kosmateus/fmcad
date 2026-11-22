@@ -15,6 +15,7 @@ export const queueRuntimeModules = [
   "queue-document",
   "queue-phased",
   "queue-state",
+  "queue-runtime-retirement",
   "queue-audit-response-proof",
   "queue-atomic-migration-stop",
   "queue-atomic-audit-upgrade",

@@ -33,6 +33,12 @@ export interface AppliedRuntimeRetirement {
   frozenDigest: string;
 }
 export interface VerifiedRuntimeRetirement {
+  /** Required by the Node restore adapter; content equality is not a namespace. */
+  namespace?: {
+    directory: string;
+    device: number;
+    inode: number;
+  };
   marker: AppliedRuntimeRetirement;
   /** Exact current queue bytes, observed again under the actual writer claim. */
   currentSnapshotDigest: string;
