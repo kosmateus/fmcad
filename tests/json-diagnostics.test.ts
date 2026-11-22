@@ -15,7 +15,7 @@ const { main } = load(
   path.join(root, "src/cli"),
 ) as typeof import("../src/entrypoints/cli");
 const cfg: FmcadConfiguration = {
-  backend: "mcp",
+  backend: "addin",
   routing: "queue",
   url: "http://host",
   headers: { Authorization: "Bearer opaque-token" },
@@ -156,38 +156,39 @@ test("invalid config cannot leak partial/escaped header values before config res
   }
 });
 
-test("invalid imported JSONC is safe and forced init does not mutate existing config", async (t) => {
+test("invalid fmcad JSONC config reports its file and location without leaking or writing", async (t) => {
   const folder = fixture(t);
-  t.mock.method(os, "homedir", () => folder);
-  const source = path.join(folder, ".opencode", "opencode.jsonc");
-  fs.mkdirSync(path.dirname(source));
+  const source = path.join(folder, "fmcad.jsonc");
   const config = path.join(folder, "config.json");
   fs.writeFileSync(config, "existing config sentinel");
   for (const text of invalidConfigs) {
-    fs.writeFileSync(source, "// imported config\n" + text);
+    fs.writeFileSync(source, "// fmcad config\n" + text);
     const h = harness();
-    assert.equal(
-      await main(
-        ["init", "--from-opencode", "--force", "--config", config],
-        h.deps,
-      ),
-      1,
-    );
+    assert.equal(await main(["tools", "--config", source], h.deps), 1);
     failed(h);
     assert.ok(
-      h.stderr.startsWith(`ERROR Cannot parse ${source}: Invalid JSONC`),
+      h.stderr.startsWith(`ERROR Cannot parse config ${source}: Invalid JSONC`),
     );
+    assert.match(h.stderr, /Invalid JSONC \(line 2 column [1-9]\d*\)\n$/);
     assert.doesNotMatch(h.stderr, /opaque|padding|Authorization|X-Custom/);
     assert.equal(fs.readFileSync(config, "utf8"), "existing config sentinel");
-    assert.equal(
-      fs.readFileSync(source, "utf8"),
-      "// imported config\n" + text,
-    );
+    assert.equal(fs.readFileSync(source, "utf8"), "// fmcad config\n" + text);
     assert.deepEqual(fs.readdirSync(folder).sort(), [
-      ".opencode",
       "config.json",
+      "fmcad.jsonc",
     ]);
   }
+  const malformed = '// fmcad config\n{\n  "opaque": }\n}';
+  fs.writeFileSync(source, malformed);
+  const h = harness();
+  assert.equal(await main(["tools", "--config", source], h.deps), 1);
+  failed(h);
+  assert.equal(
+    h.stderr,
+    `ERROR Cannot parse config ${source}: Invalid JSONC (line 3 column 13)\n`,
+  );
+  assert.equal(fs.readFileSync(source, "utf8"), malformed);
+  assert.equal(fs.readFileSync(config, "utf8"), "existing config sentinel");
 });
 
 test("invalid args and args-file suppress unlabeled snippets before config load or backend construction", async (t) => {
