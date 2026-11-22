@@ -168,6 +168,37 @@ for (const kind of ["path-replaced", "inode-written"]) {
   });
 }
 
+test("sealing refuses inode changes during final parent verification", () => {
+  const f = fixture();
+  let reads = 0,
+    changed = false;
+  const replacement = Buffer.alloc(f.bytes.length, 89);
+  try {
+    assert.throws(
+      () =>
+        sealFreshCheckpointReceipt(f.input, {
+          ...fs,
+          readSync(fd, buffer, offset, length, position) {
+            if (position === 0) reads++;
+            return fs.readSync(fd, buffer, offset, length, position);
+          },
+          lstatSync(file) {
+            if (file === f.directory && reads === 3 && !changed) {
+              changed = true;
+              fs.writeFileSync(f.receiptPath, replacement);
+            }
+            return fs.lstatSync(file);
+          },
+        }),
+      { code: "STORAGE_UNAVAILABLE" },
+    );
+    assert.equal(changed, true);
+    assert.deepEqual(fs.readFileSync(f.receiptPath), replacement);
+  } finally {
+    f.close();
+  }
+});
+
 test("failed original authentication never changes the new receipt's mode", () => {
   const f = fixture();
   try {
