@@ -45,6 +45,8 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   let cancelledRead = false;
   let failOutcome = false;
   let differentProductGeneration = false;
+  let windowsReceiptMode = false;
+  const windowsReceipts: { file: string; ino: number; sha256: string }[] = [];
   let beforeHistory: (() => void | Promise<void>) | undefined;
   const released = new Set<string>();
   const productJobs: string[] = [];
@@ -138,8 +140,14 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
     } };
     const receipts = nativeReceipts(script!, home, observed);
     const probe = receipts.some((entry) => entry.value["probeObservation"]);
-    for (const entry of receipts)
+    for (const entry of receipts) {
       fs.writeFileSync(entry.file, JSON.stringify(entry.value), { mode: 0o600 });
+      if (windowsReceiptMode && !probe) {
+        fs.chmodSync(entry.file, 0o644);
+        windowsReceipts.push({ file: entry.file, ino: fs.statSync(entry.file).ino,
+          sha256: hash(fs.readFileSync(entry.file, "utf8")) });
+      }
+    }
     let stdout: string;
     if (probe) {
       identityCalls++;
@@ -253,6 +261,8 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
     cancelledRead(value: boolean) { cancelledRead = value; },
     failOutcome(value = true) { failOutcome = value; },
     changeProductGeneration() { differentProductGeneration = true; },
+    useWindowsReceipts() { windowsReceiptMode = true; },
+    windowsReceipts: () => [...windowsReceipts],
     removePreparation() { Object.defineProperty(physical, "prepareCallTool", { value: undefined }); },
     productJobs: () => [...productJobs],
     revoke(value: boolean) { revoked = value; },
@@ -272,6 +282,27 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 const target = { docFileId: "file-A" };
+
+test("public inspection seals a fresh Windows-created receipt without changing its original identity",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t);
+    f.useWindowsReceipts();
+    const client = await f.client();
+    const result = record(await client.documentUnlock({
+      action: "inspect", target, requestId: "fresh-windows-receipt-inspect",
+    }));
+    assert.equal(result["state"], "inspection_required", JSON.stringify(result));
+    assert.equal(typeof record(result["observation"])["observationId"], "string");
+    const receipts = f.windowsReceipts();
+    assert.equal(receipts.length, 1);
+    for (const receipt of receipts) {
+      const after = fs.statSync(receipt.file);
+      assert.equal(after.mode & 0o7777, 0o600);
+      assert.equal(after.ino, receipt.ino);
+      assert.equal(hash(fs.readFileSync(receipt.file, "utf8")), receipt.sha256);
+    }
+    assert.equal(f.counts().products, 1, "No replay while securing original receipt");
+  });
 
 test("shared public blocker projection hides foreign and unresolvable jobs without dropping private conflicts", () => {
   const { checkpointDisclosableConflicts } = load("./document-checkpoint-broker") as

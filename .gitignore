@@ -286,6 +286,8 @@ src/document-checkpoint-readback.js
 src/document-checkpoint-readback.d.ts
 src/document-checkpoint-broker.js
 src/document-checkpoint-broker.d.ts
+src/document-checkpoint-receipt.js
+src/document-checkpoint-receipt.d.ts
 src/document-continuation-broker.js
 src/document-continuation-broker.d.ts
 src/document-unlock-controller.js

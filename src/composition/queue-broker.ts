@@ -7415,6 +7415,35 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (parsed["success"] !== true || parsed["operation"] !== "param.inspect")
         fail("DOCUMENT_STATE_CHANGED", "Checkpoint result operation changed");
       const checkpoint = checkpointEvidence.decode(parsed["result"], job.documentInspection!.target);
+      const readRecords = context.turnRpcs.map((item) => item.record).filter((record) =>
+        (record.binding["documentScope"] as { operation?: string } | undefined)?.operation === "param.inspect");
+      if (readRecords.length !== 1)
+        fail("STORAGE_UNAVAILABLE", "Fresh checkpoint requires one original read receipt");
+      const record = readRecords[0]!;
+      const { sealFreshCheckpointReceipt } = runtimeRequire("./document-checkpoint-receipt") as
+        typeof import("../document-checkpoint-receipt");
+      sealFreshCheckpointReceipt({
+        directory: dir, jobId: job.id, rpcId: record.binding.rpcId,
+        receiptPath: required(record.receipt),
+        authenticateOriginal(bytes) {
+          lane.assertCurrent(grant);
+          assertCheckpointOwner();
+          checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
+          if (checkpointReads.get(job.id) !== task || record.terminal !== true ||
+              record.binding.jobId !== job.id ||
+              job.documentInspection?.generation !== currentCheckpointGeneration() ||
+              !retained.physicalDispatches?.some((entry) =>
+                entry.physical.turnId === record.binding.rpcId &&
+                same(entry.physical, record.binding["physicalTurn"])))
+            fail("STORAGE_UNAVAILABLE", "Fresh checkpoint receipt lost its original turn");
+          const original = decodeAdmissionJson(
+            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          ) as P.RemoteReceipt;
+          remoteReceipt(record, true, original);
+          if (!same(original, record.remoteReceipt))
+            fail("STORAGE_UNAVAILABLE", "Fresh checkpoint receipt bytes differ from its terminal RPC");
+        },
+      });
       finishTurn(grant, {
         state: "succeeded", code: "CHECKPOINT_READ_COMPLETE", sdkSettled: true,
         userScriptSubmitted: false, mayHaveMutated: false, currentTurnSubmitted: true,

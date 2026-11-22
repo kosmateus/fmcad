@@ -98,6 +98,7 @@
     "src/document-unlock-diagnostics.ts",
     "src/document-unlock-controller.ts",
     "src/document-checkpoint-broker.ts",
+    "src/document-checkpoint-receipt.ts",
     "src/document-continuation-broker.ts"
   ],
   "references": [
