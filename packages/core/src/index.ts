@@ -12,6 +12,7 @@ export * from "./domain/diagnostics";
 export * from "./ports";
 export * from "./catalog";
 export * from "./domain/queue-model";
+export * from "./domain/document-checkpoint";
 export * from "./domain/queue";
 export * from "./domain/document";
 export * from "./domain/queue-control";

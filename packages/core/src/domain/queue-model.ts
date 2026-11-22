@@ -74,6 +74,7 @@ export interface QueueDetails {
   rpcState?: string | undefined;
 }
 export interface QueueJob {
+  documentInspection?: import("./document-checkpoint").DocumentInspection;
   id: string;
   requestId: string;
   clientId: string;
@@ -200,6 +201,7 @@ export interface QueueSnapshot {
   jobs: Record<string, QueueJob>;
   lastClient: string | null;
   quarantined?: Record<string, QueueQuarantine>;
+  documentCheckpoints?: import("./document-checkpoint").DocumentCheckpoints;
   localUnknown?: QueueBlock | undefined;
   controlBlocked?: unknown;
   controlGeneration?: number | undefined;

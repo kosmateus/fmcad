@@ -234,12 +234,20 @@ export function validQuarantine(
   );
 }
 
-export function conflictsWithQuarantine(
-  snapshot: QueueSnapshot,
+/** The complete, deterministic conflict set is the input to diagnostics and
+ * checkpoint CAS. A boolean or a paginated subset cannot authorize acceptance. */
+export function quarantineConflicts(
+  snapshot: Pick<QueueSnapshot, "quarantined">,
   request: QueueRequest,
-): boolean {
-  const target = quarantineTarget(request);
-  return Object.values(snapshot.quarantined ?? {}).some((record) => {
+): QueueQuarantine[] {
+  return quarantineTargetConflicts(snapshot, quarantineTarget(request));
+}
+
+export function quarantineTargetConflicts(
+  snapshot: Pick<QueueSnapshot, "quarantined">,
+  target: QueueIsolationTarget | null,
+): QueueQuarantine[] {
+  return Object.values(snapshot.quarantined ?? {}).filter((record) => {
     if (!target || !record.target) return true;
     if (
       record.target.creationId &&
@@ -250,5 +258,12 @@ export function conflictsWithQuarantine(
       return record.target.fileId === target.fileId;
     if (record.target.fileId || target.fileId) return true; // No proof that an ID/name alias is another DataFile.
     return !record.target.creationId || !target.creationId;
-  });
+  }).sort((left, right) => left.jobId < right.jobId ? -1 : left.jobId > right.jobId ? 1 : 0);
+}
+
+export function conflictsWithQuarantine(
+  snapshot: QueueSnapshot,
+  request: QueueRequest,
+): boolean {
+  return quarantineConflicts(snapshot, request).length > 0;
 }
