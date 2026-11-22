@@ -44,6 +44,18 @@ function fixture(mode = "success") {
   const linux = path.join(directory, "linux");
   fs.mkdirSync(mapped, { mode: 0o700 });
   fs.mkdirSync(linux, { mode: 0o700 });
+  fs.mkdirSync(path.join(directory, "lib"));
+  const installedPackageFiles: Record<string, string> = {};
+  for (const name of [
+    "lib/physical_authority.py",
+    "lib/physical_lifecycle.py",
+  ]) {
+    const raw = Buffer.from("# fake offline CLI source");
+    fs.writeFileSync(path.join(directory, name), raw);
+    installedPackageFiles[name] = createHash("sha256")
+      .update(raw)
+      .digest("hex");
+  }
   const trace = path.join(directory, "trace.jsonl");
   const executable = path.join(directory, "python.exe");
   const secret = "fake-test-token-never-diagnostics";
@@ -56,25 +68,36 @@ const nativePath=p=>path.join(root,...p.split("\\\\").slice(3));
 const digest=b=>crypto.createHash("sha256").update(b).digest("hex");
 const record=x=>fs.appendFileSync(${JSON.stringify(trace)},JSON.stringify(x)+"\\n");
 let input=[];process.stdin.on("data",x=>input.push(x));process.stdin.on("end",()=>{
-const raw=Buffer.concat(input);
-if(args[2]==="-c"&&args[3].includes("root=Path")){
- const attempt=args[5],dir=path.join(root,attempt);fs.mkdirSync(dir,{mode:448});
+const inputRaw=Buffer.concat(input),parsed=inputRaw.length?JSON.parse(inputRaw):null;
+const legacy=args[2]==="-m"?"grant":args[3]?.includes("root=Path")?"prepare":"verify";
+const envelope=parsed?.action?parsed:{action:legacy,
+ attempt:args[5],descriptorRaw:inputRaw.toString(),
+ request:args[args.indexOf("--request")+1],output:legacy==="verify"?args[4]:args[args.indexOf("--output")+1],
+ descriptor:legacy==="grant"?JSON.parse(fs.readFileSync(nativePath(args[args.indexOf("--request")+1]))):parsed};
+const raw=Buffer.from(envelope.descriptorRaw||"");
+if(envelope.action==="prepare"){
+ const attempt=envelope.attempt,dir=path.join(root,attempt);fs.mkdirSync(dir,{mode:448});
  fs.writeFileSync(path.join(dir,"request.json"),raw,{flag:"wx",mode:384});
- record({operation:"prepare",descriptor:JSON.parse(raw),cwd:process.cwd(),env:process.env,argsWithoutCode:[...args.slice(0,3),...args.slice(4)]});
+ record({operation:"prepare",descriptor:JSON.parse(raw),cwd:process.cwd(),env:process.env,startupFlags:args.slice(0,4)});
+ if(mode==="changed-fork")fs.writeFileSync(${JSON.stringify(path.join(directory, "lib/physical_lifecycle.py"))},"# changed");
  console.log(digest(raw));return;
 }
-if(args[2]==="-m"){
- const request=nativePath(args[args.indexOf("--request")+1]),grant=nativePath(args[args.indexOf("--output")+1]);
+if(envelope.action==="grant"){
+ const request=nativePath(envelope.request),grant=nativePath(envelope.output);
  const data=Buffer.from(JSON.stringify({descriptor:JSON.parse(fs.readFileSync(request)),token:${JSON.stringify(secret)}}));
  record({operation:"grant",args});
  if(mode==="symlink"){fs.writeFileSync(grant+".target",data);fs.symlinkSync(grant+".target",grant);}
  else fs.writeFileSync(grant,data,{flag:"wx",mode:384});
  if(mode==="error"){console.error(${JSON.stringify(secret)});process.exit(17);}
- if(mode==="overflow"){console.log(${JSON.stringify(secret)}.repeat(20));return;}
- console.log(JSON.stringify({ok:true,operation:"grant"}));return;
+ if(mode==="overflow"){console.log(${JSON.stringify(secret)}.repeat(300));return;}
+ if(mode==="foreign-ack"){console.log(JSON.stringify({state:"granted",handoffId:"foreign"}));return;}
+ if(mode==="malformed-ack"){console.log("{broken");return;}
+ if(mode==="pending-ack"){console.log(JSON.stringify({state:"pending",handoffId:envelope.descriptor.handoffId}));return;}
+ if(mode==="duplicate-ack"){console.log('{"state":"unknown","state":"granted","handoffId":'+JSON.stringify(envelope.descriptor.handoffId)+'}');return;}
+ console.log(JSON.stringify({state:"granted",handoffId:envelope.descriptor.handoffId}));return;
 }
-if(args[2]==="-c"){
- record({operation:"verify"});const data=fs.readFileSync(nativePath(args[4]));
+if(envelope.action==="verify"){
+ record({operation:"verify"});const data=fs.readFileSync(nativePath(envelope.output));
  console.log(mode==="mismatch"?"0".repeat(64):digest(data));return;
 }
 process.exit(19);
@@ -84,8 +107,12 @@ process.exit(19);
   const options = {
     nativePython: "C:\\runtime\\python.exe",
     mappedNativePython: executable,
+    nativePythonSha256: createHash("sha256")
+      .update(fs.readFileSync(executable))
+      .digest("hex"),
     installedForkDirectory: "C:\\installed\\AutodeskFusionMCP",
     mappedInstalledForkDirectory: directory,
+    installedPackageFiles,
     provisionPath: "C:\\private\\provision.json",
     localAppData: "C:\\Users\\operator\\AppData\\Local",
     nativePrivateDirectory: "C:\\private\\grants",
@@ -151,6 +178,7 @@ test(
       "SystemRoot:LOCALAPPDATA:FUSION_MCP_ADMISSION_PROVISION",
     );
     assert.equal(env["HOME"], undefined);
+    assert.deepEqual(records[0]?.["startupFlags"], ["-I", "-S", "-B", "-c"]);
     const attempts = fs.readdirSync(f.mapped);
     const nativeRaw = fs.readFileSync(
       path.join(f.mapped, attempts[0]!, "grant.json"),
@@ -173,7 +201,16 @@ test(
   },
 );
 
-for (const mode of ["error", "overflow", "mismatch", "symlink"]) {
+for (const mode of [
+  "error",
+  "overflow",
+  "mismatch",
+  "symlink",
+  "foreign-ack",
+  "malformed-ack",
+  "pending-ack",
+  "duplicate-ack",
+]) {
   test(
     `native ${mode} leaves uncertain issuance and private evidence without retry`,
     platformOptions,
@@ -259,5 +296,170 @@ test(
         PhysicalGenerationProvisionError,
       );
     assert.equal(f.records().length, 0);
+  },
+);
+
+test(
+  "wrong executable or fork mapping refuses before launching untrusted code",
+  platformOptions,
+  async (t) => {
+    for (const target of ["executable", "fork"]) {
+      const f = fixture();
+      t.after(f.cleanup);
+      const port = createNativePhysicalGenerationProvision(f.options);
+      fs.appendFileSync(
+        target === "executable"
+          ? f.options.mappedNativePython
+          : path.join(f.directory, "lib/physical_lifecycle.py"),
+        "\n# changed untrusted source",
+      );
+      await assert.rejects(port.provision(descriptor));
+      assert.equal(f.records().length, 0);
+      assert.equal(fs.readdirSync(f.linux).length, 0);
+    }
+  },
+);
+
+test(
+  "package is pinned again before the grant process, not only during preparation",
+  platformOptions,
+  async (t) => {
+    const f = fixture("changed-fork");
+    t.after(f.cleanup);
+    const port = createNativePhysicalGenerationProvision(f.options);
+    await assert.rejects(port.provision(descriptor));
+    assert.deepEqual(
+      f.records().map((r) => r["operation"]),
+      ["prepare"],
+    );
+    assert.equal(fs.readdirSync(f.linux).length, 0);
+  },
+);
+
+test(
+  "parent rename and public symlink cannot redirect a token write",
+  platformOptions,
+  async (t) => {
+    const f = fixture();
+    t.after(f.cleanup);
+    const open = fs.openSync;
+    let replaced = false;
+    t.mock.method(
+      fs,
+      "openSync",
+      (file: fs.PathLike, flags: number | string, mode?: fs.Mode) => {
+        if (
+          !replaced &&
+          String(file).endsWith(".grant.json") &&
+          typeof flags === "number" &&
+          (flags & fs.constants.O_CREAT) !== 0
+        ) {
+          replaced = true;
+          fs.renameSync(f.linux, f.linux + "-original");
+          fs.mkdirSync(f.linux + "-public", { mode: 0o777 });
+          fs.symlinkSync(f.linux + "-public", f.linux);
+        }
+        return open(file, flags, mode);
+      },
+    );
+    const port = createNativePhysicalGenerationProvision(f.options);
+    await assert.rejects(
+      port.provision(descriptor),
+      (error: unknown) =>
+        error instanceof PhysicalGenerationProvisionError &&
+        error.grantIssuance === "unknown",
+    );
+    assert.deepEqual(fs.readdirSync(f.linux + "-public"), []);
+    const privateOriginal = f.linux + "-original";
+    assert.equal(fs.statSync(privateOriginal).mode & 0o777, 0o700);
+    const retained = fs.readdirSync(privateOriginal);
+    assert.equal(retained.length, 1);
+    const copy = path.join(privateOriginal, retained[0]!);
+    assert.equal(fs.statSync(copy).mode & 0o777, 0o600);
+    assert.equal(JSON.parse(fs.readFileSync(copy, "utf8")).token, f.secret);
+  },
+);
+
+const nativePython = process.env["FMCAD_TEST_NATIVE_PYTHON"];
+const nativePythonWin = process.env["FMCAD_TEST_NATIVE_PYTHON_WIN"];
+const nativeRoot = process.env["FMCAD_TEST_NATIVE_DIRECTORY"];
+const nativeRootWin = process.env["FMCAD_TEST_NATIVE_DIRECTORY_WIN"];
+const localAppData = process.env["FMCAD_TEST_NATIVE_LOCALAPPDATA"];
+test(
+  "real isolated Windows Python refuses shadow json/sitecustomize and wrong fork before imports",
+  {
+    skip:
+      process.platform !== "linux" ||
+      !nativePython ||
+      !nativePythonWin ||
+      !nativeRoot ||
+      !nativeRootWin ||
+      !localAppData
+        ? "Requires explicitly configured native Windows Python and owned filesystem fixture root; no Fusion calls"
+        : false,
+  },
+  async (t) => {
+    const f = fixture();
+    t.after(f.cleanup);
+    const id = path.basename(f.directory);
+    const root = path.join(nativeRoot!, id);
+    fs.mkdirSync(root, { mode: 0o700 });
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, "lib"));
+    const marker = path.join(root, "UNTRUSTED-IMPORT");
+    const markerWin = path.win32.join(nativeRootWin!, id, "UNTRUSTED-IMPORT");
+    const attack = `open(${JSON.stringify(markerWin)}, "w").write("UNTRUSTED")\nraise RuntimeError("must not import")\n`;
+    const packageFiles: Record<string, string> = {};
+    for (const name of [
+      "lib/physical_authority.py",
+      "lib/physical_lifecycle.py",
+    ]) {
+      fs.writeFileSync(path.join(root, name), attack);
+      packageFiles[name] = createHash("sha256").update(attack).digest("hex");
+    }
+    for (const name of ["json.py", "sitecustomize.py"])
+      fs.writeFileSync(path.join(root, name), attack);
+    const nativeOptions = {
+      ...f.options,
+      nativePython: nativePythonWin!,
+      mappedNativePython: nativePython!,
+      nativePythonSha256: createHash("sha256")
+        .update(fs.readFileSync(nativePython!))
+        .digest("hex"),
+      installedForkDirectory: path.win32.join(nativeRootWin!, id),
+      mappedInstalledForkDirectory: root,
+      installedPackageFiles: packageFiles,
+      localAppData: localAppData!,
+    };
+    const port = createNativePhysicalGenerationProvision(nativeOptions);
+    await assert.rejects(port.provision(descriptor));
+    assert.equal(fs.existsSync(marker), false);
+    assert.equal(fs.readdirSync(f.linux).length, 0);
+    for (const name of ["json.py", "sitecustomize.py"])
+      fs.unlinkSync(path.join(root, name));
+    const wrongCwd = createNativePhysicalGenerationProvision({
+      ...nativeOptions,
+      installedForkDirectory: path.win32.join(nativeRootWin!, id + "-wrong"),
+    });
+    await assert.rejects(wrongCwd.provision(descriptor));
+    assert.equal(fs.existsSync(marker), false);
+    const provisionFile = path.join(nativeRoot!, id + "-provision.json");
+    const invalidProcess = structuredClone(descriptor);
+    invalidProcess.physicalRuntime.pid = 0;
+    fs.writeFileSync(
+      provisionFile,
+      JSON.stringify({
+        ...invalidProcess.physicalRuntime,
+        instance: invalidProcess.generation.instance,
+        epoch: invalidProcess.generation.epoch,
+      }),
+    );
+    t.after(() => fs.unlinkSync(provisionFile));
+    const wrongProcess = createNativePhysicalGenerationProvision({
+      ...nativeOptions,
+      provisionPath: path.win32.join(nativeRootWin!, id + "-provision.json"),
+    });
+    await assert.rejects(wrongProcess.provision(invalidProcess));
+    assert.equal(fs.existsSync(marker), false);
   },
 );
