@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { postHttp } from "../fusion-transport/http";
 import { postCurl } from "../fusion-transport/curl";
-import { admissionData } from "./admission-json";
+import { admissionData, decodeAdmissionJson } from "./admission-json";
 import type {
   ObjectValue,
   Response,
@@ -168,7 +168,7 @@ export function createPhysicalGenerationAuthorization(
         createHash("sha256").update(bytes).digest("hex") !== grantDigest
       )
         denied();
-      const value: unknown = JSON.parse(bytes.toString("utf8"));
+      const value: unknown = decodeAdmissionJson(bytes.toString("utf8"));
       if (!value || typeof value !== "object" || Array.isArray(value)) denied();
       const { token: privateToken, ...descriptor } = value as Record<
         string,
@@ -282,7 +282,7 @@ export function createPhysicalGenerationAuthorization(
             )
           : postHttp(server, { ...original }, {}));
       if (response.status !== 200) return unknown();
-      const value: unknown = JSON.parse(response.raw);
+      const value: unknown = decodeAdmissionJson(response.raw);
       if (!value || typeof value !== "object" || Array.isArray(value))
         return unknown();
       const proof = value as Record<string, unknown>;

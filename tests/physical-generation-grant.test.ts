@@ -166,6 +166,10 @@ for (const state of [
   "active",
   "unknown",
   "foreign-target",
+  "foreign-grant",
+  "foreign-runtime",
+  "foreign-generation",
+  "duplicate-state",
   "bad-evidence",
   "disconnected",
 ]) {
@@ -186,22 +190,52 @@ for (const state of [
         const release =
           state === "released" ||
           state === "bad-evidence" ||
-          state === "foreign-target";
+          state === "foreign-target" ||
+          state === "foreign-grant" ||
+          state === "foreign-runtime" ||
+          state === "foreign-generation" ||
+          state === "duplicate-state";
+        const responseBinding =
+          state === "foreign-target"
+            ? { ...body, target: '{"creationId":"foreign"}' }
+            : state === "foreign-grant"
+              ? { ...body, grantDigest: "b".repeat(64) }
+              : state === "foreign-runtime"
+                ? {
+                    ...body,
+                    physicalRuntime: {
+                      ...f.expected.physicalRuntime,
+                      birth: "foreign-sdk-birth",
+                    },
+                  }
+                : state === "foreign-generation"
+                  ? {
+                      ...body,
+                      generation: {
+                        ...f.expected.generation,
+                        epoch: "foreign-epoch",
+                      },
+                    }
+                  : body;
+        const raw = JSON.stringify({
+          state: release ? "released" : state,
+          binding: responseBinding,
+          ...(release
+            ? {
+                evidenceDigest: digest,
+                physicalEvidenceReference: `fmcad-physical-turn:sha256:${state === "bad-evidence" ? "b".repeat(64) : digest}`,
+              }
+            : {}),
+        });
         return {
           status: 200,
-          raw: JSON.stringify({
-            state: release ? "released" : state,
-            binding:
-              state === "foreign-target"
-                ? { ...body, target: '{"creationId":"foreign"}' }
-                : body,
-            ...(release
-              ? {
-                  evidenceDigest: digest,
-                  physicalEvidenceReference: `fmcad-physical-turn:sha256:${state === "bad-evidence" ? "b".repeat(64) : digest}`,
-                }
-              : {}),
-          }),
+          raw:
+            state === "duplicate-state"
+              ? raw.replace(
+                  '"state":"released"',
+                  '"state":"active","state":"released"',
+                )
+              : raw,
         };
       },
     });
@@ -230,6 +264,7 @@ for (const kind of [
   "foreign-runtime",
   "foreign-generation",
   "unknown-field",
+  "duplicate-field",
   "foreign-endpoint",
   "retired-owner",
 ]) {
@@ -260,6 +295,16 @@ for (const kind of [
       fs.writeFileSync(
         f.grantFile,
         JSON.stringify({ ...value, unbound: true }),
+      );
+      f.options.grantDigest = createHash("sha256")
+        .update(fs.readFileSync(f.grantFile))
+        .digest("hex");
+    }
+    if (kind === "duplicate-field") {
+      const original = fs.readFileSync(f.grantFile, "utf8");
+      fs.writeFileSync(
+        f.grantFile,
+        '{"kind":"foreign-kind",' + original.slice(1),
       );
       f.options.grantDigest = createHash("sha256")
         .update(fs.readFileSync(f.grantFile))
