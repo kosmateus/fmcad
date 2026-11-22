@@ -476,11 +476,15 @@ test(
       assert.equal(reads, 1);
       const records = f.records();
       assert.equal(
-        records.find((record) => record.operation === "prepare")?.activationRaw,
+        records.find((record) => record["operation"] === "prepare")?.[
+          "activationRaw"
+        ],
         JSON.stringify(activation),
       );
       assert.equal(
-        records.find((record) => record.operation === "grant")?.activationRaw,
+        records.find((record) => record["operation"] === "grant")?.[
+          "activationRaw"
+        ],
         JSON.stringify(activation),
       );
       const grant = JSON.parse(fs.readFileSync(result.grantFile, "utf8"));
