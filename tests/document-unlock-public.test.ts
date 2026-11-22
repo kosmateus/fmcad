@@ -615,27 +615,32 @@ test(
       "MCP and CLI must expose the same safe status DTO",
     );
 
-    const privilegedReadsBeforeMismatch = broker.dispatchCount(
-      "param.inspect",
-      documentA,
-    );
-    const conflictingAliases = await successor.callTool(
-      "fmcad_document_unlock",
+    const fullReadsBeforeMismatch = broker.dispatchCount("param.inspect");
+    const conflictingAliases = [
       {
-        action: "inspect",
         target: { docId: documentA, docFileId: fileB },
-        requestId: requestId("mismatched-alias"),
+        requestId: requestId("mismatched-alias-a-to-b"),
       },
-    );
+      {
+        target: { docId: documentB, docFileId: fileA },
+        requestId: requestId("mismatched-alias-b-to-a"),
+      },
+      {
+        target: { docId: requestId("unknown-document"), docFileId: fileA },
+        requestId: requestId("unknown-alias-with-known-file"),
+      },
+    ];
+    for (const conflict of conflictingAliases) {
+      const refused = await successor.callTool("fmcad_document_unlock", {
+        action: "inspect",
+        ...conflict,
+      });
+      assert.equal(object(refused)["isError"], true, JSON.stringify(refused));
+    }
     assert.equal(
-      object(conflictingAliases)["isError"],
-      true,
-      "mismatched creationId and fileId aliases must be refused",
-    );
-    assert.equal(
-      broker.dispatchCount("param.inspect", documentA),
-      privilegedReadsBeforeMismatch,
-      "a failed identity probe must not dispatch the privileged full parameter read",
+      broker.dispatchCount("param.inspect"),
+      fullReadsBeforeMismatch,
+      "conflicting or unknown aliases must not reach a full parameter read on any document",
     );
 
     const firstInspectResponse = await successor.callTool(
@@ -681,7 +686,7 @@ test(
     assert.ok(secondObservationId);
     assert.notEqual(secondObservationId, firstObservationId);
     assert.equal(
-      broker.dispatchCount("param.inspect", documentA),
+      broker.dispatchCount("param.inspect"),
       2,
       "both agreeing public aliases must resolve to the same document and read its parameters",
     );
@@ -706,9 +711,9 @@ test(
     });
     assertMcpFailure(falseProof, "NOT_AUTHORIZED");
     assert.equal(
-      broker.dispatchCount("param.inspect", documentA),
+      broker.dispatchCount("param.inspect"),
       2,
-      "foreign and invented observations must be refused before a full read",
+      "foreign and invented observations must be refused before a full read on any document",
     );
 
     const staleReadHold = broker.holdNextSdkOperation({
@@ -753,7 +758,7 @@ test(
     );
     assert.ok(thirdObservationId);
     assert.equal(
-      broker.dispatchCount("param.inspect", documentA),
+      broker.dispatchCount("param.inspect"),
       3,
       "the full read finishes once after the active SDK turn is released",
     );
@@ -841,10 +846,7 @@ test(
       broker.originalJob(requestId("fresh-apply-a"))["state"],
       "succeeded",
     );
-    const readsBeforePostApplyReadback = broker.dispatchCount(
-      "param.inspect",
-      documentA,
-    );
+    const readsBeforePostApplyReadback = broker.dispatchCount("param.inspect");
     const readback = assertMcpSuccess(
       await successor.callTool("fmcad_document_unlock", {
         action: "inspect",
@@ -859,9 +861,136 @@ test(
     );
     assert.match(JSON.stringify(readback["observed"]), /16 mm/);
     assert.equal(
-      broker.dispatchCount("param.inspect", documentA),
+      broker.dispatchCount("param.inspect"),
       readsBeforePostApplyReadback + 1,
-      "public post-apply readback dispatches one complete parameter inspection",
+      "public post-apply readback dispatches one complete parameter inspection on any target",
+    );
+    const postApplyObservationId = String(
+      object(readback["observation"])["observationId"],
+    );
+    assert.ok(postApplyObservationId);
+    const postApplyAccepted = cliOutput(
+      await fixture.runPublicCli({
+        directory: broker.home,
+        clientId: "document-unlock-successor-b",
+        args: unlockCliArgs({
+          action: "accept",
+          target: { docId: documentA, docFileId: fileA },
+          requestId: requestId("accept-before-second-unknown"),
+          observationId: postApplyObservationId,
+        }),
+      }),
+    );
+    assert.equal(postApplyAccepted["state"], "checkpoint_current");
+
+    const secondUnknownRequestId = requestId("second-unknown-a");
+    const secondUnknownHold = broker.holdNextSdkOperation({
+      operation: "param.apply",
+      loseAcknowledgement: true,
+    });
+    const secondUnknownAccepted = await successor.callTool(
+      "fmcad_execute",
+      applyArguments(documentA, "18 mm"),
+      { requestId: secondUnknownRequestId },
+    );
+    const secondUnknownDispatch = await secondUnknownHold.started;
+    assert.equal(secondUnknownDispatch.operation, "param.apply");
+    assert.equal(secondUnknownDispatch.docId, documentA);
+    secondUnknownHold.release();
+    await secondUnknownHold.completed;
+    const secondUnknownResult = await waitForPublicJob(
+      successor,
+      secondUnknownAccepted,
+      secondUnknownRequestId,
+    );
+    assertMcpSuccess(secondUnknownResult);
+    assert.equal(
+      object(resultContent(secondUnknownResult)["job"])["state"],
+      "needs_reconciliation",
+    );
+    const secondUnknown = broker.originalJob(secondUnknownRequestId);
+    const secondUnknownHash = secondUnknown["hash"];
+    assert.equal(secondUnknown["state"], "needs_reconciliation");
+    assert.equal(broker.dispatchCount("param.apply", documentA), 3);
+    assert.equal(broker.dispatchCount("param.apply", documentB), 1);
+    const secondUnknownIntentHashes = broker.originalIntentHashes(
+      secondUnknownRequestId,
+    );
+    const secondUnknownPhysicalDispatches = secondUnknown[
+      "physicalDispatches"
+    ] as Array<Record<string, unknown>>;
+    const secondUnknownProductDispatches =
+      secondUnknownPhysicalDispatches.filter(
+        (dispatch) => object(dispatch["request"])["kind"] === "product",
+      );
+    assert.equal(secondUnknownProductDispatches.length, 1);
+    const secondUnknownProductDispatch = secondUnknownProductDispatches[0]!;
+    assert.equal(
+      object(secondUnknownProductDispatch["request"])["requestHash"],
+      secondUnknownHash,
+    );
+    assert.equal(
+      Object.keys(secondUnknownIntentHashes).length,
+      secondUnknownPhysicalDispatches.length,
+    );
+    for (const dispatch of secondUnknownPhysicalDispatches) {
+      assert.equal(
+        secondUnknownIntentHashes[String(dispatch["intentReference"])],
+        dispatch["intentDigest"],
+      );
+    }
+
+    const applyAttemptsBeforeBlockedWrite = broker.dispatchCount("param.apply");
+    const blockedAfterSecondUnknownAccepted = await successor.callTool(
+      "fmcad_execute",
+      applyArguments(documentA, "20 mm"),
+      { requestId: requestId("blocked-after-second-unknown-a") },
+    );
+    const blockedAfterSecondUnknown = await waitForPublicJob(
+      successor,
+      blockedAfterSecondUnknownAccepted,
+      requestId("blocked-after-second-unknown-a"),
+    );
+    assertMcpSuccess(blockedAfterSecondUnknown);
+    const blockedAfterSecondUnknownJob = object(
+      resultContent(blockedAfterSecondUnknown)["job"],
+    );
+    assert.equal(blockedAfterSecondUnknownJob["state"], "failed");
+    assert.equal(
+      blockedAfterSecondUnknownJob["code"],
+      "DOCUMENT_UNLOCK_REQUIRED",
+    );
+    const blockedAfterSecondUnknownDetails = object(
+      broker.originalJob(requestId("blocked-after-second-unknown-a"))[
+        "details"
+      ],
+    );
+    assert.equal(
+      blockedAfterSecondUnknownDetails["executionOutcome"],
+      "not_started",
+    );
+    assert.equal(
+      blockedAfterSecondUnknownDetails["userScriptSubmitted"],
+      false,
+    );
+    assert.equal(
+      broker.dispatchCount("param.apply"),
+      applyAttemptsBeforeBlockedWrite,
+      "a prior acceptance must not dispatch another write after the second UNKNOWN",
+    );
+    assert.equal(
+      broker.originalJob(unknownRequestId)["state"],
+      "needs_reconciliation",
+      "the first UNKNOWN remains unresolved after the blocked write",
+    );
+    assert.equal(
+      broker.originalJob(secondUnknownRequestId)["state"],
+      "needs_reconciliation",
+      "the second UNKNOWN remains unresolved after the blocked write",
+    );
+    assert.equal(
+      broker.originalJob(secondUnknownRequestId)["hash"],
+      secondUnknownHash,
     );
 
     await successor.close();
@@ -913,11 +1042,23 @@ test(
       "restart must preserve the original intent receipt without replay",
     );
     const restoredCheckpoints = restartedBroker.documentCheckpointState();
-    assert.equal(Object.keys(restoredCheckpoints.acceptances).length, 1);
-    assert.equal(
-      Object.values(restoredCheckpoints.acceptances)[0]?.["observationId"],
-      thirdObservationId,
+    assert.deepEqual(
+      Object.values(restoredCheckpoints.acceptances)
+        .map((acceptance) => acceptance["observationId"])
+        .sort(),
+      [thirdObservationId, postApplyObservationId].sort(),
+      "restart preserves both accepted checkpoints without treating either as current",
     );
     assert.equal(restartedBroker.dispatchCount("param.apply", documentA), 0);
+    const restoredSecondUnknown = restartedBroker.originalJob(
+      secondUnknownRequestId,
+    );
+    assert.equal(restoredSecondUnknown["state"], "needs_reconciliation");
+    assert.equal(restoredSecondUnknown["hash"], secondUnknownHash);
+    assert.deepEqual(
+      restartedBroker.originalIntentHashes(secondUnknownRequestId),
+      secondUnknownIntentHashes,
+      "restart preserves the second UNKNOWN intent without replay",
+    );
   },
 );
