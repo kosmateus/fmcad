@@ -6,7 +6,7 @@ const retirement = require("../packages/core/dist/domain/runtime-retirement.js")
 const policy = require("../packages/core/dist/domain/document-conflicts.js");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
-function fixture() {
+function fixture(observerState) {
   let count = 0;
   const domain = new core.QueueDomain({
     now: () => 100,
@@ -26,6 +26,12 @@ function fixture() {
         arguments: { code: "owned original", persistent: false },
       },
     },
+    ...(observerState ? {
+      kind: "command", buildHash: "original-build", cwd: "/owned-fixture",
+      argv: ["cad", "batch", "run"],
+      payload: { version: 1, kind: "cad", operation: "batch.run", doc: "Owned", docId: "doc-A",
+        data: { runId: requestId, reportPath: "/owned-fixture/report" } },
+    } : {}),
   });
   const old = domain.submit(request("original-uncertain"));
   domain.next();
@@ -35,6 +41,34 @@ function fixture() {
     clientId: "another-owner",
   });
   domain.block(old.id, { code: "ORIGINAL_UNKNOWN_EVIDENCE" });
+  let observer;
+  if (observerState) {
+    const marker = {
+      version: 1, kind: "atomic-holder-status", observerJobHash: "",
+      targetJobId: old.id, targetRequestId: old.requestId, targetClientId: "original-owner",
+      targetJobHash: domain.data.jobs[old.id].hash, targetBuildHash: "original-build",
+      observerBuildHash: "observer-build", projectDirectory: "/owned-fixture",
+      paused: false, controlGeneration: 0, contextEpoch: 0,
+      reportPath: "/owned-fixture/report", reportFingerprint: "a".repeat(64),
+      commandId: "fmcad_atomic_" + "b".repeat(32), sessionNonce: "c".repeat(32), docId: "doc-A",
+    };
+    observer = domain.submit({
+      kind: "command", requestId: "original-observer", clientId: "original-owner",
+      timeoutMs: 1000, backend: "addin", buildHash: "observer-build",
+      argv: ["cad", "batch", "reconcile", "--doc-id", "doc-A"], cwd: "/owned-fixture",
+      payload: { version: 1, kind: "cad", operation: "batch.reconcile", doc: "Owned", docId: "doc-A",
+        data: { reportPath: marker.reportPath, blockedJobId: old.id,
+          commandId: marker.commandId, sessionNonce: marker.sessionNonce } },
+    });
+    marker.observerJobHash = domain.data.jobs[observer.id].hash;
+    domain.armWorkflowObservation(observer.id, marker);
+    if (observerState !== "queued") {
+      assert.equal(domain.next().id, observer.id);
+      domain.markDispatch(observer.id);
+      if (observerState === "unknown") domain.block(observer.id, "Owned original read outcome unknown");
+      else domain.finish(observer.id, { state: "succeeded" });
+    }
+  }
   domain.pause(true);
   const frozen = structuredClone(domain.data);
   const marker = {
@@ -72,10 +106,49 @@ function fixture() {
     },
     exposures: { [exposure.key]: exposure },
   };
+  if (observer && observerState !== "terminal") {
+    const job = frozen.jobs[observer.id];
+    coverage.jobs[observer.id] = { original: job,
+      outcome: observerState === "unknown" ? "unknown" : "not_started" };
+    if (observerState === "unknown") {
+      coverage.exposures["root:" + observer.id] = {
+        ...exposure, key: "root:" + observer.id,
+        entryDigest: hash(core.canonical(job)),
+        source: { kind: "job", jobId: job.id, requestId: job.requestId,
+          clientId: job.clientId, jobHash: job.hash,
+          catalogDigest: hash(core.canonical(job.physicalDispatches ?? job.dispatch ?? null)) },
+      };
+    }
+  }
   const authority = retirement.createRuntimeRetirementAuthority(() => coverage);
   const project = (value = frozen, cap = authority) =>
     retirement.projectRuntimeRetirement(value, cap, core.canonical, hash, 200);
-  return { frozen, marker, old, waiting, coverage, authority, project };
+  return { frozen, marker, old, waiting, observer, coverage, authority, project };
+}
+for (const state of ["unknown", "terminal", "queued"]) {
+  test(`retirement restores a ${state} scoped observer as historical data without rearming it`, () => {
+    const f = fixture(state), projected = f.project();
+    const restored = new core.QueueDomain({
+      snapshot: projected, recover: true, runtimeRetirement: f.authority,
+      now: () => 300, newId: () => "never-replayed", hash,
+    });
+    assert.equal(restored.data.active, null);
+    assert.equal(restored.data.blocked, null);
+    assert.equal(restored.data.jobs[f.old.id].state, "needs_reconciliation");
+    assert.equal(restored.data.jobs[f.observer.id].state,
+      state === "unknown" ? "needs_reconciliation" : state === "queued" ? "failed" : "succeeded");
+    assert.deepEqual(restored.data.jobs[f.observer.id].workflowObservation,
+      f.frozen.jobs[f.observer.id].workflowObservation);
+    assert.equal(restored.data.paused, true);
+    restored.pause(false);
+    assert.equal(restored.next(), null);
+    const changed = structuredClone(projected);
+    changed.jobs[f.observer.id].workflowObservation.reportPath = "/forged";
+    assert.throws(() => new core.QueueDomain({
+      snapshot: changed, recover: true, runtimeRetirement: f.authority, hash,
+    }));
+    assert.throws(() => new core.QueueDomain({ snapshot: projected, recover: true, hash }));
+  });
 }
 test("projection preserves UNKNOWN/identity/evidence and pause, but retires only old execution slots", () => {
   const f = fixture(),

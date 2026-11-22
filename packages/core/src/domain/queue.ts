@@ -16,7 +16,7 @@ import { validQuarantine,
   validPhysicalDispatch, quarantineTarget,
 } from "./queue-quarantine";
 import { documentConflicts, documentConflictAllowsInspection } from "./document-conflicts";
-import { runtimeRetiredJob, projectRuntimeRetirement, type RuntimeRetirementAuthority } from "./runtime-retirement";
+import { runtimeRetiredJob, projectRuntimeRetirement, verifiedRuntimeRetirement, type RuntimeRetirementAuthority } from "./runtime-retirement";
 import {
   validDocumentContinuation, verifiedDocumentContinuation,
   isDocumentContinuationAuthority, createDocumentContinuationAuthority,
@@ -210,6 +210,32 @@ function workflowObservationFor(d: QueueSnapshot, id: string) {
       payload["docId"] !== marker.docId || observer.request.buildHash !== marker.observerBuildHash) return null;
   return marker;
 }
+/** Validation of immutable history only. This must never replace the operational
+ * workflowObservationFor predicate or authorize another observer dispatch. */
+function retiredWorkflowObservationHistory(
+  d: QueueSnapshot, id: string, authority: RuntimeRetirementAuthority | undefined,
+) {
+  if (!d.appliedRuntimeRetirement && !d.runtimeRetiredExposures) return false;
+  const coverage = verifiedRuntimeRetirement(authority);
+  const original = coverage.frozen.jobs[id], observer = d.jobs[id];
+  const marker = original && workflowObservationFor(coverage.frozen, id);
+  const target = marker && d.jobs[marker.targetJobId];
+  if (!original || !observer || !marker || !target ||
+      !runtimeRetiredJob(d, target, authority, canonical)) return false;
+  if (terminal(original.state))
+    return canonical(observer) === canonical(original);
+  if (runtimeRetiredJob(d, observer, authority, canonical)) return true;
+  const covered = coverage.jobs[id];
+  if (covered?.outcome !== "not_started" || original.state !== "queued" ||
+      canonical(covered.original) !== canonical(original) || !integer(observer.finishedAt))
+    return false;
+  return canonical(observer) === canonical({
+    ...original, state: "failed", code: "RUNTIME_RETIRED_NOT_STARTED",
+    finishedAt: observer.finishedAt,
+    details: { executionOutcome: "not_started", userScriptSubmitted: false,
+      mayHaveMutated: false, code: "RUNTIME_RETIRED_NOT_STARTED" },
+  });
+}
 function normalizeDescription(value: string): string | undefined {
   if (
     typeof value !== "string" ||
@@ -381,7 +407,8 @@ export class QueueDomain {
         fail("CORRUPT_STATE", "Invalid broker-authored document continuation marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
-      if (job.workflowObservation && !workflowObservationFor(d, job.id))
+      if (job.workflowObservation && !workflowObservationFor(d, job.id) &&
+          !retiredWorkflowObservationHistory(d, job.id, retirements.get(this)))
         fail("CORRUPT_STATE", "Scoped workflow observation marker does not match its blocked owner job",
         );
     }
