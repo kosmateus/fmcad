@@ -90,7 +90,9 @@
     "src/queue-settled-epoch-evidence.ts",
     "src/atomic-runtime-abi.ts",
     "src/document-unlock-admission.ts",
-    "src/document-checkpoint-readback.ts"
+    "src/document-checkpoint-readback.ts",
+    "src/document-unlock-diagnostics.ts",
+    "src/document-unlock-controller.ts"
   ],
   "references": [
     {

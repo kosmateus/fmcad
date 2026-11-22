@@ -13,6 +13,7 @@ export * from "./ports";
 export * from "./catalog";
 export * from "./domain/queue-model";
 export * from "./domain/document-checkpoint";
+export { quarantineTargetConflicts } from "./domain/queue-quarantine";
 export * from "./domain/queue";
 export * from "./domain/document";
 export * from "./domain/queue-control";
