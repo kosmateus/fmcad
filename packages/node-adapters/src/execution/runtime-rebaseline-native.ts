@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
 import type { NativePhysicalGenerationProvisionOptions } from "./physical-generation-provision";
 import { nativePhysicalGuard } from "./physical-generation-provision";
+import { runtimeRebaselineManifestNames } from "../persistence/runtime-rebaseline-scope";
 
 export interface NativeRebaselineReference {
   path: string;
@@ -59,15 +60,27 @@ export interface NativeRuntimeBarrierLease {
   publishActivation(
     publication: NativeRuntimeActivationPublication,
   ): Promise<void>;
-  consumeActivation(publication: NativeRuntimeActivationPublication): Promise<{
-    binding: {
-      requestId: string;
-      newHead: string;
-      publicationDigest: string;
-      initiatorOperatorId: string;
-    };
-    evidence: NativeRebaselineReference[];
-  }>;
+  consumeActivation(
+    publication: NativeRuntimeActivationPublication,
+  ): Promise<NativeRuntimeActivationCompletion>;
+  verifyNativeConsumeReceipt(
+    publication: NativeRuntimeActivationPublication,
+    completion: NativeRuntimeActivationCompletion,
+  ): Promise<void>;
+}
+
+export interface NativeRuntimeActivationCompletion {
+  binding: {
+    requestId: string;
+    newHead: string;
+    publicationDigest: string;
+    initiatorOperatorId: string;
+  };
+  evidence: NativeRebaselineReference[];
+  nativeReceipt: {
+    kind: "native-runtime-rebaseline-consume-v1";
+    reference: NativeRebaselineReference;
+  };
 }
 
 export interface NativeRuntimeRebaselineAuthorityPorts {
@@ -409,14 +422,6 @@ function originalFacts(options: NativeRuntimeRebaselineOptions) {
   };
 }
 
-const headInputs = [
-  "physical-backend-head.json",
-  "isolated-admission-epoch.json",
-  "instance.json",
-  "queue-state.json",
-  "runtime-rebaseline-head.json",
-] as const;
-
 function currentFile(file: string): Buffer | null {
   let info: fs.Stats;
   try {
@@ -465,6 +470,16 @@ function syncReference(reference: NativeRebaselineReference): void {
   syncDirectory(path.dirname(reference.path));
 }
 
+function syncWithin(directory: string, root: string): void {
+  if (directory !== root && !directory.startsWith(root + path.sep)) refuse();
+  for (;;) {
+    privateDirectory(directory);
+    syncDirectory(directory);
+    if (directory === root) return;
+    directory = path.dirname(directory);
+  }
+}
+
 /** Only called while the real writer capability and persistent native fence
  * are held. No syscall here delegates Linux durability to Windows UNC. */
 function publishPosix(
@@ -486,6 +501,10 @@ function publishPosix(
     request.requestId,
     "record.json",
   );
+  const pointer = currentFile(
+    path.join(options.store, "isolated-admission-epoch.json"),
+  );
+  const headInputs = runtimeRebaselineManifestNames(options.store, pointer);
   if (
     publication.store !== options.store ||
     publication.storeDevice !== info.dev ||
@@ -500,6 +519,22 @@ function publishPosix(
   )
     refuse();
   const record = privateObject(publication.record);
+  const frozen = object(record["frozen"]);
+  if (!isDeepStrictEqual(Object.keys(frozen).sort(), [...headInputs].sort()))
+    refuse();
+  for (const name of headInputs) {
+    const value = frozen[name];
+    if (value === null) {
+      if (publication.expectedFiles[name] !== null) refuse();
+    } else {
+      const reference = object(value);
+      if (
+        reference["sha256"] !== publication.expectedFiles[name] ||
+        reference["path"] !== path.join(path.dirname(recordFile), name)
+      )
+        refuse();
+    }
+  }
   const receipt = object(record["receipt"]);
   const activation = object(decodeAdmissionJson(publication.activationBytes));
   if (
@@ -523,6 +558,17 @@ function publishPosix(
       currentFile(path.join(options.store, name)),
     ]),
   );
+  if (!isDeepStrictEqual(pointer, current["isolated-admission-epoch.json"]))
+    refuse("RUNTIME_BARRIER_CHANGED");
+  if (!current["queue-state.json"]) refuse();
+  for (const name of headInputs) {
+    if (name.endsWith("queue-state.pending.json") && current[name] !== null)
+      refuse();
+    if (name.includes("/") && !name.endsWith(".pending.json") && !current[name])
+      refuse();
+    if (name.includes("/"))
+      privateDirectory(path.dirname(path.join(options.store, name)));
+  }
   const alreadyNew =
     current["runtime-rebaseline-head.json"]?.equals(
       Buffer.from(publication.activationBytes),
@@ -554,9 +600,12 @@ function publishPosix(
     refuse("RUNTIME_BARRIER_CHANGED");
   syncReference(publication.record);
   // These immutable refs are recorded by 3bp.4, not reconstructed by a resumer.
-  for (const value of Object.values(object(record["frozen"]))) {
-    if (value !== null)
-      syncReference(object(value) as unknown as NativeRebaselineReference);
+  for (const value of Object.values(frozen)) {
+    if (value !== null) {
+      const reference = object(value) as unknown as NativeRebaselineReference;
+      syncReference(reference);
+      syncWithin(path.dirname(reference.path), path.dirname(recordFile));
+    }
   }
   for (const value of record["evidence"] as NativeRebaselineReference[])
     syncReference(value);
@@ -633,6 +682,72 @@ function pythonEncoding(value: unknown): string {
     (character) =>
       `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
   );
+}
+
+function authenticatedCompletion(
+  pinned: NativeRuntimeRebaselineOptions,
+  key: Buffer,
+  fenceBinding: Record<string, unknown>,
+  requestId: string,
+  publication: NativeRuntimeActivationPublication,
+  terminal: Record<string, unknown>,
+): NativeRuntimeActivationCompletion {
+  const publicationJson = JSON.stringify(publication);
+  const publicationDigest = sha(Buffer.from(publicationJson));
+  const receiptJson = terminal["receiptJson"];
+  if (
+    terminal["state"] !== "consumed" ||
+    !isDeepStrictEqual(terminal["binding"], fenceBinding) ||
+    terminal["publicationJson"] !== publicationJson ||
+    typeof receiptJson !== "string" ||
+    terminal["receiptDigest"] !== sha(Buffer.from(receiptJson)) ||
+    typeof terminal["receiptMac"] !== "string" ||
+    !/^[a-f0-9]{64}$/.test(terminal["receiptMac"])
+  )
+    refuse();
+  const expectedMac = createHmac("sha256", key)
+    .update("fmcad-native-consume-v1\0")
+    .update(receiptJson)
+    .digest();
+  if (!timingSafeEqual(expectedMac, Buffer.from(terminal["receiptMac"], "hex")))
+    refuse();
+  const receipt = object(decodeAdmissionJson(receiptJson));
+  const activation = object(decodeAdmissionJson(publication.activationBytes));
+  const binding = {
+    requestId,
+    newHead: String(activation["newHead"]),
+    publicationDigest,
+    initiatorOperatorId: String(fenceBinding["initiatorOperatorId"]),
+  };
+  if (
+    receipt["kind"] !== "fmcad-rebaseline-consumed" ||
+    receipt["version"] !== 1 ||
+    !isDeepStrictEqual(receipt["fence"], fenceBinding) ||
+    !isDeepStrictEqual(receipt["activation"], {
+      ...binding,
+      fenceNonce: fenceBinding["fenceNonce"],
+      record: publication.record,
+    })
+  )
+    refuse();
+  const receiptRef = immutable(
+    pinned.evidenceDirectory,
+    `${requestId}-native-consumed.json`,
+    Buffer.from(receiptJson),
+  );
+  const attestationRef = immutable(
+    pinned.evidenceDirectory,
+    `${requestId}-completion.json`,
+    Buffer.from(JSON.stringify(binding)),
+  );
+  return {
+    binding,
+    evidence: [receiptRef, attestationRef],
+    nativeReceipt: {
+      kind: "native-runtime-rebaseline-consume-v1",
+      reference: receiptRef,
+    },
+  };
 }
 
 /** Private local composition. No JSON decoder can produce this writer or the
@@ -797,15 +912,19 @@ function nativeRuntimeRebaselineAuthorityPorts(
           Buffer.from(JSON.stringify(binding)),
         );
         let active = true;
+        let settled = false;
         const assertHeld = () => {
           if (!active) refuse();
           writerLease.assertHeld();
           // Presence alone is not native authority. It prevents a fresh Linux
           // writer from changing local metadata after this parent dies.
-          const value = currentFile(markerFile);
-          if (!value || !existingMarker(value, intent)) refuse();
+          if (!settled) {
+            const value = currentFile(markerFile);
+            if (!value || !existingMarker(value, intent)) refuse();
+          }
         };
         const verify = async () => {
+          if (settled) refuse();
           assertHeld();
           originalFacts(pinned);
           const current = await nativeFence(
@@ -822,7 +941,11 @@ function nativeRuntimeRebaselineAuthorityPorts(
           assertHeld();
           return {
             binding: structuredClone(binding),
-            evidence: [...facts.references, fenceReference, bindingReference],
+            evidence: structuredClone([
+              ...facts.references,
+              fenceReference,
+              bindingReference,
+            ]),
           };
         };
         try {
@@ -831,10 +954,12 @@ function nativeRuntimeRebaselineAuthorityPorts(
             assertWriterAndProvisionLock: assertHeld,
             verifyCurrentBarrier: verify,
             async publishActivation(publication) {
+              publication = structuredClone(publication);
               await verify();
               publishPosix(pinned, intent, publication, assertHeld);
             },
             async consumeActivation(publication) {
+              publication = structuredClone(publication);
               await verify();
               // Resume exact NEW re-fsyncs instead of depending on old ACKs.
               publishPosix(pinned, intent, publication, assertHeld);
@@ -858,69 +983,63 @@ function nativeRuntimeRebaselineAuthorityPorts(
                 "query",
                 { requestId: intent.requestId },
               );
-              const receiptJson = terminal["receiptJson"];
-              if (
-                terminal["state"] !== "consumed" ||
-                !isDeepStrictEqual(terminal["binding"], fenceBinding) ||
-                terminal["publicationJson"] !== publicationJson ||
-                typeof receiptJson !== "string" ||
-                terminal["receiptDigest"] !== sha(Buffer.from(receiptJson)) ||
-                typeof terminal["receiptMac"] !== "string" ||
-                !/^[a-f0-9]{64}$/.test(terminal["receiptMac"])
-              )
-                refuse();
-              const expectedMac = createHmac("sha256", key)
-                .update("fmcad-native-consume-v1\0")
-                .update(receiptJson)
-                .digest();
-              if (
-                !timingSafeEqual(
-                  expectedMac,
-                  Buffer.from(terminal["receiptMac"], "hex"),
-                )
-              )
-                refuse();
-              const receipt = object(decodeAdmissionJson(receiptJson));
-              const activation = object(
-                decodeAdmissionJson(publication.activationBytes),
-              );
-              const completionBinding = {
-                requestId: intent.requestId,
-                newHead: String(activation["newHead"]),
-                publicationDigest,
-                initiatorOperatorId: String(
-                  fenceBinding["initiatorOperatorId"],
-                ),
-              };
-              if (
-                receipt["kind"] !== "fmcad-rebaseline-consumed" ||
-                receipt["version"] !== 1 ||
-                !isDeepStrictEqual(receipt["fence"], fenceBinding) ||
-                !isDeepStrictEqual(receipt["activation"], {
-                  ...completionBinding,
-                  fenceNonce: fenceBinding["fenceNonce"],
-                  record: publication.record,
-                })
-              )
-                refuse();
-              const receiptRef = immutable(
-                pinned.evidenceDirectory,
-                `${intent.requestId}-native-consumed.json`,
-                Buffer.from(receiptJson),
-              );
-              const attestationRef = immutable(
-                pinned.evidenceDirectory,
-                `${intent.requestId}-completion.json`,
-                Buffer.from(JSON.stringify(completionBinding)),
+              const completion = authenticatedCompletion(
+                pinned,
+                key,
+                fenceBinding,
+                intent.requestId,
+                publication,
+                terminal,
               );
               assertHeld();
               fs.unlinkSync(markerFile);
               syncDirectory(pinned.store);
-              active = false;
-              return {
-                binding: completionBinding,
-                evidence: [receiptRef, attestationRef],
-              };
+              settled = true;
+              return completion;
+            },
+            async verifyNativeConsumeReceipt(publication, completion) {
+              publication = structuredClone(publication);
+              completion = structuredClone(completion);
+              assertHeld();
+              privateDirectory(pinned.store);
+              const info = fs.statSync(pinned.store);
+              if (
+                publication.store !== pinned.store ||
+                publication.storeDevice !== info.dev ||
+                publication.storeInode !== info.ino ||
+                publication.activationFile !==
+                  path.join(pinned.store, "runtime-rebaseline-head.json") ||
+                !currentFile(publication.activationFile)?.equals(
+                  Buffer.from(publication.activationBytes),
+                )
+              )
+                refuse();
+              privateBytes(publication.record);
+              const terminal = await nativeFence(
+                pinned,
+                facts.retiredProcess,
+                "query",
+                { requestId: intent.requestId },
+              );
+              const verified = authenticatedCompletion(
+                pinned,
+                key,
+                fenceBinding,
+                intent.requestId,
+                publication,
+                terminal,
+              );
+              if (!isDeepStrictEqual(verified, completion)) refuse();
+              privateBytes(completion.nativeReceipt.reference);
+              // Completed query never publishes, consumes or requires zero
+              // ordinary work. Core re-fsyncs completion/dependencies before
+              // this final authenticated query, then this marker may settle.
+              assertHeld();
+              if (!settled) {
+                fs.unlinkSync(markerFile);
+                syncDirectory(pinned.store);
+                settled = true;
+              }
             },
           });
         } finally {
@@ -952,12 +1071,53 @@ export function createNativeRuntimeRebaselineAuthorityPorts(
 ): NativeRuntimeRebaselineAuthorityPorts {
   try {
     const ports = nativeRuntimeRebaselineAuthorityPorts(options);
+    const nativeOperation = async <T>(work: () => Promise<T>): Promise<T> => {
+      try {
+        return await work();
+      } catch (error) {
+        if (error instanceof NativeRuntimeBarrierError) throw error;
+        throw new NativeRuntimeBarrierError("RUNTIME_BARRIER_UNPROVEN");
+      }
+    };
     return {
       ...ports,
       async withExclusiveBarrier(request, work) {
+        let callbackFailed = false;
+        let callbackError: unknown;
         try {
-          return await ports.withExclusiveBarrier(request, work);
+          return await ports.withExclusiveBarrier(request, async (lease) => {
+            try {
+              return await work({
+                initiatorOperatorId: lease.initiatorOperatorId,
+                assertWriterAndProvisionLock() {
+                  try {
+                    lease.assertWriterAndProvisionLock();
+                  } catch (error) {
+                    if (error instanceof NativeRuntimeBarrierError) throw error;
+                    throw new NativeRuntimeBarrierError(
+                      "RUNTIME_BARRIER_UNPROVEN",
+                    );
+                  }
+                },
+                verifyCurrentBarrier: () =>
+                  nativeOperation(() => lease.verifyCurrentBarrier()),
+                publishActivation: (publication) =>
+                  nativeOperation(() => lease.publishActivation(publication)),
+                consumeActivation: (publication) =>
+                  nativeOperation(() => lease.consumeActivation(publication)),
+                verifyNativeConsumeReceipt: (publication, completion) =>
+                  nativeOperation(() =>
+                    lease.verifyNativeConsumeReceipt(publication, completion),
+                  ),
+              });
+            } catch (error) {
+              callbackFailed = true;
+              callbackError = error;
+              throw error;
+            }
+          });
         } catch (error) {
+          if (callbackFailed && error === callbackError) throw error;
           if (error instanceof NativeRuntimeBarrierError) throw error;
           throw new NativeRuntimeBarrierError("RUNTIME_BARRIER_UNPROVEN");
         }

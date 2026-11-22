@@ -7,14 +7,17 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   createNativeRuntimeRebaselineAuthorityPorts,
   type NativeRuntimeRebaselineOptions,
+  type NativeRuntimeActivationCompletion,
+  type NativeRuntimeActivationPublication,
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
+import { runtimeRebaselineManifestNames } from "../packages/node-adapters/src/persistence/runtime-rebaseline-scope";
 
 const sha = (bytes: string | Buffer) =>
   createHash("sha256").update(bytes).digest("hex");
 
 /** Separate executable, persistent fake issuer store, actual Linux files.
  * No Fusion, production DB, grant or SDK call is used by this fixture. */
-function fixture() {
+function fixture(epoch = false) {
   const directory = fs.mkdtempSync("/tmp/opencode/native-barrier-test-");
   const write = (name: string, value: unknown) => {
     const bytes = Buffer.from(
@@ -27,6 +30,17 @@ function fixture() {
   const store = path.join(directory, "store");
   fs.mkdirSync(store, { mode: 0o700 });
   fs.writeFileSync(path.join(store, "queue-state.json"), "{}", { mode: 0o600 });
+  if (epoch) {
+    const epochRoot = path.join(store, "admission-epochs", "current");
+    fs.mkdirSync(epochRoot, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(
+      path.join(store, "isolated-admission-epoch.json"),
+      JSON.stringify({ epochId: "current", root: epochRoot }),
+      { mode: 0o600 },
+    );
+    for (const name of ["instance.json", "queue-state.json"])
+      fs.writeFileSync(path.join(epochRoot, name), "{}", { mode: 0o600 });
+  }
   fs.mkdirSync(path.join(directory, "lib"));
   const files: Record<string, string> = {};
   for (const name of [
@@ -174,15 +188,19 @@ process.stdout.write(JSON.stringify(current));
       },
     },
   };
-  const names = [
-    "physical-backend-head.json",
-    "isolated-admission-epoch.json",
-    "instance.json",
-    "queue-state.json",
-    "runtime-rebaseline-head.json",
-  ];
+  const names = runtimeRebaselineManifestNames(
+    store,
+    epoch
+      ? fs.readFileSync(path.join(store, "isolated-admission-epoch.json"))
+      : null,
+  );
   const manifest = Object.fromEntries(
-    names.map((name) => [name, name === "queue-state.json" ? sha("{}") : null]),
+    names.map((name) => [
+      name,
+      fs.existsSync(path.join(store, name))
+        ? sha(fs.readFileSync(path.join(store, name)))
+        : null,
+    ]),
   );
   const info = fs.statSync(store);
   const request = {
@@ -247,6 +265,26 @@ test("changed original evidence refuses before any native process/fence", () => 
     fs.appendFileSync(f.options.originalEvidence.retiredProcess.path, " ");
     assert.throws(() => createNativeRuntimeRebaselineAuthorityPorts(f.options));
     assert.equal(fs.existsSync(f.state), false);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("trusted callback errors retain their public contract instead of becoming native diagnostics", async () => {
+  const f = fixture();
+  try {
+    const expected = Object.assign(
+      new Error("Unresolved queue snapshot journal"),
+      { code: "STORAGE_UNAVAILABLE" },
+    );
+    await assert.rejects(
+      createNativeRuntimeRebaselineAuthorityPorts(
+        f.options,
+      ).withExclusiveBarrier(f.request, async () => {
+        throw expected;
+      }),
+      (error: unknown) => error === expected,
+    );
   } finally {
     f.cleanup();
   }
@@ -403,6 +441,13 @@ setInterval(()=>{},1000);await new Promise(()=>{});
       }),
     );
     await ready;
+    await assert.rejects(
+      createNativeRuntimeRebaselineAuthorityPorts(
+        f.options,
+      ).withExclusiveBarrier(f.request, async () =>
+        assert.fail("Concurrent writer admitted"),
+      ),
+    );
     worker.kill("SIGKILL");
     await exit;
     assert.ok(
@@ -432,7 +477,13 @@ setInterval(()=>{},1000);await new Promise(()=>{});
 });
 
 test("POSIX OLD publishes once, exact NEW re-fsyncs and verified consume clears marker", async () => {
-  const f = fixture();
+  const f = fixture(true);
+  let saved:
+    | {
+        publication: NativeRuntimeActivationPublication;
+        completion: NativeRuntimeActivationCompletion;
+      }
+    | undefined;
   try {
     const ports = createNativeRuntimeRebaselineAuthorityPorts(f.options);
     await ports.withExclusiveBarrier(f.request, async (lease) => {
@@ -445,17 +496,23 @@ test("POSIX OLD publishes once, exact NEW re-fsyncs and verified consume clears 
       fs.mkdirSync(recordDirectory, { recursive: true, mode: 0o700 });
       const info = fs.statSync(f.options.store),
         recordFile = path.join(recordDirectory, "record.json");
-      const frozenQueue = path.join(recordDirectory, "queue-state.json");
-      fs.writeFileSync(frozenQueue, "{}", { mode: 0o600 });
+      const frozen = Object.fromEntries(
+        Object.entries(f.manifest).map(([name, digest]) => {
+          if (digest === null) return [name, null];
+          const file = path.join(recordDirectory, name);
+          fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+          fs.copyFileSync(path.join(f.options.store, name), file);
+          fs.chmodSync(file, 0o600);
+          return [name, { path: file, sha256: digest }];
+        }),
+      );
       const recordBytes = JSON.stringify({
         store: f.options.store,
         storeDevice: info.dev,
         storeInode: info.ino,
         request: f.request,
         receipt: { newHead: "a".repeat(64) },
-        frozen: {
-          "queue-state.json": { path: frozenQueue, sha256: sha("{}") },
-        },
+        frozen,
         evidence: barrier.evidence,
       });
       fs.writeFileSync(recordFile, recordBytes, { mode: 0o600 });
@@ -488,7 +545,39 @@ test("POSIX OLD publishes once, exact NEW re-fsyncs and verified consume clears 
       fs.writeFileSync(path.join(f.options.store, "queue-state.json"), "{}", {
         mode: 0o600,
       });
-      await lease.publishActivation(publication);
+      const realFsync = fs.fsyncSync;
+      let directoryFailure = false;
+      fs.fsyncSync = (fd: number) => {
+        const held = fs.fstatSync(fd);
+        if (
+          held.isDirectory() &&
+          held.ino === info.ino &&
+          held.dev === info.dev &&
+          fs.existsSync(activationFile)
+        ) {
+          directoryFailure = true;
+          throw Object.assign(new Error("Owned directory durability fault"), {
+            code: "EIO",
+          });
+        }
+        return realFsync(fd);
+      };
+      try {
+        await assert.rejects(lease.publishActivation(publication));
+        assert.equal(directoryFailure, true);
+        assert.ok(fs.existsSync(activationFile));
+        assert.equal(
+          JSON.parse(fs.readFileSync(f.state, "utf8")).state,
+          "pending",
+        );
+        assert.ok(
+          fs.existsSync(
+            path.join(f.options.store, "runtime-rebaseline-publication.json"),
+          ),
+        );
+      } finally {
+        fs.fsyncSync = realFsync;
+      }
       const published = fs.statSync(activationFile);
       await lease.publishActivation(publication);
       assert.equal(fs.statSync(activationFile).ino, published.ino);
@@ -501,6 +590,17 @@ test("POSIX OLD publishes once, exact NEW re-fsyncs and verified consume clears 
       );
       fs.unlinkSync(f.fault);
       const result = await lease.consumeActivation(publication);
+      assert.equal(
+        result.nativeReceipt.kind,
+        "native-runtime-rebaseline-consume-v1",
+      );
+      assert.equal(
+        result.nativeReceipt.reference.sha256,
+        sha(fs.readFileSync(result.nativeReceipt.reference.path)),
+      );
+      await lease.verifyNativeConsumeReceipt(publication, result);
+      await lease.verifyNativeConsumeReceipt(publication, result);
+      saved = { publication, completion: result };
       assert.deepEqual(result.binding, {
         requestId: f.request.requestId,
         newHead: "a".repeat(64),
@@ -521,6 +621,37 @@ test("POSIX OLD publishes once, exact NEW re-fsyncs and verified consume clears 
       for (const ref of result.evidence)
         assert.equal(sha(fs.readFileSync(ref.path)), ref.sha256);
     });
+    assert.ok(saved);
+    const { publication, completion } = saved;
+    f.options.operatorId = "operator-two";
+    const before = fs.statSync(publication.activationFile);
+    // The native fixture fails consume if a completed query attempts it.
+    fs.writeFileSync(
+      f.fault,
+      JSON.stringify({ action: "consume", fail: true }),
+    );
+    await createNativeRuntimeRebaselineAuthorityPorts(
+      f.options,
+    ).withExclusiveBarrier(f.request, async (lease) => {
+      const projectionOnly = {
+        binding: completion.binding,
+        evidence: completion.evidence,
+      };
+      await assert.rejects(
+        lease.verifyNativeConsumeReceipt(
+          publication,
+          projectionOnly as NativeRuntimeActivationCompletion,
+        ),
+      );
+      await lease.verifyNativeConsumeReceipt(publication, completion);
+    });
+    assert.equal(fs.statSync(publication.activationFile).ino, before.ino);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.options.store, "runtime-rebaseline-publication.json"),
+      ),
+      false,
+    );
   } finally {
     f.cleanup();
   }
@@ -710,6 +841,27 @@ print("OWNED_ISSUANCE_DENIED_AFTER_VERIFIER_EXIT")
       );
       assert.equal(issuer.status, 0, issuer.stderr);
       assert.match(issuer.stdout, /OWNED_ISSUANCE_DENIED_AFTER_VERIFIER_EXIT/);
+      const falselyRetired = JSON.stringify({
+        exited: true,
+        oldPidPresent: false,
+        forceUsed: false,
+        oldPid: identity.pid,
+        oldBirth: identity.birth,
+      });
+      fs.writeFileSync(
+        options.originalEvidence.retiredProcess.path,
+        falselyRetired,
+      );
+      options.originalEvidence.retiredProcess.sha256 = sha(falselyRetired);
+      // Independently observe the still-live owned process. An archived JSON
+      // retirement verdict alone must never establish the current barrier.
+      await assert.rejects(
+        createNativeRuntimeRebaselineAuthorityPorts(
+          options,
+        ).withExclusiveBarrier(f.request, async () =>
+          assert.fail("Live retired process accepted"),
+        ),
+      );
     } finally {
       owner.stdin.end();
       await ownerExit;
