@@ -6,6 +6,8 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   currentProcessIdentity,
   discoverOwnedUnsavedFixtureProofs,
+  prepareSupplementalCloseProof,
+  publishSupplementalCloseProof,
 } from "./fixture-provenance";
 import {
   captureOriginalView,
@@ -27,6 +29,7 @@ function ancestry(
   t: TestContext,
   sharedRoot?: string,
   originalUser?: { creationId: string; name: string; fileId: null },
+  backendIdentity = "view-ancestry:v1",
 ) {
   const root = sharedRoot ?? fs.mkdtempSync("/tmp/opencode/view-ancestry-");
   if (!sharedRoot)
@@ -70,7 +73,7 @@ function ancestry(
     restorationProfile: "style-relative-1e-5",
   };
   const backend: ScenarioBackend = {
-    identity: "view-ancestry:v1",
+    identity: backendIdentity,
     mode: "fusion",
     qualification: "broker",
     protocol: "addin",
@@ -653,7 +656,8 @@ test("capture inventory proofs refresh after asynchronous ancestry reads settle 
 });
 
 test("a payload prepared before a canonical peer close refuses without effects and captures the exact user on fresh admission", async (t) => {
-  const f = ancestry(t);
+  const buildHash = "b".repeat(64);
+  const f = ancestry(t, undefined, undefined, "view:addin:" + buildHash);
   const { model } = await fixture(t);
   const setup = await model.execute(
     program(`import adsk.core
@@ -689,13 +693,102 @@ assert user.activate()`),
   ];
   const prior = await prepareCaptureView(f.root, f.backend, baseline, f.read);
   const prepared = captureOriginalView(true, prior);
-  const closed = await model.execute(
-    program(`import adsk.core
-app = adsk.core.Application.get()
-peer = next(d for d in app.documents if d.creationId == ${JSON.stringify(f.document.creationId)})
-assert peer.close(False)`),
+  const retained = new Map<string, Execution>(
+    f.report.requests.map((entry) => [entry.requestId, entry.result]),
   );
+  const backend = {
+    ...f.backend,
+    lookup: async (owner: Owner, requestId: string) => {
+      assert.deepEqual(owner, f.report.owner);
+      return retained.get(requestId) ?? null;
+    },
+  };
+  const originals = new Map(
+    f.report.requests.map((entry) => [
+      entry.requestId,
+      f.originals.get(entry.result.brokerReceipt.jobId),
+    ]),
+  );
+  const ports = {
+    readRuntimeBinding: async () => ({
+      buildHash,
+      instanceId: "view-readmission-component",
+    }),
+    readOriginalResult: async (owner: Owner, requestId: string) => {
+      assert.deepEqual(owner, f.report.owner);
+      assert.ok(originals.has(requestId));
+      return originals.get(requestId);
+    },
+  };
+  const requestId = f.report.owner.clientId + ":2";
+  const close = await prepareSupplementalCloseProof(
+    f.directory,
+    backend,
+    requestId,
+    ports,
+  );
+  fs.writeFileSync(close.executionSourceFile, close.source, { flag: "wx" });
+  const jobId = randomUUID();
+  const startedAt = Date.now();
+  const closed = await model.execute(close.source);
+  const finishedAt = Date.now();
   assert.equal(closed.success, true, closed.error);
+  const operationResult = {
+    version: 1,
+    requestId,
+    jobId,
+    acceptance: "accepted",
+    executionOutcome: "succeeded",
+    mayHaveMutated: true,
+  };
+  const execution: Execution = {
+    requestId,
+    state: closed.success ? "succeeded" : "failed",
+    sdkSettled: true,
+    mayHaveMutated: true,
+    exitCode: closed.success ? 0 : 1,
+    stdout: closed.stdout,
+    brokerReceipt: {
+      requestId,
+      jobId,
+      clientId: f.report.owner.clientId,
+      state: "succeeded",
+      operationResult,
+    },
+  };
+  retained.set(requestId, execution);
+  originals.set(requestId, {
+    job: {
+      id: jobId,
+      requestId,
+      clientId: f.report.owner.clientId,
+      kind: "command",
+      state: execution.state,
+      submittedAt: startedAt,
+      startedAt,
+      finishedAt,
+      operationResult,
+    },
+    execution: {
+      state: execution.state,
+      sdkSettled: execution.sdkSettled,
+      mayHaveMutated: execution.mayHaveMutated,
+      exitCode: execution.exitCode,
+      publicationOutcome: "published",
+    },
+    stdout: closed.stdout,
+    provenance: {
+      status: "available",
+      inputs: [
+        {
+          kind: "source",
+          originalPath: close.executionSourceFile,
+          sha256: createHash("sha256").update(close.source).digest("hex"),
+          bytes: Buffer.byteLength(close.source),
+        },
+      ],
+    },
+  });
   const refused = await model.execute(prepared);
   assert.equal(refused.success, true, refused.error);
   assert.doesNotMatch(refused.stdout, /FMCAD_VIEW_EFFECT/u);
@@ -723,13 +816,13 @@ assert peer.close(False)`),
     "Physical absence alone must not manufacture a canonical close",
   );
   assert.throws(() => assertViewReadmission(prior, unproved, refusal));
-  f.report.requests.push(
-    f.entry("cleanup", 2, { creationId: f.document.creationId, closed: true }),
-  );
-  f.report.status = "passed";
-  f.report.cleanup = "complete";
-  f.write();
+  await publishSupplementalCloseProof(f.directory, backend, ports);
   const next = await prepareCaptureView(f.root, f.backend, baseline, f.read);
+  const closeProof = next.peers.find(
+    (peer) => peer.document.creationId === f.document.creationId,
+  );
+  assert.equal(closeProof?.supplementalClose?.jobId, jobId);
+  assert.equal(closeProof?.supplementalClose?.requestId, requestId);
   assert.equal(
     next.peers.find(
       (peer) => peer.document.creationId === f.document.creationId,
