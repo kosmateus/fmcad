@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+import { prepareBrokerPhysicalGeneration } from "../packages/node-adapters/src/execution/physical-generation-broker";
 import { createPhysicalTurnStatusRequest } from "../packages/node-adapters/src/execution/admission-http";
 import {
   createPhysicalGenerationAuthorization,
@@ -66,6 +67,82 @@ function fixture(t: { after(action: () => void): void }) {
     },
   };
   return { root, expected, secret, grantFile, options };
+}
+
+for (const outcome of [
+  "ready",
+  "owner-changed",
+  "wrong-grant",
+  "operator-failed",
+] as const) {
+  test(`claimed broker publishes private capability only after verified provisioning: ${outcome}`, async (t) => {
+    const f = fixture(t);
+    let validOwner = true;
+    let provisions = 0;
+    const prepared = prepareBrokerPhysicalGeneration({
+      runtime: f.expected,
+      clientId: f.expected.brokerOwner.clientId,
+      async provision(descriptor) {
+        provisions++;
+        assert.deepEqual(descriptor, f.expected);
+        assert.equal("protocol" in descriptor.brokerOwner, false);
+        // Changes to the port's argument cannot weaken the client's own pins.
+        descriptor.brokerOwner.nonce = "port-mutated-copy";
+        await Promise.resolve();
+        if (outcome === "operator-failed")
+          throw new Error("local operator refused");
+        if (outcome === "owner-changed") validOwner = false;
+        if (outcome === "wrong-grant")
+          fs.writeFileSync(
+            f.grantFile,
+            JSON.stringify({
+              ...f.expected,
+              brokerOwner: descriptor.brokerOwner,
+              token: f.secret,
+            }),
+          );
+        return { grantFile: f.grantFile, grantDigest: f.options.grantDigest };
+      },
+    });
+    assert.throws(() => prepared.authorization(), {
+      code: "PHYSICAL_GENERATION_REJECTED",
+    });
+    const context = {
+      directory: f.root,
+      owner: { ...f.expected.brokerOwner, protocol: 2 },
+      buildHash: "a".repeat(64),
+      configHash: "b".repeat(64),
+      assertBrokerOwner() {
+        assert.ok(validOwner, "claim was replaced");
+      },
+    };
+    if (outcome === "ready") {
+      await prepared.preparePhysicalGeneration(context);
+      assert.equal(
+        prepared.authorization().headers(f.expected.endpointURL)[
+          "X-Fmcad-Physical-Grant"
+        ],
+        f.secret,
+      );
+      validOwner = false;
+      assert.throws(() =>
+        prepared.authorization().headers(f.expected.endpointURL),
+      );
+    } else {
+      await assert.rejects(prepared.preparePhysicalGeneration(context));
+      assert.throws(() => prepared.authorization(), {
+        code: "PHYSICAL_GENERATION_REJECTED",
+      });
+    }
+    await assert.rejects(prepared.preparePhysicalGeneration(context), {
+      code: "PHYSICAL_GENERATION_REJECTED",
+    });
+    assert.equal(
+      provisions,
+      1,
+      "uncertain local provisioning must never be retried",
+    );
+  });
 }
 
 test("physical capability pins exact grant bytes and preserves exact target string", (t) => {
