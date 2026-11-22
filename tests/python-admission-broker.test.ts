@@ -17,8 +17,8 @@ const { prepareWireArtifact, pythonArtifactManifest } = load(
     artifact: PreparedPythonArtifact,
   ): PythonArtifactManifest;
 };
-// This rejection fixture stops during startup admission. It deliberately supplies
-// the real MCP transport, whose later add-in-only UI methods are absent.
+// This rejection fixture stops during startup admission before the add-in
+// transport opens a session or calls the local JSON-RPC endpoint.
 type Config = import("../src/queue-broker-ports").Config;
 type StartupFixtureOptions = Omit<
   import("../src/queue-broker-ports").Options,
@@ -97,10 +97,10 @@ test("production transport rejects invalid startup Python before any admission, 
   const address = endpoint.address();
   assert.ok(address && typeof address !== "string");
   const cfg = {
-    backend: "mcp",
+    backend: "addin",
     url: `http://127.0.0.1:${address.port}`,
     timeoutMs: 5000,
-    tool: "fusion_mcp_execute",
+    tool: "execute_python",
   };
   await assert.rejects(
     serve(cfg, {
