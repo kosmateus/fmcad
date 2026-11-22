@@ -127,7 +127,8 @@ async function main() {
   };
   const calls = [],
     checks = [],
-    results = [];
+    results = [],
+    toolResults = [];
   const persist = () =>
     fs.writeFileSync(
       path.join(root, "fixture-report.json"),
@@ -136,6 +137,7 @@ async function main() {
           calls,
           checks,
           results,
+          toolResults,
           realSdkRequests: 0,
           boundary:
             "Real serve/BrokerAddinClient/production checker, loopback fake peer and synthetic receipts; not live Fusion evidence",
@@ -402,7 +404,7 @@ print(json.dumps(dict(runCalls=run_calls(sys.stdin.read()))))`,
     nativePath: (file) => file,
     createBackend: (server) => {
       factories++;
-      return new BrokerAddinClient(
+      const client = new BrokerAddinClient(
         { ...server, url: endpointUrl, transport: "http" },
         {
           version: "offline-endpoint",
@@ -410,6 +412,18 @@ print(json.dumps(dict(runCalls=run_calls(sys.stdin.read()))))`,
           bridgeSource: () => "",
         },
       );
+      for (const method of ["callTool", "executeUiGuardedScript"]) {
+        const execute = client[method].bind(client);
+        client[method] = async (...args) => {
+          const result = await execute(...args);
+          toolResults.push({
+            method,
+            readOnlyRequested: result.readOnlyRequested,
+          });
+          return result;
+        };
+      }
+      return client;
     },
   };
   if (process.argv[3] === "process-refusal") {
@@ -574,6 +588,11 @@ print(json.dumps(dict(runCalls=run_calls(sys.stdin.read()))))`,
         "isolated-scratch-close",
       ],
     );
+    assert.deepEqual(toolResults, [
+      { method: "callTool", readOnlyRequested: true },
+      { method: "executeUiGuardedScript", readOnlyRequested: false },
+      { method: "executeUiGuardedScript", readOnlyRequested: false },
+    ]);
     for (const check of checks) {
       const response = api.readJson(
         path.join(f.audit, check.kind, "response.json"),
