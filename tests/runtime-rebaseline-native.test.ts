@@ -72,6 +72,12 @@ if(fault.action===e.action&&fault.fail)process.exit(79);
 fs.writeFileSync(${JSON.stringify(scriptFile)},process.argv.at(-1));
 const file=${JSON.stringify(state)};
 let current=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):null;
+if(e.action==='query'&&fault.pauseQuery&&!fs.existsSync(fault.pauseQuery.ready)){
+ fs.writeFileSync(fault.pauseQuery.ready,'captured native query response');
+ const until=Date.now()+5000;
+ while(!fs.existsSync(fault.pauseQuery.release)&&Date.now()<until)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
+ if(!fs.existsSync(fault.pauseQuery.release))process.exit(81);
+}
 if(e.action==='begin'){
  if(!current) current={kind:'fmcad-provision-fence',version:1,state:'pending',binding:{
  requestId:q.requestId,fenceNonce:'fixture-nonce',handoffId:q.handoffId,
@@ -951,6 +957,56 @@ test(
           },
         }),
       );
+      const approvedHead = path.join(
+        f.options.store,
+        "runtime-rebaseline-head.json",
+      );
+      const approvedBytes = fs.readFileSync(approvedHead);
+      const pausedRead = async (
+        name: string,
+        mutate: () => Promise<void> | void,
+      ) => {
+        const ready = path.join(f.directory, `${name}-query-ready`);
+        const release = path.join(f.directory, `${name}-query-release`);
+        fs.writeFileSync(
+          f.fault,
+          JSON.stringify({ pauseQuery: { ready, release } }),
+        );
+        const observed = new Promise<void>((resolve, reject) => {
+          const watcher = fs.watch(f.directory, () => {
+            if (fs.existsSync(ready)) {
+              watcher.close();
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+          const timer = setTimeout(() => {
+            watcher.close();
+            reject(new Error("Owned query pause timed out"));
+          }, 5_000);
+        });
+        const inFlight = ports.getVerifiedActivation(descriptor);
+        try {
+          await observed;
+          await mutate();
+          fs.writeFileSync(release, "finish the captured response");
+          await assert.rejects(inFlight);
+        } finally {
+          fs.writeFileSync(release, "release during cleanup");
+          await inFlight.catch(() => undefined);
+          fs.writeFileSync(approvedHead, approvedBytes, { mode: 0o600 });
+          fs.unlinkSync(f.fault);
+        }
+      };
+      await pausedRead("delete-pointer", () => fs.unlinkSync(approvedHead));
+      await pausedRead("replace-pointer", () =>
+        fs.writeFileSync(approvedHead, '{"foreign":"new-head"}', {
+          mode: 0o600,
+        }),
+      );
+      await pausedRead("refresh-approved-context", async () => {
+        assert.ok(await core.runtimeRebaselineRoot(f.options.store, authority));
+      });
       const headFile = path.join(
         f.options.store,
         "runtime-rebaseline-head.json",

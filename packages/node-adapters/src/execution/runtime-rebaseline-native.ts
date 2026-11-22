@@ -834,27 +834,32 @@ function nativeRuntimeRebaselineAuthorityPorts(
       const approved = lastApproved;
       if (!approved) return undefined;
       descriptor = structuredClone(descriptor);
-      const info = fs.statSync(pinned.store);
-      if (
-        descriptor.kind !== "fmcad-physical-grant" ||
-        descriptor.version !== 1 ||
-        descriptor.brokerOwner.queueDirectory !== pinned.store ||
-        descriptor.handoffId !== pinned.pins.handoffId ||
-        !isDeepStrictEqual(descriptor.generation, pinned.pins.generation) ||
-        !isDeepStrictEqual(descriptor.physicalRuntime, {
-          ...pinned.pins.process,
-          version: pinned.runtimeVersion,
-          source: pinned.pins.source,
-          build: pinned.pins.build,
-        }) ||
-        descriptor.endpointURL !== pinned.pins.endpoint ||
-        approved.publication.storeDevice !== info.dev ||
-        approved.publication.storeInode !== info.ino ||
-        !currentFile(
-          path.join(pinned.store, "runtime-rebaseline-head.json"),
-        )?.equals(Buffer.from(approved.publication.activationBytes))
-      )
-        refuse();
+      const assertApprovedCurrent = () => {
+        if (lastApproved !== approved) refuse("RUNTIME_BARRIER_CHANGED");
+        privateDirectory(pinned.store);
+        const info = fs.statSync(pinned.store);
+        if (
+          descriptor.kind !== "fmcad-physical-grant" ||
+          descriptor.version !== 1 ||
+          descriptor.brokerOwner.queueDirectory !== pinned.store ||
+          descriptor.handoffId !== pinned.pins.handoffId ||
+          !isDeepStrictEqual(descriptor.generation, pinned.pins.generation) ||
+          !isDeepStrictEqual(descriptor.physicalRuntime, {
+            ...pinned.pins.process,
+            version: pinned.runtimeVersion,
+            source: pinned.pins.source,
+            build: pinned.pins.build,
+          }) ||
+          descriptor.endpointURL !== pinned.pins.endpoint ||
+          approved.publication.storeDevice !== info.dev ||
+          approved.publication.storeInode !== info.ino ||
+          !currentFile(
+            path.join(pinned.store, "runtime-rebaseline-head.json"),
+          )?.equals(Buffer.from(approved.publication.activationBytes))
+        )
+          refuse();
+      };
+      assertApprovedCurrent();
       originalFacts(pinned);
       privateBytes(approved.publication.record);
       for (const reference of approved.completion.evidence)
@@ -884,13 +889,21 @@ function nativeRuntimeRebaselineAuthorityPorts(
           ),
         )["activation"],
       );
-      return {
+      const activationTuple = {
         requestId: String(activation["requestId"]),
         fenceNonce: String(activation["fenceNonce"]),
         newHead: String(activation["newHead"]),
         publicationDigest: String(activation["publicationDigest"]),
         receiptDigest: sha(raw),
       };
+      // The authenticated response may have been captured before a concurrent
+      // pointer/context change. No await may separate this final read from the
+      // tuple returned to the private issuer.
+      privateBytes(approved.publication.record);
+      for (const reference of approved.completion.evidence)
+        privateBytes(reference);
+      assertApprovedCurrent();
+      return activationTuple;
     },
     async withExclusiveBarrier(request, invokeMode, work) {
       const intent = structuredClone(request);
