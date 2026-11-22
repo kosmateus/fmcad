@@ -1216,3 +1216,36 @@ test("phase review: a missing approved pointer never falls back to an ordinary h
   });
   assert.deepEqual(f.counts(), { cas: 1, consume: 1 });
 });
+
+test("path review: a frozen epoch parent symlink cannot create even a directory in a foreign namespace", async () => {
+  const f = fixture(),
+    epochId = "private-epoch";
+  const epoch = path.join(f.dir, "admission-epochs", epochId);
+  fs.mkdirSync(epoch, { recursive: true });
+  fs.writeFileSync(
+    path.join(f.dir, "isolated-admission-epoch.json"),
+    JSON.stringify({ root: epoch, epochId }),
+  );
+  fs.writeFileSync(path.join(epoch, "instance.json"), "{}");
+  fs.writeFileSync(
+    path.join(epoch, "queue-state.json"),
+    JSON.stringify({
+      jobs: {
+        epochUnknown: { id: "epochUnknown", state: "needs_reconciliation" },
+      },
+      quarantined: { epochUnknown: { target: null } },
+    }),
+  );
+  const destination = path.join(f.dir, "runtime-rebaselines", "rebaseline-1");
+  fs.mkdirSync(destination, { recursive: true });
+  const foreign = fs.mkdtempSync(
+    path.join(os.tmpdir(), "foreign-frozen-epoch-"),
+  );
+  fs.symlinkSync(foreign, path.join(destination, "admission-epochs"));
+  assert.deepEqual(fs.readdirSync(foreign), []);
+  await assert.rejects(rebaselineRuntime(f.dir, f.request(), f.authority), {
+    code: "STORAGE_UNAVAILABLE",
+  });
+  assert.deepEqual(f.counts(), { cas: 0, consume: 0 });
+  assert.deepEqual(fs.readdirSync(foreign), []);
+});

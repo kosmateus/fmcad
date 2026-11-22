@@ -176,6 +176,75 @@ function optional(file: string): Buffer | null {
     throw error;
   }
 }
+/** Linux broker: mkdir one child at a time through its verified, held parent
+ * descriptor. Never traverse a caller-replaceable ancestor while creating. */
+function ensureOwnedDirectory(
+  store: string,
+  target: string,
+  identity: { device: number; inode: number },
+) {
+  const relative = path.relative(store, target);
+  const components = relative ? relative.split(path.sep) : [];
+  if (components.some((component) => !/^[A-Za-z0-9_-]{1,128}$/.test(component)))
+    fail("STORAGE_UNAVAILABLE", "Invalid frozen directory namespace");
+  function assertOwned(fd: number, expected: string) {
+    const held = fs.fstatSync(fd),
+      named = fs.lstatSync(expected);
+    if (
+      !held.isDirectory() ||
+      !named.isDirectory() ||
+      named.isSymbolicLink() ||
+      held.dev !== named.dev ||
+      held.ino !== named.ino ||
+      fs.realpathSync(`/proc/self/fd/${fd}`) !== expected
+    )
+      fail("STORAGE_UNAVAILABLE", "Owned directory identity changed");
+  }
+  const flags =
+    fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW;
+  let fd = fs.openSync(store, flags),
+    current = store;
+  try {
+    const root = fs.fstatSync(fd);
+    if (root.dev !== identity.device || root.ino !== identity.inode)
+      fail("STORAGE_UNAVAILABLE", "Canonical store identity changed");
+    assertOwned(fd, current);
+    for (const component of components) {
+      assertOwned(fd, current);
+      const anchored = path.join(`/proc/self/fd/${fd}`, component);
+      let existing: fs.Stats | undefined;
+      try {
+        existing = fs.lstatSync(anchored);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (existing && (!existing.isDirectory() || existing.isSymbolicLink()))
+        fail(
+          "STORAGE_UNAVAILABLE",
+          "Frozen directory component is not an owned directory",
+        );
+      if (!existing) {
+        assertOwned(fd, current);
+        fs.mkdirSync(anchored, { mode: 0o700 });
+        fs.fsyncSync(fd);
+      }
+      const next = fs.openSync(anchored, flags),
+        expected = path.join(current, component);
+      try {
+        assertOwned(fd, current);
+        assertOwned(next, expected);
+      } catch (error) {
+        fs.closeSync(next);
+        throw error;
+      }
+      fs.closeSync(fd);
+      fd = next;
+      current = expected;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 function ref(file: string): RebaselineReference {
   return { path: file, sha256: sha(bytes(file)) };
 }
@@ -957,16 +1026,8 @@ export async function rebaselineRuntime(
       "runtime-rebaselines",
       request.requestId,
     );
-    const parent = path.dirname(destination);
-    fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
-    if (fs.realpathSync(parent) !== parent)
-      fail("STORAGE_UNAVAILABLE", "Rebaseline parent escaped canonical store");
-    fs.mkdirSync(destination, { recursive: true, mode: 0o700 });
-    if (fs.realpathSync(destination) !== destination)
-      fail(
-        "STORAGE_UNAVAILABLE",
-        "Rebaseline destination escaped canonical store",
-      );
+    const storeIdentity = { device: old.device, inode: old.inode };
+    ensureOwnedDirectory(store, destination, storeIdentity);
     syncDirectory(store);
     syncDirectory(path.dirname(destination));
     const frozen: Record<string, RebaselineReference | null> = {};
@@ -977,12 +1038,7 @@ export async function rebaselineRuntime(
         frozen[name] = null;
         continue;
       }
-      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-      if (fs.realpathSync(path.dirname(file)) !== path.dirname(file))
-        fail(
-          "STORAGE_UNAVAILABLE",
-          "Frozen snapshot namespace escaped canonical store",
-        );
+      ensureOwnedDirectory(store, path.dirname(file), storeIdentity);
       immutableBytes(file, value!);
       frozen[name] = ref(file);
     }
