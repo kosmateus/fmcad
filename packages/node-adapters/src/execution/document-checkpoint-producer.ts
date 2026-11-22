@@ -301,15 +301,17 @@ export function createDocumentCheckpointProducer(
       );
       if (
         intents?.length !== 1 ||
-        (job.physicalDispatchCount !== undefined &&
-          job.physicalDispatchCount !== job.physicalDispatches?.length)
+        !Number.isSafeInteger(job.physicalDispatchCount) ||
+        job.physicalDispatchCount !== job.physicalDispatches?.length
       )
         reject();
       const intent = intents[0];
       if (
         !intent ||
         !validPhysicalDispatch(job, intent) ||
-        intent.request.kind !== "product"
+        intent.request.kind !== "product" ||
+        !Number.isSafeInteger(intent.catalogIndex) ||
+        intent.catalogIndex !== job.physicalDispatches!.indexOf(intent) + 1
       )
         reject();
       requireSame(object(record)["physicalCatalogIndex"], intent.catalogIndex);
@@ -317,9 +319,7 @@ export function createDocumentCheckpointProducer(
         request: intent.request,
         physical: intent.physical,
         target: intent.target,
-        ...(intent.catalogIndex === undefined
-          ? {}
-          : { catalogIndex: intent.catalogIndex }),
+        catalogIndex: intent.catalogIndex,
       });
       const intentArtifact = input.artifacts.find(
         (artifact) => artifact.role === "physical-intent",

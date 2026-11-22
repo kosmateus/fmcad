@@ -972,3 +972,29 @@ test("retained job-request artifact must be present and match the original reque
     code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
   });
 });
+
+for (const kind of ["same-seven", "both-missing", "missing-counter"] as const) {
+  test(`matching catalog fields ${kind} cannot replace their real admitted position`, (t) => {
+    const f = fixture(t);
+    const entry = f.job.physicalDispatches![0]!;
+    if (kind === "missing-counter") delete f.job.physicalDispatchCount;
+    else {
+      if (kind === "same-seven") entry.catalogIndex = 7;
+      else delete entry.catalogIndex;
+      f.mutate("rpc", (value) => {
+        if (kind === "same-seven") value["physicalCatalogIndex"] = 7;
+        else delete value["physicalCatalogIndex"];
+      });
+      f.mutate("physical-intent", (value) => {
+        if (kind === "same-seven") value["catalogIndex"] = 7;
+        else delete value["catalogIndex"];
+      });
+      entry.intentDigest = sha256(
+        fs.readFileSync(path.join(f.jobDirectory, entry.intentReference)),
+      );
+    }
+    assert.throws(() => createDocumentCheckpointProducer(f.ports)(f.input()), {
+      code: "DOCUMENT_CHECKPOINT_PRODUCER_MISMATCH",
+    });
+  });
+}
