@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { createHash } = require("node:crypto");
+const { spawnSync } = require("node:child_process");
 const test = require("node:test");
 const { QueueDomain } = require("@fmcad/core");
 const { QueueState } = require("../src/queue-state.js");
@@ -88,12 +89,16 @@ function fixture(t) {
       root,
       assertBrokerOwner() {
         assertions++;
+        if (ownerAsync === "reject")
+          return Promise.reject(new Error("private-owner-rejection"));
         if (ownerAsync) return new Promise(() => {});
         if (!owned)
           throw Object.assign(new Error("writer lost"), { code: "OWNER_LOST" });
       },
       assertVerifiedRoot(actual) {
         assert.equal(actual, directory);
+        if (rootAsync === "reject")
+          return Promise.reject(new Error("private-root-rejection"));
         if (rootAsync) return new Promise(() => {});
         if (!rootValid)
           throw Object.assign(new Error("root changed"), {
@@ -115,11 +120,11 @@ function fixture(t) {
     invalidateRoot() {
       rootValid = false;
     },
-    asyncOwner() {
-      ownerAsync = true;
+    asyncOwner(rejected = false) {
+      ownerAsync = rejected ? "reject" : true;
     },
-    asyncRoot() {
-      rootAsync = true;
+    asyncRoot(rejected = false) {
+      rootAsync = rejected ? "reject" : true;
     },
     get assertions() {
       return assertions;
@@ -386,3 +391,38 @@ test("domain validation refusal precedes every byte of projection publication", 
     false,
   );
 });
+for (const kind of ["owner", "root"]) {
+  test(`rejected asynchronous ${kind} assertion is refused without terminating the process`, () => {
+    const code = `
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const { QueueDomain } = require("@fmcad/core");
+const { QueueState } = require(${JSON.stringify(path.join(__dirname, "../src/queue-state.js"))});
+const { createApprovedRuntimeRetirement } = require(${JSON.stringify(path.join(__dirname, "../src/queue-runtime-retirement.js"))});
+const sha = (bytes) => require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+const fixture = ${fixture.toString()};
+const cleanup = [];
+const f = fixture({ after(fn) { cleanup.push(fn); } });
+const authority = f.factory().forDirectory(f.directory);
+f[${JSON.stringify(kind === "owner" ? "asyncOwner" : "asyncRoot")}](true);
+assert.throws(() => new QueueState(f.directory, {
+  runtimeRetirement: authority, now: () => 200,
+}), { code: "RUNTIME_RETIREMENT_CHANGED" });
+assert.deepEqual(fs.readFileSync(f.file), f.bytes);
+setImmediate(() => {
+  assert.deepEqual(fs.readFileSync(f.file), f.bytes);
+  for (const fn of cleanup) fn();
+  console.log("REFUSED_NO_WRITE");
+});`;
+    const result = spawnSync(process.execPath, ["-e", code], {
+      encoding: "utf8",
+      cwd: path.join(__dirname, ".."),
+      timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.match(result.stdout, /REFUSED_NO_WRITE/);
+  });
+}

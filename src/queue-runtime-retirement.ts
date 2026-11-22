@@ -61,8 +61,12 @@ export function createApprovedRuntimeRetirement(options: {
   const recordDigest = sha(JSON.stringify(record));
   function assertOwner() {
     const result: unknown = options.assertBrokerOwner();
-    if (result !== undefined)
+    if (result !== undefined) {
+      // Reject async assertions immediately, but own their eventual rejection.
+      // This never waits for or converts them into publication authority.
+      void Promise.resolve(result).catch(() => {});
       refused("Broker ownership assertion must finish synchronously");
+    }
   }
   if (
     typeof record.request.requestId !== "string" ||
@@ -82,8 +86,10 @@ export function createApprovedRuntimeRetirement(options: {
   function assertRoot() {
     assertOwner();
     const result: unknown = options.assertVerifiedRoot(directory);
-    if (result !== undefined)
+    if (result !== undefined) {
+      void Promise.resolve(result).catch(() => {});
       refused("Runtime root assertion must finish synchronously");
+    }
     if (fs.realpathSync(directory) !== directory)
       refused("Runtime retirement store is not canonical");
     const stat = fs.statSync(directory);
