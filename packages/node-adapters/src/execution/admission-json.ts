@@ -2,6 +2,40 @@ import { types } from "node:util";
 
 /** Decode evidence without discarding duplicate keys or numeric information. */
 export function decodeAdmissionJson(text: string): unknown {
+  return decodeJson(text, "protocol");
+}
+
+/** Opaque historical queue/user values use finite JSON numbers, not the
+ * protocol identity/counter integer policy. Duplicate-key checks are shared. */
+export function decodeOpaqueQueueJson(text: string): unknown {
+  return decodeJson(text, "opaque");
+}
+
+/** Only the original uncertainty blobs are opaque inside a runtime record.
+ * All bindings, counters, versions and other evidence remain protocol-strict. */
+export function decodeRuntimeRebaselineRecordJson(text: string): unknown {
+  return decodeJson(text, "runtime-record");
+}
+function opaqueRecordPath(path: readonly string[]): boolean {
+  const start = path[0] === "layers" ? 2 : 0;
+  if (path[start] !== "carriedExposures" || path[start + 2] !== "original")
+    return false;
+  const entry = path[start + 1] ?? "";
+  return (
+    /^(?:admission-epochs\/[A-Za-z0-9_-]{1,128}\/)?runtime:controlBlocked:*$/.test(
+      entry,
+    ) ||
+    (/^(?:admission-epochs\/[A-Za-z0-9_-]{1,128}\/)?runtime:localUnknown:*$/.test(
+      entry,
+    ) &&
+      path[start + 3] === "reason")
+  );
+}
+
+function decodeJson(
+  text: string,
+  numberPolicy: "protocol" | "opaque" | "runtime-record",
+): unknown {
   let cursor = 0;
   const fail = (): never => {
     throw new Error("Ambiguous admission JSON");
@@ -34,7 +68,7 @@ export function decodeAdmissionJson(text: string): unknown {
     }
     return `${negative ? "-" : ""}${digits}e${scale}`;
   }
-  function value(depth: number): unknown {
+  function value(depth: number, path: readonly string[] = []): unknown {
     if (depth > 128) return fail();
     space();
     const char = text[cursor];
@@ -53,7 +87,15 @@ export function decodeAdmissionJson(text: string): unknown {
       }
       while (true) {
         space();
-        if (array) entries.push(value(depth + 1));
+        if (array)
+          entries.push(
+            value(
+              depth + 1,
+              numberPolicy === "runtime-record"
+                ? [...path, String(entries.length)]
+                : path,
+            ),
+          );
         else {
           if (text[cursor] !== '"') return fail();
           const key = string();
@@ -62,7 +104,10 @@ export function decodeAdmissionJson(text: string): unknown {
           space();
           if (text[cursor++] !== ":") return fail();
           Object.defineProperty(result, key, {
-            value: value(depth + 1),
+            value: value(
+              depth + 1,
+              numberPolicy === "runtime-record" ? [...path, key] : path,
+            ),
             enumerable: true,
             configurable: true,
             writable: true,
@@ -92,8 +137,10 @@ export function decodeAdmissionJson(text: string): unknown {
     const number = Number(raw);
     if (
       !Number.isFinite(number) ||
-      (Number.isInteger(number) && !Number.isSafeInteger(number)) ||
-      decimal(raw) !== decimal(String(number))
+      ((numberPolicy === "protocol" ||
+        (numberPolicy === "runtime-record" && !opaqueRecordPath(path))) &&
+        ((Number.isInteger(number) && !Number.isSafeInteger(number)) ||
+          decimal(raw) !== decimal(String(number))))
     )
       return fail();
     return number;

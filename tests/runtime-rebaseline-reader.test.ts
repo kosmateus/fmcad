@@ -14,6 +14,11 @@ import type {
   NativeRuntimeActivationCompletion,
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import type { PhysicalGenerationDescriptor } from "../packages/node-adapters/src/execution/physical-generation";
+import {
+  decodeAdmissionJson,
+  decodeOpaqueQueueJson,
+  decodeRuntimeRebaselineRecordJson,
+} from "../packages/node-adapters/src/execution/admission-json";
 import type * as Core from "../src/queue-runtime-rebaseline";
 
 const load = createRequire(__filename);
@@ -31,7 +36,14 @@ const sha = (bytes: string | Uint8Array) =>
  * subprocess runs on Linux, not Fusion/Windows. It validates/compiles the exact
  * transmitted QUERY script and reads its pre-existing database with mode=ro.
  * Signing and initial writes belong only to this explicit fixture producer. */
-async function fixture(t: TestContext, prefix = "consumed-reader-") {
+async function fixture(
+  t: TestContext,
+  prefix = "consumed-reader-",
+  params: Record<string, unknown> = {},
+  uncertainty?: "localUnknown" | "controlBlocked",
+  epochUncertainty = false,
+  invalidCounter?: { field: "grantCount" | "admissionCount"; value: number },
+) {
   const directory = fs.mkdtempSync(
     path.join(
       process.env["FMCAD_READER_CHILD_BASE"] ?? "/tmp/opencode",
@@ -47,7 +59,7 @@ async function fixture(t: TestContext, prefix = "consumed-reader-") {
     clientId: "historical-author",
     requestId: "old-unknown",
     timeoutMs: 1000,
-    payload: { jsonrpc: "2.0", method: "mutation", id: "old" },
+    payload: { jsonrpc: "2.0", method: "mutation", id: "old", params },
   });
   const jobId = job["id"];
   assert.equal(typeof jobId, "string");
@@ -55,6 +67,52 @@ async function fixture(t: TestContext, prefix = "consumed-reader-") {
   queue.next();
   queue.markDispatch(jobId, { rpcCount: 1, completedCount: 0 });
   queue.block(jobId, { code: "UNKNOWN" });
+  let uncertaintyQueue = queue;
+  if (epochUncertainty) {
+    const epochRoot = path.join(store, "admission-epochs", "owned-active");
+    fs.mkdirSync(epochRoot, { recursive: true, mode: 0o700 });
+    uncertaintyQueue = new QueueState(epochRoot);
+    fs.writeFileSync(
+      path.join(epochRoot, "instance.json"),
+      JSON.stringify({
+        buildHash: "owned-build",
+        instance: { pid: 456, birth: "owned-current-birth" },
+      }),
+      { mode: 0o600 },
+    );
+    fs.writeFileSync(
+      path.join(store, "isolated-admission-epoch.json"),
+      JSON.stringify({ epochId: "owned-active", root: epochRoot }),
+      { mode: 0o600 },
+    );
+  }
+  if (uncertainty === "localUnknown") {
+    const local = queue.submit({
+      kind: "command",
+      phased: true,
+      cwd: directory,
+      argv: ["cad", "document", "status"],
+      clientId: "historical-local",
+      requestId: "historical-local-unknown",
+      timeoutMs: 1000,
+      payload: {
+        version: 1,
+        kind: "cad",
+        operation: "document.status",
+        doc: "Owned",
+        docId: "owned-doc",
+        data: {},
+      },
+    });
+    const localId = local["id"];
+    assert.ok(typeof localId === "string");
+    queue.blockLocal(localId, params);
+  }
+  if (uncertainty === "controlBlocked")
+    uncertaintyQueue._commit((d) => {
+      d.controlBlocked = params;
+      return null;
+    });
   const history = fs.readFileSync(path.join(store, "queue-state.json"));
   const write = (file: string, bytes: string | Buffer) => {
     fs.writeFileSync(file, bytes, { mode: 0o600 });
@@ -78,9 +136,17 @@ async function fixture(t: TestContext, prefix = "consumed-reader-") {
     admissionCount: 0,
     writerGeneration: "owned-writer",
   };
+  const observedBinding: Core.RuntimeBarrierBinding = invalidCounter
+    ? JSON.parse(
+        JSON.stringify({
+          ...binding,
+          [invalidCounter.field]: invalidCounter.value,
+        }),
+      )
+    : binding;
   const attestation = write(
     path.join(directory, "barrier.json"),
-    JSON.stringify(binding),
+    JSON.stringify(observedBinding),
   );
   const key = Buffer.alloc(32, 7),
     keyRef = write(path.join(directory, "key"), key);
@@ -184,7 +250,7 @@ print(json.dumps(value))
           assertWriterAndProvisionLock: assertHeld,
           async verifyCurrentBarrier() {
             assertHeld();
-            return { binding, evidence: [attestation] };
+            return { binding: observedBinding, evidence: [attestation] };
           },
           async publishActivation(value) {
             assertHeld();
@@ -679,6 +745,233 @@ test("failed core reapproval invalidates an earlier activation context", async (
     code: "EIO",
   });
   mock.mock.restore();
+  assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+});
+
+for (const fault of ["fsync", "parse"])
+  test(`early core ${fault} refusal invalidates previous approval before native verification`, async (t) => {
+    const f = await fixture(t);
+    await core.runtimeRebaselineRoot(f.store, f.reader);
+    assert.ok(await f.ports.getVerifiedActivation(f.descriptor));
+    const original = fs.readFileSync(f.publication.activationFile);
+    const fsync = fs.fsyncSync;
+    let failed = false;
+    const mock = t.mock.method(fs, "fsyncSync", (fd: number) => {
+      if (fault === "fsync" && !failed) {
+        failed = true;
+        throw Object.assign(new Error("first core fsync"), { code: "EIO" });
+      }
+      return fsync(fd);
+    });
+    if (fault === "parse") fs.writeFileSync(f.publication.activationFile, "{");
+    await assert.rejects(core.runtimeRebaselineRoot(f.store, f.reader));
+    mock.mock.restore();
+    if (fault === "fsync") assert.equal(failed, true);
+    fs.writeFileSync(f.publication.activationFile, original);
+    assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+  });
+
+test("finite opaque QueueState measurements roundtrip through rebaseline and readonly approval", async (t) => {
+  const params = {
+    measurement: 1e20,
+    negative: -1e20,
+    tiny: Number.MIN_VALUE,
+    fraction: 1e-20,
+    ratio: 0.1,
+  };
+  const f = await fixture(t, "finite-reader-", params);
+  const root = await core.runtimeRebaselineRoot(f.store, f.reader);
+  assert.ok(root);
+  const snapshot = JSON.parse(JSON.stringify(root.snapshot));
+  assert.deepEqual(snapshot.jobs[f.jobId].request.payload.params, params);
+  const current = JSON.parse(
+    root.currentFiles!["queue-state.json"]!.toString("utf8"),
+  );
+  assert.deepEqual(current.jobs[f.jobId].request.payload.params, params);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.store, "queue-state.json")),
+    f.history,
+  );
+  assert.ok(await f.ports.getVerifiedActivation(f.descriptor));
+});
+
+test("metadata process identity still rejects negative and unsafe integer PIDs", async (t) => {
+  const f = await fixture(t);
+  for (const pid of [-1, 1e20])
+    assert.throws(
+      () =>
+        core.createRuntimeRebaselineReaderAuthority({
+          ...f.ports,
+          pins: {
+            ...f.options.pins,
+            process: { ...f.options.pins.process, pid },
+          },
+        }),
+      { code: "NOT_AUTHORIZED" },
+    );
+  assert.equal(fs.readFileSync(f.trace, "utf8"), "");
+});
+
+for (const { uncertainty, epoch } of [
+  { uncertainty: "localUnknown", epoch: false },
+  { uncertainty: "controlBlocked", epoch: false },
+  { uncertainty: "controlBlocked", epoch: true },
+] as const)
+  test(`opaque uncertainty ${uncertainty} ${epoch ? "epoch" : "root"} keeps finite measurements in frozen snapshot and record projections`, async (t) => {
+    const params =
+      uncertainty === "localUnknown"
+        ? { measurement: 1e20, tiny: Number.MIN_VALUE }
+        : {
+            cause: { measurement: 1e20, tiny: Number.MIN_VALUE },
+            samples: [1e20, Number.MIN_VALUE],
+          };
+    const f = await fixture(
+      t,
+      "opaque-uncertainty-",
+      params,
+      uncertainty,
+      epoch,
+    );
+    // This fixture puts measurements in historical uncertainty, not protocol pins.
+    assert.ok(f);
+    const root = await core.runtimeRebaselineRoot(f.store, f.reader);
+    assert.ok(root);
+    const layer = epoch ? "admission-epochs/owned-active" : "root";
+    const key = (epoch ? layer + "/" : "") + `runtime:${uncertainty}`;
+    const exposure = JSON.parse(
+      JSON.stringify(root.record.carriedExposures[key]),
+    );
+    const reason =
+      uncertainty === "localUnknown"
+        ? exposure.original.reason
+        : exposure.original;
+    assert.deepEqual(reason, params);
+    assert.deepEqual(
+      root.record.layers[layer]?.carriedExposures[`runtime:${uncertainty}`],
+      root.record.carriedExposures[key],
+    );
+    assert.ok(await f.ports.getVerifiedActivation(f.descriptor));
+  });
+
+test("opaque queue numeric policy does not relax protocol, duplicate-key or finite-value checks", () => {
+  assert.deepEqual(
+    decodeOpaqueQueueJson('{"params":{"measurement":1e20,"tiny":5e-324}}'),
+    { params: { measurement: 1e20, tiny: Number.MIN_VALUE } },
+  );
+  for (const raw of [
+    '{"pid":1e20}',
+    '{"pid":9007199254740993}',
+    '{"v":1e-400}',
+    '{"v":1.00000000000000001}',
+    '{"numberPolicy":"opaque","pid":1e20}',
+  ])
+    assert.throws(() => decodeAdmissionJson(raw), /Ambiguous/);
+  for (const raw of [
+    '{"x":1,"x":2}',
+    '{"x":1,"\\u0078":2}',
+    '{"x":Infinity}',
+    '{"x":NaN}',
+    '{"x":1e999}',
+  ]) {
+    assert.throws(() => decodeAdmissionJson(raw), /Ambiguous/);
+    assert.throws(() => decodeOpaqueQueueJson(raw), /Ambiguous/);
+  }
+});
+
+test("runtime record numeric policy is limited to original uncertainty blobs and exact namespaces", () => {
+  const data = { measurement: 1e20, tiny: Number.MIN_VALUE };
+  const allowed = [
+    {
+      carriedExposures: {
+        "runtime:controlBlocked": { original: { cause: data } },
+      },
+    },
+    {
+      carriedExposures: {
+        "admission-epochs/owned-active/runtime:controlBlocked:": {
+          original: { cause: data },
+        },
+      },
+    },
+    {
+      layers: {
+        "admission-epochs/owned-active": {
+          carriedExposures: {
+            "runtime:localUnknown:": {
+              original: { id: "local", at: 1, reason: data },
+            },
+          },
+        },
+      },
+    },
+  ];
+  for (const value of allowed)
+    assert.deepEqual(
+      decodeRuntimeRebaselineRecordJson(JSON.stringify(value)),
+      value,
+    );
+  const forbidden = [
+    { binding: { process: { pid: 1e20 } } },
+    { binding: { grantCount: 1e20 } },
+    { version: 1e20 },
+    {
+      carriedExposures: {
+        "runtime:localUnknown": {
+          original: { id: "local", at: 1e20, reason: data },
+        },
+      },
+    },
+    {
+      carriedExposures: {
+        "arbitrary-runtime:controlBlocked": { original: data },
+      },
+    },
+    {
+      carriedExposures: {
+        "admission-epochs/id/extra/runtime:controlBlocked": { original: data },
+      },
+    },
+    {
+      carriedExposures: {
+        "runtime:controlBlocked": {
+          physicalBinding: { pid: 1e20 },
+          original: data,
+        },
+      },
+    },
+  ];
+  for (const value of forbidden)
+    assert.throws(
+      () => decodeRuntimeRebaselineRecordJson(JSON.stringify(value)),
+      /Ambiguous/,
+    );
+  for (const literal of ["NaN", "Infinity", "1e999"])
+    assert.throws(
+      () =>
+        decodeRuntimeRebaselineRecordJson(
+          `{"carriedExposures":{"runtime:controlBlocked":{"original":${literal}}}}`,
+        ),
+      /Ambiguous/,
+    );
+});
+
+test("protocol admission counters remain schema-rejected outside opaque historical data", async (t) => {
+  for (const field of ["grantCount", "admissionCount"] as const)
+    for (const value of [-1, 1e20])
+      await assert.rejects(
+        fixture(t, "bad-counter-", {}, undefined, false, { field, value }),
+        { code: "RUNTIME_BARRIER_UNPROVEN" },
+      );
+});
+
+test("an early failed core attempt also revokes an older staged finalizer", async (t) => {
+  const f = await fixture(t);
+  const staged = await f.ports.verifyConsumed(f.publication, f.completion);
+  const original = fs.readFileSync(f.publication.activationFile);
+  fs.writeFileSync(f.publication.activationFile, "{");
+  await assert.rejects(core.runtimeRebaselineRoot(f.store, f.reader));
+  fs.writeFileSync(f.publication.activationFile, original);
+  assert.throws(() => staged.finalize(), { code: "RUNTIME_BARRIER_CHANGED" });
   assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
 });
 

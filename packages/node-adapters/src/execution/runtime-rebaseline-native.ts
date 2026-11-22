@@ -4,7 +4,10 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
-import { decodeAdmissionJson } from "./admission-json";
+import {
+  decodeAdmissionJson,
+  decodeRuntimeRebaselineRecordJson,
+} from "./admission-json";
 import type {
   NativePhysicalGenerationProvisionOptions,
   NativePhysicalActivation,
@@ -549,7 +552,13 @@ function publishPosix(
     )
   )
     refuse();
-  const record = privateObject(publication.record);
+  const record = object(
+    decodeRuntimeRebaselineRecordJson(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        privateBytes(publication.record),
+      ),
+    ),
+  );
   const frozen = object(record["frozen"]);
   if (!isDeepStrictEqual(Object.keys(frozen).sort(), [...headInputs].sort()))
     refuse();

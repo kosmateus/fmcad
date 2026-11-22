@@ -11,7 +11,11 @@ const { runtimeRebaselineManifestNames: inputNames } = createRequire(
 )(
   "./dist/node-adapters/persistence/runtime-rebaseline-scope",
 ) as typeof import("../packages/node-adapters/src/persistence/runtime-rebaseline-scope");
-const { decodeAdmissionJson } = createRequire(__filename)(
+const {
+  decodeAdmissionJson,
+  decodeOpaqueQueueJson,
+  decodeRuntimeRebaselineRecordJson,
+} = createRequire(__filename)(
   "./dist/node-adapters/execution/admission-json",
 ) as typeof import("../packages/node-adapters/src/execution/admission-json");
 
@@ -111,6 +115,8 @@ const authorities = new WeakMap<object, RuntimeRebaselineAuthorityPorts>();
 export interface RuntimeRebaselineReaderPorts {
   store: string;
   pins: RuntimePins;
+  /** Revoke prior/staged approval before ANY attempted core I/O or parsing. */
+  invalidate(): void;
   /** Authenticated native QUERY of the exact existing consumed publication.
    * No writer, publication lease, issuance or persistence port is available. */
   verifyConsumed(
@@ -133,6 +139,7 @@ export function createRuntimeRebaselineReaderAuthority(
 ): RuntimeRebaselineReaderAuthority {
   if (
     typeof ports.verifyConsumed !== "function" ||
+    typeof ports.invalidate !== "function" ||
     !same(Object.keys(ports.pins).sort(), [
       "admissionStore",
       "build",
@@ -240,6 +247,11 @@ function bytes(file: string): Buffer {
 }
 function json(value: Buffer): unknown {
   return decodeAdmissionJson(
+    new TextDecoder("utf-8", { fatal: true }).decode(value),
+  );
+}
+function snapshotJson(value: Buffer): unknown {
+  return decodeOpaqueQueueJson(
     new TextDecoder("utf-8", { fatal: true }).decode(value),
   );
 }
@@ -544,7 +556,7 @@ function scopedState(files: Record<string, Buffer | null>, handoffId: string) {
   for (const [name, value] of Object.entries(files)) {
     if (!name.endsWith("queue-state.json") || !value) continue;
     const layer = name === "queue-state.json" ? "root" : path.dirname(name);
-    const snapshot = object(json(value));
+    const snapshot = object(snapshotJson(value));
     snapshots[layer] = snapshot;
     const decisions = dispositions(snapshot, handoffId),
       carried = exposures(snapshot, handoffId);
@@ -634,7 +646,11 @@ function readRuntimeRebaselineRoot(directory: string): {
   }
   const pointer = object(json(active));
   const reference = pointer["record"] as RebaselineReference;
-  const record = object(json(verify(reference))) as unknown as RebaselineRecord;
+  const record = object(
+    decodeRuntimeRebaselineRecordJson(
+      new TextDecoder("utf-8", { fatal: true }).decode(verify(reference)),
+    ),
+  ) as unknown as RebaselineRecord;
   const stat = fs.statSync(store);
   if (
     record.version !== 1 ||
@@ -845,6 +861,8 @@ export async function runtimeRebaselineRoot(
   directory: string,
   authority: RuntimeRebaselineAuthority | RuntimeRebaselineReaderAuthority,
 ): Promise<ApprovedRuntimeRebaselineRoot | null> {
+  const reader = readers.get(authority);
+  if (reader) reader.invalidate();
   const root = readRuntimeRebaselineRoot(directory);
   if (!root) {
     assertNoPendingRuntimePublication(directory);
@@ -856,7 +874,6 @@ export async function runtimeRebaselineRoot(
       "Local head is published but native consume requires same-ID resume",
     );
   assertNoPendingRuntimePublication(directory);
-  const reader = readers.get(authority);
   if (reader) return approveReadOnlyRoot(directory, root, reader);
   const ports = authorities.get(authority);
   if (!ports || fs.realpathSync(ports.store) !== root.record.store)

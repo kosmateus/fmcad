@@ -3,7 +3,10 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { isDeepStrictEqual as same } from "node:util";
-import { decodeAdmissionJson } from "./admission-json";
+import {
+  decodeAdmissionJson,
+  decodeRuntimeRebaselineRecordJson,
+} from "./admission-json";
 import { nativePhysicalGuard } from "./physical-generation-provision";
 import type {
   NativePhysicalActivation,
@@ -47,6 +50,7 @@ export interface NativeRuntimeRebaselineReaderOptions {
 export interface NativeRuntimeRebaselineReaderPorts {
   store: string;
   pins: NativeRuntimeRebaselinePins;
+  invalidate(): void;
   verifyConsumed(
     publication: NativeRuntimeActivationPublication,
     completion: NativeRuntimeActivationCompletion,
@@ -338,7 +342,13 @@ function capture(
     ) !== null
   )
     deny();
-  const record = decode(verified(publication.record));
+  const record = object(
+    decodeRuntimeRebaselineRecordJson(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        verified(publication.record),
+      ),
+    ),
+  );
   if (!same(decode(tracked(path.join(archive, "completion.json"))), completion))
     deny();
   const binding = object(record["binding"]);
@@ -595,6 +605,10 @@ function createPorts(
   return Object.freeze({
     store: pinned.store,
     pins: structuredClone(pinned.pins),
+    invalidate() {
+      approvalGeneration++;
+      approved = undefined;
+    },
     async verifyConsumed(
       publication: NativeRuntimeActivationPublication,
       completion: NativeRuntimeActivationCompletion,
@@ -682,6 +696,7 @@ export function createNativeRuntimeRebaselineReaderPorts(
     return Object.freeze({
       store: ports.store,
       pins: ports.pins,
+      invalidate: () => ports.invalidate(),
       verifyConsumed: (
         publication: NativeRuntimeActivationPublication,
         completion: NativeRuntimeActivationCompletion,
