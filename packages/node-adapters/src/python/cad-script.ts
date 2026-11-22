@@ -24,6 +24,41 @@ export interface CadPreparationPorts {
   dataImport(operation: string, data: CadData): PreparedImport;
 }
 
+type CheckpointJson =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly CheckpointJson[]
+  | { readonly [key: string]: CheckpointJson };
+
+export interface ParamCheckpointGuardV1 {
+  readonly schema: "fmcad.param-checkpoint-v1";
+  readonly document: {
+    readonly identity: {
+      readonly creationId: string;
+      readonly name: string;
+      readonly fileId: string | null;
+      readonly version: number | null;
+      readonly isSaved: boolean;
+      readonly isModified: boolean;
+    };
+    readonly fingerprint: string;
+  };
+  readonly parameters: readonly {
+    readonly name: string;
+    readonly expression: string;
+    readonly unit: string;
+    readonly value: CheckpointJson;
+    readonly valueType: "numeric" | "text";
+    readonly valueUnits: string | null;
+    readonly comment: string;
+    readonly metadata: { readonly [key: string]: CheckpointJson };
+  }[];
+}
+
+const PARAM_CHECKPOINT_FIELD = "_fmcadCheckpointGuard";
+
 export function fusionPath(value: unknown): string {
   if (typeof value !== "string") throw new Error("File path must be a string");
   if (/^[A-Za-z]:[\\/]|^\\\\/.test(value)) return value;
@@ -79,7 +114,12 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
     data: CadData,
     context: CadContext,
     pathMapper: (value: unknown) => string = fusionPath,
+    checkpointGuard?: ParamCheckpointGuardV1,
   ) {
+    if (Object.hasOwn(data, PARAM_CHECKPOINT_FIELD))
+      throw new Error("Parameter checkpoint guard is compiler-owned");
+    if (checkpointGuard !== undefined && operation !== "param.apply")
+      throw new Error("Parameter checkpoint guard is only valid for param.apply");
     const entry = ports.validate(operation, data);
     if (operation === "inspect.pack") data = ports.inspection(data);
     if (entry["curve"]) data = ports.curve(operation, data);
@@ -94,9 +134,12 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
       for (const model of models) model.fusionPath = pathMapper(model.path);
       data = imported;
     }
+    const preparedData = mapCadPaths(operation, data, pathMapper);
+    if (checkpointGuard !== undefined)
+      preparedData[PARAM_CHECKPOINT_FIELD] = structuredClone(checkpointGuard);
     const plan = planCadScript(
       operation,
-      mapCadPaths(operation, data, pathMapper),
+      preparedData,
       context,
       entry,
       pythonLiteral,
