@@ -473,16 +473,20 @@ test("an older acceptance with identical parameters is not the current checkpoin
 test("client resolves despite an outcome-record write failure after a dispatched private read",
   { timeout: 60000 }, async (t) => {
     if (process.env["FMCAD_CHECKPOINT_OUTCOME_FAULT_CHILD"] !== "1") {
+      const env: NodeJS.ProcessEnv = { ...process.env, FMCAD_CHECKPOINT_OUTCOME_FAULT_CHILD: "1" };
+      delete env["NODE_TEST_CONTEXT"];
       const child = spawnSync(process.execPath, [
         "--test", "--test-name-pattern=client resolves despite an outcome-record", __filename,
       ], {
-        env: { ...process.env, FMCAD_CHECKPOINT_OUTCOME_FAULT_CHILD: "1" },
+        env,
         encoding: "utf8", timeout: 50000,
       });
       const owned = /CHECKPOINT_FAULT_HOME (\/tmp\/opencode\/checkpoint-broker-[A-Za-z0-9]+)/.exec(child.stdout);
       if (owned) fs.rmSync(owned[1]!, { recursive: true, force: true });
       assert.equal(child.error, undefined, child.stderr || child.stdout);
       assert.equal(child.status, 0, child.stderr || child.stdout);
+      assert.ok(owned, "child must actually run the filesystem fault and disclose its owned fixture: " + child.stdout);
+      assert.ok(child.stdout.includes("CHECKPOINT_FAULT_REFUSED"), child.stdout);
       return;
     }
     const f = await fixture(t), client = await f.client();
@@ -494,6 +498,10 @@ test("client resolves despite an outcome-record write failure after a dispatched
     assert.ok(result["error"], JSON.stringify(result));
     assert.equal(result["observed"], undefined);
     assert.equal(f.counts().products, 1);
+    const jobs = path.join(f.dir, "jobs");
+    assert.ok(fs.readdirSync(jobs).some((id) =>
+      fs.statSync(path.join(jobs, id, "outcome.json")).isDirectory()));
+    process.stdout.write("CHECKPOINT_FAULT_REFUSED\n");
     // Simulate process loss with retained UNKNOWN state, not successful cleanup.
     // This child owns all its resources; the parent preserves the terminal result.
     process.exit(0);
