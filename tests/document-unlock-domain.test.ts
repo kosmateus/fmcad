@@ -660,3 +660,62 @@ test("a backward clock cannot publish an acceptance that its own restore decoder
   });
   assert.deepEqual(restored.acceptDocumentObservation(acceptance), result);
 });
+
+test("a file-only selector must resolve its live creation identity before privileged inspection", () => {
+  const { domain, input, marker } = recoveryReadFixture();
+  const target = { fileId: "saved-file-A" };
+  assert.throws(
+    () => domain.documentInspectionFence(target, "current-generation"),
+    {
+      code: "DOCUMENT_TARGET_UNRESOLVED",
+    },
+  );
+  assert.throws(
+    () =>
+      domain.submitDocumentInspection(
+        {
+          ...input,
+          argv: ["param", "inspect", "--doc-file-id", target.fileId],
+          payload: {
+            version: 1,
+            kind: "cad",
+            operation: "param.inspect",
+            docFileId: target.fileId,
+            data: { includeModel: true },
+          },
+        },
+        { ...marker, target },
+      ),
+    { code: "DOCUMENT_INSPECTION_UNPROVEN" },
+  );
+  const resolved = { creationId: "document-A", fileId: target.fileId };
+  assert.equal(
+    domain.documentInspectionFence(resolved, "current-generation")
+      .priorCheckpointId,
+    null,
+  );
+  const { observation } = checkpointFixture();
+  domain.recordDocumentObservation({
+    ...observation,
+    target: resolved,
+    blockers: Object.values(domain.data.quarantined!).map((item) => ({
+      jobId: item.jobId,
+      requestId: item.requestId,
+      originalHash: item.jobHash,
+      catalogDigest: item.catalogDigest,
+      barrierRef: item.evidenceReference,
+    })),
+  });
+  const accepted = domain.acceptDocumentObservation({
+    observationId: observation.id,
+    requestId: "accept-resolved-file",
+    actorClientId: observation.actorClientId,
+    generation: observation.generation,
+    observedStateDigest: observation.stateDigest,
+  });
+  assert.equal(
+    domain.documentInspectionFence(resolved, "current-generation")
+      .priorCheckpointId,
+    accepted.id,
+  );
+});

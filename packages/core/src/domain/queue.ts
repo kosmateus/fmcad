@@ -91,6 +91,7 @@ function validDocumentInspection(job: QueueJob): boolean {
   const target = quarantineTarget(job.request);
   const argv = job.request.argv?.[0] === "cad" ? job.request.argv.slice(1) : job.request.argv;
   if (!marker || marker.version !== 1 || !identifier(marker.generation) ||
+    !identifier(marker.target?.creationId) ||
     !/^[a-f0-9]{64}$/.test(marker.blockersDigest) ||
     !(marker.priorCheckpointId === null || identifier(marker.priorCheckpointId)) ||
     Object.keys(marker).sort().join(",") !== "blockersDigest,generation,priorCheckpointId,target,version" ||
@@ -643,6 +644,8 @@ export class QueueDomain {
   }
 
   documentInspectionFence(target: QueueIsolationTarget, generation: string): DocumentInspection {
+    if (!identifier(target.creationId))
+      fail("DOCUMENT_TARGET_UNRESOLVED", "Resolve the current document creation identity before full inspection");
     const key = documentTargetKey(target);
     if (!identifier(generation))
       fail("INVALID_DOCUMENT_INSPECTION", "A current runtime generation is required");
