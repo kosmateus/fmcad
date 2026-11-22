@@ -85,7 +85,10 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
   process.env.XDG_STATE_HOME=home;process.chdir(home);
   const dir=queueDirectory();
   const cfg=resolveFmcadConfiguration({adapter:{backend:'addin',url:'http://127.0.0.1:8765/mcp',timeoutMs:120000},
-    environment:{},file:{},platformDefaults:{},acceptedService:null});
+    // This case holds one worker inside SDK while a second checks locally.
+    // CPU-budgeted production defaults may provide only one preparation slot.
+    environment:{},file:slowPeerChecker?{queue:{preparationConcurrency:2}}:{},
+    platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
   const calls=[],clients=[];
   let active=0,maximum=0,products=0,fingerprint='A-1',observe=async()=>{},observeProduct=async()=>{},observeProtocol=async()=>{};
