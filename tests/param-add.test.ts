@@ -66,24 +66,18 @@ async function fixture() {
   const { resolveFmcadConfiguration } = load(
     "../packages/core/dist/domain/config",
   );
-  const config = resolveFmcadConfiguration({
-    adapter: {},
-    environment: {},
-    file: {
-      backend: "addin",
-      routing: "queue",
-      backends: {
-        addin: {
-          url: "http://127.0.0.1:8765/mcp",
-          tool: "fusion_mcp_execute",
-          transport: "node",
-        },
+  const requests: { action: string; request: { backend: string } }[] = [];
+  const addinConfig = {
+    backend: "addin",
+    routing: "queue",
+    backends: {
+      addin: {
+        url: "http://127.0.0.1:8765/mcp",
+        tool: "fusion_mcp_execute",
+        transport: "node",
       },
     },
-    platformDefaults: {},
-    acceptedService: null,
-  });
-  const requests: { action: string; request: { backend: string } }[] = [];
+  };
   const calls: {
     name: string;
     arguments: { featureType: string; object: { script: string } };
@@ -91,7 +85,7 @@ async function fixture() {
   async function run(words: string[]) {
     let stdout = "";
     let stderr = "";
-    const argv = ["--backend", "addin", ...words];
+    const argv = words;
     const dependencies = {
       stdout: {
         write(value: unknown) {
@@ -104,7 +98,18 @@ async function fixture() {
         },
       },
       setExitCode() {},
-      loadConfig: () => ({ cfg: config }),
+      loadConfig: (options: Record<string, unknown>) => {
+        assert.equal(options["backend"], "addin");
+        return {
+          cfg: resolveFmcadConfiguration({
+            adapter: options,
+            environment: {},
+            file: addinConfig,
+            platformDefaults: {},
+            acceptedService: null,
+          }),
+        };
+      },
       async runQueued(
         rawArgv: string[],
         selectedConfig: {
