@@ -421,450 +421,763 @@ test(
   },
 );
 
-test(
-  "owner stop authorizes an ADDIN runtime upgrade and recovers orphan work through its authenticated live backend",
-  { timeout: 30000 },
-  async (t) => {
-    const processBirth = (
-      load("./queue-instance") as {
-        processBirth(pid?: number): string;
-      }
-    ).processBirth;
-    const sdk = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-      stdio: "ignore",
-    });
-    await once(sdk, "spawn");
-    t.after(() => {
-      if (sdk.exitCode === null && sdk.signalCode === null) sdk.kill("SIGKILL");
-    });
-    assert.ok(sdk.pid);
-    const oldSdk: P.Instance = {
-      pid: sdk.pid,
-      birth: processBirth(sdk.pid),
-      version: "fixture",
-    };
-    const f = setup(oldSdk, "mcp", undefined, true);
-    const originalStateHome = process.env["XDG_STATE_HOME"];
-    process.env["XDG_STATE_HOME"] = f.root;
-    t.after(() => {
-      if (originalStateHome === undefined) delete process.env["XDG_STATE_HOME"];
-      else process.env["XDG_STATE_HOME"] = originalStateHome;
-    });
-    const { hash } = load("./queue-instance") as {
-      hash(value: string | Uint8Array): string;
-    };
-    const credentialsDir = path.join(f.dir, "client-credentials");
-    fs.mkdirSync(credentialsDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(credentialsDir, `${hash(f.clientId)}.json`),
-      JSON.stringify({ clientId: f.clientId, clientToken: f.token }),
-      { mode: 0o600 },
-    );
-    const originalEpochIdentity = fs.readFileSync(
-      path.join(f.epoch.root, "instance.json"),
-    );
-    const originalPointer = fs.readFileSync(
-      path.join(f.dir, "isolated-admission-epoch.json"),
-    );
-    const originalHistory = fs.readFileSync(
-      path.join(f.dir, "queue-state.json"),
-    );
-    const ownerScript = path.join(
-      process.cwd(),
-      "tests/fixtures/backend-transition-owner.cjs",
-    );
-    const repoRoot = path.resolve(__dirname, "..", "..");
-    const targetIdentity = oldSdk;
-    const targetObservation = {
-      ...targetIdentity,
-      activeCommand: "SelectCommand",
-      documents: [],
-    };
-    const owner = spawn(
-      process.execPath,
-      [
-        ownerScript,
-        runtimeRoot,
-        repoRoot,
-        f.dir,
-        JSON.stringify(f.next),
-        JSON.stringify(targetObservation),
-        JSON.stringify(f.approval),
-        "a".repeat(64),
-      ],
-      { stdio: ["ignore", "ignore", "pipe", "ipc"] },
-    );
-    const children: ReturnType<typeof spawn>[] = [owner, sdk];
-    const resources: { handle?: Awaited<ReturnType<typeof serve>> } = {};
-    t.after(async () => {
-      for (const child of children)
-        if (child && child.exitCode === null && child.signalCode === null)
-          child.kill("SIGKILL");
-      await Promise.all(
-        children
-          .filter(
-            (child) => child.exitCode === null && child.signalCode === null,
-          )
-          .map((child) => once(child, "exit").catch(() => [])),
-      );
-      if (resources.handle) await resources.handle.close().catch(() => {});
-      fs.rmSync(f.root, { recursive: true, force: true });
-    });
-    function waitForMessage(
-      child: ReturnType<typeof spawn>,
-      kind: string,
-    ): Promise<Record<string, unknown>> {
-      return new Promise((resolve, reject) => {
-        const onMessage = (value: unknown) => {
-          const message = value as Record<string, unknown>;
-          if (message["kind"] === "error") {
-            child.off("message", onMessage);
-            reject(
-              Object.assign(new Error(String(message["message"])), message),
-            );
-          } else if (message["kind"] === kind) {
-            child.off("message", onMessage);
-            resolve(message);
-          }
-        };
-        child.on("message", onMessage);
-        child.once("exit", (code) => {
-          child.off("message", onMessage);
-          reject(new Error(`Owner exited before ${kind} (code ${code})`));
-        });
-      });
-    }
-    async function waitForFile(file: string) {
-      const deadline = Date.now() + 5000;
-      while (!fs.existsSync(file) && Date.now() < deadline)
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      assert.ok(
-        fs.existsSync(file),
-        `Timed out waiting for ${path.basename(file)}`,
-      );
-    }
-
-    const ready = waitForMessage(owner, "ready");
-    assert.equal((await ready)["kind"], "ready");
-    const sourceOwner = JSON.parse(
-      fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8"),
-    ) as { nonce: string };
-    const sourceStartupReceipt = path.join(
-      f.dir,
-      `broker-startup-${sourceOwner.nonce}.receipt.json`,
-    );
-    assert.ok(
-      fs.existsSync(sourceStartupReceipt),
-      JSON.stringify(
-        fs.readdirSync(f.dir).filter((name) => name.startsWith("broker-")),
-      ),
-    );
-
-    let stdout = "";
-    const cliDeps = {
-      loadConfig: () => ({ cfg: f.next }),
-      stdout: {
-        write(text: string) {
-          stdout += text;
-        },
-      },
-      stderr: { write() {} },
-    };
-    const { queueCommand } = load("./dist/entrypoints/queue-cli") as {
-      queueCommand(argv: string[], deps: typeof cliDeps): Promise<number>;
-    };
-    const stopRequestId = "addin-runtime-owner-stop";
-    assert.equal(
-      await queueCommand(
-        ["stop", "--client", f.clientId, "--request-id", stopRequestId],
-        cliDeps,
-      ),
-      0,
-    );
-    const releaseFile = String(JSON.parse(stdout)["releaseFile"]);
-    await waitForFile(releaseFile);
-    const ownerExit = once(owner, "exit");
-    owner.send({ action: "exit" });
-    await ownerExit;
-    assert.ok(fs.existsSync(sourceStartupReceipt));
-    const sourceState = (
-      load("./queue-isolated-epoch") as {
-        openIsolatedEpoch(dir: string, options: { recover: false }): P.State;
-      }
-    ).openIsolatedEpoch(f.dir, { recover: false });
-    const jobsAtTransition = Object.fromEntries(
-      Object.entries(sourceState.data.jobs).map(([id, job]) => [id, job.state]),
-    );
-
-    let targetProbes = 0;
-    let probeStarted!: () => void;
-    let continueProbe!: () => void;
-    const firstProbeStarted = new Promise<void>((resolve) => {
-      probeStarted = resolve;
-    });
-    const firstProbeAllowed = new Promise<void>((resolve) => {
-      continueProbe = resolve;
-    });
-    const approval: BackendTransitionApproval = {
-      ...f.approval,
-      requestId: "addin-runtime-upgrade-after-owner-stop",
-      previousConfig: f.next,
-      nextConfig: f.next,
-      stopRequestId,
-      nextBuildHash: (
-        load("./queue-instance") as { buildHash(): string }
-      ).buildHash(),
-    };
-    const approvalFile = path.join(f.root, "backend-approval.json");
-    fs.writeFileSync(approvalFile, JSON.stringify(approval), { mode: 0o600 });
-    const broker = load("./queue-broker") as {
-      serve: typeof serve;
-    };
-    const productionServe = broker.serve;
-    const createBackend = (): P.Client => ({
-      server: { timeoutMs: 1000 },
-      _parse: (raw) => JSON.parse(raw) as P.Reply,
-      _openSession: () => {
-        throw new Error("Unexpected session");
-      },
-      listTools: () => {
-        throw new Error("Unexpected catalog");
-      },
-      executeUiGuardedScript: () => {
-        throw new Error("Unexpected script");
-      },
-      _post: () => {
-        throw new Error("Original job replay forbidden");
-      },
-      callTool: async (args) => {
-        targetProbes++;
-        if (targetProbes === 1) {
-          probeStarted();
-          await firstProbeAllowed;
+for (const mode of ["runtime-upgrade", "dead-sdk", "dead-sdk-late-change"])
+  test(
+    mode === "dead-sdk-late-change"
+      ? "dead SDK transition refuses owner-stop evidence changed during its sole target observation without replay"
+      : mode === "dead-sdk"
+        ? "public owner stop composes a dead SDK transition and recovers orphan work through its authenticated ADDIN backend"
+        : "owner stop authorizes an ADDIN runtime upgrade and recovers orphan work through its authenticated live backend",
+    { timeout: 30000 },
+    async (t) => {
+      const deadSdk = mode !== "runtime-upgrade";
+      const processBirth = (
+        load("./queue-instance") as {
+          processBirth(pid?: number): string;
         }
-        assert.ok(args.object?.script);
-        return {
-          failed: false,
-          text: runBoundInstanceProbe(args.object.script, targetObservation)
-            .text,
-        };
-      },
-    });
-    const transitionOptions: P.Options = {
-      dir: f.dir,
-      confirmOwnership: true,
-      autoReconcile: false,
-      nativePath: (file) => file,
-      backendTransition: approval,
-      createBackend,
-    };
-    broker.serve = async (config, options) => {
-      const handle = await productionServe(config, {
-        ...options,
-        dir: f.dir,
-        nativePath: (file) => file,
-        createBackend,
+      ).processBirth;
+      const sdk = spawn(
+        process.execPath,
+        ["-e", "setInterval(() => {}, 1000)"],
+        {
+          stdio: "ignore",
+        },
+      );
+      await once(sdk, "spawn");
+      t.after(() => {
+        if (sdk.exitCode === null && sdk.signalCode === null)
+          sdk.kill("SIGKILL");
       });
-      resources.handle = handle;
-      return handle;
-    };
-    t.after(() => {
-      broker.serve = productionServe;
-    });
-    stdout = "";
-    const winner = queueCommand(
-      [
-        "transition-backend",
-        "--backend-approval",
-        approvalFile,
-        "--confirm-ownership",
-        "true",
-      ],
-      { ...cliDeps, loadConfig: () => ({ cfg: f.next }) },
-    );
-    await Promise.race([
-      firstProbeStarted,
-      winner.then(() => {
-        throw new Error(
-          "Transition completed without reaching its target probe",
+      assert.ok(sdk.pid);
+      const oldSdk: P.Instance = {
+        pid: sdk.pid,
+        birth: processBirth(sdk.pid),
+        version: "fixture",
+      };
+      const f = setup(oldSdk, "mcp", undefined, true);
+      const originalStateHome = process.env["XDG_STATE_HOME"];
+      process.env["XDG_STATE_HOME"] = f.root;
+      t.after(() => {
+        if (originalStateHome === undefined)
+          delete process.env["XDG_STATE_HOME"];
+        else process.env["XDG_STATE_HOME"] = originalStateHome;
+      });
+      const { hash } = load("./queue-instance") as {
+        hash(value: string | Uint8Array): string;
+      };
+      const credentialsDir = path.join(f.dir, "client-credentials");
+      fs.mkdirSync(credentialsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(credentialsDir, `${hash(f.clientId)}.json`),
+        JSON.stringify({ clientId: f.clientId, clientToken: f.token }),
+        { mode: 0o600 },
+      );
+      const originalEpochIdentity = fs.readFileSync(
+        path.join(f.epoch.root, "instance.json"),
+      );
+      const originalPointer = fs.readFileSync(
+        path.join(f.dir, "isolated-admission-epoch.json"),
+      );
+      const originalHistory = fs.readFileSync(
+        path.join(f.dir, "queue-state.json"),
+      );
+      const ownerScript = path.join(
+        process.cwd(),
+        "tests/fixtures/backend-transition-owner.cjs",
+      );
+      const repoRoot = path.resolve(__dirname, "..", "..");
+      const targetIdentity = oldSdk;
+      const targetObservation = {
+        ...targetIdentity,
+        activeCommand: "SelectCommand",
+        documents: [],
+      };
+      // Historical MCP is metadata only. Compose the real IPC/authentication,
+      // lifetime and administrative emitters without constructing an MCP backend.
+      // The source startup observation is synthetic, like the ADDIN adapter below.
+      const historicalOwner = `
+      const path = require('node:path');
+      const { createRequire } = require('node:module');
+      const load = createRequire(path.join(process.argv[1], 'src/queue-broker.js'));
+      const dir = process.argv[3];
+      const qi = load('./queue-instance');
+      const state = load('./queue-isolated-epoch').openIsolatedEpoch(dir, {recover:false});
+      const identity = qi.readJson(path.join(state.epoch.root, 'instance.json'));
+      const { claimBrokerLifetime } = load('./dist/node-adapters/execution/broker-lifetime');
+      const { createBrokerIpcDispatch } = load('./dist/node-adapters/broker-ipc/dispatch');
+      const { QueueGate } = load('./dist/node-adapters/execution/gate');
+      const { runBoundInstanceProbe } = require(path.join(process.argv[2], 'tests/fixtures/bound-instance-probe.cjs'));
+      const forbidden = () => { throw new Error('Historical owner must not send SDK work'); };
+      const lifetime = claimBrokerLifetime({
+        dir, socket: path.join(dir, 'broker.sock'),
+        buildHash: identity.buildHash, configHash: identity.configHash,
+        processBirth: qi.processBirth, disposeClient() {},
+      });
+      const gate = new QueueGate(state, lifetime.owner.nonce);
+      gate.buildHash = identity.buildHash;
+      gate.controlCapabilities = {stop:true};
+      let busy = false;
+      const admin = load('./queue-console-admin').createAdmin({
+        state, gate, dir, marker:lifetime.owner, buildHash:identity.buildHash,
+        getContext: () => ({active:null, busy, stopping:lifetime.stopping, held:null}),
+        setBusy: value => { busy = value; },
+        resumeCheck:forbidden, observeControlCompletion:forbidden,
+        close: () => lifetime.close(), diagnostics() {},
+        durable:qi.durable, readJson:qi.readJson, hash:qi.hash,
+      });
+      const clientsFile = path.join(dir, 'clients.json');
+      const dispatcher = createBrokerIpcDispatch(qi.readJson(clientsFile), {
+        persistClients: values => qi.durable(clientsFile, values),
+        processUnavailable: () => qi.priorProcessAlive(identity.instance) !== true,
+        hasSuccessor: () => false, ownsSuccessorCreation: () => false,
+        assertMigrationAdmission() {}, readEpochOwner: () => state.epoch,
+        isHistorical: () => false, acceptsLifecycle:admin.accepts,
+        lifecycle:admin.handle, backend:forbidden, workerStatus:forbidden,
+        readJob:forbidden, result:forbidden,
+        command(message) {
+          if (message.action !== 'control-status') return forbidden();
+          return gate.snapshot();
+        },
+      });
+      process.on('message', async () => {
+        await lifetime.close(); process.disconnect();
+      });
+      (async () => {
+        await lifetime.initialize({recovery:false, startupQuiescent:() => true},
+          startup => qi.probe({
+            server:{timeoutMs:1000}, _parse:JSON.parse,
+            _post:forbidden, _openSession:forbidden, listTools:forbidden,
+            executeUiGuardedScript:forbidden,
+            callTool(args) {
+              return {failed:false, text:runBoundInstanceProbe(args.object.script,
+                {...identity.instance, activeCommand:'SelectCommand', documents:[]}).text};
+            },
+          }, {receiptPath:startup.receipt, binding:startup.binding,
+            requireIdle:false, mapPath:file => file}));
+        await lifetime.listen({
+          dispatch:dispatcher.dispatch, inspectDrain:() => 'idle',
+          retireWorkers:async () => {}, releaseLease() {},
+          poll() {}, pollMs:1000, onTransportError:forbidden,
+          onShutdownError(error) { throw error; },
+        });
+        process.send({kind:'ready'});
+      })().catch(error => {
+        process.send({kind:'error', code:error.code, message:error.message});
+        process.disconnect(); process.exitCode = 1;
+      });
+    `;
+      const owner = spawn(
+        process.execPath,
+        deadSdk
+          ? ["-e", historicalOwner, runtimeRoot, repoRoot, f.dir]
+          : [
+              ownerScript,
+              runtimeRoot,
+              repoRoot,
+              f.dir,
+              JSON.stringify(f.next),
+              JSON.stringify(targetObservation),
+              JSON.stringify(f.approval),
+              "a".repeat(64),
+            ],
+        { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+      );
+      const children: ReturnType<typeof spawn>[] = [owner, sdk];
+      const resources: { handle?: Awaited<ReturnType<typeof serve>> } = {};
+      t.after(async () => {
+        await Promise.all(
+          children.map(async (child) => {
+            if (child.exitCode !== null || child.signalCode !== null) return;
+            const exited = once(child, "exit");
+            child.kill("SIGKILL");
+            await exited;
+          }),
         );
-      }),
-    ]);
-    try {
-      await assert.rejects(serve(f.next, transitionOptions));
-      assert.equal(targetProbes, 1, "the competing startup never probes ADDIN");
-    } finally {
-      continueProbe();
-    }
-    assert.equal(await winner, 0);
-    const handle = resources.handle;
-    assert.ok(handle);
-    assert.equal(
-      targetProbes,
-      1,
-      "transition performs one ADDIN startup probe",
-    );
-    assert.equal(
-      handle.status().paused,
-      true,
-      "owner stop pause remains closed",
-    );
-    const head = JSON.parse(
-      fs.readFileSync(path.join(f.dir, "physical-backend-head.json"), "utf8"),
-    ) as { identity: { path: string } };
-    const activeIdentity = JSON.parse(
-      fs.readFileSync(head.identity.path, "utf8"),
-    ) as P.Identity;
-    assert.deepEqual(
-      {
-        pid: activeIdentity.instance.pid,
-        birth: activeIdentity.instance.birth,
-        version: activeIdentity.instance.version,
-      },
-      targetIdentity,
-    );
-    assert.equal(activeIdentity.instance.activeCommand, "SelectCommand");
-    assert.deepEqual(activeIdentity.instance.documents, []);
-    assert.deepEqual(
-      fs.readFileSync(path.join(f.epoch.root, "instance.json")),
-      originalEpochIdentity,
-    );
-    assert.deepEqual(
-      fs.readFileSync(path.join(f.dir, "isolated-admission-epoch.json")),
-      originalPointer,
-    );
-    assert.deepEqual(
-      fs.readFileSync(path.join(f.dir, "queue-state.json")),
-      originalHistory,
-    );
-    assert.deepEqual(
-      Object.fromEntries(
-        Object.entries(handle.status().jobs).map(([id, job]) => [
+        if (resources.handle) await resources.handle.close().catch(() => {});
+        fs.rmSync(f.root, { recursive: true, force: true });
+      });
+      function waitForMessage(
+        child: ReturnType<typeof spawn>,
+        kind: string,
+      ): Promise<Record<string, unknown>> {
+        return new Promise((resolve, reject) => {
+          const onMessage = (value: unknown) => {
+            const message = value as Record<string, unknown>;
+            if (message["kind"] === "error") {
+              child.off("message", onMessage);
+              reject(
+                Object.assign(new Error(String(message["message"])), message),
+              );
+            } else if (message["kind"] === kind) {
+              child.off("message", onMessage);
+              resolve(message);
+            }
+          };
+          child.on("message", onMessage);
+          child.once("exit", (code) => {
+            child.off("message", onMessage);
+            reject(new Error(`Owner exited before ${kind} (code ${code})`));
+          });
+        });
+      }
+      async function waitForFile(file: string) {
+        const deadline = Date.now() + 5000;
+        while (!fs.existsSync(file) && Date.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.ok(
+          fs.existsSync(file),
+          `Timed out waiting for ${path.basename(file)}`,
+        );
+      }
+
+      const ready = waitForMessage(owner, "ready");
+      assert.equal((await ready)["kind"], "ready");
+      const sourceOwner = JSON.parse(
+        fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8"),
+      ) as { nonce: string };
+      const sourceStartupReceipt = path.join(
+        f.dir,
+        `broker-startup-${sourceOwner.nonce}.receipt.json`,
+      );
+      assert.ok(
+        fs.existsSync(sourceStartupReceipt),
+        JSON.stringify(
+          fs.readdirSync(f.dir).filter((name) => name.startsWith("broker-")),
+        ),
+      );
+
+      let stdout = "";
+      const cliDeps = {
+        // stop is metadata-only: retain the historical source config here,
+        // and pass the supported physical target only to transition-backend.
+        loadConfig: () => ({ cfg: deadSdk ? f.cfg : f.next }),
+        stdout: {
+          write(text: string) {
+            stdout += text;
+          },
+        },
+        stderr: { write() {} },
+      };
+      const { queueCommand } = load("./dist/entrypoints/queue-cli") as {
+        queueCommand(argv: string[], deps: typeof cliDeps): Promise<number>;
+      };
+      const stopRequestId = deadSdk
+        ? "dead-sdk-owner-stop"
+        : "addin-runtime-owner-stop";
+      await assert.rejects(
+        queueCommand(
+          [
+            "stop",
+            "--client",
+            "foreign-stop-client",
+            "--request-id",
+            "foreign-owner-stop",
+          ],
+          cliDeps,
+        ),
+        { code: "NOT_OWNER" },
+      );
+      assert.equal(
+        fs.existsSync(
+          path.join(f.dir, `console-admin-${hash("foreign-owner-stop")}.json`),
+        ),
+        false,
+      );
+      assert.equal(
+        await queueCommand(
+          ["stop", "--client", f.clientId, "--request-id", stopRequestId],
+          cliDeps,
+        ),
+        0,
+      );
+      const releaseFile = String(JSON.parse(stdout)["releaseFile"]);
+      await waitForFile(releaseFile);
+      const stopBytes = fs.readFileSync(
+        path.join(f.dir, `console-admin-${hash(stopRequestId)}.json`),
+      );
+      const releaseBytes = fs.readFileSync(releaseFile);
+      const sourceReceiptBytes = fs.readFileSync(sourceStartupReceipt);
+      const sourceLifecycle = path.join(
+        f.dir,
+        `broker-lifecycle-${sourceOwner.nonce}.json`,
+      );
+      const sourceLifecycleBytes = fs.readFileSync(sourceLifecycle);
+      const release = JSON.parse(releaseBytes.toString()) as {
+        outcome: string;
+        requestId: string;
+      };
+      assert.equal(release.outcome, "released");
+      assert.equal(release.requestId, stopRequestId);
+      const ownerExit = once(owner, "exit");
+      owner.send({ action: "exit" });
+      await ownerExit;
+      assert.ok(fs.existsSync(sourceStartupReceipt));
+      let actualTargetIdentity = targetIdentity;
+      if (deadSdk) {
+        const sdkExit = once(sdk, "exit");
+        sdk.kill("SIGKILL");
+        await sdkExit;
+        const targetProcess = spawn(
+          process.execPath,
+          ["-e", "setInterval(() => {}, 1000)"],
+          {
+            stdio: "ignore",
+          },
+        );
+        children.push(targetProcess);
+        await once(targetProcess, "spawn");
+        assert.ok(targetProcess.pid);
+        actualTargetIdentity = {
+          pid: targetProcess.pid,
+          birth: processBirth(targetProcess.pid),
+          version: "fixture",
+        };
+        assert.notEqual(actualTargetIdentity.pid, oldSdk.pid);
+        assert.notEqual(actualTargetIdentity.birth, oldSdk.birth);
+        Object.assign(targetObservation, actualTargetIdentity);
+      }
+      const sourceState = (
+        load("./queue-isolated-epoch") as {
+          openIsolatedEpoch(dir: string, options: { recover: false }): P.State;
+        }
+      ).openIsolatedEpoch(f.dir, { recover: false });
+      const jobsAtTransition = Object.fromEntries(
+        Object.entries(sourceState.data.jobs).map(([id, job]) => [
           id,
           job.state,
         ]),
-      ),
-      jobsAtTransition,
-    );
+      );
 
-    stdout = "";
-    assert.equal(
-      await queueCommand(
+      let targetProbes = 0;
+      let probeStarted!: () => void;
+      let continueProbe!: () => void;
+      const firstProbeStarted = new Promise<void>((resolve) => {
+        probeStarted = resolve;
+      });
+      const firstProbeAllowed = new Promise<void>((resolve) => {
+        continueProbe = resolve;
+      });
+      const approval: BackendTransitionApproval = {
+        ...f.approval,
+        requestId: deadSdk
+          ? "dead-sdk-mcp-to-addin"
+          : "addin-runtime-upgrade-after-owner-stop",
+        previousConfig: deadSdk ? f.cfg : f.next,
+        nextConfig: f.next,
+        stopRequestId,
+        ...(deadSdk
+          ? {}
+          : {
+              nextBuildHash: (
+                load("./queue-instance") as { buildHash(): string }
+              ).buildHash(),
+            }),
+      };
+      const approvalFile = path.join(f.root, "backend-approval.json");
+      fs.writeFileSync(approvalFile, JSON.stringify(approval), { mode: 0o600 });
+      const broker = load("./queue-broker") as {
+        serve: typeof serve;
+      };
+      const productionServe = broker.serve;
+      const createBackend = (): P.Client => ({
+        server: { timeoutMs: 1000 },
+        _parse: (raw) => JSON.parse(raw) as P.Reply,
+        _openSession: () => {
+          throw new Error("Unexpected session");
+        },
+        listTools: () => {
+          throw new Error("Unexpected catalog");
+        },
+        executeUiGuardedScript: () => {
+          throw new Error("Unexpected script");
+        },
+        _post: () => {
+          throw new Error("Original job replay forbidden");
+        },
+        callTool: async (args) => {
+          targetProbes++;
+          if (targetProbes === 1) {
+            probeStarted();
+            await firstProbeAllowed;
+          }
+          assert.ok(args.object?.script);
+          return {
+            failed: false,
+            text: runBoundInstanceProbe(args.object.script, targetObservation)
+              .text,
+          };
+        },
+      });
+      const transitionOptions: P.Options = {
+        dir: f.dir,
+        confirmOwnership: true,
+        autoReconcile: false,
+        nativePath: (file) => file,
+        backendTransition: approval,
+        createBackend,
+      };
+      if (deadSdk) {
+        for (const [invalid, code] of [
+          [{ ...approval, clientToken: "foreign" }, "NOT_OWNER"],
+          [{ ...approval, stopRequestId: "" }, "BACKEND_TRANSITION_UNPROVEN"],
+        ] as const) {
+          await assert.rejects(
+            productionServe(f.next, {
+              ...transitionOptions,
+              backendTransition: invalid,
+            }),
+            { code },
+          );
+          assert.equal(targetProbes, 0);
+          assert.equal(fs.existsSync(path.join(f.dir, "broker.lock")), false);
+        }
+        fs.writeFileSync(
+          sourceStartupReceipt,
+          JSON.stringify({
+            ...JSON.parse(sourceReceiptBytes.toString()),
+            instance: actualTargetIdentity,
+          }),
+        );
+        try {
+          await assert.rejects(productionServe(f.next, transitionOptions), {
+            code: "NORMAL_RESTART_UNPROVEN",
+          });
+          assert.equal(
+            targetProbes,
+            0,
+            "a foreign source receipt cannot authorize a target probe",
+          );
+        } finally {
+          fs.writeFileSync(sourceStartupReceipt, sourceReceiptBytes);
+        }
+      }
+      broker.serve = async (config, options) => {
+        const handle = await productionServe(config, {
+          ...options,
+          dir: f.dir,
+          nativePath: (file) => file,
+          createBackend,
+        });
+        resources.handle = handle;
+        return handle;
+      };
+      t.after(() => {
+        broker.serve = productionServe;
+      });
+      stdout = "";
+      const winner = queueCommand(
         [
-          "resume",
-          "--client",
-          f.clientId,
-          "--request-id",
-          "resume-after-addin-runtime-upgrade",
+          "transition-backend",
+          "--backend-approval",
+          approvalFile,
+          "--confirm-ownership",
+          "true",
         ],
         { ...cliDeps, loadConfig: () => ({ cfg: f.next }) },
-      ),
-      0,
-    );
-    assert.equal(handle.status().paused, false);
-    assert.equal(
-      targetProbes,
-      2,
-      "resume is a separate fresh ADDIN observation",
-    );
-    const { createQueueSession } = load("./dist/composition/library-queue") as {
-      createQueueSession(
-        config: P.Config,
-        clientId: string,
-        cwd: string,
-        instanceId: string,
-      ): {
-        start(): Promise<void>;
-        status(): Promise<{ blocked: boolean }>;
-        dispose(): void;
-      };
-    };
-    const session = createQueueSession(
-      f.next,
-      f.clientId,
-      f.root,
-      "transition-public-client",
-    );
-    try {
-      await session.start();
-      assert.equal((await session.status()).blocked, false);
-      const headFile = path.join(f.dir, "physical-backend-head.json");
-      const retainedHead = fs.readFileSync(headFile);
+      );
+      await Promise.race([
+        firstProbeStarted,
+        winner.then(() => {
+          throw new Error(
+            "Transition completed without reaching its target probe",
+          );
+        }),
+      ]);
       try {
-        const altered = JSON.parse(retainedHead.toString()) as {
-          identity: { sha256: string };
-        };
-        altered.identity.sha256 = "0".repeat(64);
-        fs.writeFileSync(headFile, JSON.stringify(altered));
-        await assert.rejects(session.status(), {
-          code: "BACKEND_TRANSITION_CHANGED",
-        });
+        await assert.rejects(serve(f.next, transitionOptions));
+        assert.equal(
+          targetProbes,
+          1,
+          "the competing startup never probes ADDIN",
+        );
       } finally {
-        fs.writeFileSync(headFile, retainedHead);
+        if (mode === "dead-sdk-late-change")
+          fs.writeFileSync(
+            releaseFile,
+            JSON.stringify({ ...release, outcome: "retained" }),
+          );
+        continueProbe();
       }
-    } finally {
-      session.dispose();
-    }
-    assert.deepEqual(
-      Object.fromEntries(
-        Object.entries(handle.status().jobs).map(([id, job]) => [
-          id,
-          job.state,
-        ]),
-      ),
-      jobsAtTransition,
-    );
-    await handle.close();
-    delete resources.handle;
-    const { openIsolatedEpoch } = load("./queue-isolated-epoch") as {
-      openIsolatedEpoch(dir: string, options?: { recover: false }): P.State;
-    };
-    const current = openIsolatedEpoch(f.dir, { recover: false });
-    const job = current.submit({
-      kind: "rpc",
-      requestId: "interrupted-after-authenticated-backend-transition",
-      clientId: f.clientId,
-      timeoutMs: 1000,
-      payload: { jsonrpc: "2.0", id: "orphan-write", method: "tools/call" },
-    });
-    const jobId = job["id"];
-    assert.ok(typeof jobId === "string");
-    assert.equal(current.next()?.id, jobId);
-    assert.equal(current.status(jobId)["state"], "running");
-    const currentFile = path.join(f.epoch.root, "queue-state.json");
-    const interruptedBytes = fs.readFileSync(currentFile);
-    const retained = [
-      path.join(f.dir, "queue-state.json"),
-      path.join(f.dir, "instance.json"),
-      path.join(f.epoch.root, "instance.json"),
-      path.join(f.dir, "isolated-admission-epoch.json"),
-      path.join(f.dir, "physical-backend-head.json"),
-      head.identity.path,
-    ].map((file) => ({ file, bytes: fs.readFileSync(file) }));
-    const readonly = openIsolatedEpoch(f.dir, { recover: false });
-    assert.equal(readonly.status(jobId)["state"], "running");
-    assert.deepEqual(fs.readFileSync(currentFile), interruptedBytes);
-    const backend = lifecycle.resolveBackendHead(f.dir, () => readonly).current;
-    assert.ok(backend);
-    assert.equal(backend.identity.instance.pid, targetIdentity.pid);
-    assert.equal(backend.identity.instance.birth, targetIdentity.birth);
-    assert.equal(backend.identity.instance.pid, f.epoch.currentInstance.pid);
-    const reopened = openIsolatedEpoch(f.dir);
-    assert.equal(reopened.status(jobId)["state"], "needs_reconciliation");
-    assert.equal(reopened.summary().blocked?.id, jobId);
-    assert.equal(
-      targetProbes,
-      2,
-      "metadata recovery neither probes Fusion nor replays dispatched work",
-    );
-    for (const { file, bytes } of retained)
-      assert.deepEqual(fs.readFileSync(file), bytes);
-    assert.deepEqual(
-      fs.readFileSync(path.join(f.dir, "queue-state.json")),
-      originalHistory,
-    );
-  },
-);
+      if (mode === "dead-sdk-late-change") {
+        await assert.rejects(winner, { code: "NORMAL_RESTART_UNPROVEN" });
+        assert.equal(targetProbes, 1);
+        assert.equal(
+          fs.existsSync(path.join(f.dir, "physical-backend-head.json")),
+          false,
+        );
+        await assert.rejects(productionServe(f.next, transitionOptions));
+        assert.equal(
+          targetProbes,
+          1,
+          "a late proof failure cannot replay the target observation",
+        );
+        assert.deepEqual(
+          fs.readFileSync(sourceStartupReceipt),
+          sourceReceiptBytes,
+        );
+        assert.deepEqual(
+          fs.readFileSync(sourceLifecycle),
+          sourceLifecycleBytes,
+        );
+        assert.deepEqual(
+          fs.readFileSync(path.join(f.epoch.root, "instance.json")),
+          originalEpochIdentity,
+        );
+        assert.deepEqual(
+          fs.readFileSync(path.join(f.dir, "queue-state.json")),
+          originalHistory,
+        );
+        return;
+      }
+      assert.equal(await winner, 0);
+      const handle = resources.handle;
+      assert.ok(handle);
+      assert.equal(
+        targetProbes,
+        1,
+        "transition performs one ADDIN startup probe",
+      );
+      assert.equal(
+        handle.status().paused,
+        true,
+        "owner stop pause remains closed",
+      );
+      if (deadSdk) {
+        const currentHead = lifecycle.backendHead(f.dir)!;
+        assert.ok(currentHead.head.deadPredecessor);
+        assert.equal(currentHead.head.runtimeUpgrade, undefined);
+        const proof = JSON.parse(
+          fs.readFileSync(currentHead.head.deadPredecessor.path, "utf8"),
+        ) as {
+          kind: string;
+          stopRequestId: string;
+          previous: P.Identity;
+          sourceStartup: { receiptReference: { path: string } };
+          evidence: { path: string; sha256: string }[];
+        };
+        assert.equal(proof.kind, "settled-normal-dead-predecessor-v1");
+        assert.equal(proof.stopRequestId, stopRequestId);
+        assert.deepEqual(
+          proof.previous.instance,
+          JSON.parse(originalEpochIdentity.toString()).instance,
+        );
+        assert.equal(
+          proof.sourceStartup.receiptReference.path,
+          sourceStartupReceipt,
+        );
+        for (const file of [
+          sourceStartupReceipt,
+          sourceLifecycle,
+          path.join(f.dir, `console-admin-${hash(stopRequestId)}.json`),
+          releaseFile,
+        ]) {
+          assert.ok(
+            proof.evidence.some(
+              (ref) =>
+                ref.path === file && ref.sha256 === hash(fs.readFileSync(file)),
+            ),
+          );
+        }
+        const targetReceipt = currentHead.head.observation.find((ref) =>
+          ref.path.endsWith(".receipt.json"),
+        );
+        assert.ok(targetReceipt);
+        assert.notEqual(targetReceipt.path, sourceStartupReceipt);
+        const receipt = JSON.parse(
+          fs.readFileSync(targetReceipt.path, "utf8"),
+        ) as {
+          terminal: boolean;
+          outcome: string;
+          instance: P.Instance;
+        };
+        assert.equal(receipt.terminal, true);
+        assert.equal(receipt.outcome, "succeeded");
+        assert.equal(receipt.instance.pid, actualTargetIdentity.pid);
+        assert.equal(receipt.instance.birth, actualTargetIdentity.birth);
+        assert.notEqual(receipt.instance.pid, proof.previous.instance.pid);
+      }
+      assert.deepEqual(
+        fs.readFileSync(sourceStartupReceipt),
+        sourceReceiptBytes,
+      );
+      assert.deepEqual(fs.readFileSync(sourceLifecycle), sourceLifecycleBytes);
+      assert.deepEqual(
+        fs.readFileSync(
+          path.join(f.dir, `console-admin-${hash(stopRequestId)}.json`),
+        ),
+        stopBytes,
+      );
+      assert.deepEqual(fs.readFileSync(releaseFile), releaseBytes);
+      const head = JSON.parse(
+        fs.readFileSync(path.join(f.dir, "physical-backend-head.json"), "utf8"),
+      ) as { identity: { path: string } };
+      const activeIdentity = JSON.parse(
+        fs.readFileSync(head.identity.path, "utf8"),
+      ) as P.Identity;
+      assert.deepEqual(
+        {
+          pid: activeIdentity.instance.pid,
+          birth: activeIdentity.instance.birth,
+          version: activeIdentity.instance.version,
+        },
+        actualTargetIdentity,
+      );
+      assert.equal(activeIdentity.instance.activeCommand, "SelectCommand");
+      assert.deepEqual(activeIdentity.instance.documents, []);
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.epoch.root, "instance.json")),
+        originalEpochIdentity,
+      );
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "isolated-admission-epoch.json")),
+        originalPointer,
+      );
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "queue-state.json")),
+        originalHistory,
+      );
+      assert.deepEqual(
+        Object.fromEntries(
+          Object.entries(handle.status().jobs).map(([id, job]) => [
+            id,
+            job.state,
+          ]),
+        ),
+        jobsAtTransition,
+      );
+
+      stdout = "";
+      assert.equal(
+        await queueCommand(
+          [
+            "resume",
+            "--client",
+            f.clientId,
+            "--request-id",
+            "resume-after-addin-runtime-upgrade",
+          ],
+          { ...cliDeps, loadConfig: () => ({ cfg: f.next }) },
+        ),
+        0,
+      );
+      assert.equal(handle.status().paused, false);
+      assert.equal(
+        targetProbes,
+        2,
+        "resume is a separate fresh ADDIN observation",
+      );
+      const { createQueueSession } = load(
+        "./dist/composition/library-queue",
+      ) as {
+        createQueueSession(
+          config: P.Config,
+          clientId: string,
+          cwd: string,
+          instanceId: string,
+        ): {
+          start(): Promise<void>;
+          status(): Promise<{ blocked: boolean }>;
+          dispose(): void;
+        };
+      };
+      const session = createQueueSession(
+        f.next,
+        f.clientId,
+        f.root,
+        "transition-public-client",
+      );
+      try {
+        await session.start();
+        assert.equal((await session.status()).blocked, false);
+        const headFile = path.join(f.dir, "physical-backend-head.json");
+        const retainedHead = fs.readFileSync(headFile);
+        try {
+          const altered = JSON.parse(retainedHead.toString()) as {
+            identity: { sha256: string };
+          };
+          altered.identity.sha256 = "0".repeat(64);
+          fs.writeFileSync(headFile, JSON.stringify(altered));
+          await assert.rejects(session.status(), {
+            code: "BACKEND_TRANSITION_CHANGED",
+          });
+        } finally {
+          fs.writeFileSync(headFile, retainedHead);
+        }
+      } finally {
+        session.dispose();
+      }
+      assert.deepEqual(
+        Object.fromEntries(
+          Object.entries(handle.status().jobs).map(([id, job]) => [
+            id,
+            job.state,
+          ]),
+        ),
+        jobsAtTransition,
+      );
+      await handle.close();
+      delete resources.handle;
+      const { openIsolatedEpoch } = load("./queue-isolated-epoch") as {
+        openIsolatedEpoch(dir: string, options?: { recover: false }): P.State;
+      };
+      const current = openIsolatedEpoch(f.dir, { recover: false });
+      const job = current.submit({
+        kind: "rpc",
+        requestId: "interrupted-after-authenticated-backend-transition",
+        clientId: f.clientId,
+        timeoutMs: 1000,
+        payload: { jsonrpc: "2.0", id: "orphan-write", method: "tools/call" },
+      });
+      const jobId = job["id"];
+      assert.ok(typeof jobId === "string");
+      assert.equal(current.next()?.id, jobId);
+      assert.equal(current.status(jobId)["state"], "running");
+      const currentFile = path.join(f.epoch.root, "queue-state.json");
+      const interruptedBytes = fs.readFileSync(currentFile);
+      const retained = [
+        path.join(f.dir, "queue-state.json"),
+        path.join(f.dir, "instance.json"),
+        path.join(f.epoch.root, "instance.json"),
+        path.join(f.dir, "isolated-admission-epoch.json"),
+        path.join(f.dir, "physical-backend-head.json"),
+        head.identity.path,
+      ].map((file) => ({ file, bytes: fs.readFileSync(file) }));
+      const readonly = openIsolatedEpoch(f.dir, { recover: false });
+      assert.equal(readonly.status(jobId)["state"], "running");
+      assert.deepEqual(fs.readFileSync(currentFile), interruptedBytes);
+      const backend = lifecycle.resolveBackendHead(
+        f.dir,
+        () => readonly,
+      ).current;
+      assert.ok(backend);
+      assert.equal(backend.identity.instance.pid, actualTargetIdentity.pid);
+      assert.equal(backend.identity.instance.birth, actualTargetIdentity.birth);
+      if (deadSdk)
+        assert.notEqual(
+          backend.identity.instance.pid,
+          f.epoch.currentInstance.pid,
+        );
+      else
+        assert.equal(
+          backend.identity.instance.pid,
+          f.epoch.currentInstance.pid,
+        );
+      const reopened = openIsolatedEpoch(f.dir);
+      assert.equal(reopened.status(jobId)["state"], "needs_reconciliation");
+      assert.equal(reopened.summary().blocked?.id, jobId);
+      assert.equal(
+        targetProbes,
+        2,
+        "metadata recovery neither probes Fusion nor replays dispatched work",
+      );
+      for (const { file, bytes } of retained)
+        assert.deepEqual(fs.readFileSync(file), bytes);
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "queue-state.json")),
+        originalHistory,
+      );
+    },
+  );
 
 function publishedSetup(t: TestContext) {
   const fixtureLoad = createRequire(
