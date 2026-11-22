@@ -22,6 +22,8 @@ import {
   type NativeRuntimeRebaselinePins,
 } from "./runtime-rebaseline-native";
 import { runtimeRebaselineManifestNames } from "../persistence/runtime-rebaseline-scope";
+import { validateNativeRootSuccession } from "./runtime-root-successor";
+import { runtimeRootSuccessorQueryPython } from "./runtime-root-successor-query";
 
 type Data = Record<string, unknown>;
 export interface NativeRuntimeRebaselineReaderOptions {
@@ -60,6 +62,8 @@ export interface NativeRuntimeRebaselineReaderPorts {
   ): Promise<NativePhysicalActivation | undefined>;
 }
 export interface NativeRuntimeConsumedVerification {
+  readonly authenticatedRootPins?: NativeRuntimeRebaselinePins;
+  readonly authenticatedCurrentPins?: NativeRuntimeRebaselinePins;
   finalize(): void;
   abort(): void;
 }
@@ -85,9 +89,10 @@ if operator["runtime"]!=expected_runtime:
 verifier=operator["publicationVerifier"]
 if verifier["keyId"]!=e["keyId"] or hashlib.sha256(bytes.fromhex(verifier["keyHex"])).hexdigest()!=e["keyDigest"]:
     deny("NATIVE_VERIFICATION_KEY_CHANGED")
-from lib.rebaseline_fence import OperatorAuthority,query_fence
+from lib.rebaseline_fence import OperatorAuthority
+${runtimeRootSuccessorQueryPython}
 authority=OperatorAuthority(operator)
-result=query_fence(authority,decode_json(e["requestJson"]))
+result=_fmcad_query_runtime_root(authority,decode_json(e["requestJson"]))
 print(json.dumps(result,sort_keys=True,ensure_ascii=True))
 `;
 const sha = (value: string | Uint8Array) =>
@@ -352,12 +357,33 @@ function capture(
   if (!same(decode(tracked(path.join(archive, "completion.json"))), completion))
     deny();
   const binding = object(record["binding"]);
+  // These are candidate ancestor pins, not authority. The original MAC and the
+  // guarded native successor chain must authenticate them before finalization.
+  const ancestorGeneration = object(binding["generation"]);
+  if (
+    Object.keys(ancestorGeneration).sort().join(",") !== "epoch,instance" ||
+    typeof ancestorGeneration["instance"] !== "string" ||
+    !ancestorGeneration["instance"] ||
+    typeof ancestorGeneration["epoch"] !== "string" ||
+    !ancestorGeneration["epoch"] ||
+    typeof binding["handoffId"] !== "string" ||
+    !binding["handoffId"]
+  )
+    deny();
+  const originalPins: NativeRuntimeRebaselinePins = {
+    ...options.pins,
+    handoffId: binding["handoffId"],
+    generation: {
+      instance: ancestorGeneration["instance"],
+      epoch: ancestorGeneration["epoch"],
+    },
+  };
   if (
     !same(
       Object.fromEntries(
         Object.keys(options.pins).map((key) => [key, binding[key]]),
       ),
-      options.pins,
+      originalPins,
     ) ||
     object(record["request"])["requestId"] !== requestId ||
     object(record["request"])["expectedHead"] !== publication.expectedHead
@@ -421,7 +447,14 @@ function capture(
   for (const ref of record["evidence"] as unknown[]) verified(ref);
   for (const ref of completion.evidence) verified(ref);
   verified(completion.nativeReceipt.reference);
-  return { device: info.dev, inode: info.ino, files, immutable, record };
+  return {
+    device: info.dev,
+    inode: info.ino,
+    files,
+    immutable,
+    record,
+    originalPins,
+  };
 }
 function sameImmutable(
   a: ReturnType<typeof capture>,
@@ -552,13 +585,13 @@ function createPorts(
       !fence["fenceNonce"] ||
       fence["requestId"] !== completion.binding.requestId ||
       fence["oldHead"] !== publication.expectedHead ||
-      fence["handoffId"] !== pinned.pins.handoffId ||
+      fence["handoffId"] !== snapshot.originalPins.handoffId ||
       !same(fence["store"], {
         path: pinned.store,
         device: snapshot.device,
         inode: snapshot.inode,
       }) ||
-      !same(fence["generation"], pinned.pins.generation) ||
+      !same(fence["generation"], snapshot.originalPins.generation) ||
       !same(fence["physicalRuntime"], {
         ...pinned.pins.process,
         version: pinned.runtimeVersion,
@@ -595,12 +628,38 @@ function createPorts(
       )
     )
       deny();
+    const successor = validateNativeRootSuccession(terminal["successor"], {
+      requestId: completion.binding.requestId,
+      admissionStore: pinned.pins.admissionStore,
+      originalRuntime: {
+        handoffId: snapshot.originalPins.handoffId,
+        generation: snapshot.originalPins.generation,
+        physicalRuntime: {
+          ...snapshot.originalPins.process,
+          version: pinned.runtimeVersion,
+          source: snapshot.originalPins.source,
+          build: snapshot.originalPins.build,
+        },
+        endpointURL: snapshot.originalPins.endpoint,
+      },
+      currentRuntime: {
+        handoffId: pinned.pins.handoffId,
+        generation: pinned.pins.generation,
+        physicalRuntime: {
+          ...pinned.pins.process,
+          version: pinned.runtimeVersion,
+          source: pinned.pins.source,
+          build: pinned.pins.build,
+        },
+        endpointURL: pinned.pins.endpoint,
+      },
+    });
     pinnedNative(pinned);
     if (!same(capture(pinned, publication, completion), snapshot)) deny();
     resync(snapshot);
     pinnedNative(pinned);
     if (!same(capture(pinned, publication, completion), snapshot)) deny();
-    return { snapshot, activation: authenticated.activation };
+    return { snapshot, activation: authenticated.activation, successor };
   }
   return Object.freeze({
     store: pinned.store,
@@ -621,6 +680,8 @@ function createPorts(
       if (approvalGeneration !== generation) deny();
       let pending = true;
       return Object.freeze({
+        authenticatedRootPins: structuredClone(result.snapshot.originalPins),
+        authenticatedCurrentPins: structuredClone(pinned.pins),
         finalize() {
           if (!pending || approvalGeneration !== generation) deny();
           pending = false;
@@ -674,7 +735,9 @@ function createPorts(
         )
       )
         deny();
-      return result.activation;
+      // Ordinary successors have retired the activation. Native issuance must
+      // receive no ancestor approval; the guarded current generation authorizes it.
+      return result.successor ? undefined : result.activation;
     },
   });
 }

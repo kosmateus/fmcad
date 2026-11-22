@@ -126,6 +126,12 @@ export interface RuntimeRebaselineReaderPorts {
 }
 /** Private single-use finalizer, not a JSON verdict or a publication lease. */
 export interface RuntimeConsumedVerification {
+  /** Ancestor pins authenticated by the private native verifier, not a JSON
+   * override. Needed only when a committed handoff changed the current generation. */
+  readonly authenticatedRootPins?: RuntimePins;
+  /** Current native scope of the same proof, preventing a verifier callback from
+   * being rebound by a wrapper that substitutes different current pins. */
+  readonly authenticatedCurrentPins?: RuntimePins;
   finalize(): void;
   abort(): void;
 }
@@ -910,12 +916,15 @@ async function approveReadOnlyRoot(
     fs.realpathSync(ports.store) !== root.record.store ||
     !same(
       Object.fromEntries(
-        Object.keys(ports.pins).map((key) => [
-          key,
-          (root.record.binding as unknown as Data)[key],
-        ]),
+        Object.keys(ports.pins)
+          .filter((key) => key !== "generation" && key !== "handoffId")
+          .map((key) => [key, (root.record.binding as unknown as Data)[key]]),
       ),
-      ports.pins,
+      Object.fromEntries(
+        Object.entries(ports.pins).filter(
+          ([key]) => key !== "generation" && key !== "handoffId",
+        ),
+      ),
     )
   )
     fail(
@@ -971,6 +980,26 @@ async function approveReadOnlyRoot(
       "A private consumed verification finalizer is required",
     );
   try {
+    const authenticatedPins = verification.authenticatedRootPins ?? ports.pins;
+    if (
+      !same(
+        Object.fromEntries(
+          Object.keys(ports.pins).map((key) => [
+            key,
+            (root.record.binding as unknown as Data)[key],
+          ]),
+        ),
+        authenticatedPins,
+      ) ||
+      !same(
+        verification.authenticatedCurrentPins ?? authenticatedPins,
+        ports.pins,
+      )
+    )
+      fail(
+        "NOT_AUTHORIZED",
+        "Consumed root has no authenticated ancestor pins",
+      );
     assertCurrent();
     flushReferences(root.record.store, references);
     assertCurrent();

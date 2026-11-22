@@ -265,7 +265,10 @@ script=sys.argv[-1]
 compile(script,"<actual-query-script>","exec")
 tree=ast.parse(script)
 imports=[n for n in ast.walk(tree) if isinstance(n,ast.ImportFrom) and n.module=="lib.rebaseline_fence"]
-assert len(imports)==1 and [n.name for n in imports[0].names]==["OperatorAuthority","query_fence"]
+assert any([n.name for n in node.names]==["OperatorAuthority"] for node in imports)
+assert len([node for node in ast.walk(tree) if isinstance(node,ast.FunctionDef) and node.name=="_fmcad_query_runtime_root"])==1
+result_calls=[node.value for node in tree.body if isinstance(node,ast.Assign) and any(isinstance(target,ast.Name) and target.id=="result" for target in node.targets)]
+assert len(result_calls)==1 and isinstance(result_calls[0],ast.Call) and isinstance(result_calls[0].func,ast.Name) and result_calls[0].func.id=="_fmcad_query_runtime_root"
 for n in ast.walk(tree):
  if isinstance(n,ast.Call):
   name=n.func.id if isinstance(n.func,ast.Name) else n.func.attr if isinstance(n.func,ast.Attribute) else ""
@@ -544,6 +547,137 @@ test("real core approves a CONSUMED root through SQLite QUERY only, preserves UN
   opened.mock.restore();
 });
 
+async function successorFixture(
+  t: TestContext,
+  fault?:
+    "missing" | "badMac" | "wrongRetirement" | "foreignCurrent" | "wrongStore",
+) {
+  const f = await fixture(t, "consumed-reader-successor-");
+  const nextGeneration = {
+    instance: "owned-next-instance",
+    epoch: "owned-next-epoch",
+  };
+  const handoffId = "owned-next-handoff";
+  const currentRuntime = {
+    handoffId,
+    generation: nextGeneration,
+    physicalRuntime: f.descriptor.physicalRuntime,
+    endpointURL: f.descriptor.endpointURL,
+  };
+  const info = fs.statSync(f.database, { bigint: true });
+  // Explicit owned fixture producer, not a native authority or production write.
+  const terminal = {
+    ...f.terminal,
+    successor: {
+      kind: "fmcad-runtime-root-successor-v1",
+      version: 1,
+      requestId: f.request.requestId,
+      retirement: { handoffId, nextGeneration },
+      handoffs: [
+        {
+          handoffId,
+          generation: f.options.pins.generation,
+          nextGeneration,
+          state: "committed",
+        },
+      ],
+      currentRuntime,
+      database: {
+        path: f.options.pins.admissionStore,
+        device: info.dev.toString(),
+        inode: info.ino.toString(),
+      },
+    },
+  };
+  const body: Record<string, unknown> = structuredClone(terminal);
+  const successor = body["successor"] as typeof terminal.successor;
+  if (fault === "missing") delete body["successor"];
+  if (fault === "badMac") body["receiptMac"] = "0".repeat(64);
+  if (fault === "wrongRetirement") successor.retirement.handoffId = "foreign";
+  if (fault === "foreignCurrent")
+    successor.currentRuntime.generation = {
+      instance: "foreign",
+      epoch: "foreign",
+    };
+  if (fault === "wrongStore") successor.database.path = "C:\\foreign.sqlite3";
+  const produced = spawnSync(
+    "python3",
+    [
+      "-c",
+      "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('UPDATE consumed SET body=? WHERE request_id=?',(sys.stdin.read(),sys.argv[2])); c.commit(); c.close()",
+      f.database,
+      f.request.requestId,
+    ],
+    { input: JSON.stringify(body), encoding: "utf8" },
+  );
+  assert.equal(produced.status, 0, produced.stderr);
+  const before = fs.readFileSync(f.database);
+  const ports = createNativeRuntimeRebaselineReaderPorts({
+    ...f.options,
+    pins: { ...f.options.pins, handoffId, generation: nextGeneration },
+  });
+  const reader = core.createRuntimeRebaselineReaderAuthority(ports);
+  return { ...f, ports, reader, before, handoffId, nextGeneration };
+}
+
+test("current native successor authenticates the unchanged ancestor root without reusing its activation", async (t) => {
+  const f = await successorFixture(t);
+  const { ports, reader, handoffId, nextGeneration, before } = f;
+  const root = await core.runtimeRebaselineRoot(f.store, reader);
+  assert.ok(root);
+  assert.deepEqual(root.record.binding.generation, f.options.pins.generation);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.store, "queue-state.json")),
+    f.history,
+  );
+  assert.equal(
+    await ports.getVerifiedActivation({
+      ...f.descriptor,
+      handoffId,
+      generation: nextGeneration,
+      brokerOwner: { ...f.descriptor.brokerOwner, nonce: "new-owner-nonce" },
+    }),
+    undefined,
+    "An ordinary successor must not resend ancestor activation",
+  );
+  assert.deepEqual(
+    fs.readFileSync(f.database),
+    before,
+    "Reader never mutates native state",
+  );
+});
+
+for (const fault of [
+  "missing",
+  "badMac",
+  "wrongRetirement",
+  "foreignCurrent",
+  "wrongStore",
+] as const) {
+  test(`native successor cannot authorize an ancestor with ${fault}`, async (t) => {
+    const f = await successorFixture(t, fault);
+    await assert.rejects(core.runtimeRebaselineRoot(f.store, f.reader), {
+      code:
+        fault === "badMac"
+          ? "RUNTIME_BARRIER_UNPROVEN"
+          : "RUNTIME_BARRIER_CHANGED",
+    });
+    assert.equal(
+      await f.ports.getVerifiedActivation({
+        ...f.descriptor,
+        handoffId: f.handoffId,
+        generation: f.nextGeneration,
+      }),
+      undefined,
+    );
+    assert.deepEqual(fs.readFileSync(f.database), f.before);
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.store, "queue-state.json")),
+      f.history,
+    );
+  });
+}
+
 test("readonly authority is not a publication lease or JSON authority", async (t) => {
   const f = await fixture(t);
   assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
@@ -659,6 +793,7 @@ for (const fault of [
 
 test("changed current pins and another canonical store cannot borrow consumed authority", async (t) => {
   const f = await fixture(t);
+  const originalDatabase = fs.readFileSync(f.database);
   const wrong = core.createRuntimeRebaselineReaderAuthority({
     ...f.ports,
     pins: {
@@ -678,7 +813,8 @@ test("changed current pins and another canonical store cannot borrow consumed au
   await assert.rejects(core.runtimeRebaselineRoot(f.store, cross), {
     code: "NOT_AUTHORIZED",
   });
-  assert.equal(fs.readFileSync(f.trace, "utf8"), "");
+  assert.equal(await f.ports.getVerifiedActivation(f.descriptor), undefined);
+  assert.deepEqual(fs.readFileSync(f.database), originalDatabase);
 });
 
 test("local tampering fails before QUERY and completion JSON is not native authority", async (t) => {
