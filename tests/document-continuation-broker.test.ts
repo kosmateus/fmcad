@@ -391,6 +391,32 @@ test("real domain capability binds a fresh phased job, verifies the original wor
   );
 });
 
+test("the real cad-command wrapper and generated policy argv retain the same guarded source contract", async () => {
+  const f = fixture(),
+    input = request();
+  const payload = {
+    version: 1,
+    kind: "cad-command",
+    invocation: input.payload,
+    output: { json: true, summary: false },
+  };
+  const command = {
+    ...input,
+    payload,
+    argv: cadWorkerPolicyArguments(decodeCadWorkerInvocation(payload)),
+  };
+  const job = f.job(await f.broker.submit(command, f.actor));
+  const turn = createTurnIdentity(job.id);
+  const program = await f.broker.prepareWorker(job, f.call(command), turn);
+  assert.equal(
+    program.sourceHash,
+    helper.compileDocumentContinuationPrograms(input, guard).guarded.sourceHash,
+  );
+  assert.equal(job.hash, helper.continuationRequestHash(command));
+  assert.notEqual(job.hash, helper.continuationRequestHash(input));
+  f.broker.expectedProduct(job, turn);
+});
+
 test("a forged worker script, envelope or provenance cannot be replaced with trusted guarded source", async () => {
   for (const variant of ["script", "readonly", "manifest", "method", "extra"]) {
     const f = fixture(),
