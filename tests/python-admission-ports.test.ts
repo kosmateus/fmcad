@@ -454,6 +454,11 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
   const f = await fixture(t, { typedService: true, slowPeerChecker: true }),
     a = await f.client("a"),
     b = await f.client("b");
+  assert.equal(
+    f.cfg.queue.preparationConcurrency,
+    2,
+    "This concurrent checker case must reserve two local worker slots regardless of host CPU capacity",
+  );
   const source = f.script(
     "typed.py",
     'def run(context: str) -> None:\n    print("TYPED_SERVICE")\n',
