@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
-import type { NativePhysicalGenerationProvisionOptions } from "./physical-generation-provision";
+import type {
+  NativePhysicalGenerationProvisionOptions,
+  NativePhysicalActivation,
+} from "./physical-generation-provision";
+import type { PhysicalGenerationDescriptor } from "./physical-generation";
 import { nativePhysicalGuard } from "./physical-generation-provision";
 import { runtimeRebaselineManifestNames } from "../persistence/runtime-rebaseline-scope";
 
@@ -88,6 +92,9 @@ export interface NativeRuntimeRebaselineAuthorityPorts {
   store: string;
   operatorId: string;
   pins: NativeRuntimeRebaselinePins;
+  getVerifiedActivation(
+    descriptor: PhysicalGenerationDescriptor,
+  ): Promise<NativePhysicalActivation | undefined>;
   withExclusiveBarrier<T>(
     request: NativeRuntimeRebaselineRequest,
     invokeMode: "publish-or-resume" | "verify-completed",
@@ -117,7 +124,10 @@ export interface NativeRuntimeRebaselineOptions {
   store: string;
   operatorId: string;
   pins: NativeRuntimeRebaselinePins;
-  native: NativePhysicalGenerationProvisionOptions;
+  native: Omit<
+    NativePhysicalGenerationProvisionOptions,
+    "getVerifiedActivation"
+  >;
   runtimeVersion: string;
   originalEvidence: NativeRebaselineOriginalEvidence;
   evidenceDirectory: string;
@@ -808,10 +818,80 @@ function nativeRuntimeRebaselineAuthorityPorts(
   const key = privateBytes(pinned.publicationAuthority.keyReference);
   if (key.length !== 32 || !pinned.publicationAuthority.keyId) refuse();
   const facts = originalFacts(pinned);
+  let lastApproved:
+    | {
+        request: NativeRuntimeRebaselineRequest;
+        publication: NativeRuntimeActivationPublication;
+        completion: NativeRuntimeActivationCompletion;
+        fenceBinding: Record<string, unknown>;
+      }
+    | undefined;
   return {
     store: pinned.store,
     operatorId: pinned.operatorId,
     pins: structuredClone(pinned.pins),
+    async getVerifiedActivation(descriptor) {
+      const approved = lastApproved;
+      if (!approved) return undefined;
+      descriptor = structuredClone(descriptor);
+      const info = fs.statSync(pinned.store);
+      if (
+        descriptor.kind !== "fmcad-physical-grant" ||
+        descriptor.version !== 1 ||
+        descriptor.brokerOwner.queueDirectory !== pinned.store ||
+        descriptor.handoffId !== pinned.pins.handoffId ||
+        !isDeepStrictEqual(descriptor.generation, pinned.pins.generation) ||
+        !isDeepStrictEqual(descriptor.physicalRuntime, {
+          ...pinned.pins.process,
+          version: pinned.runtimeVersion,
+          source: pinned.pins.source,
+          build: pinned.pins.build,
+        }) ||
+        descriptor.endpointURL !== pinned.pins.endpoint ||
+        approved.publication.storeDevice !== info.dev ||
+        approved.publication.storeInode !== info.ino ||
+        !currentFile(
+          path.join(pinned.store, "runtime-rebaseline-head.json"),
+        )?.equals(Buffer.from(approved.publication.activationBytes))
+      )
+        refuse();
+      originalFacts(pinned);
+      privateBytes(approved.publication.record);
+      for (const reference of approved.completion.evidence)
+        privateBytes(reference);
+      const raw = privateBytes(approved.completion.nativeReceipt.reference);
+      const terminal = await nativeFence(
+        pinned,
+        facts.retiredProcess,
+        "query",
+        { requestId: approved.request.requestId },
+      );
+      const verified = authenticatedCompletion(
+        pinned,
+        key,
+        approved.fenceBinding,
+        approved.request.requestId,
+        approved.publication,
+        terminal,
+      );
+      if (!isDeepStrictEqual(verified, approved.completion)) refuse();
+      const activation = object(
+        object(
+          decodeAdmissionJson(
+            new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+              raw,
+            ),
+          ),
+        )["activation"],
+      );
+      return {
+        requestId: String(activation["requestId"]),
+        fenceNonce: String(activation["fenceNonce"]),
+        newHead: String(activation["newHead"]),
+        publicationDigest: String(activation["publicationDigest"]),
+        receiptDigest: sha(raw),
+      };
+    },
     async withExclusiveBarrier(request, invokeMode, work) {
       const intent = structuredClone(request);
       if (
@@ -1138,6 +1218,12 @@ function nativeRuntimeRebaselineAuthorityPorts(
                 syncDirectory(pinned.store);
                 settled = true;
               }
+              lastApproved = structuredClone({
+                request: intent,
+                publication,
+                completion,
+                fenceBinding,
+              });
             },
           });
         } finally {
@@ -1179,6 +1265,8 @@ export function createNativeRuntimeRebaselineAuthorityPorts(
     };
     return {
       ...ports,
+      getVerifiedActivation: (descriptor) =>
+        nativeOperation(() => ports.getVerifiedActivation(descriptor)),
       async withExclusiveBarrier(request, invokeMode, work) {
         let callbackFailed = false;
         let callbackError: unknown;

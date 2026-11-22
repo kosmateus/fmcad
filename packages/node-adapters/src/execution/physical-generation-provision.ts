@@ -19,6 +19,19 @@ export interface NativePhysicalGenerationProvisionOptions {
   mappedPrivateDirectory: string;
   linuxGrantDirectory: string;
   timeoutMs?: number;
+  /** Trusted local composition only, after native-authenticated root approval.
+   * This is not an invocation field and never changes the public descriptor. */
+  getVerifiedActivation?: (
+    descriptor: PhysicalGenerationDescriptor,
+  ) => Promise<NativePhysicalActivation | undefined>;
+}
+
+export interface NativePhysicalActivation {
+  requestId: string;
+  fenceNonce: string;
+  newHead: string;
+  publicationDigest: string;
+  receiptDigest: string;
 }
 
 export class PhysicalGenerationProvisionError extends Error {
@@ -115,7 +128,25 @@ sys.path.insert(0,str(root))
 const nativeBootstrap = `${nativePhysicalGuard}
 if e["action"]=="grant":
     sys.argv=["lib.physical_lifecycle","grant","--request",e["request"],"--output",e["output"],"--timeout",str(e["timeout"])]
-    runpy.run_module("lib.physical_lifecycle",run_name="__main__")
+    activation_handle=None
+    try:
+        if e.get("activationRaw") is not None:
+            from lib.physical_authority import _read_private_bytes
+            activation=Path(p["nativePrivateDirectory"])/e["attempt"]/"activation.json"
+            k.CreateFileW.argtypes=[wt.LPCWSTR,wt.DWORD,wt.DWORD,ctypes.c_void_p,wt.DWORD,wt.DWORD,wt.HANDLE]
+            k.CreateFileW.restype=wt.HANDLE
+            # Keep these verified bytes stable through the supported CLI read.
+            # READ sharing only denies concurrent writes, deletion and rename.
+            activation_handle=k.CreateFileW(str(activation),0x80000000,1,None,3,0x00200000,None)
+            if activation_handle in (None,ctypes.c_void_p(-1).value):
+                raise RuntimeError("Private activation is unavailable")
+            if _read_private_bytes(activation)!=e["activationRaw"].encode("utf-8"):
+                raise RuntimeError("Private activation changed")
+            sys.argv+=["--activation",str(activation)]
+        runpy.run_module("lib.physical_lifecycle",run_name="__main__")
+    finally:
+        if activation_handle not in (None,ctypes.c_void_p(-1).value):
+            k.CloseHandle(activation_handle)
 elif e["action"]=="prepare":
     from lib.physical_authority import private_directory,_read_private_bytes
     parent=Path(p["nativePrivateDirectory"])
@@ -135,6 +166,15 @@ elif e["action"]=="prepare":
     verified=_read_private_bytes(directory/"request.json")
     if verified!=raw:
         raise RuntimeError("Descriptor changed")
+    if e.get("activationRaw") is not None:
+        activation_raw=e["activationRaw"].encode("utf-8")
+        fd=os.open(directory/"activation.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(fd,"wb") as f:
+            f.write(activation_raw)
+            f.flush()
+            os.fsync(f.fileno())
+        if _read_private_bytes(directory/"activation.json")!=activation_raw:
+            raise RuntimeError("Private activation changed")
     print(hashlib.sha256(verified).hexdigest())
 elif e["action"]=="verify":
     from lib.physical_authority import _read_private_bytes
@@ -181,7 +221,8 @@ function readMappedFile(file: string): Buffer {
 export function createNativePhysicalGenerationProvision(
   options: NativePhysicalGenerationProvisionOptions,
 ) {
-  const pinned = structuredClone(options);
+  const { getVerifiedActivation, ...configuration } = options;
+  const pinned = structuredClone(configuration);
   const timeout = pinned.timeoutMs ?? 30_000;
   const validSha = (value: string) => /^[a-f0-9]{64}$/.test(value);
   for (const value of [
@@ -356,6 +397,26 @@ export function createNativePhysicalGenerationProvision(
           throw new Error("Canonical directory identity changed");
         const raw = Buffer.from(JSON.stringify(snapshot));
         if (raw.length > 1_048_576) throw new Error("Descriptor too large");
+        const approval = await getVerifiedActivation?.(
+          structuredClone(snapshot),
+        );
+        const activation =
+          approval === undefined ? undefined : structuredClone(approval);
+        if (
+          activation !== undefined &&
+          (Object.keys(activation).sort().join(",") !==
+            "fenceNonce,newHead,publicationDigest,receiptDigest,requestId" ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(activation.requestId) ||
+            typeof activation.fenceNonce !== "string" ||
+            !activation.fenceNonce ||
+            activation.fenceNonce.length > 256 ||
+            !validSha(activation.newHead) ||
+            !validSha(activation.publicationDigest) ||
+            !validSha(activation.receiptDigest))
+        )
+          throw new Error("Unverified native activation");
+        const activationRaw =
+          activation === undefined ? undefined : JSON.stringify(activation);
         const attempt = randomUUID();
         const nativeDirectory = path.win32.join(
           pinned.nativePrivateDirectory,
@@ -368,6 +429,7 @@ export function createNativePhysicalGenerationProvision(
             action: "prepare",
             attempt,
             descriptorRaw: raw.toString("utf8"),
+            activationRaw,
           })
         ).trim();
         if (requestDigest !== digest(raw))
@@ -380,6 +442,7 @@ export function createNativePhysicalGenerationProvision(
             request,
             output,
             timeout: timeout / 1000,
+            activationRaw,
           }),
         );
         if (

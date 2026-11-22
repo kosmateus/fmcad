@@ -12,6 +12,7 @@ import {
   type NativeRuntimeActivationPublication,
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import { runtimeRebaselineManifestNames } from "../packages/node-adapters/src/persistence/runtime-rebaseline-scope";
+import type { PhysicalGenerationDescriptor } from "../packages/node-adapters/src/execution/physical-generation";
 
 const sha = (bytes: string | Buffer) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -893,9 +894,29 @@ test(
         { mode: 0o600 },
       );
       f.request.expectedHead = core.literalRuntimeHead(f.options.store).digest;
-      const authority = core.createRuntimeRebaselineAuthority(
-        createNativeRuntimeRebaselineAuthorityPorts(f.options),
-      );
+      const ports = createNativeRuntimeRebaselineAuthorityPorts(f.options);
+      const descriptor: PhysicalGenerationDescriptor = {
+        kind: "fmcad-physical-grant",
+        version: 1,
+        handoffId: f.options.pins.handoffId,
+        generation: f.options.pins.generation,
+        physicalRuntime: {
+          ...f.options.pins.process,
+          version: f.options.runtimeVersion,
+          source: f.options.pins.source,
+          build: f.options.pins.build,
+        },
+        endpointURL: f.options.pins.endpoint,
+        brokerOwner: {
+          pid: process.pid,
+          birth: "owned-broker-birth",
+          nonce: "owned-broker",
+          clientId: "owned-client",
+          queueDirectory: f.options.store,
+        },
+      };
+      assert.equal(await ports.getVerifiedActivation(descriptor), undefined);
+      const authority = core.createRuntimeRebaselineAuthority(ports);
       const receipt = await core.rebaselineRuntime(
         f.options.store,
         f.request,
@@ -911,6 +932,24 @@ test(
       assert.equal(
         JSON.parse(fs.readFileSync(f.state, "utf8")).state,
         "consumed",
+      );
+      const nativeState = JSON.parse(fs.readFileSync(f.state, "utf8"));
+      const approved = JSON.parse(nativeState.receiptJson).activation;
+      assert.deepEqual(await ports.getVerifiedActivation(descriptor), {
+        requestId: approved.requestId,
+        fenceNonce: approved.fenceNonce,
+        newHead: approved.newHead,
+        publicationDigest: approved.publicationDigest,
+        receiptDigest: sha(nativeState.receiptJson),
+      });
+      await assert.rejects(
+        ports.getVerifiedActivation({
+          ...descriptor,
+          brokerOwner: {
+            ...descriptor.brokerOwner,
+            queueDirectory: "/other-store",
+          },
+        }),
       );
       const headFile = path.join(
         f.options.store,
@@ -969,6 +1008,7 @@ test(
         1,
       );
       fs.unlinkSync(f.state);
+      await assert.rejects(ports.getVerifiedActivation(descriptor));
       await assert.rejects(
         core.runtimeRebaselineRoot(f.options.store, resumer),
       );

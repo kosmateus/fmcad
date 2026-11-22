@@ -79,14 +79,15 @@ const raw=Buffer.from(envelope.descriptorRaw||"");
 if(envelope.action==="prepare"){
  const attempt=envelope.attempt,dir=path.join(root,attempt);fs.mkdirSync(dir,{mode:448});
  fs.writeFileSync(path.join(dir,"request.json"),raw,{flag:"wx",mode:384});
- record({operation:"prepare",descriptor:JSON.parse(raw),cwd:process.cwd(),env:process.env,startupFlags:args.slice(0,4),bootstrap:args[4]});
+ if(envelope.activationRaw!==undefined)fs.writeFileSync(path.join(dir,"activation.json"),envelope.activationRaw,{flag:"wx",mode:384});
+ record({operation:"prepare",descriptor:JSON.parse(raw),activationRaw:envelope.activationRaw,cwd:process.cwd(),env:process.env,startupFlags:args.slice(0,4),bootstrap:args[4]});
  if(mode==="changed-fork")fs.writeFileSync(${JSON.stringify(path.join(directory, "lib/physical_lifecycle.py"))},"# changed");
  console.log(digest(raw));return;
 }
 if(envelope.action==="grant"){
  const request=nativePath(envelope.request),grant=nativePath(envelope.output);
  const data=Buffer.from(JSON.stringify({descriptor:JSON.parse(fs.readFileSync(request)),token:${JSON.stringify(secret)}}));
- record({operation:"grant",args});
+ record({operation:"grant",args,activationRaw:envelope.activationRaw});
  if(mode==="symlink"){fs.writeFileSync(grant+".target",data);fs.symlinkSync(grant+".target",grant);}
  else fs.writeFileSync(grant,data,{flag:"wx",mode:384});
  if(mode==="error"){console.error(${JSON.stringify(secret)});process.exit(17);}
@@ -447,6 +448,79 @@ test(
   },
 );
 
+const activation = {
+  requestId: "approved-rebaseline",
+  fenceNonce: "c".repeat(64),
+  newHead: "a".repeat(64),
+  publicationDigest: "b".repeat(64),
+  receiptDigest: "d".repeat(64),
+};
+
+test(
+  "trusted native approval reaches the private grant channel without changing the public descriptor",
+  platformOptions,
+  async () => {
+    const f = fixture();
+    try {
+      let reads = 0;
+      const port = createNativePhysicalGenerationProvision({
+        ...f.options,
+        async getVerifiedActivation(current) {
+          reads++;
+          assert.deepEqual(current, descriptor);
+          current.brokerOwner.nonce = "cannot-mutate-the-issued-descriptor";
+          return activation;
+        },
+      });
+      const result = await port.provision(descriptor);
+      assert.equal(reads, 1);
+      const records = f.records();
+      assert.equal(
+        records.find((record) => record.operation === "prepare")?.activationRaw,
+        JSON.stringify(activation),
+      );
+      assert.equal(
+        records.find((record) => record.operation === "grant")?.activationRaw,
+        JSON.stringify(activation),
+      );
+      const grant = JSON.parse(fs.readFileSync(result.grantFile, "utf8"));
+      assert.deepEqual(grant.descriptor, descriptor);
+      assert.deepEqual(Object.keys(grant).sort(), ["descriptor", "token"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test(
+  "failed or malformed private activation refuses before any native issuance",
+  platformOptions,
+  async () => {
+    for (const mode of ["unverified", "malformed"]) {
+      const f = fixture();
+      try {
+        const port = createNativePhysicalGenerationProvision({
+          ...f.options,
+          async getVerifiedActivation() {
+            if (mode === "unverified") throw new Error(f.secret);
+            return { ...activation, receiptDigest: "not-a-native-receipt" };
+          },
+        });
+        await assert.rejects(
+          port.provision(descriptor),
+          (error: unknown) =>
+            error instanceof PhysicalGenerationProvisionError &&
+            error.grantIssuance === "notStarted" &&
+            !error.message.includes(f.secret),
+        );
+        assert.equal(f.records().length, 0);
+      } finally {
+        f.cleanup();
+      }
+    }
+  },
+);
+
 const nativePython = process.env["FMCAD_TEST_NATIVE_PYTHON"];
 const nativePythonWin = process.env["FMCAD_TEST_NATIVE_PYTHON_WIN"];
 const nativeRoot = process.env["FMCAD_TEST_NATIVE_DIRECTORY"];
@@ -508,8 +582,23 @@ p.add_argument("operation",choices=["grant"])
 p.add_argument("--request",required=True)
 p.add_argument("--output",required=True)
 p.add_argument("--timeout",required=True)
+p.add_argument("--activation")
 a=p.parse_args()
 d=json.loads(Path(a.request).read_bytes())
+if a.activation is not None:
+    assert json.loads(Path(a.activation).read_bytes())==${JSON.stringify(activation)}
+    try:
+        with open(a.activation,"wb") as changed:
+            raise RuntimeError("Private activation write was not fenced")
+    except PermissionError:
+        pass
+    try:
+        os.replace(a.activation,a.activation+".moved")
+        raise RuntimeError("Private activation replacement was not fenced")
+    except PermissionError:
+        pass
+    with open(${JSON.stringify(eventsWin)},"a") as f:
+        f.write("owned-activation-held\\n")
 raw=json.dumps({"descriptor":d,"token":"OWNED-FAKE-OFFLINE-NOT-A-REAL-GRANT"}).encode("utf-8")
 fd=os.open(a.output,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
 with os.fdopen(fd,"wb") as f:
@@ -591,7 +680,7 @@ sys.stdin.buffer.read()
         epoch: ownedDescriptor.generation.epoch,
       }),
     );
-    const port = createNativePhysicalGenerationProvision({
+    const nativeOptions = {
       ...f.options,
       nativePython: nativePythonWin!,
       mappedNativePython: nativePython!,
@@ -605,7 +694,8 @@ sys.stdin.buffer.read()
       localAppData: localAppData!,
       nativePrivateDirectory: mailboxWin,
       mappedPrivateDirectory: mailbox,
-    });
+    };
+    const port = createNativePhysicalGenerationProvision(nativeOptions);
     const result = await port.provision(ownedDescriptor);
     const raw = fs.readFileSync(result.grantFile);
     assert.equal(
@@ -629,6 +719,33 @@ sys.stdin.buffer.read()
     assert.deepEqual(
       fs.readFileSync(path.join(mailbox, attempt, "grant.json")),
       raw,
+    );
+    const activated = await createNativePhysicalGenerationProvision({
+      ...nativeOptions,
+      async getVerifiedActivation(current) {
+        assert.deepEqual(current, ownedDescriptor);
+        return activation;
+      },
+    }).provision(ownedDescriptor);
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(activated.grantFile, "utf8")).descriptor,
+      ownedDescriptor,
+    );
+    assert.ok(
+      fs.readFileSync(events, "utf8").includes("owned-activation-held"),
+    );
+    const approvedAttempt = fs
+      .readdirSync(mailbox)
+      .find((name) =>
+        fs.existsSync(path.join(mailbox, name, "activation.json")),
+      );
+    assert.ok(approvedAttempt);
+    assert.equal(
+      fs.readFileSync(
+        path.join(mailbox, approvedAttempt, "activation.json"),
+        "utf8",
+      ),
+      JSON.stringify(activation),
     );
   },
 );
