@@ -75,6 +75,11 @@ function checkpoint(value: unknown): value is ParamCheckpointGuardV1 {
     )
       return false;
     names.add(parameter["name"]);
+    if (
+      (parameter["unit"].toLowerCase() === "text") !==
+      (parameter["valueType"] === "text")
+    )
+      return false;
     if (parameter["valueType"] === "text") {
       if (
         typeof parameter["value"] !== "string" ||

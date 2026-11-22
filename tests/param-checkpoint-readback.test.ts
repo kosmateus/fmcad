@@ -206,6 +206,22 @@ print(json.dumps({"output": output.getvalue(), "writes": case.parameters.writes}
   assert.equal(checkpoint.document.identity.version, 7);
   assert.match(checkpoint.document.fingerprint, /^[a-f0-9]{64}$/);
   assert.equal(checkpoint.parameters[0]?.name, "size");
+  const textCheckpoint = decodeDocumentCheckpointReadback(
+    {
+      ...checkpoint,
+      parameters: [
+        {
+          ...checkpoint.parameters[0],
+          unit: "tExT",
+          valueType: "text",
+          value: "hello",
+          valueUnits: null,
+        },
+      ],
+    },
+    { creationId: "creation-1", fileId: "file-1" },
+  );
+  assert.equal(textCheckpoint.parameters[0]?.value, "hello");
   assert.throws(
     () =>
       decodeDocumentCheckpointReadback(response.result, {
@@ -228,6 +244,20 @@ print(json.dumps({"output": output.getvalue(), "writes": case.parameters.writes}
     },
     (value: Record<string, unknown>) => {
       value["schema"] = "unverified";
+    },
+    (value: Record<string, unknown>) => {
+      value["parameters"] = [{ ...checkpoint.parameters[0], unit: "Text" }];
+    },
+    (value: Record<string, unknown>) => {
+      value["parameters"] = [
+        {
+          ...checkpoint.parameters[0],
+          unit: "mm",
+          valueType: "text",
+          value: "hello",
+          valueUnits: null,
+        },
+      ];
     },
   ]) {
     const invalid: Record<string, unknown> = { ...structuredClone(checkpoint) };
