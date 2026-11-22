@@ -101,6 +101,7 @@ function fixture(t: TestContext) {
     },
   };
   return {
+    directory,
     domain,
     clients,
     ports,
@@ -250,4 +251,114 @@ test("a new generation requires a new inspection before acceptance", async (t) =
     Object.keys(f.domain.data.documentCheckpoints!.acceptances).length,
     0,
   );
+});
+
+test("pending source verification must finish before an observation is published", async (t) => {
+  const f = fixture(t);
+  let entered!: () => void;
+  let reject!: (error: Error) => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const verification = new Promise<void>((_resolve, fail) => {
+    reject = fail;
+  });
+  f.ports.verifyObservation = () => {
+    entered();
+    return verification;
+  };
+  const running = f.controller.handle(inspect, actor);
+  await ready;
+  assert.equal(f.domain.data.documentCheckpoints, undefined);
+  reject(
+    Object.assign(new Error("private verifier refused"), {
+      code: "DOCUMENT_STATE_CHANGED",
+    }),
+  );
+  const result = await running;
+  assert.equal(
+    (result as { error: { code: string } }).error.code,
+    "DOCUMENT_STATE_CHANGED",
+  );
+  assert.equal(f.domain.data.documentCheckpoints, undefined);
+});
+
+test("acceptance waits for verification and rechecks authorization after it", async (t) => {
+  const f = fixture(t);
+  await f.controller.handle(inspect, actor);
+  let entered!: () => void;
+  let finish!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const verification = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  f.ports.verifyObservation = () => {
+    entered();
+    return verification;
+  };
+  const running = f.controller.handle(
+    {
+      action: "accept",
+      target,
+      requestId: "accept-after-await",
+      observationId: "observation-A",
+    },
+    actor,
+  );
+  await ready;
+  assert.equal(
+    Object.keys(f.domain.data.documentCheckpoints!.acceptances).length,
+    0,
+  );
+  delete f.clients[actor.clientId];
+  finish();
+  const result = await running;
+  assert.equal(
+    (result as { error: { code: string } }).error.code,
+    "NOT_AUTHORIZED",
+  );
+  assert.equal(
+    Object.keys(f.domain.data.documentCheckpoints!.acceptances).length,
+    0,
+  );
+});
+
+test("known unfenced local, control and SDK work refuses before the first identity probe", async (t) => {
+  for (const field of ["blocked", "localUnknown", "controlBlocked"] as const) {
+    const f = fixture(t);
+    f.domain.data[field] = { id: "old-unfenced", reason: "unknown", at: 1 };
+    const result = await f.controller.handle(inspect, actor);
+    assert.equal(
+      (result as { error: { code: string } }).error.code,
+      "SDK_QUIESCENCE_UNPROVEN",
+    );
+    assert.equal(f.counts().probes, 0);
+    assert.equal(f.counts().reads, 0);
+  }
+});
+
+test("exact request intent remains bound after completion and reopening the controller and queue", async (t) => {
+  const f = fixture(t);
+  f.ports.probeIdentity = async () => ({ ...f.observed, fileId: "file-A" });
+  await f.controller.handle(inspect, actor);
+  const reopened = openIsolatedEpoch(f.directory, { recover: false });
+  assert.ok(reopened.data.documentUnlockIntents);
+  const controller = createDocumentUnlockController({
+    ...f.ports,
+    domain: reopened,
+  });
+  const result = await controller.handle(
+    {
+      ...inspect,
+      target: { docId: "creation-A", docFileId: "file-A" },
+    },
+    actor,
+  );
+  assert.equal(
+    (result as { error: { code: string } }).error.code,
+    "REQUEST_CONFLICT",
+  );
+  assert.equal(f.counts().reads, 1);
 });

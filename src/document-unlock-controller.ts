@@ -46,7 +46,7 @@ export interface DocumentUnlockControllerPorts {
   verifyObservation(
     observation: DocumentObservation,
     target: CurrentUnlockTarget,
-  ): void;
+  ): void | Promise<void>;
   /** Authorize/filter all metadata before constructing the public DTO. */
   resolution(
     actor: UnlockPrincipal,
@@ -99,6 +99,13 @@ export function createDocumentUnlockController(
         ports.resolution(actor, metadata.selector),
       );
     }
+    if (
+      ports.domain.data.blocked ||
+      ports.domain.data.localUnknown ||
+      ports.domain.data.controlBlocked
+    )
+      refused("SDK_QUIESCENCE_UNPROVEN");
+    ports.domain.rememberDocumentUnlockRequest(actor.clientId, request);
     const records = ports.domain.data.documentCheckpoints;
     const acceptance = Object.values(records?.acceptances ?? {}).find(
       (value) =>
@@ -145,7 +152,7 @@ export function createDocumentUnlockController(
           : "DOCUMENT_STATE_CHANGED",
       );
     if (selected) {
-      ports.verifyObservation(selected, target);
+      await ports.verifyObservation(selected, target);
       permission.recheck();
       if (request.action === "accept") {
         ports.domain.acceptDocumentObservation({
@@ -191,7 +198,7 @@ export function createDocumentUnlockController(
       priorCheckpointId: marker.priorCheckpointId,
       createdAt: read.createdAt,
     };
-    ports.verifyObservation(observation, target);
+    await ports.verifyObservation(observation, target);
     permission.recheck();
     const stored = ports.domain.recordDocumentObservation(observation);
     return serializeDocumentUnlockStatus(

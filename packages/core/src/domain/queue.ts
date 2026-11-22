@@ -313,6 +313,13 @@ export class QueueDomain {
     if (d.documentCheckpoints !== undefined &&
       !validDocumentCheckpoints(d.documentCheckpoints, (value) => this.hash(canonical(value))))
       fail("CORRUPT_STATE", "Invalid document checkpoint history");
+    if (d.documentUnlockIntents !== undefined &&
+      (!plain(d.documentUnlockIntents) || Object.entries(d.documentUnlockIntents).some(([key, intent]) =>
+        !plain(intent) || Object.keys(intent).sort().join(",") !== "actorClientId,requestHash,requestId" ||
+        !identifier(intent.actorClientId) || !identifier(intent.requestId) ||
+        typeof intent.requestHash !== "string" || !/^[a-f0-9]{64}$/.test(intent.requestHash) ||
+        key !== this.hash(canonical([intent.actorClientId, intent.requestId])))))
+      fail("CORRUPT_STATE", "Invalid document unlock request history");
     const uncertain = jobs.filter((j) =>
       ["running", "sending", "needs_reconciliation"].includes(j.state) &&
       !Object.hasOwn(d.quarantined ?? {}, j.id),
@@ -641,6 +648,27 @@ export class QueueDomain {
 
   submitDocumentInspection(request: unknown, marker: DocumentInspection) {
     return this._submit(request, undefined, copy(marker));
+  }
+
+  rememberDocumentUnlockRequest(actorClientId: string, request: unknown) {
+    const input: unknown = JSON.parse(canonical(request));
+    if (!identifier(actorClientId) || !plain(input) ||
+      !identifier(input["requestId"]) ||
+      (input["action"] !== "inspect" && input["action"] !== "accept"))
+      fail("INVALID_REQUEST", "Expected a decoded document unlock control request");
+    const intent = {
+      actorClientId, requestId: input["requestId"],
+      requestHash: this.hash(canonical(input)),
+    };
+    const key = this.hash(canonical([actorClientId, intent.requestId]));
+    return this._commit((d) => {
+      const existing = d.documentUnlockIntents?.[key];
+      if (existing && existing.requestHash !== intent.requestHash)
+        fail("REQUEST_CONFLICT", "Document unlock request ID already identifies different arguments");
+      d.documentUnlockIntents ??= {};
+      d.documentUnlockIntents[key] = intent;
+      return intent;
+    });
   }
 
   documentInspectionFence(target: QueueIsolationTarget, generation: string): DocumentInspection {
