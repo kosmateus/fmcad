@@ -8,6 +8,7 @@ export const queueRuntimeModules = [
   "document-unlock-diagnostics",
   "document-unlock-controller",
   "document-checkpoint-broker",
+  "document-continuation-broker",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",
   "queue-audit-facts-capture",
