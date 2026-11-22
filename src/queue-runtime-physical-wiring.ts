@@ -2,9 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { isDeepStrictEqual } from "node:util";
 import {
-  createRuntimeRebaselineAuthority,
+  createRuntimeRebaselineReaderAuthority,
   runtimeRebaselineRoot,
 } from "./queue-runtime-rebaseline";
 import type {
@@ -12,28 +11,41 @@ import type {
   PhysicalRootVerificationContext,
   VerifiedPhysicalOperatorProfile,
 } from "../packages/node-adapters/src/execution/physical-generation-profile";
-import type { NativeRuntimeRebaselineOptions } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
+import type { NativeRuntimeRebaselineReaderPorts } from "../packages/node-adapters/src/execution/runtime-rebaseline-reader";
 
 const load = createRequire(__filename);
-const { createNativeRuntimeRebaselineAuthorityPorts } = load(
-  "./dist/node-adapters/execution/runtime-rebaseline-native",
-) as typeof import("../packages/node-adapters/src/execution/runtime-rebaseline-native");
 const { readBytes } = load(
   "./dist/node-adapters/persistence/records",
 ) as typeof import("../packages/node-adapters/src/persistence/records");
 
 export type RuntimeRootVerificationContext = PhysicalRootVerificationContext;
-export type ApprovedRuntimeRoot = NonNullable<
+type AuthenticatedRuntimeRoot = NonNullable<
   Awaited<ReturnType<typeof runtimeRebaselineRoot>>
 >;
-export interface RuntimeRootPhysicalWiring {
-  physicalProfileDependencies: {
-    runtimeRoot: PhysicalRuntimeRootAuthorization<ApprovedRuntimeRoot>;
+/** Frozen pre-rebaseline ledgers are never the current restart snapshot. Any
+ * core-authenticated currentView stays distinct at the top level. */
+export type ApprovedRuntimeRoot = Omit<
+  AuthenticatedRuntimeRoot,
+  "snapshot" | "snapshots"
+> & {
+  frozenBaseline: Pick<AuthenticatedRuntimeRoot, "snapshot" | "snapshots">;
+  currentFiles: Readonly<Record<string, Buffer | null>>;
+};
+export interface RuntimeRootOperatorContext {
+  store: string;
+  admissionStore: string;
+  publicationAuthority: {
+    keyId: string;
+    keyReference: { path: string; sha256: string };
+    nativeOperatorFile: string;
   };
-  verifyRuntimeRootBeforeRestore(
-    context: RuntimeRootVerificationContext,
-  ): Promise<ApprovedRuntimeRoot>;
 }
+export type RuntimeRootOperatorFactory = (
+  profile: VerifiedPhysicalOperatorProfile,
+  context: RuntimeRootVerificationContext,
+) => RuntimeRootOperatorContext;
+export type RuntimeRootPhysicalWiring =
+  PhysicalRuntimeRootAuthorization<ApprovedRuntimeRoot>;
 function rejected(): never {
   throw Object.assign(
     new Error("Native-authenticated runtime root is required"),
@@ -43,16 +55,50 @@ function rejected(): never {
     },
   );
 }
+function defaultOperator(
+  profile: VerifiedPhysicalOperatorProfile,
+  context: RuntimeRootVerificationContext,
+): RuntimeRootOperatorContext {
+  try {
+    const { readRuntimeVerificationRealm } = load(
+      "./dist/node-adapters/execution/runtime-verification-realm",
+    ) as typeof import("../packages/node-adapters/src/execution/runtime-verification-realm");
+    const realm = readRuntimeVerificationRealm(context.directory);
+    return {
+      store: context.directory,
+      admissionStore: path.win32.join(
+        profile.nativeProvision.localAppData,
+        "fmcad",
+        "addin-admission",
+        "admission.sqlite3",
+      ),
+      publicationAuthority: {
+        ...realm,
+        nativeOperatorFile: path.win32.join(
+          profile.nativeProvision.nativePrivateDirectory,
+          "runtime-rebaseline-operator.json",
+        ),
+      },
+    };
+  } catch {
+    throw Object.assign(
+      new Error("An existing private runtime verification realm is required"),
+      {
+        code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
+        notStarted: true,
+      },
+    );
+  }
+}
 
 /** Two ordered stages: await verification before choosing a restore root;
  * supply this SAME native closure to the post-claim private physical profile.
  * Historical snapshots remain unproven evidence, never an empty replacement. */
 export function createRuntimeRootPhysicalWiring(
-  options: NativeRuntimeRebaselineOptions,
+  profile: VerifiedPhysicalOperatorProfile,
+  createOperator: RuntimeRootOperatorFactory = defaultOperator,
 ): RuntimeRootPhysicalWiring {
-  const ports = createNativeRuntimeRebaselineAuthorityPorts(options);
-  const authority = createRuntimeRebaselineAuthority(ports);
-  const nativeProvision = structuredClone(options.native);
+  const nativeProvision = structuredClone(profile.nativeProvision);
   Object.freeze(nativeProvision.installedPackageFiles);
   Object.freeze(nativeProvision);
   let verified:
@@ -66,9 +112,18 @@ export function createRuntimeRootPhysicalWiring(
       }
     | undefined;
   let revision = 0;
+  let reader:
+    | {
+        ports: NativeRuntimeRebaselineReaderPorts;
+        authority: ReturnType<typeof createRuntimeRebaselineReaderAuthority>;
+      }
+    | undefined;
   const runtimeRoot: PhysicalRuntimeRootAuthorization<ApprovedRuntimeRoot> = {
     nativeProvision,
-    getVerifiedActivation: ports.getVerifiedActivation,
+    get getVerifiedActivation() {
+      if (!reader || !verified) rejected();
+      return reader.ports.getVerifiedActivation;
+    },
     verifyRuntimeRootBeforeRestore,
     assertVerifiedRoot(directory) {
       const current = verified;
@@ -93,8 +148,9 @@ export function createRuntimeRootPhysicalWiring(
         rejected();
       const head = path.join(directory, "runtime-rebaseline-head.json");
       if (
-        readBytes(head, 1024 * 1024, fs, head).toString("utf8") !==
-        current.headBytes
+        !readBytes(head, 1024 * 1024, fs, head).equals(
+          Buffer.from(current.headBytes, "utf8"),
+        )
       )
         rejected();
       try {
@@ -113,82 +169,115 @@ export function createRuntimeRootPhysicalWiring(
   ): Promise<ApprovedRuntimeRoot> {
     const currentRevision = ++revision;
     verified = undefined;
-    if (
-      context.directory !== ports.store ||
-      fs.realpathSync(context.directory) !== context.directory ||
-      !/^[a-f0-9]{64}$/.test(context.buildHash) ||
-      !/^[a-f0-9]{64}$/.test(context.configHash)
-    )
-      rejected();
-    const root = await runtimeRebaselineRoot(context.directory, authority);
-    if (!root || revision !== currentRevision) rejected();
-    const recordFile = path.join(
-      root.record.store,
-      "runtime-rebaselines",
-      root.record.request.requestId,
-      "record.json",
-    );
-    const recordDigest = createHash("sha256")
-      .update(JSON.stringify(root.record))
-      .digest("hex");
-    verified = {
-      directory: root.record.store,
-      device: root.record.storeDevice,
-      inode: root.record.storeInode,
-      recordFile,
-      recordDigest,
-      headBytes: JSON.stringify({
-        version: 1,
-        newHead: root.record.receipt.newHead,
-        record: { path: recordFile, sha256: recordDigest },
-      }),
-    };
-    runtimeRoot.assertVerifiedRoot(context.directory);
-    return root;
+    reader?.ports.invalidate();
+    try {
+      if (
+        fs.realpathSync(context.directory) !== context.directory ||
+        !/^[a-f0-9]{64}$/.test(context.buildHash) ||
+        !/^[a-f0-9]{64}$/.test(context.configHash)
+      )
+        rejected();
+      if (!reader) {
+        const operator = createOperator(profile, context),
+          runtime = profile.runtime;
+        if (
+          Object.keys(operator).sort().join(",") !==
+            "admissionStore,publicationAuthority,store" ||
+          operator.store !== context.directory
+        )
+          rejected();
+        const { createNativeRuntimeRebaselineReaderPorts } = load(
+          "./dist/node-adapters/execution/runtime-rebaseline-reader",
+        ) as typeof import("../packages/node-adapters/src/execution/runtime-rebaseline-reader");
+        const ports = createNativeRuntimeRebaselineReaderPorts({
+          store: operator.store,
+          publicationAuthority: operator.publicationAuthority,
+          pins: {
+            handoffId: runtime.handoffId,
+            admissionStore: operator.admissionStore,
+            generation: runtime.generation,
+            process: {
+              pid: runtime.physicalRuntime.pid,
+              birth: runtime.physicalRuntime.birth,
+            },
+            source: runtime.physicalRuntime.source,
+            build: runtime.physicalRuntime.build,
+            endpoint: runtime.endpointURL,
+          },
+          runtimeVersion: runtime.physicalRuntime.version,
+          native: {
+            nativePython: nativeProvision.nativePython,
+            mappedNativePython: nativeProvision.mappedNativePython,
+            nativePythonSha256: nativeProvision.nativePythonSha256,
+            installedForkDirectory: nativeProvision.installedForkDirectory,
+            mappedInstalledForkDirectory:
+              nativeProvision.mappedInstalledForkDirectory,
+            installedPackageFiles: nativeProvision.installedPackageFiles,
+            provisionPath: nativeProvision.provisionPath,
+            localAppData: nativeProvision.localAppData,
+            nativePrivateDirectory: nativeProvision.nativePrivateDirectory,
+            ...(nativeProvision.timeoutMs === undefined
+              ? {}
+              : { timeoutMs: nativeProvision.timeoutMs }),
+          },
+        });
+        reader = {
+          ports,
+          authority: createRuntimeRebaselineReaderAuthority(ports),
+        };
+      }
+      if (reader.ports.store !== context.directory) rejected();
+      const root = await runtimeRebaselineRoot(
+        context.directory,
+        reader.authority,
+      );
+      if (!root || !root.currentFiles || revision !== currentRevision)
+        rejected();
+      const recordFile = path.join(
+        root.record.store,
+        "runtime-rebaselines",
+        root.record.request.requestId,
+        "record.json",
+      );
+      const recordDigest = createHash("sha256")
+        .update(JSON.stringify(root.record))
+        .digest("hex");
+      verified = {
+        directory: root.record.store,
+        device: root.record.storeDevice,
+        inode: root.record.storeInode,
+        recordFile,
+        recordDigest,
+        headBytes: JSON.stringify({
+          version: 1,
+          newHead: root.record.receipt.newHead,
+          record: { path: recordFile, sha256: recordDigest },
+        }),
+      };
+      runtimeRoot.assertVerifiedRoot(context.directory);
+      const { snapshot, snapshots, ...current } = root;
+      return {
+        ...current,
+        currentFiles: root.currentFiles,
+        frozenBaseline: { snapshot, snapshots },
+      };
+    } catch (error) {
+      verified = undefined;
+      reader?.ports.invalidate();
+      throw error;
+    }
   }
-  return {
-    physicalProfileDependencies: { runtimeRoot },
-    verifyRuntimeRootBeforeRestore,
-  };
+  return runtimeRoot;
 }
 
 /** Called inside the single verified profile read. Additional operator authority
  * comes only from trusted composition, never from profile/ENV/completion JSON. */
 export function createRuntimeRootPhysicalProfileFactory(
-  createOptions: (
-    profile: VerifiedPhysicalOperatorProfile,
-  ) => NativeRuntimeRebaselineOptions,
+  createOperator: RuntimeRootOperatorFactory = defaultOperator,
 ) {
   return (
     profile: VerifiedPhysicalOperatorProfile,
   ): PhysicalRuntimeRootAuthorization<ApprovedRuntimeRoot> => {
-    const options = createOptions(profile),
-      runtime = profile.runtime;
-    if (
-      !isDeepStrictEqual(options.native, profile.nativeProvision) ||
-      options.runtimeVersion !== runtime.physicalRuntime.version ||
-      !isDeepStrictEqual(
-        {
-          handoffId: options.pins.handoffId,
-          generation: options.pins.generation,
-          endpointURL: options.pins.endpoint,
-          physicalRuntime: {
-            ...options.pins.process,
-            version: options.runtimeVersion,
-            source: options.pins.source,
-            build: options.pins.build,
-          },
-        },
-        {
-          handoffId: runtime.handoffId,
-          generation: runtime.generation,
-          endpointURL: runtime.endpointURL,
-          physicalRuntime: runtime.physicalRuntime,
-        },
-      )
-    )
-      rejected();
-    return createRuntimeRootPhysicalWiring(options).physicalProfileDependencies
-      .runtimeRoot;
+    return createRuntimeRootPhysicalWiring(profile, createOperator);
   };
 }

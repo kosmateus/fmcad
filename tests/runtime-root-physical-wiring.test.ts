@@ -54,12 +54,19 @@ function fixture(t: { after(action: () => void): void }) {
     JSON.stringify(snapshot),
     { mode: 0o600 },
   );
+  // Explicit owned-fixture administrative setup, never a broker-startup action.
+  const { initializeRuntimeVerificationRealm } = load(
+    "./dist/node-adapters/execution/runtime-verification-realm",
+  ) as typeof import("../packages/node-adapters/src/execution/runtime-verification-realm");
+  const realm = initializeRuntimeVerificationRealm(store);
   fs.writeFileSync(
     path.join(store, "physical-backend-head.json"),
     '{"history":"unproven"}',
     { mode: 0o600 },
   );
-  fs.mkdirSync(path.join(directory, "lib"), { mode: 0o700 });
+  const fork = path.join(directory, "fork");
+  fs.mkdirSync(fork, { mode: 0o700 });
+  fs.mkdirSync(path.join(fork, "lib"), { mode: 0o700 });
   const files: Record<string, string> = {};
   for (const name of [
     "physical_authority.py",
@@ -68,7 +75,7 @@ function fixture(t: { after(action: () => void): void }) {
     "rebaseline_fence.py",
   ]) {
     const raw = "# owned offline source\n";
-    fs.writeFileSync(path.join(directory, "lib", name), raw, { mode: 0o600 });
+    fs.writeFileSync(path.join(fork, "lib", name), raw, { mode: 0o600 });
     files[`lib/${name}`] = sha(raw);
   }
   const executable = path.join(directory, "python.exe"),
@@ -109,7 +116,16 @@ if(action==='verify'){
  if(fault.loseOwnerDuringVerify)fs.writeFileSync(${JSON.stringify(path.join(store, "broker.lock"))},'{"changed":true}');
  process.stdout.write(sha(fs.readFileSync(mapped(e.output))));return;
 }
+const operator=JSON.parse(fs.readFileSync(mapped(e.operatorFile),'utf8'));
+if(operator.database!==e.admissionStore)process.exit(86);
+if(JSON.stringify(operator.runtime)!==JSON.stringify({
+ handoffId:e.runtimePins.handoffId,generation:e.descriptor.generation,
+ physicalRuntime:e.descriptor.physicalRuntime,endpointURL:e.runtimePins.endpoint
+}))process.exit(88);
+const key=Buffer.from(operator.publicationVerifier.keyHex,'hex');
+if(e.keyId!==undefined&&(e.keyId!==operator.publicationVerifier.keyId||e.keyDigest!==sha(key)))process.exit(87);
 const q=JSON.parse(e.requestJson);
+if(action==='query'&&fault.mutateQueueDuringQuery)fs.appendFileSync(${JSON.stringify(path.join(store, "queue-state.json"))},' ');
 if(fault.badReceipt&&current?.state==='consumed')current.receiptMac='0'.repeat(64);
 if(action==='begin'){
  if(!current)current={kind:'fmcad-provision-fence',version:1,state:'pending',binding:{
@@ -122,7 +138,7 @@ if(!current){process.stdout.write(JSON.stringify({kind:'fmcad-provision-fence',v
 if(action==='consume'){
  const p=JSON.parse(q.publicationJson),a=JSON.parse(p.activationBytes),digest=sha(q.publicationJson);
  function sort(v){if(Array.isArray(v))return v.map(sort);if(v&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])]));return v;}
- const mac=crypto.createHmac('sha256',Buffer.alloc(32,7)).update('fmcad-posix-publication-v1\\0')
+ const mac=crypto.createHmac('sha256',key).update('fmcad-posix-publication-v1\\0')
  .update(JSON.stringify(sort({binding:current.binding,publicationDigest:digest}))).digest('hex');
  if(q.attestation.mac!==mac)process.exit(85);
  const receipt={kind:'fmcad-rebaseline-consumed',version:1,fence:current.binding,activation:{
@@ -130,7 +146,7 @@ if(action==='consume'){
  record:p.record,initiatorOperatorId:current.binding.initiatorOperatorId},consumedBy:'operator-one'};
  const receiptJson=JSON.stringify(receipt);
  current={...current,state:'consumed',publicationJson:q.publicationJson,receiptJson,receiptDigest:sha(receiptJson),
- receiptMac:crypto.createHmac('sha256',Buffer.alloc(32,7)).update('fmcad-native-consume-v1\\0').update(receiptJson).digest('hex')};
+ receiptMac:crypto.createHmac('sha256',key).update('fmcad-native-consume-v1\\0').update(receiptJson).digest('hex')};
  fs.writeFileSync(file,JSON.stringify(current),{mode:0o600});
 }
 process.stdout.write(JSON.stringify(current));
@@ -142,13 +158,14 @@ process.stdout.write(JSON.stringify(current));
     handoffId: "handoff",
     nextGeneration: { instance: "instance", epoch: "epoch" },
   };
+  let writerCalls = 0;
   const options: NativeRuntimeRebaselineOptions = {
     store,
     operatorId: "operator-one",
     runtimeVersion: "test",
     pins: {
       handoffId: "handoff",
-      admissionStore: "C:\\private\\admission.sqlite3",
+      admissionStore: "C:\\private\\fmcad\\addin-admission\\admission.sqlite3",
       generation: committed.nextGeneration,
       process: { pid: 22, birth: "new-birth" },
       source: "source",
@@ -175,7 +192,7 @@ process.stdout.write(JSON.stringify(current));
       }),
       committedHandoff: write("committed.json", committed),
       preservedRows: write("rows.json", {
-        databasePath: "C:\\private\\admission.sqlite3",
+        databasePath: "C:\\private\\fmcad\\addin-admission\\admission.sqlite3",
         sameDatabase: true,
         allOldAdmissionRowsPreserved: true,
         allOldHistoryRowsPreserved: true,
@@ -191,7 +208,7 @@ process.stdout.write(JSON.stringify(current));
       mappedNativePython: executable,
       nativePythonSha256: sha(fs.readFileSync(executable)),
       installedForkDirectory: "C:\\fork",
-      mappedInstalledForkDirectory: directory,
+      mappedInstalledForkDirectory: fork,
       installedPackageFiles: files,
       provisionPath: "C:\\private\\provision.json",
       localAppData: "C:\\private",
@@ -200,17 +217,12 @@ process.stdout.write(JSON.stringify(current));
       linuxGrantDirectory: directory,
     },
     publicationAuthority: {
-      keyId: "fixture-key",
-      keyReference: (() => {
-        const file = path.join(directory, "key"),
-          bytes = Buffer.alloc(32, 7);
-        fs.writeFileSync(file, bytes, { mode: 0o600 });
-        return { path: file, sha256: sha(bytes) };
-      })(),
-      nativeOperatorFile: "C:\\private\\operator.json",
+      ...realm,
+      nativeOperatorFile: "C:\\private\\runtime-rebaseline-operator.json",
     },
     writer: {
       async withExclusiveWriter(work) {
+        writerCalls++;
         const lock = path.join(directory, "writer.lock"),
           fd = fs.openSync(lock, "wx", 0o600);
         try {
@@ -247,22 +259,60 @@ process.stdout.write(JSON.stringify(current));
     runtime,
     nativeProvision: options.native,
   }).path;
+  const carrier = path.join(mailbox, "runtime-rebaseline-operator.json");
+  fs.writeFileSync(
+    carrier,
+    JSON.stringify({
+      database: options.pins.admissionStore,
+      runtime: {
+        handoffId: runtime.handoffId,
+        generation: runtime.generation,
+        physicalRuntime: runtime.physicalRuntime,
+        endpointURL: runtime.endpointURL,
+      },
+      publicationVerifier: {
+        keyId: realm.keyId,
+        keyHex: fs.readFileSync(realm.keyReference.path).toString("hex"),
+      },
+    }),
+    { mode: 0o600 },
+  );
   let factoryCalls = 0;
+  let authorization:
+    ReturnType<typeof wiring.createRuntimeRootPhysicalWiring> | undefined;
   function physical() {
     const ports = physicalBrokerPortsFromEnvironment(
       { FMCAD_PHYSICAL_OPERATOR_PROFILE: profile },
       {
-        runtimeRootFactory: wiring.createRuntimeRootPhysicalProfileFactory(
-          (verified) => {
-            factoryCalls++;
-            assert.ok(Object.isFrozen(verified));
-            assert.ok(
-              Object.isFrozen(verified.nativeProvision.installedPackageFiles),
-            );
-            return { ...options, native: verified.nativeProvision };
-          },
-        ),
+        runtimeRootFactory: (profile) => {
+          const actual = wiring.createRuntimeRootPhysicalProfileFactory(
+            (verified) => {
+              factoryCalls++;
+              assert.ok(Object.isFrozen(verified));
+              assert.ok(
+                Object.isFrozen(verified.nativeProvision.installedPackageFiles),
+              );
+              return {
+                store: options.store,
+                admissionStore: options.pins.admissionStore,
+                publicationAuthority: options.publicationAuthority,
+              };
+            },
+          )(profile);
+          authorization = actual;
+          return actual;
+        },
       },
+    );
+    assert.ok(ports);
+    return ports;
+  }
+  function physicalDefault() {
+    const ports = physicalBrokerPortsFromEnvironment(
+      {
+        FMCAD_PHYSICAL_OPERATOR_PROFILE: profile,
+      },
+      { runtimeRootFactory: wiring.createRuntimeRootPhysicalProfileFactory() },
     );
     assert.ok(ports);
     return ports;
@@ -302,10 +352,18 @@ process.stdout.write(JSON.stringify(current));
     fault,
     trace,
     physical,
+    physicalDefault,
+    carrier,
+    realm,
     claim,
     context,
     runtime,
     factoryCalls: () => factoryCalls,
+    authorization: () => {
+      assert.ok(authorization);
+      return authorization;
+    },
+    writerCalls: () => writerCalls,
     actions: () =>
       fs.existsSync(trace)
         ? fs.readFileSync(trace, "utf8").trim().split("\n")
@@ -330,9 +388,13 @@ test("one verified profile read connects actual core/native approval to the ordi
   const f = fixture(t);
   await f.bootstrap();
   const physical = f.physical();
-  assert.equal(f.factoryCalls(), 1);
+  assert.equal(f.factoryCalls(), 0);
   const approved = await physical.verifyRuntimeRootBeforeRestore(f.context);
   assert.ok(approved);
+  assert.equal(f.factoryCalls(), 1);
+  assert.equal(Object.hasOwn(approved, "snapshot"), false);
+  assert.equal(Object.hasOwn(approved, "snapshots"), false);
+  assert.ok(approved.frozenBaseline.snapshot);
   assert.equal(approved.record.history, "preserved_unproven");
   assert.equal(approved.record.dispositions["old"]?.outcome, "unknown");
   assert.equal(f.actions().filter((action) => action === "grant").length, 0);
@@ -359,6 +421,58 @@ test("an existing completion does not authorize a profile before async root veri
   await f.bootstrap();
   const physical = f.physical();
   await assert.rejects(physical.preparePhysicalGeneration(f.claim()), {
+    code: "RUNTIME_ROOT_AUTHORITY_REQUIRED",
+  });
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+test("a consumed restore view permits settled mutable projection before a fresh activation query", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const physical = f.physical();
+  await physical.verifyRuntimeRootBeforeRestore(f.context);
+  const claim = f.claim();
+  claim.assertBrokerOwner();
+  const queue = path.join(f.store, "queue-state.json");
+  const snapshot = JSON.parse(fs.readFileSync(queue, "utf8"));
+  snapshot.jobs.recent = { id: "recent", state: "needs_reconciliation" };
+  snapshot.quarantined.recent = { target: null };
+  fs.writeFileSync(queue, JSON.stringify(snapshot));
+  const before = f.actions().length;
+  await physical.preparePhysicalGeneration(claim);
+  assert.ok(f.actions().slice(before).includes("query"));
+  assert.equal(f.actions().filter((action) => action === "grant").length, 1);
+  assert.equal(
+    JSON.parse(fs.readFileSync(queue, "utf8")).jobs.recent.state,
+    "needs_reconciliation",
+  );
+});
+
+test("a wrapper precheck failure invalidates the previously retained native activation closure", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const physical = f.physical();
+  await physical.verifyRuntimeRootBeforeRestore(f.context);
+  const getter = f.authorization().getVerifiedActivation;
+  const claim = f.claim();
+  const descriptor = {
+    ...f.runtime,
+    brokerOwner: {
+      ...claim.owner,
+      clientId: "broker-client",
+      queueDirectory: f.store,
+    },
+  };
+  assert.ok(await getter(descriptor));
+  await assert.rejects(
+    physical.verifyRuntimeRootBeforeRestore({
+      ...f.context,
+      buildHash: "invalid",
+    }),
+    { code: "RUNTIME_ROOT_AUTHORITY_REQUIRED" },
+  );
+  assert.equal(await getter(descriptor), undefined);
+  await assert.rejects(physical.preparePhysicalGeneration(claim), {
     code: "RUNTIME_ROOT_AUTHORITY_REQUIRED",
   });
   assert.equal(f.actions().filter((action) => action === "grant").length, 0);
@@ -467,27 +581,205 @@ test("profile JSON cannot add a runtime activation or manufacture an operator co
   }
 });
 
-test("the trusted options factory cannot silently substitute the one-read native profile pins", (t) => {
+test("the trusted operator factory cannot inject different native profile pins", async (t) => {
   const f = fixture(t);
-  assert.throws(
-    () =>
-      physicalBrokerPortsFromEnvironment(
-        {
-          FMCAD_PHYSICAL_OPERATOR_PROFILE: f.profile,
-        },
-        {
-          runtimeRootFactory: wiring.createRuntimeRootPhysicalProfileFactory(
-            (profile) => ({
-              ...f.options,
-              native: {
-                ...profile.nativeProvision,
-                nativePrivateDirectory: "C:\\other",
-              },
-            }),
-          ),
-        },
+  const physical = physicalBrokerPortsFromEnvironment(
+    {
+      FMCAD_PHYSICAL_OPERATOR_PROFILE: f.profile,
+    },
+    {
+      runtimeRootFactory: wiring.createRuntimeRootPhysicalProfileFactory(
+        () => ({
+          store: f.store,
+          admissionStore: f.options.pins.admissionStore,
+          publicationAuthority: f.options.publicationAuthority,
+          native: { nativePrivateDirectory: "C:\\other" },
+        }),
       ),
-    { code: "PHYSICAL_OPERATOR_PROFILE_REJECTED" },
+    },
   );
+  assert.ok(physical);
+  await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context), {
+    code: "RUNTIME_ROOT_AUTHORITY_REQUIRED",
+  });
   assert.deepEqual(f.actions(), []);
+});
+
+function currentFiles(directory: string, prefix = ""): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const relative = path.join(prefix, entry.name),
+      file = path.join(directory, entry.name);
+    if (entry.isDirectory())
+      Object.assign(result, currentFiles(file, relative));
+    else result[relative] = sha(fs.readFileSync(file));
+  }
+  return result;
+}
+
+test("default one-read startup uses the existing realm and a query-only branded reader without a writer", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const writerCalls = f.writerCalls(),
+    before = currentFiles(f.store),
+    actionCount = f.actions().length;
+  const physical = f.physicalDefault();
+  const approved = await physical.verifyRuntimeRootBeforeRestore(f.context);
+  assert.ok(approved);
+  assert.equal(f.writerCalls(), writerCalls);
+  const queryActions = f.actions().slice(actionCount);
+  assert.ok(queryActions.length > 0);
+  assert.ok(queryActions.every((action) => action === "query"));
+  assert.deepEqual(
+    currentFiles(f.store),
+    before,
+    "readonly startup must not create or replace canonical proof bytes",
+  );
+  await physical.preparePhysicalGeneration(f.claim());
+  assert.equal(f.actions().filter((action) => action === "grant").length, 1);
+});
+
+test("missing realm never initializes a new key or falls back to completion JSON", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  fs.unlinkSync(f.realm.keyReference.path);
+  const before = currentFiles(f.store),
+    actions = f.actions().length;
+  const physical = f.physicalDefault();
+  await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context), {
+    code: "RUNTIME_ROOT_CONTROLLER_REQUIRED",
+  });
+  assert.deepEqual(currentFiles(f.store), before);
+  assert.equal(f.actions().length, actions);
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+test("missing native operator carrier cannot authorize a default startup", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  fs.unlinkSync(f.carrier);
+  const before = currentFiles(f.store);
+  const physical = f.physicalDefault();
+  await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context));
+  assert.deepEqual(currentFiles(f.store), before);
+  assert.equal(fs.existsSync(f.carrier), false);
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+for (const mismatched of ["database", "runtime"] as const)
+  test(`a deterministic carrier path does not authorize mismatched actual ${mismatched}`, async (t) => {
+    const f = fixture(t);
+    await f.bootstrap();
+    const carrier = JSON.parse(fs.readFileSync(f.carrier, "utf8"));
+    if (mismatched === "database")
+      carrier.database = "C:\\foreign\\admission.sqlite3";
+    else carrier.runtime.physicalRuntime.birth = "changed-process";
+    fs.writeFileSync(f.carrier, JSON.stringify(carrier));
+    const expected = sha(fs.readFileSync(f.carrier));
+    const physical = f.physicalDefault();
+    await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context));
+    assert.equal(sha(fs.readFileSync(f.carrier)), expected);
+    assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+  });
+
+test("current canonical evolution remains distinct from the frozen pre-rebaseline baseline", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const file = path.join(f.store, "queue-state.json"),
+    snapshot = JSON.parse(fs.readFileSync(file, "utf8"));
+  snapshot.jobs.recent = { id: "recent", state: "succeeded" };
+  fs.writeFileSync(file, JSON.stringify(snapshot));
+  const physical = f.physicalDefault();
+  const first = await physical.verifyRuntimeRootBeforeRestore(f.context);
+  assert.ok(first);
+  assert.equal(
+    JSON.parse(first.currentFiles["queue-state.json"]!.toString("utf8")).jobs
+      .recent.state,
+    "succeeded",
+  );
+  assert.equal(
+    Object.hasOwn(first.frozenBaseline.snapshot["jobs"] as object, "recent"),
+    false,
+  );
+  snapshot.jobs.newUnknown = {
+    id: "newUnknown",
+    state: "needs_reconciliation",
+  };
+  snapshot.quarantined.newUnknown = { target: null };
+  fs.writeFileSync(file, JSON.stringify(snapshot));
+  const second = await physical.verifyRuntimeRootBeforeRestore(f.context);
+  assert.ok(second);
+  assert.equal(
+    JSON.parse(second.currentFiles["queue-state.json"]!.toString("utf8")).jobs
+      .newUnknown.state,
+    "needs_reconciliation",
+  );
+  assert.equal(Object.hasOwn(second.record.dispositions, "newUnknown"), false);
+  assert.equal(
+    Object.hasOwn(
+      second.frozenBaseline.snapshot["jobs"] as object,
+      "newUnknown",
+    ),
+    false,
+  );
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+test("current-byte changes during startup QUERY refuse the returned restore view", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  fs.writeFileSync(f.fault, JSON.stringify({ mutateQueueDuringQuery: true }));
+  const physical = f.physicalDefault();
+  await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context));
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+test("current-byte changes during the fresh activation QUERY refuse before private issuance", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const physical = f.physicalDefault();
+  await physical.verifyRuntimeRootBeforeRestore(f.context);
+  fs.writeFileSync(f.fault, JSON.stringify({ mutateQueueDuringQuery: true }));
+  await assert.rejects(physical.preparePhysicalGeneration(f.claim()));
+  assert.equal(f.actions().filter((action) => action === "prepare").length, 0);
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+});
+
+test("core fsync failure after native QUERY cannot make activation usable before finalization", async (t) => {
+  const f = fixture(t);
+  await f.bootstrap();
+  const physical = f.physicalDefault();
+  const original = fs.fsyncSync,
+    queries = f.actions().filter((action) => action === "query").length;
+  fs.fsyncSync = (fd: number) => {
+    if (
+      fs.fstatSync(fd).isDirectory() &&
+      fs.readlinkSync(`/proc/self/fd/${fd}`) ===
+        path.join(f.store, "runtime-rebaselines", "request") &&
+      f.actions().filter((action) => action === "query").length > queries &&
+      !new Error().stack?.includes("runtime-rebaseline-reader")
+    )
+      throw Object.assign(Error("owned post-query directory EIO"), {
+        code: "EIO",
+      });
+    original(fd);
+  };
+  try {
+    await assert.rejects(physical.verifyRuntimeRootBeforeRestore(f.context), {
+      code: "EIO",
+    });
+  } finally {
+    fs.fsyncSync = original;
+  }
+  const claim = f.claim();
+  await assert.rejects(physical.preparePhysicalGeneration(claim), {
+    code: "RUNTIME_ROOT_AUTHORITY_REQUIRED",
+  });
+  assert.equal(f.actions().filter((action) => action === "grant").length, 0);
+  const recovered = f.physicalDefault();
+  await recovered.verifyRuntimeRootBeforeRestore(f.context);
+  await recovered.preparePhysicalGeneration(claim);
+  assert.equal(f.actions().filter((action) => action === "grant").length, 1);
+  assert.equal(f.actions().filter((action) => action === "begin").length, 1);
+  assert.equal(f.actions().filter((action) => action === "consume").length, 1);
 });
