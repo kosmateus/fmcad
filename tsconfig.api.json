@@ -12,6 +12,7 @@
     "src/composition/queue-broker.ts",
     "src/composition/queue-public-python-result.ts",
     "src/queue-backend-transition.ts",
+    "src/queue-runtime-rebaseline.ts",
     "src/queue-broker-ports.ts",
     "src/queue-broker-modules.ts",
     "src/queue-client.ts",

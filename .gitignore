@@ -70,6 +70,8 @@ tests/partition-bench-*/
 /src/composition/queue-broker.d.ts
 /src/queue-backend-transition.js
 /src/queue-backend-transition.d.ts
+/src/queue-runtime-rebaseline.js
+/src/queue-runtime-rebaseline.d.ts
 /src/queue-broker-ports.d.ts
 /src/queue-client.js
 /src/queue-client.d.ts
