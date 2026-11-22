@@ -170,6 +170,7 @@ export function openRuntimeRootState(options: {
           "submit",
           "submitDocumentInspection",
           "submitDocumentContinuation",
+          "refuseDocumentContinuation",
         ].includes(String(key))
       )
         return (request: QueueRequest, ...args: unknown[]) => {

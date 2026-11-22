@@ -309,6 +309,7 @@ test("runtime root keeps other layers read-only and fences every submission entr
     "submit",
     "submitDocumentInspection",
     "submitDocumentContinuation",
+    "refuseDocumentContinuation",
   ])
     assert.throws(() => state[method](request, {}), {
       code: "HISTORICAL_REQUEST_QUARANTINED",

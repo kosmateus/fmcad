@@ -120,3 +120,9 @@ export function documentConflicts(
 export function documentConflictAllowsInspection(conflict: DocumentConflict) {
   return conflict.target !== null || verifiedRuntimeConflicts.has(conflict);
 }
+
+/** Preserve the distinction between a verified whole-runtime retirement and
+ * an original per-turn quarantine. A field copied from JSON is not provenance. */
+export function documentConflictFence(conflict: DocumentConflict): "runtime_retired" | "released" {
+  return verifiedRuntimeConflicts.has(conflict) ? "runtime_retired" : "released";
+}

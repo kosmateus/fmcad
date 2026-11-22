@@ -10,7 +10,7 @@ export type DocumentUnlockState =
   | "target_unavailable";
 
 export type DocumentUnlockScope = "document" | "runtime" | "global" | "unknown";
-export type DocumentUnlockExecutionFence = "active" | "released" | "unknown";
+export type DocumentUnlockExecutionFence = "active" | "released" | "runtime_retired" | "unknown";
 export type DocumentUnlockCoverage =
   "document_identity" | "document_version" | "parameter_readback";
 
@@ -231,6 +231,7 @@ function safeFence(fence: unknown): DocumentUnlockExecutionFence | undefined {
   switch (fence) {
     case "active":
     case "released":
+    case "runtime_retired":
     case "unknown":
       return fence;
     default:
@@ -367,20 +368,18 @@ function resolvedState(resolution: DocumentUnlockServerResolution): {
   const blockerFences = (resolution.disclosableBlockers ?? []).map(
     (blocker) => safeFence(blocker.executionFence) ?? "unknown",
   );
-  const fence =
-    suppliedFence === "active" || blockerFences.includes("active")
-      ? "active"
-      : suppliedFence === "released" &&
-          blockerFences.every((blockerFence) => blockerFence === "released")
-        ? "released"
-        : "unknown";
+  const fences = [suppliedFence ?? "unknown", ...blockerFences];
+  const fence: DocumentUnlockExecutionFence = fences.includes("active") ? "active" :
+    fences.every((value) => value === "released" || value === "runtime_retired")
+      ? fences.includes("runtime_retired") ? "runtime_retired" : "released"
+      : "unknown";
   let state = safeState(resolution.state);
 
   if (resolution.hasOperatorOnlyBlocker === true || state === "scope_unproven")
     state = "scope_unproven";
   else if (
     state !== "target_unavailable" &&
-    (state === "execution_unfenced" || fence !== "released")
+    (state === "execution_unfenced" || (fence !== "released" && fence !== "runtime_retired"))
   )
     state = "execution_unfenced";
 

@@ -20,7 +20,7 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 
 /** Actual compiled broker, IPC, client preparation, checker and persistence.
  * Only the physical boundary/receipts are synthetic; no Fusion/native SDK runs. */
-async function fixture(t: TestContext, foreignConflict = false) {
+async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false) {
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
   const previousData = process.env["XDG_DATA_HOME"];
@@ -44,7 +44,8 @@ async function fixture(t: TestContext, foreignConflict = false) {
   let unknownHistory = false, revoked = false, wrongReply = false;
   let cancelledRead = false;
   let failOutcome = false;
-  let beforeHistory: (() => void) | undefined;
+  let differentProductGeneration = false;
+  let beforeHistory: (() => void | Promise<void>) | undefined;
   const released = new Set<string>();
   const productJobs: string[] = [];
   const clients: QueueClient[] = [];
@@ -53,7 +54,8 @@ async function fixture(t: TestContext, foreignConflict = false) {
     const state = openIsolatedEpoch(dir, { recover: false });
     const submitted = state.submit({
       kind: "command", clientId: "foreign-owner", requestId: "private-foreign-request",
-      argv: ["param", "apply", "--doc-id", "doc-A", "--doc-file-id", "file-A"],
+      argv: foreignConflict === "raw-forged" ? ["run", "owned-raw-fixture"] :
+        ["param", "apply", "--doc-id", "doc-A", "--doc-file-id", "file-A"],
       cwd: home, timeoutMs: 15000,
     });
     const jobId = String(submitted["id"]);
@@ -63,16 +65,19 @@ async function fixture(t: TestContext, foreignConflict = false) {
       kind: "system-read", brokerNonce: "fixture-foreign-owner", jobId,
       requestId: job.requestId, clientId: job.clientId, requestHash: job.hash,
       grantGeneration: 1, physicalRequestId: "foreign-physical-read",
-      documentSelector: { creationId: "doc-A", fileId: "file-A" },
+      documentSelector: foreignConflict === "raw-forged" ? undefined :
+        { creationId: "doc-A", fileId: "file-A" },
     };
     const binding: P.PhysicalTurnBinding = {
       version: 1, generation: { epoch: "epoch-A", instance: "generation-A" },
       grantDigest: hash("isolated-private-fixture-grant"),
       physicalRuntime: { pid: instance.pid, birth: instance.birth, version: instance.version,
         source: "fixture-source", build: "fixture-build" },
-      turnId: request.physicalRequestId, target: JSON.stringify(request.documentSelector),
+      turnId: request.physicalRequestId, target: JSON.stringify(request.documentSelector ?? null),
     };
-    const body = { request, physical: binding, target: { creationId: "doc-A", fileId: "file-A" }, catalogIndex: 1 };
+    const body = { request, physical: binding,
+      target: foreignConflict === "raw-forged" ? null : { creationId: "doc-A", fileId: "file-A" },
+      catalogIndex: 1 };
     const bytes = JSON.stringify(body), name = `physical-turn-${hash(binding.turnId)}.json`;
     fs.mkdirSync(path.join(dir, "jobs", jobId), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(dir, "jobs", jobId, name), bytes, { mode: 0o600 });
@@ -91,6 +96,12 @@ async function fixture(t: TestContext, foreignConflict = false) {
       binding: { jobId, requestId: job.requestId, clientId: job.clientId,
         requestHash: job.hash, physicalTurns: [proof] },
     });
+    if (foreignConflict === "raw-forged") {
+      const file = path.join(dir, "queue-state.json");
+      const snapshot = JSON.parse(fs.readFileSync(file, "utf8"));
+      snapshot.quarantined[jobId].fenceKind = "runtime_retired";
+      fs.writeFileSync(file, JSON.stringify(snapshot), { mode: 0o600 });
+    }
   }
   function checkpoint(): import("../packages/node-adapters/src/python/cad-script").ParamCheckpointGuardV1 {
     return {
@@ -202,7 +213,10 @@ async function fixture(t: TestContext, foreignConflict = false) {
     bindPhysicalTurn(request) {
       if (revoked) throw Object.assign(new Error("native grant revoked"), { code: "PHYSICAL_GENERATION_REJECTED" });
       return {
-        version: 1, generation: { epoch: "epoch-A", instance: "generation-A" },
+        version: 1, generation: {
+          epoch: differentProductGeneration && request.kind === "product" ? "epoch-B" : "epoch-A",
+          instance: differentProductGeneration && request.kind === "product" ? "generation-B" : "generation-A",
+        },
         grantDigest: hash("isolated-private-fixture-grant"),
         physicalRuntime: { ...instance, source: "fixture-source", build: "fixture-build" },
         turnId: request.physicalRequestId,
@@ -216,7 +230,7 @@ async function fixture(t: TestContext, foreignConflict = false) {
     },
     async physicalTurnQuiescence(binding) {
       queries++;
-      beforeHistory?.();
+      await beforeHistory?.();
       if (revoked || unknownHistory || !released.has(binding.turnId))
         return { state: "unknown", binding };
       if (cancelledRead) {
@@ -238,10 +252,12 @@ async function fixture(t: TestContext, foreignConflict = false) {
     historyUnknown(value: boolean) { unknownHistory = value; },
     cancelledRead(value: boolean) { cancelledRead = value; },
     failOutcome(value = true) { failOutcome = value; },
+    changeProductGeneration() { differentProductGeneration = true; },
+    removePreparation() { Object.defineProperty(physical, "prepareCallTool", { value: undefined }); },
     productJobs: () => [...productJobs],
     revoke(value: boolean) { revoked = value; },
     wrongReply() { wrongReply = true; },
-    beforeHistory(value: (() => void) | undefined) { beforeHistory = value; },
+    beforeHistory(value: (() => void | Promise<void>) | undefined) { beforeHistory = value; },
     async client(id = "reader-A") {
       const { QueueClient } = load("./queue-client") as typeof import("../src/queue-client");
       const client = new QueueClient(id, { cfg });
@@ -290,6 +306,16 @@ test("actual status IPC hides a foreign actor's retained conflicting job identif
     };
     assert.equal(Object.keys(snapshot.quarantined).length, 1,
       "the hidden conflict still exists and gates admission");
+  });
+
+test("actual status rejects a raw quarantine relabeled as runtime retirement in persisted data",
+  { timeout: 30000 }, async (t) => {
+    const f = await fixture(t, "raw-forged"), client = await f.client("foreign-owner");
+    const result = record(await client.documentUnlock({ action: "status", target }));
+    assert.equal(result["state"], "scope_unproven", JSON.stringify(result));
+    assert.equal(result["executionFence"], undefined);
+    assert.equal(record(result["next"])["kind"], "operator_action");
+    assert.equal(f.writes(), 0);
   });
 
 test("actual authenticated IPC shows the same full observed parameters, fresh accept and historical retry SDK0",
@@ -369,6 +395,80 @@ test("actual public IPC routes a fresh accepted continuation through the normal 
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false, "the original UNKNOWN is never replayed");
+  });
+
+for (const fault of ["generation", "preparation"] as const) {
+  test(`accepted continuation refuses ${fault} mismatch before a physical write`,
+    { timeout: 120000 }, async (t) => {
+      const f = await fixture(t, true), client = await f.client("successor-writer");
+      const inspected = record(await client.documentUnlock({
+        action: "inspect", target, requestId: `inspect-${fault}`,
+      }));
+      const accepted = record(await client.documentUnlock({
+        action: "accept", target, requestId: `accept-${fault}`,
+        observationId: record(inspected["observation"])["observationId"],
+      }));
+      assert.equal(accepted["state"], "checkpoint_current", JSON.stringify(accepted));
+      if (fault === "generation") f.changeProductGeneration();
+      else f.removePreparation();
+      const payload = {
+        version: 1, kind: "cad", operation: "param.apply", doc: "Owned A",
+        docId: "doc-A", docFileId: "file-A",
+        data: { parameters: [{ name: "length", expression: "20 mm" }] },
+      };
+      const commands = load("./dist/core/application/cad/worker-command") as
+        typeof import("../packages/core/src/application/cad/worker-command");
+      const job = await client.submit({
+        kind: "command", payload, cwd: f.dir, timeoutMs: 45000, requestId: `refuse-${fault}`,
+        argv: commands.cadWorkerPolicyArguments(commands.decodeCadWorkerInvocation(payload)),
+      });
+      const done = await client.wait(job.id, { signal: AbortSignal.timeout(45000) });
+      assert.equal(done.job.state, "failed", JSON.stringify(done));
+      assert.equal(f.writes(), 0);
+    });
+}
+
+test("a checkpoint replaced during submit verification durably binds the refused request ID",
+  { timeout: 180000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("successor-writer");
+    async function acceptFresh(suffix: string) {
+      const inspected = record(await client.documentUnlock({
+        action: "inspect", target, requestId: `inspect-race-${suffix}`,
+      }));
+      const accepted = record(await client.documentUnlock({
+        action: "accept", target, requestId: `accept-race-${suffix}`,
+        observationId: record(inspected["observation"])["observationId"],
+      }));
+      assert.equal(accepted["state"], "checkpoint_current", JSON.stringify(accepted));
+    }
+    await acceptFresh("before");
+    f.beforeHistory(async () => {
+      f.beforeHistory(undefined);
+      await acceptFresh("during-await");
+    });
+    const payload = {
+      version: 1, kind: "cad", operation: "param.apply", doc: "Owned A",
+      docId: "doc-A", docFileId: "file-A",
+      data: { parameters: [{ name: "length", expression: "20 mm" }] },
+    };
+    const commands = load("./dist/core/application/cad/worker-command") as
+      typeof import("../packages/core/src/application/cad/worker-command");
+    const input = {
+      kind: "command", payload, cwd: f.dir, timeoutMs: 45000, requestId: "stale-during-await",
+      argv: commands.cadWorkerPolicyArguments(commands.decodeCadWorkerInvocation(payload)),
+    };
+    const refused = await client.submit(input);
+    assert.equal(refused.state, "failed");
+    assert.equal(record(refused)["code"], "DOCUMENT_UNLOCK_REQUIRED");
+    assert.equal(f.writes(), 0);
+    const retry = await client.submit(input);
+    assert.equal(retry.id, refused.id);
+    assert.equal(retry.state, "failed");
+    assert.equal(f.writes(), 0);
+    const fresh = await client.submit({ ...input, requestId: "fresh-after-refused-race" });
+    const done = await client.wait(fresh.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(done.job.state, "succeeded", JSON.stringify(done));
+    assert.equal(f.writes(), 1);
   });
 
 test("fresh accept refuses a real changed readback and preserves the original observation",

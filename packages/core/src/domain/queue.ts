@@ -757,6 +757,12 @@ export class QueueDomain {
   createDocumentContinuationAuthority(verify: () => DocumentContinuation) {
     return createDocumentContinuationAuthority(this, verify);
   }
+
+  /** Persist a server-side checkpoint refusal with the original immutable input.
+   * This entrypoint can only deny work; it cannot mint continuation authority. */
+  refuseDocumentContinuation(request: unknown, preparedId?: string) {
+    return this._submit(request, preparedId, undefined, undefined, true);
+  }
   _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
     if (job.documentInspection)
       return documentInspectionAllowed(d, job, this.hash, retirements.get(this));
@@ -829,7 +835,8 @@ export class QueueDomain {
 
   // Internal server entrypoint; inspection markers are not decoded from RPC.
   _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
-    continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority }) {
+    continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority },
+    refusedContinuation = false) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -934,7 +941,7 @@ export class QueueDomain {
     });
     return this._commit((d) => {
       const time = this._time();
-      if (r.expectedRevision !== undefined && r.expectedRevision !== d.revision)
+      if (!refusedContinuation && r.expectedRevision !== undefined && r.expectedRevision !== d.revision)
         fail(
           "STALE_REVISION",
           "Read status and submit a new requestId with the current revision",
@@ -954,7 +961,8 @@ export class QueueDomain {
       if (continuation && !documentContinuationAllowed(d, inspectionCandidate, this.hash,
         retirements.get(this), continuation.authority, this))
         fail("DOCUMENT_CONTINUATION_UNPROVEN", "Continuation requires the current accepted state and exact private guard");
-      if (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation) {
+      if (refusedContinuation ||
+          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation)) {
         const refused: QueueJob = {
           id: preparedId ?? this.newId(), requestId: r.requestId,
           clientId: r.clientId, kind: r.kind, request: r, hash,

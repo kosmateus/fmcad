@@ -2175,8 +2175,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ...(target.docFileId === undefined ? {} : { fileId: target.docFileId }),
       });
       const unfenced = !!(state.data.blocked || state.data.localUnknown || state.data.controlBlocked);
-      const raw = conflicts.some((entry) => entry.target === null &&
-        (!("fenceKind" in entry) || entry.fenceKind !== "runtime_retired"));
+      const { documentConflictAllowsInspection, documentConflictFence } =
+        runtimeRequire("./dist/core/domain/document-conflicts") as
+          typeof import("../../packages/core/src/domain/document-conflicts");
+      const raw = conflicts.some((entry) => !documentConflictAllowsInspection(entry));
+      const runtimeRetired = conflicts.some((entry) =>
+        documentConflictFence(entry) === "runtime_retired");
       const observed = observation && checkpointViews.getStore()?.states.get(observation.id);
       const checkpoints = state.data.documentCheckpoints;
       const accepted = observation && observed &&
@@ -2197,13 +2201,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         target, state: unfenced ? "execution_unfenced" : raw ? "scope_unproven" :
           accepted && observed ? "checkpoint_current" :
           conflicts.length || observation ? "inspection_required" : "clear",
-        executionFence: unfenced ? "unknown" : "released",
+        executionFence: unfenced ? "unknown" : runtimeRetired ? "runtime_retired" : "released",
         hasUndisclosedBlockers: visible.length !== conflicts.length,
         disclosableBlockers: visible.map((entry) => ({
           jobId: entry.jobId, requestId: entry.requestId,
-          scope: "fenceKind" in entry && entry.fenceKind === "runtime_retired" ? "runtime" as const :
+          scope: documentConflictFence(entry) === "runtime_retired" ? "runtime" as const :
             entry.target ? "document" as const : "global" as const,
-          executionFence: "released" as const,
+          executionFence: documentConflictFence(entry),
         })),
         ...(observation && observed ? { currentObservation: {
           observationId: observation.id,
@@ -2569,6 +2573,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         });
         return;
       }
+      if (guarded)
+        fail("DOCUMENT_CONTINUATION_UNPROVEN",
+          "Guarded continuation requires supported artifact preparation and physical binding");
       // Injected test clients have no native prepare methods. Snapshot once for
       // both checking and invocation, just as the production client does.
       const args = structuredClone(message.args);
@@ -2798,6 +2805,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Product SDK dispatch has no original physical binding",
       );
     const physical = pinPhysicalTurn(binding, request, instance);
+    if (job.documentContinuation &&
+        checkpointGeneration(physical) !== job.documentContinuation.generation)
+      fail("DOCUMENT_STATE_CHANGED",
+        "Product physical generation differs from the accepted continuation");
     if (job.documentInspection &&
         (checkpointGeneration(physical) !== job.documentInspection.generation ||
          checkpointGeneration(physical) !== currentCheckpointGeneration()))
@@ -6334,6 +6345,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           };
           verifyAcceptance();
           const target = !existing && acceptedContinuationTarget(request);
+          let refuseContinuation = false;
+          const staleContinuation = (error: unknown) =>
+            ["DOCUMENT_CONTINUATION_UNPROVEN", "DOCUMENT_STATE_CHANGED",
+              "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED"].includes(errorInfo(error).code ?? "");
           let preparedContinuation:
             import("../document-continuation-broker").PreparedDocumentContinuationSubmission | undefined;
           if (target) {
@@ -6347,13 +6362,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 { clientId, clientTokenHash: required(clientHashes()[clientId]) },
               );
             } catch (error) {
-              const code = errorInfo(error).code;
-              if (["DOCUMENT_CONTINUATION_UNPROVEN", "DOCUMENT_STATE_CHANGED",
-                "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED"].includes(code ?? ""))
-                throw Object.assign(new Error(
-                  "The accepted document checkpoint is no longer current. Use fmcad_document_unlock or fmcad queue document-unlock --action inspect with the same document pins, explicitly accept the observed state, then submit a fresh requestId.",
-                ), { code: "DOCUMENT_UNLOCK_REQUIRED", notStarted: true });
-              throw error;
+              if (!staleContinuation(error)) throw error;
+              refuseContinuation = true;
             }
             verifyAcceptance();
           }
@@ -6364,8 +6374,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",
               ).retainAdmission(dir, request);
-            const job = (preparedContinuation
-              ? preparedContinuation.submit() : state.submit(request, preparedId)) as P.PublicJob;
+            let job: P.PublicJob;
+            try {
+              job = (refuseContinuation
+                ? state.refuseDocumentContinuation(request, preparedId)
+                : preparedContinuation
+                  ? preparedContinuation.submit() : state.submit(request, preparedId)) as P.PublicJob;
+            } catch (error) {
+              if (!preparedContinuation || !staleContinuation(error)) throw error;
+              job = state.refuseDocumentContinuation(request, preparedId) as P.PublicJob;
+            }
             const admitted = state.data.jobs[job.id];
             if (admitted?.documentContinuation) continuationJobs.add(job.id);
             writeRequestTrace(admitted?.request ?? request, clientId, {
