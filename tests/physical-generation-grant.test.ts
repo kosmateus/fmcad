@@ -72,6 +72,41 @@ function fixture(t: { after(action: () => void): void }) {
   return { root, expected, secret, grantFile, options };
 }
 
+test("a private FIFO cannot block grant authorization", (t) => {
+  const f = fixture(t);
+  fs.unlinkSync(f.grantFile);
+  const fifo = spawnSync("mkfifo", ["-m", "600", f.grantFile], {
+    encoding: "utf8",
+  });
+  assert.equal(fifo.status, 0, fifo.stderr);
+  const result = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `
+    const {createPhysicalGenerationAuthorization}=require(process.argv[1]);
+    const input=JSON.parse(process.argv[2]);
+    input.expected.brokerOwner.pid=process.pid;
+    input.assertBrokerOwner=()=>require("node:assert/strict").equal(input.expected.brokerOwner.pid,process.pid);
+    try {
+      createPhysicalGenerationAuthorization(input).headers(input.expected.endpointURL);
+      console.log("accepted");
+    } catch(error) { console.log(error.code); }
+  `,
+      require.resolve("../packages/node-adapters/src/execution/physical-generation"),
+      JSON.stringify(f.options),
+    ],
+    { encoding: "utf8", timeout: 5000, killSignal: "SIGKILL" },
+  );
+  assert.equal(
+    result.error,
+    undefined,
+    "Grant reader must not block on a FIFO",
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "PHYSICAL_GENERATION_REJECTED");
+});
+
 for (const outcome of [
   "ready",
   "owner-changed",

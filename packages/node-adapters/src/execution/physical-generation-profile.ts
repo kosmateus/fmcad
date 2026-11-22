@@ -55,7 +55,10 @@ function readProfile(file: string): unknown {
       rejected();
     const directory = fs.statSync(parent);
     if (directory.uid !== uid || (directory.mode & 0o077) !== 0) rejected();
-    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    fd = fs.openSync(
+      file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+    );
     const before = fs.fstatSync(fd, { bigint: true });
     if (
       !before.isFile() ||

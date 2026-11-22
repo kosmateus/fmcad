@@ -72,6 +72,47 @@ test("ordinary public configuration does not provide physical operator authority
   assert.equal(factories, 0);
 });
 
+test(
+  "private FIFO profile is rejected without blocking or constructing an issuer",
+  linux,
+  (t) => {
+    const f = fixture(t);
+    fs.unlinkSync(f.file);
+    const fifo = childProcess.spawnSync("mkfifo", ["-m", "600", f.file], {
+      encoding: "utf8",
+    });
+    assert.equal(fifo.status, 0, fifo.stderr);
+    const result = childProcess.spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+    const {physicalBrokerPortsFromEnvironment}=require(process.argv[1]);
+    let calls=0;
+    try {
+      physicalBrokerPortsFromEnvironment({FMCAD_PHYSICAL_OPERATOR_PROFILE:process.argv[2]},
+        {provisionFactory(){calls++;throw Error("No issuer for a FIFO");}});
+      console.log(JSON.stringify({code:"accepted",calls}));
+    } catch(error) { console.log(JSON.stringify({code:error.code,calls})); }
+  `,
+        require.resolve("../packages/node-adapters/src/execution/physical-generation-profile"),
+        f.file,
+      ],
+      { encoding: "utf8", timeout: 5000, killSignal: "SIGKILL" },
+    );
+    assert.equal(
+      result.error,
+      undefined,
+      "Profile reader must not block on a FIFO",
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      code: "PHYSICAL_OPERATOR_PROFILE_REJECTED",
+      calls: 0,
+    });
+  },
+);
+
 for (const transport of ["node", "windows-curl"] as const) {
   test(
     `private ${transport} profile composes deferred ports and preserves the control route`,
