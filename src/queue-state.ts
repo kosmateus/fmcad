@@ -6,7 +6,7 @@ import { performance } from "node:perf_hooks";
 import { createRequire } from "node:module";
 import type { QueueDomainOptions, QueueSnapshot } from "@fmcad/core";
 const load = createRequire(__filename);
-const { QueueDomain, terminal, validateQueueOptions } = load(
+const { QueueDomain, terminal, validateQueueOptions, canonical } = load(
   "./dist/core/domain/queue",
 ) as typeof import("../packages/core/src/domain/queue");
 const { createSnapshotStore, readBytes, MAX_JSON_RECORD_BYTES } = load(
@@ -14,7 +14,16 @@ const { createSnapshotStore, readBytes, MAX_JSON_RECORD_BYTES } = load(
 ) as typeof import("../packages/node-adapters/src/persistence/records");
 const { validPhysicalDispatch } = load("./dist/core/domain/queue-quarantine") as
   typeof import("../packages/core/src/domain/queue-quarantine");
+const { createRuntimeRetirementAuthority, projectRuntimeRetirement, verifiedRuntimeRetirement } = load(
+  "./dist/core/domain/runtime-retirement",
+) as typeof import("../packages/core/src/domain/runtime-retirement");
+const { decodeOpaqueQueueJson } = load(
+  "./dist/node-adapters/execution/admission-json",
+) as { decodeOpaqueQueueJson(text: string): unknown };
 export { terminal };
+/** Composition-only factory. Use the SAME staged core module as QueueDomain;
+ * private WeakMap membership must never be recreated from serialized markers. */
+export const createQueueRuntimeRetirementAuthority = createRuntimeRetirementAuthority;
 export interface QueueStateOptions extends Partial<
   Omit<QueueDomainOptions, "snapshot" | "newId" | "hash" | "commit">
 > {
@@ -137,7 +146,9 @@ export class QueueState extends QueueDomain {
       try {
         // QueueDomain is the retained persisted snapshot decoder. The exact
         // parsed bytes reach its constructor; host composition does not normalize.
-        snapshot = JSON.parse(serialized) as QueueSnapshot;
+        snapshot = (options.runtimeRetirement
+          ? decodeOpaqueQueueJson(serialized)
+          : JSON.parse(serialized)) as QueueSnapshot;
       } catch (error) {
         throw Object.assign(
           new Error(
@@ -158,6 +169,38 @@ export class QueueState extends QueueDomain {
         new Error("Migration escrow snapshot changed before construction"),
         { code: "MIGRATION_FENCE_CHANGED" },
       );
+    if (snapshot && options.runtimeRetirement && options.recover !== false) {
+      const verifyBytes = () => {
+        const verified = verifiedRuntimeRetirement(options.runtimeRetirement);
+        if (serialized === null ||
+          createHash("sha256").update(serialized).digest("hex") !== verified.currentSnapshotDigest)
+          throw Object.assign(
+            new Error("Approved runtime view differs from the exact current queue bytes"),
+            { code: "RUNTIME_RETIREMENT_CHANGED" },
+          );
+      };
+      verifyBytes();
+      const projected = projectRuntimeRetirement(
+        snapshot, options.runtimeRetirement,
+        canonical,
+        (text) => createHash("sha256").update(text).digest("hex"),
+        now(),
+      );
+      const next = JSON.stringify(projected);
+      if (next !== serialized) {
+        if (store.restore() !== serialized)
+          throw Object.assign(
+            new Error("Queue bytes changed before runtime retirement projection"),
+            { code: "RUNTIME_RETIREMENT_CHANGED" },
+          );
+        // Re-check the live private authority at the write boundary. Its adapter
+        // must assert the actual writer claim and exact approved current bytes.
+        verifyBytes();
+        store.commit(next);
+        serialized = next;
+      }
+      snapshot = projected;
+    }
     super({
       ...options,
       snapshot,
