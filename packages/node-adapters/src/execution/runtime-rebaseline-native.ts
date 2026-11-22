@@ -448,11 +448,14 @@ function originalFacts(options: NativeRuntimeRebaselineOptions) {
 
 function currentFile(file: string): Buffer | null {
   try {
-    return readPrivateRegular(file);
+    fs.lstatSync(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+  // Only absence of the directory entry is optional. A dangling symlink or a
+  // file lost after this observation is an unproven read, never absent metadata.
+  return readPrivateRegular(file);
 }
 
 function syncDirectory(directory: string): void {

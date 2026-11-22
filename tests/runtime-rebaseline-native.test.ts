@@ -629,6 +629,42 @@ test("POSIX OLD publishes once, exact NEW re-fsyncs and verified consume clears 
           }),
           record,
         };
+        const dangling = path.join(
+          f.options.store,
+          "physical-backend-head.json",
+        );
+        fs.symlinkSync(path.join(f.directory, "missing-target"), dangling);
+        await assert.rejects(lease.publishActivation(publication));
+        assert.equal(fs.existsSync(activationFile), false);
+        fs.unlinkSync(dangling);
+        const queueFile = path.join(f.options.store, "queue-state.json");
+        const realLstat = fs.lstatSync;
+        let removedAfterDetection = false;
+        const lstatDescriptor = Object.getOwnPropertyDescriptor(
+          fs,
+          "lstatSync",
+        )!;
+        Object.defineProperty(fs, "lstatSync", {
+          ...lstatDescriptor,
+          value: new Proxy(realLstat, {
+            apply(target, receiver, args) {
+              const observed = Reflect.apply(target, receiver, args);
+              if (String(args[0]) === queueFile && !removedAfterDetection) {
+                removedAfterDetection = true;
+                fs.unlinkSync(queueFile);
+              }
+              return observed;
+            },
+          }),
+        });
+        try {
+          await assert.rejects(lease.publishActivation(publication));
+          assert.equal(removedAfterDetection, true);
+          assert.equal(fs.existsSync(activationFile), false);
+        } finally {
+          Object.defineProperty(fs, "lstatSync", lstatDescriptor);
+          fs.writeFileSync(queueFile, "{}", { mode: 0o600 });
+        }
         fs.writeFileSync(
           path.join(f.options.store, "queue-state.json"),
           '{"foreign":true}',
