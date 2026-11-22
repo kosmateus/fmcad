@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { admissionData, decodeAdmissionJson } from "./admission-json";
 import {
   createPhysicalTurnStatusRequest,
+  createPhysicalTurnHistoryRequest,
   type PhysicalTurnStatusRequest,
 } from "./admission-http";
 import type { Spawn } from "../fusion-transport/contracts";
@@ -151,6 +152,7 @@ export function createPhysicalGenerationAuthorization(
     spawn?: Spawn;
     /** Private test/transport seam, never a request-controlled capability. */
     request?: PhysicalTurnStatusRequest;
+    historyRequest?: PhysicalTurnStatusRequest;
   } = {},
 ) {
   const expected = structuredClone(options.expected);
@@ -300,21 +302,65 @@ export function createPhysicalGenerationAuthorization(
       state: "unknown",
       binding: original,
     });
-    if (
-      !isDeepStrictEqual(binding, turnBinding(binding.turnId, binding.target))
-    )
-      return unknown();
-    const endpoint = new URL("/physical/v1/turn-status", base).href;
     try {
-      const request =
-        dependencies.request ??
-        createPhysicalTurnStatusRequest(
-          { transport: options.transport },
-          { spawn: dependencies.spawn },
-        );
+      const current = isDeepStrictEqual(
+        original,
+        turnBinding(original.turnId, original.target),
+      );
+      if (
+        !current &&
+        (original.version !== 1 ||
+          !/^[a-f0-9]{64}$/.test(original.grantDigest) ||
+          original.grantDigest === grantDigest ||
+          !Number.isSafeInteger(original.physicalRuntime.pid) ||
+          original.physicalRuntime.pid <= 0 ||
+          [
+            original.generation.instance,
+            original.generation.epoch,
+            original.physicalRuntime.birth,
+            original.physicalRuntime.version,
+            original.physicalRuntime.source,
+            original.physicalRuntime.build,
+          ].some((value) => typeof value !== "string" || !value) ||
+          !isDeepStrictEqual(original, {
+            version: 1,
+            grantDigest: original.grantDigest,
+            generation: {
+              instance: original.generation.instance,
+              epoch: original.generation.epoch,
+            },
+            physicalRuntime: {
+              pid: original.physicalRuntime.pid,
+              birth: original.physicalRuntime.birth,
+              version: original.physicalRuntime.version,
+              source: original.physicalRuntime.source,
+              build: original.physicalRuntime.build,
+            },
+            turnId: original.turnId,
+            target: original.target,
+          }))
+      )
+        return unknown();
+      const endpoint = new URL(
+        current ? "/physical/v1/turn-status" : "/physical/v1/turn-history",
+        base,
+      ).href;
+      const request = current
+        ? (dependencies.request ??
+          createPhysicalTurnStatusRequest(
+            { transport: options.transport },
+            { spawn: dependencies.spawn },
+          ))
+        : (dependencies.historyRequest ??
+          createPhysicalTurnHistoryRequest(
+            { transport: options.transport },
+            { spawn: dependencies.spawn },
+          ));
       const response = await request({
         endpoint,
-        headers: headers(endpoint),
+        // A passive history read never installs or dispatches the old token,
+        // turn or target. Only the current owner's private grant authenticates it.
+        headers: { "X-Fmcad-Physical-Grant": token() },
         body: Buffer.from(JSON.stringify(original), "utf8"),
         timeoutMs: options.timeoutMs ?? 10000,
       });

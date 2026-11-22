@@ -48,6 +48,30 @@ export function createPhysicalTurnStatusRequest(
   config: AdmissionTransport = {},
   dependencies: Dependencies = {},
 ): PhysicalTurnStatusRequest {
+  return createPhysicalControlRequest(
+    "/physical/v1/turn-status",
+    config,
+    dependencies,
+  );
+}
+
+/** Historical evidence is passive and authenticated by the current grant. */
+export function createPhysicalTurnHistoryRequest(
+  config: AdmissionTransport = {},
+  dependencies: Dependencies = {},
+): PhysicalTurnStatusRequest {
+  return createPhysicalControlRequest(
+    "/physical/v1/turn-history",
+    config,
+    dependencies,
+  );
+}
+
+function createPhysicalControlRequest(
+  pathname: "/physical/v1/turn-status" | "/physical/v1/turn-history",
+  config: AdmissionTransport,
+  dependencies: Dependencies,
+): PhysicalTurnStatusRequest {
   const post = createBytePost(config, dependencies, 65536);
   return (request) => {
     const endpoint = new URL(request.endpoint);
@@ -55,7 +79,7 @@ export function createPhysicalTurnStatusRequest(
       endpoint.protocol !== "http:" ||
       endpoint.port !== "8765" ||
       !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) ||
-      endpoint.pathname !== "/physical/v1/turn-status" ||
+      endpoint.pathname !== pathname ||
       endpoint.username ||
       endpoint.password ||
       endpoint.search ||

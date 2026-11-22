@@ -27,6 +27,7 @@ export function prepareBrokerPhysicalGeneration(options: {
   const runtime = structuredClone(options.runtime);
   const clientId = options.clientId;
   let attempted = false;
+  let issuanceAttempted = false;
   let authorization:
     ReturnType<typeof createPhysicalGenerationAuthorization> | undefined;
   function unavailable(): never {
@@ -34,7 +35,9 @@ export function prepareBrokerPhysicalGeneration(options: {
       new Error("Physical generation has not been prepared"),
       {
         code: "PHYSICAL_GENERATION_REJECTED",
-        notStarted: true,
+        ...(issuanceAttempted
+          ? { grantIssuance: "unknown" }
+          : { notStarted: true }),
       },
     );
   }
@@ -64,6 +67,7 @@ export function prepareBrokerPhysicalGeneration(options: {
       // the descriptor used to pin the resulting private file.
       let grant: { grantFile: string; grantDigest: string };
       try {
+        issuanceAttempted = true;
         grant = await options.provision(structuredClone(descriptor));
       } catch {
         // The operator may include credentials/private paths in its exception.

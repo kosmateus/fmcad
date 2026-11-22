@@ -5,7 +5,10 @@ import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 import { prepareBrokerPhysicalGeneration } from "../packages/node-adapters/src/execution/physical-generation-broker";
-import { createPhysicalTurnStatusRequest } from "../packages/node-adapters/src/execution/admission-http";
+import {
+  createPhysicalTurnStatusRequest,
+  createPhysicalTurnHistoryRequest,
+} from "../packages/node-adapters/src/execution/admission-http";
 import {
   createPhysicalGenerationAuthorization,
   type PhysicalGenerationDescriptor,
@@ -145,6 +148,8 @@ for (const outcome of [
               "Physical generation has not been prepared",
             );
             assert.equal("cause" in error, false);
+            assert.equal("notStarted" in error, false);
+            assert.equal(Reflect.get(error, "grantIssuance"), "unknown");
             assert.equal(JSON.stringify(error).includes(f.secret), false);
             assert.equal(error.stack?.includes(f.secret), false);
           }
@@ -618,6 +623,114 @@ test("physical control byte port cannot dispatch to an SDK endpoint", () => {
       () =>
         port({
           endpoint,
+          headers: {},
+          body: new Uint8Array(),
+          timeoutMs: 1000,
+        }),
+      /exact private control endpoint/,
+    );
+});
+
+for (const state of [
+  "released",
+  "active",
+  "unknown",
+  "spliced-binding",
+  "current-proof",
+  "revoked-current-owner",
+] as const) {
+  test(`historical quiescence uses original binding and current private grant: ${state}`, async (t) => {
+    const f = fixture(t);
+    const previous = createPhysicalGenerationAuthorization(
+      f.options,
+    ).turnBinding("original-old-turn", '{"creationId":"original-document"}');
+    previous.grantDigest = "c".repeat(64);
+    previous.generation = { instance: "old-instance", epoch: "old-epoch" };
+    previous.physicalRuntime = {
+      ...previous.physicalRuntime,
+      pid: 999,
+      birth: "old-birth",
+      build: "old-build",
+    };
+    let sends = 0;
+    const historyRequest = createPhysicalTurnHistoryRequest(
+      {},
+      {
+        fetch: async (url, init) => {
+          sends++;
+          assert.equal(url, "http://127.0.0.1:8765/physical/v1/turn-history");
+          const headers = new Headers(init?.headers);
+          assert.equal(headers.get("X-Fmcad-Physical-Grant"), f.secret);
+          assert.equal(headers.has("X-Fmcad-Physical-Turn"), false);
+          assert.equal(headers.has("X-Fmcad-Physical-Target"), false);
+          assert.ok(init?.body instanceof Uint8Array);
+          assert.deepEqual(
+            JSON.parse(Buffer.from(init.body).toString("utf8")),
+            previous,
+          );
+          if (state === "active" || state === "unknown")
+            return Response.json({ state, binding: previous });
+          const responseBinding =
+            state === "spliced-binding"
+              ? { ...previous, target: '{"creationId":"another-document"}' }
+              : previous;
+          const digest = pythonEvidence(
+            state === "current-proof"
+              ? createPhysicalGenerationAuthorization(f.options).turnBinding(
+                  previous.turnId,
+                  previous.target,
+                )
+              : responseBinding,
+          );
+          return Response.json({
+            state: "released",
+            binding: responseBinding,
+            evidenceDigest: digest,
+            physicalEvidenceReference: `fmcad-physical-turn:sha256:${digest}`,
+          });
+        },
+      },
+    );
+    const authorization = createPhysicalGenerationAuthorization(
+      {
+        ...f.options,
+        assertBrokerOwner() {
+          assert.notEqual(state, "revoked-current-owner");
+        },
+      },
+      {
+        request: async () =>
+          assert.fail("Old binding must never use current status"),
+        historyRequest,
+      },
+    );
+    const result = await authorization.physicalTurnQuiescence(previous);
+    assert.deepEqual(result.binding, previous);
+    assert.equal(
+      result.state,
+      state === "released" || state === "active" ? state : "unknown",
+    );
+    assert.equal(sends, state === "revoked-current-owner" ? 0 : 1);
+    assert.throws(() =>
+      authorization.withPhysicalTurn(previous, () =>
+        assert.fail("No old SDK dispatch"),
+      ),
+    );
+  });
+}
+
+test("history byte port refuses SDK and current-status routes", () => {
+  const port = createPhysicalTurnHistoryRequest(
+    {},
+    {
+      fetch: async () => assert.fail("No SDK or current-status dispatch"),
+    },
+  );
+  for (const pathname of ["/mcp", "/admission/v1", "/physical/v1/turn-status"])
+    assert.throws(
+      () =>
+        port({
+          endpoint: `http://127.0.0.1:8765${pathname}`,
           headers: {},
           body: new Uint8Array(),
           timeoutMs: 1000,
