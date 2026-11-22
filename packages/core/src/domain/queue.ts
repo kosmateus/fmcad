@@ -9,11 +9,21 @@ import type {
   AtomicWorkflowObservation,
   QueueQuarantine,
   QueuePhysicalDispatch,
+  QueueIsolationTarget,
 } from "./queue-model";
 import { initialQueueSnapshot } from "./queue-model";
 import { conflictsWithQuarantine, validQuarantine,
-  validPhysicalDispatch,
+  validPhysicalDispatch, quarantineTargetConflicts, quarantineConflicts, quarantineTarget,
 } from "./queue-quarantine";
+import {
+  documentTargetKey,
+  validDocumentObservation,
+  validDocumentCheckpoints,
+  type DocumentObservation,
+  type DocumentAcceptance,
+  type DocumentBlocker,
+  type DocumentInspection,
+} from "./document-checkpoint";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "expired"]);
 const STATES = new Set([
@@ -74,6 +84,35 @@ function cadInvocation(request: QueueRequest) {
   return payload["kind"] === "cad-command" && payload["version"] === 1 && plain(invocation)
     ? invocation
     : null;
+}
+function validDocumentInspection(job: QueueJob): boolean {
+  const marker = job.documentInspection;
+  const invocation = cadInvocation(job.request);
+  const target = quarantineTarget(job.request);
+  const argv = job.request.argv?.[0] === "cad" ? job.request.argv.slice(1) : job.request.argv;
+  if (!marker || marker.version !== 1 || !identifier(marker.generation) ||
+    !identifier(marker.target?.creationId) ||
+    !/^[a-f0-9]{64}$/.test(marker.blockersDigest) ||
+    !(marker.priorCheckpointId === null || identifier(marker.priorCheckpointId)) ||
+    Object.keys(marker).sort().join(",") !== "blockersDigest,generation,priorCheckpointId,target,version" ||
+    !target || canonical(target) !== canonical(marker.target) ||
+    job.request.kind !== "command" || argv?.[0] !== "param" || argv[1] !== "inspect" ||
+    invocation?.["kind"] !== "cad" || invocation["version"] !== 1 ||
+    invocation["operation"] !== "param.inspect" ||
+    invocation["docId"] !== marker.target.creationId ||
+    invocation["docFileId"] !== marker.target.fileId ||
+    !plain(invocation["data"]) || invocation["data"]["includeModel"] !== true ||
+    Object.keys(invocation["data"]).length !== 1)
+    return false;
+  try { documentTargetKey(marker.target); return true; } catch { return false; }
+}
+function documentInspectionAllowed(d: QueueSnapshot, job: QueueJob, hash: (value: string) => string) {
+  if (!validDocumentInspection(job) || d.blocked || d.localUnknown || d.controlBlocked) return false;
+  const marker = job.documentInspection!;
+  const conflicts = quarantineTargetConflicts(d, marker.target);
+  return conflicts.every((item) => item.target !== null) &&
+    marker.blockersDigest === hash(canonical(conflicts)) &&
+    (d.documentCheckpoints?.heads[documentTargetKey(marker.target)] ?? null) === marker.priorCheckpointId;
 }
 function workflowObservationFor(d: QueueSnapshot, id: string) {
   const observer = d.jobs[id];
@@ -257,6 +296,8 @@ export class QueueDomain {
       fail("CORRUPT_STATE", "Invalid sequence lease");
     }
     for (const job of jobs) {
+      if (job.documentInspection !== undefined && !validDocumentInspection(job))
+        fail("CORRUPT_STATE", "Invalid broker-authored document inspection marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id))
@@ -269,6 +310,9 @@ export class QueueDomain {
             !validQuarantine(d.jobs[id]!, record, this.hash),
         )))
       fail("CORRUPT_STATE", "Invalid UNKNOWN dispatch quarantine");
+    if (d.documentCheckpoints !== undefined &&
+      !validDocumentCheckpoints(d.documentCheckpoints, (value) => this.hash(canonical(value))))
+      fail("CORRUPT_STATE", "Invalid document checkpoint history");
     const uncertain = jobs.filter((j) =>
       ["running", "sending", "needs_reconciliation"].includes(j.state) &&
       !Object.hasOwn(d.quarantined ?? {}, j.id),
@@ -547,6 +591,11 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
+      if (job.documentInspection && !documentInspectionAllowed(d, job, this.hash)) {
+        this._refuseDocumentConflict(d, job, time);
+        job.code = "CHECKPOINT_CHANGED";
+        continue;
+      }
       const r = job.request;
       const code = job.contextEnded
         ? "SEQUENCE_EXPIRED"
@@ -587,6 +636,33 @@ export class QueueDomain {
   }
 
   submit(request: unknown, preparedId?: string) {
+    return this._submit(request, preparedId);
+  }
+
+  submitDocumentInspection(request: unknown, marker: DocumentInspection) {
+    return this._submit(request, undefined, copy(marker));
+  }
+
+  documentInspectionFence(target: QueueIsolationTarget, generation: string): DocumentInspection {
+    if (!identifier(target.creationId))
+      fail("DOCUMENT_TARGET_UNRESOLVED", "Resolve the current document creation identity before full inspection");
+    const key = documentTargetKey(target);
+    if (!identifier(generation))
+      fail("INVALID_DOCUMENT_INSPECTION", "A current runtime generation is required");
+    if (this.data.blocked || this.data.localUnknown || this.data.controlBlocked)
+      fail("SDK_QUIESCENCE_UNPROVEN", "The previous physical execution is not fenced");
+    const conflicts = quarantineTargetConflicts(this.data, target);
+    if (conflicts.some((item) => !item.target))
+      fail("UNKNOWN_SCOPE_UNPROVEN", "Raw exposure requires a host-retirement barrier before inspection");
+    return {
+      version: 1, target: copy(target), generation,
+      blockersDigest: this.hash(canonical(conflicts)),
+      priorCheckpointId: this.data.documentCheckpoints?.heads[key] ?? null,
+    };
+  }
+
+  // Internal server entrypoint; inspection markers are not decoded from RPC.
+  _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -696,6 +772,29 @@ export class QueueDomain {
           "STALE_REVISION",
           "Read status and submit a new requestId with the current revision",
         );
+      // Commit the refusal after request deduplication. A lost refusal ACK must
+      // never turn the original immutable request into a later dispatched job.
+      const inspectionCandidate: QueueJob = {
+        id: preparedId ?? "unpublished-inspection", requestId: r.requestId,
+        clientId: r.clientId, kind: r.kind, request: r, hash, order: 0,
+        state: "queued", submittedAt: time, queueDeadline: null,
+        timeoutMs: r.timeoutMs, sequenceId: null, sequenceState: null,
+        ...(inspection ? { documentInspection: inspection } : {}),
+      };
+      if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash))
+        fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
+      if (quarantineConflicts(d, r).length && !inspection) {
+        const refused: QueueJob = {
+          id: preparedId ?? this.newId(), requestId: r.requestId,
+          clientId: r.clientId, kind: r.kind, request: r, hash,
+          order: Math.max(0, ...Object.values(d.jobs).map((job) => job.order)) + 1,
+          state: "queued", submittedAt: time, queueDeadline: null,
+          timeoutMs: r.timeoutMs, sequenceId: null, sequenceState: null,
+        };
+        this._refuseDocumentConflict(d, refused, time);
+        d.jobs[refused.id] = refused;
+        return this._public(refused);
+      }
       let sequenceMode: SequenceMode = seq?.mode || "automatic",
         sequenceParent: QueueJob | undefined;
       if (seq && seq.action !== "begin") {
@@ -766,6 +865,7 @@ export class QueueDomain {
         sequenceId: seq && seq.action !== "begin" ? seq.id! : null,
         sequenceState: seq ? "queued" : null,
       };
+      if (inspection) job.documentInspection = inspection;
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
       if (sequenceParent && sequenceMode === "automatic") {
@@ -868,7 +968,8 @@ export class QueueDomain {
       }
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
-        (job) => job.queueDeadline !== null && time >= job.queueDeadline,
+        (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
+          (!!job.documentInspection && !documentInspectionAllowed(d, job, this.hash)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -888,6 +989,7 @@ export class QueueDomain {
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
+        (!!job.documentInspection && !documentInspectionAllowed(d, job, this.hash)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -898,7 +1000,9 @@ export class QueueDomain {
           !(job.sequenceMode === "automatic"
             ? this._automaticMatches(d, job, time)
             : this._matches(d, r, time))) ||
-        (canGrant && !conflictsWithQuarantine(d, job.request) &&
+        (canGrant && (job.documentInspection
+          ? documentInspectionAllowed(d, job, this.hash)
+          : !conflictsWithQuarantine(d, job.request)) &&
           (!d.lease ||
             (r.sequence &&
               r.sequence.action !== "begin" &&
@@ -917,7 +1021,9 @@ export class QueueDomain {
       const eligible = Object.values(d.jobs).filter(
         (j) =>
           j.state === "queued" &&
-          !conflictsWithQuarantine(d, j.request) &&
+          (j.documentInspection
+            ? documentInspectionAllowed(d, j, this.hash)
+            : !conflictsWithQuarantine(d, j.request)) &&
           (!d.lease ||
             (j.request.sequence &&
               j.request.sequence.action !== "begin" &&
@@ -1138,6 +1244,9 @@ export class QueueDomain {
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
     return this._commit((d) => {
       const job = this._active(d, id);
+      if ((job.documentInspection && !documentInspectionAllowed(d, job, this.hash)) ||
+        (!job.documentInspection && quarantineConflicts(d, job.request).length))
+        fail("DOCUMENT_UNLOCK_REQUIRED", "Document conflict changed before dispatch; inspect and explicitly accept the current state");
       const old = job.dispatch || {
         dispatchCount: 0,
         rpcCount: 0,
@@ -1214,6 +1323,8 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
+      if (job.documentInspection && !documentInspectionAllowed(d, job, this.hash))
+        fail("DOCUMENT_UNLOCK_REQUIRED", "Inspection fence changed before the system-read boundary");
       this._appendPhysicalDispatch(job, entry);
       return this._public(job);
     });
@@ -1254,9 +1365,147 @@ export class QueueDomain {
       (d.quarantined ??= {})[id] = copy(record);
       d.active = null;
       d.blocked = null;
-      if (d.lease?.clientId === job.clientId) d.lease = null;
+      if (job.sequenceId && d.lease?.id === job.sequenceId &&
+        d.lease.clientId === job.clientId) d.lease = null;
+      for (const waiting of Object.values(d.jobs))
+        if (["queued", "preparing", "processing"].includes(waiting.state) &&
+          quarantineConflicts(d, waiting.request).length &&
+          !documentInspectionAllowed(d, waiting, this.hash))
+          this._refuseDocumentConflict(d, waiting, this._time());
       return this._public(job);
     });
+  }
+
+  _refuseDocumentConflict(d: QueueSnapshot, job: QueueJob, time: number) {
+    const target = quarantineTarget(job.request);
+    const publicTarget = target ? {
+      ...(target.creationId ? { docId: target.creationId } : {}),
+      ...(target.fileId ? { docFileId: target.fileId } : {}),
+    } : null;
+    const conflicts = quarantineConflicts(d, job.request);
+    const started = !!(job.physicalTurns || job.dispatch?.rpcCount);
+    Object.assign(job, {
+      state: "failed", code: target ? "DOCUMENT_UNLOCK_REQUIRED" : "UNKNOWN_SCOPE_UNPROVEN",
+      finishedAt: time, revision: d.revision,
+      sequenceState: job.sequenceId ? "ended" : null,
+      details: {
+        executionOutcome: started ? "previous_turns_complete_current_not_started" : "not_started",
+        userScriptSubmitted: !!job.dispatch?.rpcCount,
+        rpcCount: job.dispatch?.rpcCount ?? 0,
+        completedCount: job.dispatch?.completedCount ?? 0,
+        target: publicTarget,
+        blockers: conflicts.map((item) => ({
+          jobId: item.jobId, requestId: item.requestId,
+          scope: item.target ? "document" : "unproven",
+          executionFence: "released",
+        })),
+        next: publicTarget ? {
+          tool: "fmcad_document_unlock",
+          arguments: { action: "status", target: publicTarget },
+          cliArguments: ["queue", "document-unlock", "--action", "status",
+            ...(target?.creationId ? ["--doc-id", target.creationId] : []),
+            ...(target?.fileId ? ["--doc-file-id", target.fileId] : [])],
+        } : {
+          action: "establish_exact_scope_or_operator_runtime_barrier",
+          message: "The new operation was not started. Establish an exact document scope or a verified runtime barrier.",
+        },
+      },
+    });
+    if (job.sequenceId && d.lease?.id === job.sequenceId &&
+      d.lease.clientId === job.clientId) d.lease = null;
+  }
+
+  /** Broker-authored readback only. Public clients cannot provide these fields.
+   * Source artifact verification and current document rights are adapter duties. */
+  recordDocumentObservation(input: DocumentObservation) {
+    const observation = copy(input);
+    const key = documentTargetKey(observation.target);
+    if (!validDocumentObservation(observation))
+      fail("INVALID_DOCUMENT_OBSERVATION", "Verified document readback is required");
+    return this._commit((d) => {
+      const records = d.documentCheckpoints ??= {
+        observations: {}, acceptances: {}, heads: {},
+      };
+      if (Object.values(records.acceptances).some((item) =>
+        item.actorClientId === observation.actorClientId && item.requestId === observation.requestId))
+        fail("REQUEST_CONFLICT", "The request already identifies an acceptance");
+      const existing = Object.values(records.observations).find((item) =>
+        item.actorClientId === observation.actorClientId &&
+        item.requestId === observation.requestId,
+      );
+      if (existing) {
+        if (canonical(existing) !== canonical(observation))
+          fail("REQUEST_CONFLICT", "Observation request already has different immutable input");
+        return copy(existing);
+      }
+      if (Object.hasOwn(records.observations, observation.id))
+        fail("REQUEST_CONFLICT", "Observation identity already exists");
+      this._assertDocumentObservation(d, observation);
+      if ((records.heads[key] ?? null) !== observation.priorCheckpointId)
+        fail("CHECKPOINT_CHANGED", "Document checkpoint changed before the observation was recorded");
+      records.observations[observation.id] = observation;
+      return copy(observation);
+    });
+  }
+
+  /** Accept a fresh broker read of a previously shown observation, never an
+   * invented outcome for an earlier UNKNOWN job. Idempotency precedes CAS. */
+  acceptDocumentObservation(input: {
+    observationId: string; requestId: string; actorClientId: string;
+    generation: string; observedStateDigest: string;
+  }): DocumentAcceptance {
+    if (![input.observationId, input.requestId, input.actorClientId, input.generation].every(identifier))
+      fail("INVALID_DOCUMENT_ACCEPTANCE", "Acceptance requires the current actor and an observation");
+    return this._commit((d) => {
+      const records = d.documentCheckpoints;
+      if (Object.values(records?.observations ?? {}).some((item) =>
+        item.actorClientId === input.actorClientId && item.requestId === input.requestId))
+        fail("REQUEST_CONFLICT", "The request already identifies an inspection");
+      const existing = Object.values(records?.acceptances ?? {}).find((item) =>
+        item.actorClientId === input.actorClientId && item.requestId === input.requestId,
+      );
+      if (existing) {
+        if (existing.observationId !== input.observationId)
+          fail("REQUEST_CONFLICT", "Acceptance request already refers to another observation");
+        return copy(existing);
+      }
+      const observation = records?.observations[input.observationId];
+      if (!observation || observation.actorClientId !== input.actorClientId)
+        fail("NOT_AUTHORIZED", "Create a readback under the current actor before accepting it");
+      if (observation.generation !== input.generation)
+        fail("DOCUMENT_STATE_CHANGED", "Inspect the document in the current runtime generation");
+      if (observation.stateDigest !== input.observedStateDigest)
+        fail("DOCUMENT_STATE_CHANGED", "Document state differs from the presented readback");
+      this._assertDocumentObservation(d, observation);
+      const key = documentTargetKey(observation.target);
+      if ((records!.heads[key] ?? null) !== observation.priorCheckpointId)
+        fail("CHECKPOINT_CHANGED", "Another acceptance changed the document checkpoint");
+      const result: DocumentAcceptance = {
+        version: 1, id: this.newId(), requestId: input.requestId,
+        actorClientId: input.actorClientId, observationId: observation.id,
+        observationDigest: this.hash(canonical(observation)), targetKey: key,
+        priorCheckpointId: observation.priorCheckpointId,
+        acceptedAt: Math.max(this._time(), observation.createdAt,
+          observation.priorCheckpointId ? records!.acceptances[observation.priorCheckpointId]!.acceptedAt : 0),
+      };
+      records!.acceptances[result.id] = result;
+      records!.heads[key] = result.id;
+      return copy(result);
+    });
+  }
+
+  _assertDocumentObservation(d: QueueSnapshot, observation: DocumentObservation) {
+    if (d.blocked || d.localUnknown || d.controlBlocked)
+      fail("SDK_QUIESCENCE_UNPROVEN", "The previous execution must be fenced before a document checkpoint");
+    const conflicts = quarantineTargetConflicts(d, observation.target);
+    if (conflicts.some((item) => !item.target))
+      fail("UNKNOWN_SCOPE_UNPROVEN", "A raw exposure requires an authenticated host-retirement barrier");
+    const current: DocumentBlocker[] = conflicts.map((item) => ({
+      jobId: item.jobId, requestId: item.requestId, originalHash: item.jobHash,
+      catalogDigest: item.catalogDigest, barrierRef: item.evidenceReference,
+    }));
+    if (canonical(current) !== canonical(observation.blockers))
+      fail("CHECKPOINT_CHANGED", "The complete document conflict set changed; inspect again");
   }
 
   resolve(id: string, details: unknown) {

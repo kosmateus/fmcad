@@ -8,10 +8,13 @@
     "sourceMap": false
   },
   "include": [
+    "tests/document-unlock-admission.test.ts",
     "tests/physical-generation-transport.test.ts",
     "tests/physical-generation-grant.test.ts",
     "tests/physical-generation-provision.test.ts",
     "tests/physical-generation-profile.test.ts",
+    "tests/document-unlock-domain.test.ts",
+    "tests/document-observation-store.test.ts",
     "tests/addin-admission-client.test.ts",
     "tests/python-source-codec.test.ts",
     "tests/python-public-source-selection.test.ts",
@@ -29,6 +32,8 @@
     "tests/normal-settled-restart.test.ts",
     "tests/normal-restart-public-autostart.test.ts",
     "tests/queue-runtime-stage.test.ts",
+    "tests/queue-runtime-rebaseline.test.ts",
+    "tests/runtime-rebaseline-scope.test.ts",
     "tests/queue-cli-recovery-parity.test.ts",
     "tests/fixtures/closed-scratch-artifacts.cts",
     "tests/fixtures/closed-epoch-successor.cts",
