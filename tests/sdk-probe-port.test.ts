@@ -57,7 +57,7 @@ const { durable } = runtimeRequire("../src/queue-instance") as ReturnType<
 function probeRequest(): WorkerSdkProbeRequest {
   return {
     capabilityId: "entity.list",
-    backend: "mcp",
+    backend: "addin",
     documentIdentity: { docId: "creation-1", docFileId: "file-1" },
   };
 }
@@ -116,7 +116,7 @@ test("typed probe port binds its accepted operation/backend/pins before any phys
   let calls = 0;
   const port = createWorkerSdkProbe({
     request: workerRequest(),
-    backend: "mcp",
+    backend: "addin",
     prepare: artifact,
     async execute() {
       calls++;
@@ -124,7 +124,7 @@ test("typed probe port binds its accepted operation/backend/pins before any phys
     },
   });
   for (const invalid of [
-    { ...probeRequest(), backend: "addin" },
+    { ...probeRequest(), backend: "mcp" },
     { ...probeRequest(), capabilityId: "model.delete" },
     { ...probeRequest(), documentIdentity: { docId: "foreign" } },
     { ...probeRequest(), documentIdentity: {} },
@@ -143,7 +143,7 @@ test("typed probe port binds its accepted operation/backend/pins before any phys
       ...workerRequest(),
       payload: { ...workerRequest().payload, operation: "entity.list" },
     },
-    backend: "mcp",
+    backend: "addin",
     prepare: artifact,
     async execute() {
       calls++;
@@ -160,7 +160,7 @@ test("native missing handler, invalid evidence and lost observation never become
     let calls = 0;
     const port = createWorkerSdkProbe({
       request: workerRequest(),
-      backend: "mcp",
+      backend: "addin",
       prepare: artifact,
       async execute() {
         calls++;
@@ -218,6 +218,12 @@ test(
   {},
   async (t) => {
     const dir = fs.mkdtempSync("/tmp/opencode/sdk-probe-port-");
+    const previousDataHome = process.env["XDG_DATA_HOME"];
+    process.env["XDG_DATA_HOME"] = path.join(dir, "data");
+    t.after(() => {
+      if (previousDataHome === undefined) delete process.env["XDG_DATA_HOME"];
+      else process.env["XDG_DATA_HOME"] = previousDataHome;
+    });
     const entrypoint = path.join(dir, "probe-worker.cjs");
     const preload = runtimeRequire.resolve("./fixtures/fake-wsl-preload.cjs");
     const input = probeRequest();
@@ -277,24 +283,30 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
         origin?: Origin,
       ) {
         const client = this as unknown as Client;
+        assert.equal(name, "fusion_mcp_execute");
+        assert.equal(at(value, "object", "readOnly"), true);
         const prepared = await client.preparePost!(
           {
             jsonrpc: "2.0",
             id: randomUUID(),
             method: "tools/call",
-            params: { name, arguments: value },
+            params: {
+              name: "execute_python",
+              arguments: {
+                code: text(at(value, "object", "script")),
+                persistent: false,
+              },
+            },
           },
           origin,
         );
         return Object.assign(
           async () => {
             const response = await prepared.send();
-            const content = JSON.parse(response.raw).result.content;
+            const content = JSON.parse(response.raw).result.structuredContent;
             return {
-              failed: false,
-              text: content
-                .map((item: { text: string }) => item.text)
-                .join("\n"),
+              failed: !content.success,
+              text: content.stdout,
             };
           },
           {
@@ -303,9 +315,12 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
         );
       },
       async _post(payload: Rpc) {
-        const wireScript = text(
-          at(payload, "params", "arguments", "object", "script"),
-        );
+        assert.equal(at(payload, "params", "name"), "execute_python");
+        const wireScript = text(at(payload, "params", "arguments", "code"));
+        assert.deepEqual(at(payload, "params", "arguments"), {
+          code: wireScript,
+          persistent: false,
+        });
         assert.ok(
           Buffer.byteLength(JSON.stringify(payload), "utf8") <= 1_048_576,
         );
@@ -329,21 +344,16 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
               jsonrpc: "2.0",
               id: payload.id,
               result: {
-                content: [
-                  {
-                    type: "text",
-                    text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
-                  },
-                ],
+                structuredContent: {
+                  success: true,
+                  stdout: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
+                  stderr: "",
+                },
               },
             }),
           };
         }
         physicalCalls++;
-        assert.equal(
-          at(payload, "params", "arguments", "object", "readOnly"),
-          true,
-        );
         assert.match(script, /FMCAD_SDK_PROBE/);
         emitReceipt(script);
         stages.push("sdk");
@@ -352,7 +362,13 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
           raw: JSON.stringify({
             jsonrpc: "2.0",
             id: payload.id,
-            result: { content: [{ type: "text", text: observed(input).text }] },
+            result: {
+              structuredContent: {
+                success: true,
+                stdout: observed(input).text,
+                stderr: "",
+              },
+            },
           }),
         };
       },
@@ -361,16 +377,16 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
           jsonrpc: "2.0",
           id: randomUUID(),
           method: "tools/call",
-          params: { name: "fusion_mcp_execute", arguments: value },
+          params: { name: "execute_python", arguments: value },
         });
         return {
           failed: false,
-          text: JSON.parse(response.raw).result.content[0].text,
+          text: JSON.parse(response.raw).result.structuredContent.stdout,
         };
       },
     };
     const broker = await serve(
-      { backend: "mcp", timeoutMs: 10000 },
+      { backend: "addin", url: "http://127.0.0.1:8765/mcp", timeoutMs: 10000 },
       {
         dir,
         confirmOwnership: true,
@@ -417,7 +433,7 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
         // Exercise the normal product budget, not a shortened test deadline.
         // Queue requests require a positive budget; zero/unlimited is invalid.
         timeoutMs: resolveFmcadConfiguration({
-          adapter: { backend: "mcp", url: "http://127.0.0.1:1/mcp" },
+          adapter: { backend: "addin", url: "http://127.0.0.1:8765/mcp" },
           environment: {},
           file: {},
           platformDefaults: {},
