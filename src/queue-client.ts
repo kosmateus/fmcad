@@ -9,11 +9,11 @@ import type {
   DebugTraceContext,
   DebugTraceEvent,
 } from "../packages/node-adapters/src/telemetry/diagnostic-log";
-import {
+const runtimeRequire = createRequire(__filename);
+const {
   decodeDocumentUnlockRequest,
   DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE,
-} from "@fmcad/core";
-const runtimeRequire = createRequire(__filename);
+} = runtimeRequire("./dist/core") as typeof import("@fmcad/core");
 const { queueDirectory, request } = runtimeRequire("./queue-connection") as {
   queueDirectory(): string;
   request(
