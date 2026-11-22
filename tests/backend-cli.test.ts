@@ -251,48 +251,116 @@ test("init stays local and run delegates through the typed library service", asy
   );
 });
 
-test("backend configuration precedence and secret isolation remain unchanged", (t) => {
+test("supported backend configuration precedence and secret isolation remain intact", async (t) => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-cli-backend-"),
   );
   const file = path.join(directory, "config.json");
-  const original = process.env["FMCAD_BACKEND"];
+  const originalEnvironment = {
+    backend: process.env["FMCAD_BACKEND"],
+    url: process.env["FMCAD_URL"],
+    headers: process.env["FMCAD_HEADERS"],
+  };
   t.after(() => {
-    if (original === undefined) delete process.env["FMCAD_BACKEND"];
-    else process.env["FMCAD_BACKEND"] = original;
+    for (const [key, value] of Object.entries({
+      FMCAD_BACKEND: originalEnvironment.backend,
+      FMCAD_URL: originalEnvironment.url,
+      FMCAD_HEADERS: originalEnvironment.headers,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     fs.rmSync(directory, { recursive: true, force: true });
   });
+  const fileUrl = "http://127.0.0.1:8765/file";
+  const environmentUrl = "http://127.0.0.1:8765/environment";
+  const cliUrl = "http://127.0.0.1:8765/cli";
   fs.writeFileSync(
     file,
     JSON.stringify({
-      backend: "mcp",
-      url: "http://native.invalid",
-      headers: { Host: "native-host", Authorization: "native-secret" },
+      backend: "addin",
       backends: {
-        mcp: { headers: { "X-Native": "secret" } },
-        addin: { transport: "node" },
+        addin: {
+          url: fileUrl,
+          headers: {
+            Authorization: "file-secret",
+            "X-Profile": "profile-value",
+          },
+          transport: "node",
+        },
       },
     }),
   );
-  for (const [env, override, expected] of [
-    ["addin", {}, "addin"],
-    ["mcp", { backend: "addin" }, "addin"],
-    ["addin", { backend: "mcp" }, "mcp"],
-  ] as const) {
-    process.env["FMCAD_BACKEND"] = env;
-    const resolved = loadConfig({
-      config: file,
-      headers: { "X-CLI": "explicit" },
-      ...override,
-    }).cfg;
-    assert.equal(resolved.backend, expected);
-    if (expected === "addin") {
-      assert.equal(resolved.url, "http://127.0.0.1:8765/mcp");
-      assert.deepEqual(resolved.headers, { "X-CLI": "explicit" });
-    } else assert.equal(resolved.headers["Authorization"], "native-secret");
-  }
+  process.env["FMCAD_BACKEND"] = "addin";
+  delete process.env["FMCAD_URL"];
+  delete process.env["FMCAD_HEADERS"];
+
+  const fromFile = loadConfig({ config: file }).cfg;
+  assert.equal(fromFile.backend, "addin");
+  assert.equal(fromFile.url, fileUrl);
+  assert.equal(fromFile.headers["Authorization"], "file-secret");
+  assert.equal(fromFile.headers["X-Profile"], "profile-value");
+
+  process.env["FMCAD_URL"] = environmentUrl;
+  process.env["FMCAD_HEADERS"] = JSON.stringify({
+    Authorization: "environment-secret",
+    "X-Environment": "environment-value",
+  });
+  const fromEnvironment = loadConfig({ config: file }).cfg;
+  assert.equal(fromEnvironment.backend, "addin");
+  assert.equal(fromEnvironment.url, environmentUrl);
+  assert.deepEqual(fromEnvironment.headers, {
+    Authorization: "environment-secret",
+    "X-Profile": "profile-value",
+    "X-Environment": "environment-value",
+  });
+
+  const fromCli = loadConfig({
+    config: file,
+    url: cliUrl,
+    headers: { Authorization: "cli-secret", "X-CLI": "cli-value" },
+  }).cfg;
+  assert.equal(fromCli.backend, "addin");
+  assert.equal(fromCli.url, cliUrl);
+  assert.deepEqual(fromCli.headers, {
+    Authorization: "cli-secret",
+    "X-Profile": "profile-value",
+    "X-Environment": "environment-value",
+    "X-CLI": "cli-value",
+  });
+  assert.equal(JSON.stringify(fromCli).includes("file-secret"), false);
+  assert.equal(JSON.stringify(fromCli).includes("environment-secret"), false);
+
   process.env["FMCAD_BACKEND"] = "unknown";
-  assert.throws(() => loadConfig({ config: file }), /backend/);
+  assert.throws(() => loadConfig({ config: file }), /backend must be "addin"/);
+
+  const script = path.join(directory, "trusted.py");
+  fs.writeFileSync(
+    script,
+    'ARGS = {}\nDOC_NAME = ""\ndef run(context):\n    pass\n',
+  );
+  const serviceCalls: string[] = [];
+  const h = harness({
+    loadConfig: (options) => loadConfig({ ...options, config: file }),
+    createFmcad: () => {
+      serviceCalls.push("sdk");
+      throw new Error("retired backend must be rejected before SDK creation");
+    },
+    runQueued: async () => {
+      serviceCalls.push("queue");
+      return 0;
+    },
+  });
+  process.env["FMCAD_BACKEND"] = "addin";
+  assert.equal(
+    await main(["run", script, "--doc", "Model", "--backend", "mcp"], h.deps),
+    1,
+  );
+  assert.match(h.stderr, /backend "mcp" is no longer supported/);
+  assert.deepEqual(serviceCalls, []);
+  assert.equal(h.stderr.includes("file-secret"), false);
+  assert.equal(h.stderr.includes("environment-secret"), false);
+  assert.equal(h.stderr.includes("cli-secret"), false);
 });
 
 test("direct routing fails before existing broker route; queue spelling does not fork execution", async () => {
