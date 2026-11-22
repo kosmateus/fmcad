@@ -568,6 +568,7 @@ export interface BrokerModules {
     fail(code: string, message: string): never;
   };
   "./python": {
+    pythonArtifactManifest: typeof import("../packages/node-adapters/dist/python/context-binding").pythonArtifactManifest;
     verifyPythonArtifact: typeof import("../packages/node-adapters/dist/python/artifact").verifyPythonArtifact;
     retainPythonOrigin(
       artifact: PreparedPythonArtifact,

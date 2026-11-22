@@ -2005,8 +2005,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           message.args[1] !== "fusion_mcp_execute" || !same(message.args[0],envelope)))
         fail("PHYSICAL_ENVELOPE_MISMATCH",
           "Actual call differs from the compiled CAD envelope, including featureType and readOnly");
+      if (compiled && !same(message.args[2],compiled.manifest))
+        fail("PHYSICAL_PROVENANCE_MISMATCH",
+          "Actual inventory differs from the trusted compiler artifact provenance");
       const adapterArgs = compiled
-        ? [envelope,"fusion_mcp_execute",structuredClone(message.args[2])]
+        ? [envelope,"fusion_mcp_execute",compiled.manifest]
         : message.args;
       const compiledScope = compiled ? {
         producer:"compiled-cad-v1", operation:compiled.operation,sourceHash:hash(compiled.script),
@@ -2217,17 +2220,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     ) fail("PHYSICAL_SCOPE_MISMATCH", "Document isolation requires a bounded compiled CAD invocation");
     const {prepareCadScript} = runtimeRequire("./dist/composition/cad") as
       typeof import("./cad");
-    const compilerContext: import("@fmcad/core").CadContext = {
-      preview: invocation.preview === true,
-    };
+    const compilerContext: import("@fmcad/core").CadContext = {};
     for (const key of ["doc", "docId", "docFileId", "component", "projectId"] as const)
       if (invocation[key] !== undefined) compilerContext[key] = invocation[key];
+    compilerContext.preview = invocation.preview === true;
     const expected = prepareCadScript(invocation.operation, invocation.data, compilerContext);
     const catalog = runtimeRequire("./catalog/index") as {
       catalog: Record<string,{readOnly?: boolean}>;
     };
     return {
       script: expected.script, operation: invocation.operation,
+      manifest: load("./python").pythonArtifactManifest(expected),
       target: quarantineTarget(job.request),
       readOnly: catalog.catalog[invocation.operation]?.readOnly === true,
     };

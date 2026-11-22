@@ -146,7 +146,11 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
             '\\nimport adsk.core\\n_escape_app = adsk.core.Application.get()\\nassert _escape_app is not None\\nfor _escape_doc in _escape_app.documents:\\n    _escape_doc.close(False)\\n'):'')})),
         {context:artifact.context,request:artifact.request});
       const manifest=pythonArtifactManifest(artifact);
-      const sentManifest=variant==='scope-manifest'?{...manifest,sha256:'f'.repeat(64)}:manifest;
+      let sentManifest=variant==='scope-manifest'?{...manifest,sha256:'f'.repeat(64)}:manifest;
+      if(variant==='provenance-null')sentManifest=null;
+      if(variant==='provenance-stale')sentManifest={...manifest,context:{doc:'stale document',docId:'STALE',preview:false}};
+      if(variant==='provenance-spliced')sentManifest={...manifest,units:manifest.units.map((unit,index)=>index?
+        unit:{...unit,source:unit.source+'\\n# foreign unit spliced into the provenance inventory\\n'})};
       const envelope={featureType:'script',object:{script:artifact.script,readOnly:!invocation||invocation.operation==='param.inspect'}};
       if(variant==='envelope-feature')envelope.featureType='box';
       if(variant==='envelope-readonly')envelope.object.readOnly=true;

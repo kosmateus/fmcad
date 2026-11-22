@@ -75,8 +75,8 @@ test("public broker rejects partial isolation evidence and restores original phy
   t.diagnostic(stdout);
   if (stderr) t.diagnostic(stderr);
   assert.equal(code, 0, stdout + stderr);
-  assert.match(stdout, /(?:#|ℹ) tests 8(?:\r?\n|$)/);
-  assert.match(stdout, /(?:#|ℹ) pass 8(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) tests 9(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) pass 9(?:\r?\n|$)/);
   assert.match(stdout, /(?:#|ℹ) fail 0(?:\r?\n|$)/);
 });
 

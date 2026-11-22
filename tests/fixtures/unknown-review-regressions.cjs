@@ -623,3 +623,55 @@ test("CR2 publication: process death between original intent and catalog writes 
     await cleanup();
   }
 });
+
+test("CR3 provenance: compiler manifest is mandatory and exact before adapter preparation", async (t) => {
+  const f = await require("./python-admission-broker.cjs")(t, {
+    typedService: true,
+    scopedService: true,
+    scopedVariants: true,
+    bindPhysicalTurn: bindingFor,
+    withPhysicalTurn: async (_binding, send) => send(),
+    physicalTurnQuiescence: async (binding) => release(binding),
+  });
+  const client = await f.client("provenance-negative-owner");
+  const service = require(
+    path.join(root, "dist/src/dist/composition/cad-service"),
+  );
+  for (const variant of [
+    "provenance-null",
+    "provenance-stale",
+    "provenance-spliced",
+  ]) {
+    const bounded = service.fromParsedCommand({
+      kind: "cad",
+      operation: "param.apply",
+      data: {
+        parameters: [
+          { name: "provenance_width", expression: "12 mm", unit: "mm" },
+        ],
+      },
+      context: { doc: "A", docId: "A" },
+      json: true,
+    });
+    const preparations = f.toolPreparations(),
+      calls = f.calls.length;
+    const accepted = await client.submit({
+      ...bounded,
+      kind: "command",
+      requestId: variant,
+      cwd: f.home,
+      backend: "addin",
+      timeoutMs: 120000,
+    });
+    const result = await client.wait(accepted.id);
+    assert.equal(result.job.state, "failed", variant + JSON.stringify(result));
+    assert.match(result.stderr, /compiler artifact provenance/i, variant);
+    assert.equal(
+      f.toolPreparations(),
+      preparations,
+      variant + " cannot enter an adapter or guard",
+    );
+    assert.equal(f.calls.length, calls, variant + " cannot send SDK");
+    assert.equal(f.products(), 0);
+  }
+});
