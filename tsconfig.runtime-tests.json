@@ -30,6 +30,8 @@
     "tests/normal-settled-restart.test.ts",
     "tests/normal-restart-public-autostart.test.ts",
     "tests/queue-runtime-stage.test.ts",
+    "tests/queue-runtime-rebaseline.test.ts",
+    "tests/runtime-rebaseline-scope.test.ts",
     "tests/queue-cli-recovery-parity.test.ts",
     "tests/fixtures/closed-scratch-artifacts.cts",
     "tests/fixtures/closed-epoch-successor.cts",
