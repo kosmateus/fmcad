@@ -144,6 +144,7 @@ jobs:
       - run: node --test dist/tests/physical-generation-grant.test.js dist/tests/physical-generation-transport.test.js
       - run: node --test dist/tests/physical-generation-provision.test.js
       - run: node --test dist/tests/physical-generation-profile.test.js
+      - run: node --test dist/tests/document-unlock-domain.test.js
       - run: node --test dist/tests/runtime-upgrade-lineage.test.js
       - run: node --test dist/tests/frozen-qualification-corpus.test.js
       - run: node --test dist/tests/frozen-inline-observer.test.js
