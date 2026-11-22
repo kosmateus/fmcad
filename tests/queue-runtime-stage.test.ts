@@ -5,6 +5,7 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const runtimeRequire = createRequire(__filename);
 const { stageQueueRuntime, stageQueueTestFixtures, queueRuntimeModules } =
@@ -25,7 +26,9 @@ test("queue staging publishes exact compiler bytes and preserves unrelated files
   assert.ok(names.includes("queue-broker-modules"));
   for (const name of names)
     for (const extension of [".js", ".d.ts"]) {
-      fs.mkdirSync(path.dirname(path.join(compiled, name)), { recursive: true });
+      fs.mkdirSync(path.dirname(path.join(compiled, name)), {
+        recursive: true,
+      });
       fs.writeFileSync(
         path.join(compiled, name + extension),
         "compiler output: " + name + extension,
@@ -75,6 +78,17 @@ test("legacy fixture consumers receive emitted CJS and runtime CJS fixtures are 
     "epoch-audit.cjs",
     "fake-wsl-platform.cjs",
     "fake-wsl-preload.cjs",
+    "backend-successor.cjs",
+    "runtime-upgrade-lineage.cjs",
+    "current-epoch-upgrade.cjs",
+    "dead-epoch-successor.cjs",
+    "publish-saved-fixture.cjs",
+    "saved-first-save-evidence.cjs",
+    "saved-first-save.cjs",
+    "saved-native-destination.cjs",
+    "settled-probes.cjs",
+    "native-source-envelope.cjs",
+    "frozen-inline-observer-evidence.json",
   ];
   for (const filename of workspaceNames)
     fs.writeFileSync(
@@ -91,6 +105,18 @@ test("legacy fixture consumers receive emitted CJS and runtime CJS fixtures are 
       path.join(compiled, filename),
       "compiler output: " + filename,
     );
+  for (const filename of [
+    "dead-epoch-successor.test.js",
+    "frozen-inline-observer.test.js",
+    "frozen-metadata-profile.test.js",
+    "runtime-upgrade-lineage.test.js",
+    "integration/offline-cli.js",
+  ]) {
+    const file = path.join(root, "dist/tests", filename);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "compiled test: " + filename);
+  }
+  fs.mkdirSync(path.join(root, "dist/src"), { recursive: true });
   stageQueueTestFixtures(root);
   for (const filename of names)
     assert.deepEqual(
@@ -101,6 +127,29 @@ test("legacy fixture consumers receive emitted CJS and runtime CJS fixtures are 
     assert.deepEqual(
       fs.readFileSync(path.join(compiled, filename)),
       fs.readFileSync(path.join(source, filename)),
+    );
+  const corpus = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "dist/src/frozen-metadata-test-corpus.json"),
+      "utf8",
+    ),
+  ) as { files: Array<{ file: string; sha256: string }> };
+  assert.ok(
+    corpus.files.some(
+      (entry) => entry.file === "tests/runtime-upgrade-lineage.test.js",
+    ),
+  );
+  assert.ok(
+    corpus.files.some(
+      (entry) => entry.file === "tests/fixtures/runtime-upgrade-lineage.cjs",
+    ),
+  );
+  for (const entry of corpus.files)
+    assert.equal(
+      entry.sha256,
+      createHash("sha256")
+        .update(fs.readFileSync(path.join(root, "dist", entry.file)))
+        .digest("hex"),
     );
 });
 
