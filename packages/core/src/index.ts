@@ -24,6 +24,7 @@ export * from "./domain/native-drive";
 export * from "./application/semantic-model-state";
 export * from "./application/observation";
 export * from "./application/mcp-context";
+export * from "./application/document-unlock";
 export type * from "./ports/mcp-context-port";
 export * from "./domain/python-artifact";
 export * from "./domain/python-checker";

@@ -190,6 +190,13 @@ async function fixture(
           calls.push(["control", request]);
           return { state: "queued_cancelled" };
         },
+        documentUnlock: async (request: unknown) => {
+          calls.push(["documentUnlock", request]);
+          return {
+            state: "inspection_required",
+            next: { action: "inspect", requestId: "inspect-next" },
+          };
+        },
       };
       return services as unknown as FmcadServices;
     },
@@ -442,6 +449,32 @@ for (const host of ["v1", "v2"] as const) {
           expectedRevision: 7,
         },
       ],
+    );
+    const unlockInput = {
+      action: "status",
+      target: { docFileId: "file-1" },
+    };
+    assert.deepEqual(await f.invoke("fmcad_document_unlock", unlockInput), {
+      state: "inspection_required",
+      next: { action: "inspect", requestId: "inspect-next" },
+    });
+    assert.deepEqual(
+      present(f.calls.find((value) => value[0] === "documentUnlock"))[1],
+      unlockInput,
+    );
+    assert.equal(
+      record(f.permissions.at(-1))["action"] ||
+        record(f.permissions.at(-1))["permission"],
+      "fmcad_execute",
+      "document control requires its own explicit permission",
+    );
+    await assert.rejects(
+      f.invoke("fmcad_document_unlock", {
+        action: "accept",
+        target: { docId: "creation-1" },
+        requestId: "accept-1",
+      }),
+      (error: unknown) => record(error)["code"] === "FMCAD_INVALID_INPUT",
     );
     assert.equal(
       (

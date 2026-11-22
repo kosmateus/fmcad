@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { decodeDocumentUnlockRequest } from "@fmcad/core";
 import { createCatalogServices } from "../api";
 import type {
   CatalogMcpTool,
@@ -92,6 +93,30 @@ const projectApplicationTools = (contextProperties: RecordValue) => [
       type: "object",
       additionalProperties: false,
       properties: { operation: { type: "string", minLength: 1 } },
+    },
+  },
+  {
+    name: "fmcad_document_unlock",
+    description:
+      "Read or accept broker-verified document recovery state. Does not execute CAD operations.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["action", "target"],
+      properties: {
+        action: { type: "string", enum: ["status", "inspect", "accept"] },
+        target: {
+          type: "object",
+          minProperties: 1,
+          additionalProperties: false,
+          properties: {
+            docId: { type: "string", minLength: 1, maxLength: 256 },
+            docFileId: { type: "string", minLength: 1, maxLength: 256 },
+          },
+        },
+        requestId: { type: "string", minLength: 1, maxLength: 256 },
+        observationId: { type: "string", minLength: 1, maxLength: 256 },
+      },
     },
   },
 ];
@@ -254,6 +279,27 @@ export function createMcpApplication(options: McpApplicationOptions) {
         if (!availableContracts.length)
           invalid(`Unknown operation: ${String(input["operation"])}`);
         return toolResult({ operations: availableContracts });
+      }
+      if (name === "fmcad_document_unlock") {
+        const input = decodeDocumentUnlockRequest(args);
+        if (object(params["_meta"]) && Object.hasOwn(params["_meta"], "fmcad"))
+          invalid("fmcad_document_unlock does not accept fmcad metadata");
+        validating = false;
+        const identity = options.clientContext?.identity ?? {
+          clientId: "mcp-local",
+          instanceId: randomUUID(),
+          sessionId: randomUUID(),
+        };
+        const project = await options.clientContext?.resolveProject({});
+        executionContext = createMcpExecutionContext({
+          clientId: identity.clientId,
+          sessionId: identity.sessionId,
+          requestId: input.requestId ?? randomUUID(),
+          projectDirectory: project?.projectDirectory ?? null,
+        });
+        services = options.services(false, executionContext);
+        await services.start();
+        return toolResult(await services.documentUnlock(input));
       }
       const queueTool = queueByName.get(name);
       if (queueTool || legacyTools.some((tool) => tool.name === name)) {

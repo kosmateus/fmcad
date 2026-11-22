@@ -311,6 +311,7 @@
     "tests/manual-model.test.ts",
     "tests/manual-shapes.test.ts",
     "tests/manual-usability.test.ts",
+    "tests/document-unlock-fronts.test.ts",
     "tests/opencode-adapters.test.ts",
     "tests/capture-png.ts",
     "tests/review-application.test.ts",

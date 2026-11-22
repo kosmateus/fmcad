@@ -43,6 +43,15 @@ export function createV1(deps: Dependencies): Plugin {
             metadata,
           });
         },
+        async authorizeControl(resource, metadata) {
+          await ctx.ask({
+            permission: "fmcad_execute",
+            patterns: [resource],
+            always: [],
+            metadata,
+          });
+          ctx.abort.throwIfAborted();
+        },
       };
     }
     let disposed = false;
@@ -95,6 +104,22 @@ export function createV1(deps: Dependencies): Plugin {
               .optional(),
           },
           execute: (input, ctx) => tools.execute(input, invocation(ctx)),
+        }),
+        fmcad_document_unlock: tool({
+          description:
+            "Read or accept broker-verified document recovery state. Does not execute CAD operations.",
+          args: {
+            action: tool.schema.enum(["status", "inspect", "accept"]),
+            target: tool.schema
+              .object({
+                docId: tool.schema.string().min(1).max(256).optional(),
+                docFileId: tool.schema.string().min(1).max(256).optional(),
+              })
+              .strict(),
+            requestId: tool.schema.string().min(1).max(256).optional(),
+            observationId: tool.schema.string().min(1).max(256).optional(),
+          },
+          execute: (input, ctx) => tools.documentUnlock(input, invocation(ctx)),
         }),
       },
       event: async ({ event }) => {

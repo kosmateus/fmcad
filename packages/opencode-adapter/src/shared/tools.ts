@@ -1,4 +1,8 @@
-import { decodeCadWorkerInvocation as decode } from "@fmcad/core";
+import {
+  decodeCadWorkerInvocation as decode,
+  decodeDocumentUnlockRequest,
+} from "@fmcad/core";
+import type { DocumentUnlockRequest } from "@fmcad/core";
 import { homedir } from "node:os";
 import { isAbsolute, normalize, parse } from "node:path";
 import type {
@@ -240,6 +244,55 @@ export function createTools(
       })();
       return JSON.stringify(await wait(work, ctx.signal));
     },
+    async documentUnlock(input: unknown, ctx: Invocation): Promise<string> {
+      ctx.signal.throwIfAborted();
+      const directory = normalize(ctx.directory);
+      if (
+        !isAbsolute(directory) ||
+        directory === parse(directory).root ||
+        directory === normalize(homedir())
+      )
+        throw new AdapterError(
+          "FMCAD_SESSION_LOCATION",
+          "Choose an explicit project directory, not home or filesystem root",
+        );
+      if (["plan", "explore"].includes(ctx.agent))
+        throw new AdapterError(
+          "FMCAD_PERMISSION_DENIED",
+          `Execution denied for ${ctx.agent}; use fmcad_help`,
+        );
+      let request: DocumentUnlockRequest;
+      try {
+        request = decodeDocumentUnlockRequest(input);
+      } catch (error) {
+        throw new AdapterError(
+          "FMCAD_INVALID_INPUT",
+          error instanceof Error
+            ? error.message
+            : "Invalid document unlock request",
+        );
+      }
+      const requestId = request.requestId ?? deps.requestID();
+      const resource = "fmcad document-unlock " + JSON.stringify(request);
+      await wait(
+        ctx.authorizeControl(resource, {
+          directory: ctx.directory,
+          requestId,
+          input: request,
+          action: "document-unlock",
+          remoteCancellation: false,
+        }),
+        ctx.signal,
+      );
+      ctx.signal.throwIfAborted();
+      const api = service(ctx);
+      const work = (async () => {
+        await api.start();
+        ctx.signal.throwIfAborted();
+        return api.documentUnlock(request);
+      })();
+      return JSON.stringify(await wait(work, ctx.signal));
+    },
     async dispose() {
       disposed = true;
       // Pending calls retain rejection observers; local disposal never waits
@@ -282,5 +335,27 @@ export const executeSchema = {
     expectedRevision: { type: "integer", minimum: 0, maximum: 2147483647 },
     queueTimeoutMs: { type: "integer", minimum: 1, maximum: 2147483647 },
   },
+  additionalProperties: false,
+} as const;
+export const documentUnlockSchema = {
+  type: "object",
+  properties: {
+    action: {
+      type: "string",
+      enum: ["status", "inspect", "accept"],
+    },
+    target: {
+      type: "object",
+      properties: {
+        docId: { type: "string", minLength: 1, maxLength: 256 },
+        docFileId: { type: "string", minLength: 1, maxLength: 256 },
+      },
+      additionalProperties: false,
+      minProperties: 1,
+    },
+    requestId: { type: "string", minLength: 1, maxLength: 256 },
+    observationId: { type: "string", minLength: 1, maxLength: 256 },
+  },
+  required: ["action", "target"],
   additionalProperties: false,
 } as const;
