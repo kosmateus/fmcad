@@ -9,15 +9,18 @@ import {
 } from "./fixture-provenance";
 import {
   captureOriginalView,
+  assertViewReadmission,
   prepareCaptureView,
   verifiedViewCapture,
   viewCapturePlanFile,
   type CaptureViewPlan,
 } from "./original-view-programs";
 import type { ScenarioBackend, Owner, Execution } from "./contracts";
+import { fixture } from "./test-support";
 import {
   create as createProgram,
   snapshot as inventorySnapshot,
+  program,
 } from "./programs";
 
 function ancestry(
@@ -647,6 +650,112 @@ test("capture inventory proofs refresh after asynchronous ancestry reads settle 
     "closed",
     "Do not dispatch a census frozen before the awaited receipt reads",
   );
+});
+
+test("a payload prepared before a canonical peer close refuses without effects and captures the exact user on fresh admission", async (t) => {
+  const f = ancestry(t);
+  const { model } = await fixture(t);
+  const setup = await model.execute(
+    program(`import adsk.core
+app = adsk.core.Application.get()
+user = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+user.creationId = ${JSON.stringify(f.user.creationId)}
+user.name = ${JSON.stringify(f.user.name)}
+class Workspace:
+    id = 'FusionSolidEnvironment'
+    def activate(self):
+        app.userInterface.activeWorkspace = self
+        return True
+class Workspaces:
+    def itemById(self, key):
+        assert key == 'FusionSolidEnvironment'
+        return Workspace()
+app.userInterface.activeWorkspace = Workspace()
+app.userInterface.workspaces = Workspaces()
+peer = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+peer.creationId = ${JSON.stringify(f.document.creationId)}
+peer.name = ${JSON.stringify(f.document.name)}
+assert user.activate()`),
+  );
+  assert.equal(setup.success, true, setup.error);
+  const original = await model.execute(captureOriginalView(true));
+  assert.equal(original.success, true, original.error);
+  const originalView = JSON.parse(
+    original.stdout.trim().slice("FMCAD_SCENARIO ".length),
+  ) as Record<string, unknown>;
+  const baseline = [
+    ...f.snapshot.documents,
+    { ...f.document, fileId: null, saved: false, modified: false },
+  ];
+  const prior = await prepareCaptureView(f.root, f.backend, baseline, f.read);
+  const prepared = captureOriginalView(true, prior);
+  const closed = await model.execute(
+    program(`import adsk.core
+app = adsk.core.Application.get()
+peer = next(d for d in app.documents if d.creationId == ${JSON.stringify(f.document.creationId)})
+assert peer.close(False)`),
+  );
+  assert.equal(closed.success, true, closed.error);
+  const refused = await model.execute(prepared);
+  assert.equal(refused.success, true, refused.error);
+  assert.doesNotMatch(refused.stdout, /FMCAD_VIEW_EFFECT/u);
+  const refusal = JSON.parse(
+    refused.stdout.trim().slice("FMCAD_SCENARIO ".length),
+  ) as Record<string, unknown>;
+  assert.deepEqual(refusal, {
+    viewAdmissionChanged: true,
+    missingPeer: f.document.creationId,
+    bodyCalls: 0,
+    mutationStarted: false,
+    strictCamera: true,
+  });
+  const unproved = await prepareCaptureView(
+    f.root,
+    f.backend,
+    baseline,
+    f.read,
+  );
+  assert.equal(
+    unproved.peers.find(
+      (peer) => peer.document.creationId === f.document.creationId,
+    )?.state,
+    "open",
+    "Physical absence alone must not manufacture a canonical close",
+  );
+  assert.throws(() => assertViewReadmission(prior, unproved, refusal));
+  f.report.requests.push(
+    f.entry("cleanup", 2, { creationId: f.document.creationId, closed: true }),
+  );
+  f.report.status = "passed";
+  f.report.cleanup = "complete";
+  f.write();
+  const next = await prepareCaptureView(f.root, f.backend, baseline, f.read);
+  assert.equal(
+    next.peers.find(
+      (peer) => peer.document.creationId === f.document.creationId,
+    )?.state,
+    "closed",
+  );
+  assert.equal(
+    assertViewReadmission(prior, next, refusal),
+    f.document.creationId,
+  );
+  const captured = await model.execute(captureOriginalView(true, next));
+  assert.equal(captured.success, true, captured.error);
+  const actual = JSON.parse(
+    captured.stdout.trim().slice("FMCAD_SCENARIO ".length),
+  ) as Record<string, unknown>;
+  assert.deepEqual(actual["active"], f.user);
+  const camera = actual["camera"] as Record<string, unknown>;
+  assert.deepEqual(camera["document"], {
+    creationId: f.user.creationId,
+    name: f.user.name,
+    dataFileId: null,
+  });
+  assert.equal(actual["restorationProfile"], "motion-absolute-1e-7");
+  assert.deepEqual(actual["camera"], originalView["camera"]);
+  assert.deepEqual(actual["nativeCamera"], originalView["nativeCamera"]);
+  assert.equal(actual["workspace"], originalView["workspace"]);
 });
 
 test("capture preparation waits for an already accepted peer SaveAs without submitting SDK or granting an unsettled exemption", async (t) => {
