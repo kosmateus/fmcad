@@ -107,6 +107,7 @@ export function stageQueueTestFixtures(root: string): void {
     "fake-wsl-platform.cjs",
     "fake-wsl-preload.cjs",
     "backend-successor.cjs",
+    "runtime-upgrade-lineage.cjs",
     "current-epoch-upgrade.cjs",
     "dead-epoch-successor.cjs",
     "publish-saved-fixture.cjs",
@@ -145,14 +146,19 @@ export function stageQueueTestFixtures(root: string): void {
     "tests/dead-epoch-successor.test.js",
     "tests/frozen-inline-observer.test.js",
     "tests/frozen-metadata-profile.test.js",
+    "tests/runtime-upgrade-lineage.test.js",
     "tests/integration/offline-cli.js",
     ...workspaceNames.map((filename) => `tests/fixtures/${filename}`),
-  ].sort().map((file) => {
-    const bytes = fs.readFileSync(path.join(root, "dist", file));
-    return { file, sha256: createHash("sha256").update(bytes).digest("hex") };
-  });
-  fs.writeFileSync(path.join(root, "dist/src/frozen-metadata-test-corpus.json"),
-    JSON.stringify({ version: 1, files: corpus }, null, 2) + "\n");
+  ]
+    .sort()
+    .map((file) => {
+      const bytes = fs.readFileSync(path.join(root, "dist", file));
+      return { file, sha256: createHash("sha256").update(bytes).digest("hex") };
+    });
+  fs.writeFileSync(
+    path.join(root, "dist/src/frozen-metadata-test-corpus.json"),
+    JSON.stringify({ version: 1, files: corpus }, null, 2) + "\n",
+  );
 }
 
 if (require.main === module) {

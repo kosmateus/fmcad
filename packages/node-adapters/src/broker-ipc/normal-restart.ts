@@ -155,6 +155,24 @@ export function normalRestartInstance(
   identity: Identity,
   state: State,
 ): object {
+  return authenticateNormalRestart(root, epoch, identity, state, {
+    read,
+    checked,
+  }).instance;
+}
+/** Shared live/historical verifier. Historical readers must authenticate every
+ * reference and may only remap the pinned pointer to its exact archived bytes. */
+export function authenticateNormalRestart(
+  root: string,
+  epoch: Epoch,
+  identity: Identity,
+  state: State,
+  reader: {
+    read(file: string): Data;
+    checked(reference: unknown, file: string): Data;
+  },
+): { instance: object; origin: Identity } {
+  const { read, checked } = reader;
   const pointer = read(path.join(root, "isolated-admission-epoch.json"));
   if (
     pointer["root"] !== epoch.root ||
@@ -173,7 +191,8 @@ export function normalRestartInstance(
       path.dirname(directory) !== path.join(root, "normal-restarts") ||
       !/^[a-f0-9-]{36}$/.test(path.basename(directory)) ||
       fs.realpathSync(directory) !== directory ||
-      visited.has(ref.path)
+      visited.has(ref.path) ||
+      visited.size >= 32
     )
       fail("Invalid or cyclic normal restart lineage");
     visited.add(ref.path);
@@ -193,6 +212,8 @@ export function normalRestartInstance(
       proof["previousIdentity"],
       path.join(directory, "previous-identity.json"),
     ) as unknown as Identity;
+    if (previous.configHash !== current.configHash)
+      fail("Normal restart configuration continuity changed");
     const ownerReference = object(proof["ownerReference"]);
     const ownerFile = ownerReference["path"];
     if (
@@ -232,6 +253,15 @@ export function normalRestartInstance(
       nonce !== path.basename(directory)
     )
       fail("Normal restart owner binding differs");
+    if (
+      binding["buildHash"] !== current.buildHash ||
+      binding["stage"] !== "startup" ||
+      !Number.isSafeInteger(binding["ownerPid"]) ||
+      (binding["ownerPid"] as number) <= 0 ||
+      typeof binding["ownerBirth"] !== "string" ||
+      !binding["ownerBirth"]
+    )
+      fail("Normal restart build or process binding differs");
     const receipt = checked(
       proof["startupReceipt"],
       path.join(root, `broker-startup-${nonce}.receipt.json`),
@@ -255,7 +285,7 @@ export function normalRestartInstance(
   }
   if (!sameProcess(current.instance, epoch.currentInstance))
     fail("Normal restart is not anchored to this epoch");
-  return result;
+  return { instance: result, origin: current };
 }
 
 /** SDK0 admission before the single startup observation, called by ordinary

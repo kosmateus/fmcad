@@ -47,6 +47,7 @@ const frozenTests = [
   "tests/dead-epoch-successor.test.js",
   "tests/frozen-inline-observer.test.js",
   "tests/frozen-metadata-profile.test.js",
+  "tests/runtime-upgrade-lineage.test.js",
 ];
 
 function pinFrozenCorpus(runtime: string) {

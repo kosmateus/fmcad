@@ -464,13 +464,70 @@ function readEpochOrigin(
   ancestryDepth: number,
 ): { identity: EffectivePredecessorIdentity; predecessor?: CheckedSuccession } {
   if (ancestryDepth >= 32) fail("Inherited backend lineage bound exceeded");
-  const identity = checkedIdentity(
+  const rawIdentity = record(
     read(snapshot.identity, path.join(pointer.root, "instance.json")),
   );
+  const identity = checkedIdentity(rawIdentity);
+  let creationIdentity = identity;
+  const hasRestart = rawIdentity["normalRestart"] !== undefined;
+  if (hasRestart) {
+    const restartReference = rawIdentity["normalRestart"];
+    if (!referenceValue(restartReference))
+      fail("Normal restart reference is invalid");
+    const restart = record(read(restartReference, restartReference.path));
+    const closedReference = restart["closedReference"];
+    if (!referenceValue(closedReference))
+      fail("Normal restart closed reference is invalid");
+    const pointerFile = path.join(root, "isolated-admission-epoch.json");
+    const archivedPointer = fs.existsSync(snapshot.pointer.path)
+      ? snapshot.pointer
+      : { path: pointerFile, sha256: snapshot.pointer.sha256 };
+    const pinnedPointer = read(archivedPointer, archivedPointer.path);
+    if (!isDeepStrictEqual(pinnedPointer, pointer))
+      fail("Normal restart archived pointer differs from its epoch");
+    const state = record(
+      read(snapshot.state, path.join(pointer.root, "queue-state.json")),
+    );
+    const { authenticateNormalRestart } = load(
+      "./dist/node-adapters/broker-ipc/normal-restart",
+    ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
+    const result = authenticateNormalRestart(
+      root,
+      pointer,
+      {
+        ...identity,
+        normalRestart: restartReference,
+      },
+      { jobs: record(state["jobs"]) },
+      {
+        read(file) {
+          if (file === pointerFile) return record(pinnedPointer);
+          if (file === path.join(pointer.root, "closed.json"))
+            return record(read(closedReference, file));
+          fail("Normal restart attempted an unbound historical read");
+        },
+        checked(entry, file) {
+          if (!referenceValue(entry))
+            fail("Normal restart evidence reference is invalid");
+          if (file === pointerFile) {
+            if (
+              entry.path !== pointerFile ||
+              entry.sha256 !== snapshot.pointer.sha256
+            )
+              fail("Normal restart pointer reference differs from its archive");
+            return record(read(archivedPointer, archivedPointer.path));
+          }
+          return record(read(entry, file));
+        },
+      },
+    );
+    creationIdentity = checkedIdentity(result.origin);
+  }
   if (
-    identity.instance.pid !== pointer.currentInstance.pid ||
-    identity.instance.birth !== pointer.currentInstance.birth ||
-    identity.instance.version !== record(pointer.currentInstance)["version"]
+    creationIdentity.instance.pid !== pointer.currentInstance.pid ||
+    creationIdentity.instance.birth !== pointer.currentInstance.birth ||
+    creationIdentity.instance.version !==
+      record(pointer.currentInstance)["version"]
   )
     fail("Epoch identity differs from its qualified SDK process");
   const rootIdentity = record(
@@ -496,13 +553,16 @@ function readEpochOrigin(
   if (
     identity.configHash !== originConfig ||
     !expected ||
-    identity.instance.pid !== expected.pid ||
-    identity.instance.birth !== expected.birth
+    creationIdentity.instance.pid !== expected.pid ||
+    creationIdentity.instance.birth !== expected.birth
   )
     fail(
       "Inherited backend differs from its qualified epoch/process authority",
     );
-  if (identity.buildHash !== predecessor.authority.buildHash)
+  if (
+    hasRestart ||
+    creationIdentity.buildHash !== predecessor.authority.buildHash
+  )
     verifyCreationBuild(pointer, predecessor.authority, read);
   return { identity, predecessor };
 }
@@ -574,11 +634,78 @@ export function successorBackendIdentity(
     ["pid", "birth", "version"].every(
       (key) => record(left)[key] === record(right)[key],
     );
+  const authenticatedRefs = new Map<string, Reference>();
+  const remember = (entry: Reference): void => {
+    if (!referenceValue(entry))
+      fail("Physical backend evidence reference is invalid");
+    const previous = authenticatedRefs.get(entry.path);
+    if (previous && previous.sha256 !== entry.sha256)
+      fail("Physical backend contains ambiguous evidence references");
+    authenticatedRefs.set(entry.path, entry);
+  };
+  remember(proof.lifecycle);
+  const anchored = (file: string): Reference => {
+    const entry = authenticatedRefs.get(file);
+    if (!entry) fail("Physical backend omits required lifecycle evidence");
+    return entry;
+  };
+  const physicalStartup = (
+    head: Record<string, unknown>,
+    identity: Record<string, unknown>,
+    requireReady: boolean,
+  ) => {
+    if (!references(head["observation"]))
+      fail("Runtime upgrade startup observations are invalid");
+    const receipts = head["observation"].filter(
+      (ref) =>
+        path.dirname(ref.path) === root &&
+        /^broker-startup-[a-f0-9-]{36}\.receipt\.json$/.test(
+          path.basename(ref.path),
+        ),
+    );
+    if (receipts.length !== 1)
+      fail("Runtime upgrade requires one original physical startup");
+    const entry = receipts[0]!;
+    const receipt = record(read(entry, entry.path));
+    const nonce = receipt["brokerNonce"];
+    if (typeof nonce !== "string" || !/^[a-f0-9-]{36}$/.test(nonce))
+      fail("Runtime upgrade startup nonce is invalid");
+    const lifecycleFile = path.join(root, `broker-lifecycle-${nonce}.json`);
+    const lifecycleReference = anchored(lifecycleFile);
+    const lifecycle = record(read(lifecycleReference, lifecycleFile));
+    const owner = record(lifecycle["owner"]);
+    const binding = record(lifecycle["binding"]);
+    const observation = record(receipt["probeObservation"]);
+    if (
+      !(requireReady
+        ? lifecycle["stage"] === "ready"
+        : ["ready", "recovery"].includes(String(lifecycle["stage"]))) ||
+      lifecycle["buildHash"] !== identity["buildHash"] ||
+      lifecycle["configHash"] !== identity["configHash"] ||
+      lifecycle["receipt"] !== entry.path ||
+      owner["nonce"] !== nonce ||
+      binding["brokerNonce"] !== nonce ||
+      binding["ownerPid"] !== owner["pid"] ||
+      binding["ownerBirth"] !== owner["birth"] ||
+      binding["buildHash"] !== identity["buildHash"] ||
+      binding["stage"] !== "startup" ||
+      receipt["terminal"] !== true ||
+      receipt["outcome"] !== "succeeded" ||
+      !Object.entries(binding).every(([key, value]) =>
+        isDeepStrictEqual(receipt[key], value),
+      ) ||
+      !sameIdentity(receipt["instance"], identity["instance"]) ||
+      observation["schema"] !== "fmcad-instance-probe-v1" ||
+      !isDeepStrictEqual(observation["identity"], identity["instance"])
+    )
+      fail("Runtime upgrade original physical startup changed");
+    return { entry, receipt, lifecycleReference };
+  };
   const verifyDeadPredecessor = (
     head: Record<string, unknown>,
     destination: string,
     refs: Reference[],
-  ): boolean => {
+  ): false | { previous: Record<string, unknown>; sourceRef: Reference } => {
     if (head["deadPredecessor"] === undefined) return false;
     const proofRef = head["deadPredecessor"];
     const proofFile = path.join(destination, "dead-predecessor.json");
@@ -615,7 +742,6 @@ export function successorBackendIdentity(
       previous["configHash"] !== head["previousConfigHash"] ||
       typeof previous["buildHash"] !== "string" ||
       !validInstance(previous["instance"]) ||
-      !sameProcess(previous["instance"]) ||
       !isDeepStrictEqual(read(sourceRef, sourceRef.path), previous) ||
       priorProcessAlive(previous["instance"]) !== false ||
       priorProcessAlive(owner) !== false ||
@@ -730,16 +856,245 @@ export function successorBackendIdentity(
     );
     if (
       !validInstance(transitionIdentity["instance"]) ||
-      isDeepStrictEqual(transitionIdentity["instance"], previous["instance"])
+      sameIdentity(transitionIdentity["instance"], previous["instance"])
     )
       fail("Dead-SDK transition did not bind a fresh target process");
-    return true;
+    return { previous, sourceRef };
   };
   const findEvidence = (value: unknown, expectedPath: string): Reference => {
     if (!references(value)) fail("Dead-SDK source evidence list is invalid");
     const entry = value.find((ref) => ref.path === expectedPath);
     if (!entry) fail("Dead-SDK proof omits required source evidence");
     return entry;
+  };
+  const verifyRuntimeUpgrade = (
+    head: Record<string, unknown>,
+    destination: string,
+    refs: Reference[],
+    effective: Record<string, unknown>,
+    prior: EffectivePredecessorIdentity,
+    priorHead: Record<string, unknown>,
+    priorReference: Reference,
+  ): void => {
+    const proofFile = path.join(destination, "runtime-upgrade.json");
+    const entry = head["runtimeUpgrade"];
+    const headRefs = new Map(refs.map((ref) => [ref.path, ref.sha256]));
+    if (
+      head["deadPredecessor"] !== undefined ||
+      !referenceValue(entry) ||
+      entry.path !== proofFile ||
+      headRefs.get(entry.path) !== entry.sha256
+    )
+      fail("Runtime upgrade is not anchored by its physical transition");
+    const upgrade = record(read(entry, proofFile));
+    const previous = record(upgrade["previous"]);
+    const owner = record(upgrade["previousOwner"]);
+    const epoch = record(upgrade["epoch"]);
+    const sourceIdentity = upgrade["sourceIdentityReference"];
+    const evidence = upgrade["evidence"];
+    const requestId = upgrade["stopRequestId"];
+    if (
+      upgrade["kind"] !== "settled-normal-runtime-upgrade-v1" ||
+      !referenceValue(sourceIdentity) ||
+      !isDeepStrictEqual(sourceIdentity, priorHead["identity"]) ||
+      !isDeepStrictEqual(read(sourceIdentity, sourceIdentity.path), previous) ||
+      !references(evidence) ||
+      typeof requestId !== "string" ||
+      !requestId ||
+      previous["buildHash"] !== prior.buildHash ||
+      previous["configHash"] !== prior.configHash ||
+      !/^[a-f0-9]{64}$/.test(String(previous["buildHash"])) ||
+      effective["buildHash"] === previous["buildHash"] ||
+      !sameIdentity(previous["instance"], prior.instance) ||
+      !sameIdentity(effective["instance"], prior.instance) ||
+      !isDeepStrictEqual(head["previousConfig"], head["nextConfig"]) ||
+      !isDeepStrictEqual(head["previousConfig"], priorHead["nextConfig"]) ||
+      previous["configHash"] !== head["previousConfigHash"] ||
+      effective["configHash"] !== previous["configHash"] ||
+      epoch["root"] !== pointer.root ||
+      epoch["epochId"] !== pointer.epochId ||
+      epoch["ownerClientId"] !== pointer.ownerClientId ||
+      !isDeepStrictEqual(epoch["currentInstance"], pointer.currentInstance) ||
+      owner["protocol"] !== 2 ||
+      !Number.isSafeInteger(owner["pid"]) ||
+      (owner["pid"] as number) <= 0 ||
+      typeof owner["birth"] !== "string" ||
+      !owner["birth"] ||
+      typeof owner["nonce"] !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(owner["nonce"]) ||
+      priorProcessAlive(owner) !== false
+    )
+      fail(
+        "Runtime upgrade source, owner, configuration or SDK continuity changed",
+      );
+    for (const ref of evidence) {
+      if (headRefs.get(ref.path) !== ref.sha256)
+        fail("Runtime upgrade source evidence is not anchored");
+      read(ref, ref.path);
+    }
+    const ownLifecycleFile = path.join(
+      root,
+      `broker-lifecycle-${owner["nonce"]}.json`,
+    );
+    const ownStartupFile = path.join(
+      root,
+      `broker-startup-${owner["nonce"]}.receipt.json`,
+    );
+    const lifecycle = record(
+      read(findEvidence(evidence, ownLifecycleFile), ownLifecycleFile),
+    );
+    const binding = record(lifecycle["binding"]);
+    if (
+      lifecycle["stage"] !== "ready" ||
+      !isDeepStrictEqual(lifecycle["owner"], owner) ||
+      lifecycle["configHash"] !== previous["configHash"] ||
+      lifecycle["buildHash"] !== previous["buildHash"] ||
+      lifecycle["receipt"] !== ownStartupFile ||
+      binding["brokerNonce"] !== owner["nonce"] ||
+      binding["ownerPid"] !== owner["pid"] ||
+      binding["ownerBirth"] !== owner["birth"] ||
+      binding["stage"] !== "startup" ||
+      binding["buildHash"] !== previous["buildHash"]
+    )
+      fail("Runtime upgrade source owner lifecycle changed");
+    const sourceStartup = record(upgrade["sourceStartup"]);
+    if (sourceStartup["kind"] === "pinned-head-reopen") {
+      const original = physicalStartup(priorHead, previous, true);
+      if (
+        !isDeepStrictEqual(sourceStartup["headReference"], priorReference) ||
+        !isDeepStrictEqual(sourceStartup["receiptReference"], original.entry) ||
+        !isDeepStrictEqual(
+          sourceStartup["lifecycleReference"],
+          original.lifecycleReference,
+        ) ||
+        !["headReference", "receiptReference", "lifecycleReference"].every(
+          (key) =>
+            evidence.some((ref) => isDeepStrictEqual(ref, sourceStartup[key])),
+        ) ||
+        record(original.receipt)["brokerNonce"] === owner["nonce"] ||
+        !isDeepStrictEqual(
+          Object.keys(binding).sort(),
+          [
+            "brokerNonce",
+            "ownerPid",
+            "ownerBirth",
+            "buildHash",
+            "stage",
+          ].sort(),
+        )
+      )
+        fail(
+          "Runtime upgrade metadata reopen differs from its immediate physical source",
+        );
+    } else if (
+      sourceStartup["kind"] !== "owner-startup-probe" ||
+      !isDeepStrictEqual(
+        sourceStartup["receiptReference"],
+        findEvidence(evidence, ownStartupFile),
+      )
+    )
+      fail("Runtime upgrade source startup proof is invalid");
+    if (
+      sourceStartup["kind"] === "owner-startup-probe" ||
+      fs.existsSync(ownStartupFile)
+    ) {
+      const startup = record(
+        read(findEvidence(evidence, ownStartupFile), ownStartupFile),
+      );
+      if (
+        startup["terminal"] !== true ||
+        startup["outcome"] !== "succeeded" ||
+        !Object.entries(binding).every(([key, value]) =>
+          isDeepStrictEqual(startup[key], value),
+        ) ||
+        !sameIdentity(startup["instance"], previous["instance"])
+      )
+        fail("Runtime upgrade source owner startup receipt changed");
+    }
+    const queue = record(upgrade["queue"]);
+    const control = record(queue["controlRequest"]);
+    const jobs = record(upgrade["jobs"]);
+    if (
+      queue["active"] !== null ||
+      queue["blocked"] !== null ||
+      queue["lease"] !== null ||
+      queue["localUnknown"] !== null ||
+      queue["controlBlocked"] !== null ||
+      queue["paused"] !== true ||
+      !Number.isSafeInteger(queue["controlGeneration"]) ||
+      control["paused"] !== true ||
+      control["generation"] !== queue["controlGeneration"]
+    )
+      fail("Runtime upgrade source was not settled under its owner stop");
+    for (const job of Object.values(jobs))
+      if (
+        !["succeeded", "failed", "cancelled", "expired"].includes(
+          String(record(job)["state"]),
+        ) ||
+        record(job)["executionOutcome"] === "unknown"
+      )
+        fail("Runtime upgrade source contains unfinished or UNKNOWN work");
+    const digest = hash(requestId);
+    const adminFile = path.join(root, `console-admin-${digest}.json`);
+    const releaseFile = path.join(root, `console-release-${digest}.json`);
+    const admin = record(read(findEvidence(evidence, adminFile), adminFile));
+    const release = record(
+      read(findEvidence(evidence, releaseFile), releaseFile),
+    );
+    const closedFile = path.join(pointer.root, "closed.json");
+    const closed = record(read(findEvidence(evidence, closedFile), closedFile));
+    read(findEvidence(evidence, livePointer), livePointer);
+    if (
+      closed["admissionMode"] !== "normal-multidocument" ||
+      admin["action"] !== "console-stop" ||
+      admin["clientId"] !== pointer.ownerClientId ||
+      admin["requestId"] !== requestId ||
+      admin["instanceId"] !== owner["nonce"] ||
+      admin["buildHash"] !== previous["buildHash"] ||
+      admin["status"] !== "accepted" ||
+      record(admin["result"])["releaseFile"] !== releaseFile ||
+      release["terminal"] !== true ||
+      release["outcome"] !== "released" ||
+      release["requestId"] !== requestId ||
+      release["instanceId"] !== owner["nonce"] ||
+      release["buildHash"] !== previous["buildHash"] ||
+      (admin["expectedGeneration"] !== queue["controlGeneration"] &&
+        (admin["expectedGeneration"] as number) + 1 !==
+          queue["controlGeneration"])
+    )
+      fail("Runtime upgrade owner stop, release or generation changed");
+    const workers = upgrade["workerEvidence"];
+    if (!references(workers))
+      fail("Runtime upgrade worker evidence is invalid");
+    const evidenceRefs = new Map(evidence.map((ref) => [ref.path, ref.sha256]));
+    const workerRefs = new Map(workers.map((ref) => [ref.path, ref]));
+    if (workerRefs.size !== workers.length)
+      fail("Runtime upgrade worker evidence is ambiguous");
+    for (const worker of workers)
+      if (evidenceRefs.get(worker.path) !== worker.sha256)
+        fail("Runtime upgrade worker identity is not anchored");
+    for (const id of Object.keys(jobs)) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(id))
+        fail("Runtime upgrade job namespace is invalid");
+      const workerFile = path.join(root, "jobs", id, "worker-identity.json");
+      const worker = workerRefs.get(workerFile);
+      if (fs.existsSync(workerFile)) {
+        if (!worker || priorProcessAlive(read(worker, workerFile)) !== false)
+          fail("Runtime upgrade worker is alive or its death is unproven");
+      } else if (worker) fail("Runtime upgrade worker identity disappeared");
+    }
+    const expectedWorkers = new Set(
+      Object.keys(jobs).map((id) =>
+        path.join(root, "jobs", id, "worker-identity.json"),
+      ),
+    );
+    if (workers.some((ref) => !expectedWorkers.has(ref.path)))
+      fail("Runtime upgrade contains unrelated worker evidence");
+    const startup = physicalStartup(head, effective, false);
+    if (!sameIdentity(startup.receipt["auditExpectedInstance"], prior.instance))
+      fail(
+        "Runtime upgrade target startup differs from its prior effective SDK",
+      );
   };
   const visit = (
     entry: Reference,
@@ -786,11 +1141,43 @@ export function successorBackendIdentity(
           fail("Physical backend pointer changed");
         read(pointerRef, pointerRef.path);
       } else read(ref, ref.path);
+      remember(ref);
     }
     const effective = record(
       read(head["identity"], path.join(destination, "instance.json")),
     );
     const deadPredecessor = verifyDeadPredecessor(head, destination, refs);
+    const escrow = refs.find(
+      (ref) => ref.path === path.join(destination, "predecessor-head.json"),
+    );
+    let runtimePrior: EffectivePredecessorIdentity | undefined;
+    const runtimeUpgrade = head["runtimeUpgrade"] !== undefined;
+    if (runtimeUpgrade) {
+      if (!escrow)
+        fail(
+          "Runtime upgrade requires its authenticated immediate predecessor",
+        );
+      const priorHead = record(read(escrow, escrow.path));
+      const priorReference = {
+        path: path.join(
+          root,
+          "physical-backend-transitions",
+          String(priorHead["requestId"]),
+          "transition.json",
+        ),
+        sha256: escrow.sha256,
+      };
+      runtimePrior = visit(priorReference, depth + 1);
+      verifyRuntimeUpgrade(
+        head,
+        destination,
+        refs,
+        effective,
+        runtimePrior,
+        priorHead,
+        priorReference,
+      );
+    }
     const previousConfig = record(head["previousConfig"]),
       nextConfig = record(head["nextConfig"]);
     if (
@@ -799,32 +1186,43 @@ export function successorBackendIdentity(
       effective["configHash"] !== head["nextConfigHash"] ||
       !/^[a-f0-9]{64}$/.test(String(effective["buildHash"])) ||
       !validInstance(effective["instance"]) ||
-      (!deadPredecessor && !sameProcess(effective["instance"])) ||
+      (!deadPredecessor &&
+        !runtimeUpgrade &&
+        !sameProcess(effective["instance"])) ||
       !["addin", "mcp"].includes(String(previousConfig["backend"])) ||
       !["addin", "mcp"].includes(String(nextConfig["backend"])) ||
-      previousConfig["backend"] === nextConfig["backend"] ||
+      (!runtimeUpgrade &&
+        previousConfig["backend"] === nextConfig["backend"]) ||
       config(previousConfig) !== config(nextConfig)
     )
       fail("Physical backend configuration, build or SDK identity changed");
-    const escrow = refs.find(
-      (ref) => ref.path === path.join(destination, "predecessor-head.json"),
-    );
     if (escrow) {
       const priorHead = record(read(escrow, escrow.path));
-      const prior = visit(
-        {
-          path: path.join(
-            root,
-            "physical-backend-transitions",
-            String(priorHead["requestId"]),
-            "transition.json",
-          ),
-          sha256: escrow.sha256,
-        },
-        depth + 1,
-      );
+      const prior =
+        runtimePrior ||
+        visit(
+          {
+            path: path.join(
+              root,
+              "physical-backend-transitions",
+              String(priorHead["requestId"]),
+              "transition.json",
+            ),
+            sha256: escrow.sha256,
+          },
+          depth + 1,
+        );
       if (
         head["previousConfigHash"] !== prior.configHash ||
+        (deadPredecessor &&
+          (!isDeepStrictEqual(
+            deadPredecessor.sourceRef,
+            priorHead["identity"],
+          ) ||
+            !isDeepStrictEqual(
+              checkedIdentity(deadPredecessor.previous),
+              prior,
+            ))) ||
         !refs.some(
           (ref) =>
             ref.path === record(priorHead["identity"])["path"] &&
@@ -842,6 +1240,15 @@ export function successorBackendIdentity(
         read,
         ancestryDepth,
       );
+      if (
+        deadPredecessor &&
+        (!isDeepStrictEqual(deadPredecessor.sourceRef, snapshot.identity) ||
+          !isDeepStrictEqual(
+            checkedIdentity(deadPredecessor.previous),
+            origin.identity,
+          ))
+      )
+        fail("Dead-SDK source differs from its authenticated effective epoch");
       const inheritedHead =
         origin.predecessor?.authority.backendTransition?.head;
       if (
@@ -875,7 +1282,12 @@ export function successorBackendIdentity(
           sameIdentity(receipt["instance"], effective["instance"]) &&
           (deadPredecessor
             ? !Object.hasOwn(receipt, "auditExpectedInstance")
-            : sameProcess(receipt["auditExpectedInstance"]))
+            : runtimeUpgrade
+              ? sameIdentity(
+                  receipt["auditExpectedInstance"],
+                  runtimePrior!.instance,
+                )
+              : sameProcess(receipt["auditExpectedInstance"]))
         );
       })
     )

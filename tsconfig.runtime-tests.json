@@ -361,6 +361,7 @@
     "tests/successor-startup-abort.test.ts",
     "tests/dead-epoch-successor-control.test.ts",
     "tests/dead-epoch-successor.test.ts",
+    "tests/runtime-upgrade-lineage.test.ts",
     "tests/frozen-qualification-corpus.test.ts",
     "tests/frozen-inline-observer.test.ts",
     "tests/epoch-dead-process.test.ts",
