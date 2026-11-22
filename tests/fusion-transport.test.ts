@@ -85,7 +85,11 @@ async function endpoint(
   };
 }
 
-function handshake(payload: ObjectValue, res: http.ServerResponse) {
+function handshake(
+  payload: ObjectValue,
+  res: http.ServerResponse,
+  protocolVersion?: string,
+) {
   if (payload["method"] === "initialize") {
     res.setHeader("Mcp-Session-Id", "test-session");
     res.end(
@@ -93,7 +97,8 @@ function handshake(payload: ObjectValue, res: http.ServerResponse) {
         jsonrpc: "2.0",
         id: payload["id"],
         result: {
-          protocolVersion: at(payload, "params", "protocolVersion"),
+          protocolVersion:
+            protocolVersion ?? at(payload, "params", "protocolVersion"),
           serverInfo: { name: "fake", version: "1", secret: "hidden" },
         },
       }),
@@ -109,53 +114,64 @@ function handshake(payload: ObjectValue, res: http.ServerResponse) {
 }
 
 for (const sse of [false, true])
-  test(`broker transport maps ${sse ? "SSE" : "JSON"} without changing native data`, async (t) => {
-    const receipt = {
-      success: true,
-      stdout: "native stdout",
-      stderr: "native stderr",
-      receipt: { token: "native-receipt", ordinal: 9 },
-    };
-    const f = await endpoint(t, (payload, req, res) => {
-      if (handshake(payload, res)) return;
-      assert.equal(payload["method"], "tools/call");
-      assert.equal(req.headers["mcp-session-id"], "test-session");
-      assert.equal(req.headers["mcp-protocol-version"], "2024-11-05");
-      const result = {
-        jsonrpc: "2.0",
-        id: 2,
-        result: {
-          structuredContent: receipt,
-          content: [{ type: "text", text: "native text" }],
-        },
+  for (const protocolVersion of ["2025-06-18", "2024-11-05"])
+    test(`broker transport maps ${sse ? "SSE" : "JSON"} with negotiated ${protocolVersion} without changing native data`, async (t) => {
+      const receipt = {
+        success: true,
+        stdout: "native stdout",
+        stderr: "native stderr",
+        receipt: { token: "native-receipt", ordinal: 9 },
       };
-      res.end(
-        sse
-          ? `: keepalive\n\nevent: message\ndata: ${JSON.stringify(result)}\n\ndata: {"jsonrpc":"2.0","method":"notice"}\n\n`
-          : JSON.stringify(result),
+      const f = await endpoint(t, (payload, req, res) => {
+        if (payload["method"] === "initialize")
+          assert.equal(at(payload, "params", "protocolVersion"), "2025-06-18");
+        if (handshake(payload, res, protocolVersion)) return;
+        assert.equal(payload["method"], "tools/call");
+        assert.equal(req.headers["mcp-session-id"], "test-session");
+        assert.equal(req.headers["mcp-protocol-version"], protocolVersion);
+        const result = {
+          jsonrpc: "2.0",
+          id: 2,
+          result: {
+            structuredContent: receipt,
+            content: [{ type: "text", text: "native text" }],
+          },
+        };
+        res.end(
+          sse
+            ? `: keepalive\n\nevent: message\ndata: ${JSON.stringify(result)}\n\ndata: {"jsonrpc":"2.0","method":"notice"}\n\n`
+            : JSON.stringify(result),
+        );
+      });
+      const headers = { Authorization: "Bearer isolated-fake-auth" };
+      const client = createBrokerTransport(
+        { url: f.url, timeoutMs: 1000, headers },
+        dependencies,
+      );
+      headers.Authorization = "changed-after-construction";
+      const result = await client.callTool({ readOnly: false }, "native");
+      assert.deepEqual(result, {
+        text: "native text",
+        failed: false,
+        data: receipt,
+      });
+      assert.deepEqual(client.serverInfo, { name: "fake", version: "1" });
+      assert.equal(f.requests.length, 3);
+      assert.deepEqual(
+        f.requests.map((request) => request.payload["method"]),
+        ["initialize", "notifications/initialized", "tools/call"],
+      );
+      for (const request of f.requests.slice(1)) {
+        assert.equal(request.headers["mcp-session-id"], "test-session");
+        assert.equal(request.headers["mcp-protocol-version"], protocolVersion);
+      }
+      assert.ok(
+        f.requests.every(
+          (request) =>
+            request.headers.authorization === "Bearer isolated-fake-auth",
+        ),
       );
     });
-    const headers = { Authorization: "Bearer isolated-fake-auth" };
-    const client = createBrokerTransport(
-      { url: f.url, timeoutMs: 1000, headers },
-      dependencies,
-    );
-    headers.Authorization = "changed-after-construction";
-    const result = await client.callTool({ readOnly: false }, "native");
-    assert.deepEqual(result, {
-      text: "native text",
-      failed: false,
-      data: receipt,
-    });
-    assert.deepEqual(client.serverInfo, { name: "fake", version: "1" });
-    assert.equal(f.requests.length, 3);
-    assert.ok(
-      f.requests.every(
-        (request) =>
-          request.headers.authorization === "Bearer isolated-fake-auth",
-      ),
-    );
-  });
 
 test("concurrent discovery headers are immutable and scoped per request", async (t) => {
   const f = await endpoint(t, (payload, req, res) => {
