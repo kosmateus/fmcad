@@ -13,6 +13,7 @@
     "tests/physical-generation-provision.test.ts",
     "tests/physical-generation-profile.test.ts",
     "tests/document-unlock-domain.test.ts",
+    "tests/document-observation-store.test.ts",
     "tests/addin-admission-client.test.ts",
     "tests/python-source-codec.test.ts",
     "tests/python-public-source-selection.test.ts",
