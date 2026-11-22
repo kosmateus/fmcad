@@ -493,6 +493,39 @@ function commandEntry(argv: string[]) {
 }
 
 export async function serve(cfg: P.Config, options: P.Options = {}) {
+  if (process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined) {
+    if ([
+      options.bindPhysicalTurn,
+      options.withPhysicalTurn,
+      options.physicalTurnQuiescence,
+      options.authorizePhysicalRequest,
+      options.preparePhysicalGeneration,
+    ].some((value) => value !== undefined))
+      fail(
+        "PHYSICAL_CAPABILITY_CONFLICT",
+        "Private operator profile cannot be combined with injected physical capabilities",
+      );
+    const physical = load(
+      "./dist/node-adapters/execution/physical-generation-profile",
+    ).physicalBrokerPortsFromEnvironment();
+    if (!physical)
+      fail("PHYSICAL_CAPABILITY_REQUIRED", "Private physical capabilities are unavailable");
+    options = {
+      ...options,
+      preparePhysicalGeneration: physical.preparePhysicalGeneration,
+      authorizePhysicalRequest: physical.authorizePhysicalRequest,
+      bindPhysicalTurn: (request) => physical.bindPhysicalTurn({
+        physicalRequestId: request.physicalRequestId,
+        ...(request.documentSelector === undefined
+          ? {} : { documentSelector: request.documentSelector }),
+        ...(request.kind === undefined ? {} : { kind: request.kind }),
+        ...(request.brokerNonce === undefined
+          ? {} : { brokerNonce: request.brokerNonce }),
+      }),
+      withPhysicalTurn: physical.withPhysicalTurn,
+      physicalTurnQuiescence: physical.physicalTurnQuiescence,
+    };
+  }
   const physicalIsolation = [
     options.bindPhysicalTurn,
     options.withPhysicalTurn,

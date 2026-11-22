@@ -503,6 +503,7 @@ interface AtomicWire extends ScopedPrepared {
   dispatchTimeoutMs: number;
 }
 export interface BrokerModules {
+  "./dist/node-adapters/execution/physical-generation-profile": typeof import("../packages/node-adapters/src/execution/physical-generation-profile");
   "./queue-isolated-epoch": {
     openIsolatedEpoch(dir: string, options?: Record<string, unknown>): P.State;
     epochAdmission(

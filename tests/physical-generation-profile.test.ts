@@ -60,6 +60,133 @@ function fixture(t: { after(action: () => void): void }) {
   return { root, profile, file, publish };
 }
 
+test(
+  "serve rejects an invalid private profile and mixed authority before backend creation",
+  linux,
+  async (t) => {
+    const f = fixture(t);
+    const old = process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+    process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] = f.file;
+    t.after(() => {
+      if (old === undefined)
+        delete process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+      else process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] = old;
+    });
+    const load = createRequire(path.resolve(__dirname, "../../package.json"));
+    const broker: typeof import("../src/composition/queue-broker") = load(
+      path.resolve(__dirname, "../../src/queue-broker.js"),
+    );
+    const cfg: FmcadConfiguration = {
+      ...DEFAULT_ADDIN_SETTINGS,
+      backend: "addin",
+      routing: "queue",
+      queue: { autoStart: false },
+      controlCenter: { port: 4748 },
+    };
+    let backendCalls = 0;
+    const createBackend = () => {
+      backendCalls++;
+      throw new Error("Backend must not be constructed");
+    };
+    await assert.rejects(
+      broker.serve(
+        { ...cfg },
+        {
+          createBackend,
+          authorizePhysicalRequest() {
+            return {};
+          },
+        },
+      ),
+      { code: "PHYSICAL_CAPABILITY_CONFLICT" },
+    );
+    fs.writeFileSync(f.file, "{}", { mode: 0o600 });
+    await assert.rejects(broker.serve({ ...cfg }, { createBackend }), {
+      code: "PHYSICAL_OPERATOR_PROFILE_REJECTED",
+    });
+    assert.equal(backendCalls, 0);
+  },
+);
+
+test(
+  "serve prepares environment capabilities only under the real owner and aborts before backend initialization",
+  linux,
+  async (t) => {
+    const f = fixture(t);
+    const old = process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+    process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] = f.file;
+    t.after(() => {
+      if (old === undefined)
+        delete process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+      else process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] = old;
+    });
+    const load = createRequire(path.resolve(__dirname, "../../package.json"));
+    const broker: typeof import("../src/composition/queue-broker") = load(
+      path.resolve(__dirname, "../../src/queue-broker.js"),
+    );
+    const profileModule: typeof import("../packages/node-adapters/src/execution/physical-generation-profile") =
+      load(
+        path.resolve(
+          __dirname,
+        "../../src/dist/node-adapters/execution/physical-generation-profile.js",
+        ),
+      );
+    const original = profileModule.physicalBrokerPortsFromEnvironment;
+    const directory = path.join(f.root, "owned-queue");
+    let preparations = 0;
+    let backendCalls = 0;
+    t.mock.method(profileModule, "physicalBrokerPortsFromEnvironment", () => {
+      const ports = original(process.env, {
+        provisionFactory: () => ({
+          async provision() {
+            throw new Error("The composition fixture does not issue grants");
+          },
+        }),
+      });
+      assert.ok(ports);
+      return {
+        ...ports,
+        async preparePhysicalGeneration(
+          context: Parameters<typeof ports.preparePhysicalGeneration>[0],
+        ) {
+          preparations++;
+          assert.equal(context.directory, fs.realpathSync(directory));
+          assert.equal(context.owner.pid, process.pid);
+          context.assertBrokerOwner();
+          throw Object.assign(new Error("Owned post-claim fixture"), {
+            code: "OFFLINE_POSTCLAIM_CAPTURED",
+          });
+        },
+      };
+    });
+    await assert.rejects(
+      broker.serve(
+        {
+          ...DEFAULT_ADDIN_SETTINGS,
+          backend: "addin",
+          routing: "queue",
+          queue: { autoStart: false },
+          controlCenter: { port: 4748 },
+        },
+        {
+          dir: directory,
+          confirmOwnership: true,
+          createBackend() {
+            backendCalls++;
+            throw new Error(
+              "Backend must not initialize after preparation failure",
+            );
+          },
+        },
+      ),
+      { code: "OFFLINE_POSTCLAIM_CAPTURED" },
+    );
+    assert.equal(preparations, 1);
+    assert.equal(backendCalls, 0);
+    assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false);
+  },
+);
+
 test("ordinary public configuration does not provide physical operator authority", () => {
   let factories = 0;
   assert.equal(
