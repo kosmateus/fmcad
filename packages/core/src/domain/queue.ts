@@ -766,10 +766,11 @@ export class QueueDomain {
     return !documentConflicts(d, quarantineTarget(job.request),
       retirements.get(this), canonical).length;
   }
-  /** Actual dispatch must compare its independently compiled guarded source. */
+  /** Preparation and dispatch compare their independently compiled guarded
+   * source. This grants neither an active SDK slot nor dispatch authority. */
   assertDocumentContinuation(id: string, sourceHash: string) {
     const job = this._job(this.data, id);
-    if (!["queued", "running", "sending"].includes(job.state) ||
+    if (!["preparing", "processing", "queued", "running", "sending"].includes(job.state) ||
       !job.documentContinuation || job.documentContinuation.sourceHash !== sourceHash ||
       !this._documentJobAllowed(this.data, job))
       fail("CHECKPOINT_CHANGED", "A fresh accepted checkpoint and exact guarded program are required");

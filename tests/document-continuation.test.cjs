@@ -188,6 +188,9 @@ test("a fresh phased continuation keeps its capability through preparation", () 
   f.permit.requestHash = hash(core.canonical(f.request));
   const job = f.domain.submitDocumentContinuation(f.request, f.authority);
   assert.equal(job.state, "preparing");
+  assert.equal(f.domain.assertDocumentContinuation(job.id, f.permit.sourceHash).acceptanceId, f.acceptance.id);
+  assert.equal(f.domain.data.active, null);
+  assert.equal(f.domain.data.jobs[job.id].dispatch, undefined);
   f.domain.readyTurn(job.id);
   assert.equal(f.domain.next().id, job.id);
 });
