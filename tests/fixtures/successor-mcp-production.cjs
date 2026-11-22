@@ -1,20 +1,22 @@
 "use strict";
 
-// Real broker/client/checker; only the loopback MCP peer and its SDK receipts
+// Real broker/client/checker; only the loopback ADDIN peer and its SDK receipts
 // are synthetic. This child owns every directory, socket and process it uses.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 const { spawnSync } = require("node:child_process");
+const { decodeNativeProgram } = require("./native-source-envelope.cjs");
 const repo = path.resolve(__dirname, "../..");
 const root = process.argv[2];
 const restorePlatform = require("./fake-wsl-platform.cjs")();
 const api = require(repo + "/src/queue-instance");
 const lineage = require(repo + "/src/queue-epoch-lineage");
 const hash = require(repo + "/src/dist/core/application/cad/json").hash;
-const { BrokerMcpClient, McpDiscoveryClient } = require(
-  repo + "/src/dist/fusion-transport/mcp",
+const { McpDiscoveryClient } = require(repo + "/src/dist/fusion-transport/mcp");
+const { BrokerAddinClient } = require(
+  repo + "/src/dist/fusion-transport/addin",
 );
 
 // Script-route projection of the actual 2026-11-14 tools/list capture,
@@ -49,7 +51,35 @@ const nativeExecute = {
 };
 
 async function main() {
-  const f = require("./backend-successor.cjs")(root, repo);
+  const f = require("./backend-successor.cjs")(root, repo, {
+    sourceConfig: {
+      backend: "mcp",
+      url: "http://127.0.0.1:1/never-called",
+      headers: {},
+      tool: nativeExecute.name,
+      transport: "node",
+      protocolVersion: "2025-06-18",
+      timeoutMs: 180000,
+      routing: "queue",
+      queue: {},
+    },
+    effectiveConfig: {
+      backend: "addin",
+      url: "http://127.0.0.1:8765/mcp",
+      tool: "execute_python",
+    },
+  });
+  const executePython = {
+    name: "execute_python",
+    inputSchema: {
+      type: "object",
+      required: ["code", "persistent"],
+      properties: {
+        code: { type: "string" },
+        persistent: { type: "boolean" },
+      },
+    },
+  };
   const foreignToken = "synthetic-foreign-token";
   api.durable(path.join(f.dir, "clients.json"), {
     ...api.readJson(path.join(f.dir, "clients.json")),
@@ -108,7 +138,7 @@ async function main() {
           results,
           realSdkRequests: 0,
           boundary:
-            "Real serve/McpClient/production checker, loopback fake peer and synthetic receipts; not native Fusion evidence",
+            "Real serve/BrokerAddinClient/production checker, loopback fake peer and synthetic receipts; not live Fusion evidence",
         },
         null,
         2,
@@ -134,8 +164,8 @@ async function main() {
         const answer = (result) => reply({ result });
         if (payload.method === "initialize")
           return answer({
-            protocolVersion: "2024-11-05",
-            serverInfo: { name: "MCP Server Adapter", version: "1.0.0" },
+            protocolVersion: "2025-06-18",
+            serverInfo: { name: "autodesk-fusion-mcp", version: "offline" },
           });
         if (payload.method === "notifications/initialized") {
           res.writeHead(202);
@@ -143,46 +173,47 @@ async function main() {
           return;
         }
         if (payload.method === "tools/list")
-          return answer({ tools: [nativeExecute] });
+          return answer({ tools: [executePython] });
         assert.equal(payload.method, "tools/call");
-        if (payload.params.name !== nativeExecute.name)
+        if (payload.params.name !== executePython.name)
           return reply({
             error: {
               code: -32601,
-              message: "Tool is not advertised by the native catalog",
+              message: "Tool is not advertised by the add-in catalog",
             },
           });
         assert.deepEqual(Object.keys(payload.params.arguments).sort(), [
-          "featureType",
-          "object",
+          "code",
+          "persistent",
         ]);
-        assert.equal(payload.params.arguments.featureType, "script");
-        const script = payload.params.arguments.object.script;
-        assert.deepEqual(Object.keys(payload.params.arguments.object).sort(), [
-          "readOnly",
-          "script",
-        ]);
+        assert.equal(payload.params.arguments.persistent, false);
+        const script = payload.params.arguments.code;
         assert.equal(typeof script, "string");
-        assert.equal(
-          typeof payload.params.arguments.object.readOnly,
-          "boolean",
-        );
-        // Parse only: the synthetic native peer never executes the SDK program.
+        // Parse only: the synthetic ADDIN peer never executes the SDK program.
+        const program = decodeNativeProgram(script);
         const parsed = spawnSync(
           "python3",
           [
             "-I",
             "-S",
             "-c",
-            "import ast,sys,json\nt=ast.parse(sys.stdin.read())\nprint(json.dumps(dict(topLevelRunCalls=sum(isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='run' for n in t.body))))",
+            `import ast,sys,json
+def run_calls(source):
+    tree = ast.parse(source)
+    count = sum(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == 'run' for n in ast.walk(tree))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'compile' and node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+            count += run_calls(node.args[0].value)
+    return count
+print(json.dumps(dict(runCalls=run_calls(sys.stdin.read()))))`,
           ],
-          { input: script, encoding: "utf8" },
+          { input: program, encoding: "utf8" },
         );
         assert.equal(parsed.status, 0, parsed.stderr);
         assert.equal(
-          JSON.parse(parsed.stdout).topLevelRunCalls,
-          0,
-          "Native server invokes run; no client-side top-level invocation",
+          JSON.parse(parsed.stdout).runCalls,
+          1,
+          "The add-in adapter must invoke run exactly once",
         );
         assert.match(payload.id, /^fmcad:[a-f0-9-]{36}$/);
         const directory = [
@@ -209,10 +240,16 @@ async function main() {
         assert.equal(start.pythonCheck.status, "passed");
         assert.equal(start.pythonCheck.provenance.checker, "basedpyright");
         const wire = api.readJson(path.join(directory, "wire.json"));
-        assert.equal(
-          payload.params.arguments.object.readOnly,
-          path.basename(directory) === "dead-epoch-current-observation",
-        );
+        if (path.basename(directory) === "isolated-scratch-qualification")
+          assert.match(
+            program,
+            /New scratch qualification requires an idle current instance/,
+          );
+        if (path.basename(directory) === "isolated-scratch-close")
+          assert.match(
+            program,
+            /Scratch close requires a bounded idle current instance/,
+          );
         assert.equal(api.hash(script), wire.artifact.sha256);
         assert.equal(
           wire.artifact.sha256,
@@ -309,7 +346,14 @@ async function main() {
           );
         answer({
           content: [
-            { type: "text", text: "FMCAD_RESULT " + JSON.stringify(summary) },
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                stdout: "FMCAD_RESULT " + JSON.stringify(summary),
+                stderr: "",
+              }),
+            },
           ],
         });
       } catch (error) {
@@ -330,22 +374,23 @@ async function main() {
         bridgeSource: () => "",
       },
     );
-    assert.deepEqual(await discovery.listTools(), [nativeExecute]);
-    const unsupported = new BrokerMcpClient(
-      { url: endpointUrl, transport: "http" },
-      {
-        version: "fixture",
-        requestTimeout: () => 1000,
-        bridgeSource: () => "",
-      },
-    );
-    await assert.rejects(
-      unsupported.callTool(
-        { code: 'raise RuntimeError("must never execute")', persistent: false },
-        "execute_python",
-      ),
-      { code: "MCP_ERROR" },
-    );
+    assert.deepEqual(await discovery.listTools(), [executePython]);
+    // Historical native payloads are rejected by this synthetic ADDIN peer.
+    // This loopback fixture is not a Fusion transport or the retired endpoint.
+    const unsupported = await fetch(endpointUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "unsupported-native-tool",
+        method: "tools/call",
+        params: {
+          name: nativeExecute.name,
+          arguments: { featureType: "script", object: { script: "never run" } },
+        },
+      }),
+    });
+    assert.equal((await unsupported.json()).error.code, -32601);
     calls.length = 0;
   }
   let factories = 0;
@@ -357,7 +402,7 @@ async function main() {
     nativePath: (file) => file,
     createBackend: (server) => {
       factories++;
-      return new BrokerMcpClient(
+      return new BrokerAddinClient(
         { ...server, url: endpointUrl, transport: "http" },
         {
           version: "offline-endpoint",
