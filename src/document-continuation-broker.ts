@@ -63,6 +63,10 @@ export interface ContinuationPrograms {
   readonly ordinary: ContinuationProgram;
   readonly guarded: ContinuationProgram;
 }
+export interface PreparedDocumentContinuationSubmission {
+  /** One private commit, with no await, for the host's project-activity fence. */
+  submit(): Record<string, unknown>;
+}
 function refuse(): never {
   throw Object.assign(
     new Error("Verified document continuation is unavailable"),
@@ -282,97 +286,111 @@ export function createDocumentContinuationBroker(
     return { checkpoint, reverify: value.reverify.bind(value) };
   }
 
-  return Object.freeze({
-    async submit(input: QueueRequest, principal: ContinuationActor) {
-      const request = structuredClone(input),
-        actor = Object.freeze({ ...principal });
-      if (
-        request.clientId !== actor.clientId ||
-        request.ownerToken !== actor.clientTokenHash
-      )
-        refuse();
-      const invocation = boundedInvocation(request);
-      const target = {
-        creationId: invocation.docId,
-        ...(invocation.docFileId === undefined
-          ? {}
-          : { fileId: invocation.docFileId }),
-      };
-      synchronous(() => ports.recheck(actor, target));
-      const currentGeneration = generation();
-      const fence = domain.documentInspectionFence(target, currentGeneration);
-      const records = domain.data.documentCheckpoints;
-      const acceptance =
-        fence.priorCheckpointId &&
-        records?.acceptances[fence.priorCheckpointId];
-      const selected =
-        acceptance && records?.observations[acceptance.observationId];
-      if (
-        !acceptance ||
-        !selected ||
-        selected.actorClientId !== actor.clientId ||
-        acceptance.actorClientId !== actor.clientId ||
-        selected.generation !== currentGeneration ||
-        acceptance.observationDigest !== canonicalHash(selected) ||
-        !isDeepStrictEqual(selected.target, target)
-      )
-        refuse();
-      const observation = structuredClone(selected);
-      const verified = await ports.verifyObservation(observation, actor);
-      const programs = compileDocumentContinuationPrograms(
-        request,
-        verified?.checkpoint,
-      );
-      if (programs.guardDigest !== observation.stateDigest) refuse();
-      const descriptor: DocumentContinuation = {
-        version: 1,
-        actorClientId: actor.clientId,
-        requestHash: programs.requestHash,
-        target,
-        generation: currentGeneration,
-        observationId: observation.id,
-        acceptanceId: acceptance.id,
-        stateDigest: observation.stateDigest,
-        blockersDigest: fence.blockersDigest,
-        sourceHash: programs.guarded.sourceHash,
-      };
-      const entry: Entry = {
-        actor,
-        request,
-        observation,
-        programs,
-        descriptor,
-        verified: readVerified(verified, { observation, descriptor }),
-      };
-      live.add(entry);
-      try {
-        // No await after the final complete source check through core submission.
-        verify(entry);
-        const authority = domain.createDocumentContinuationAuthority(() =>
-          verify(entry),
-        );
-        const existing = new Set(Object.keys(domain.data.jobs));
-        const result = domain.submitDocumentContinuation(request, authority);
-        const id = result["id"];
-        if (typeof id === "string" && !existing.has(id)) {
-          const job = domain.data.jobs[id];
-          if (
-            job &&
-            ["queued", "preparing", "processing"].includes(job.state) &&
-            isDeepStrictEqual(job.documentContinuation, descriptor)
-          ) {
-            entry.jobId = id;
-            jobs.set(id, entry);
-            return result;
+  async function prepareSubmit(
+    input: QueueRequest,
+    principal: ContinuationActor,
+  ): Promise<PreparedDocumentContinuationSubmission> {
+    const request = structuredClone(input),
+      actor = Object.freeze({ ...principal });
+    if (
+      request.clientId !== actor.clientId ||
+      request.ownerToken !== actor.clientTokenHash
+    )
+      refuse();
+    const invocation = boundedInvocation(request);
+    const target = {
+      creationId: invocation.docId,
+      ...(invocation.docFileId === undefined
+        ? {}
+        : { fileId: invocation.docFileId }),
+    };
+    synchronous(() => ports.recheck(actor, target));
+    const currentGeneration = generation();
+    const fence = domain.documentInspectionFence(target, currentGeneration);
+    const records = domain.data.documentCheckpoints;
+    const acceptance =
+      fence.priorCheckpointId && records?.acceptances[fence.priorCheckpointId];
+    const selected =
+      acceptance && records?.observations[acceptance.observationId];
+    if (
+      !acceptance ||
+      !selected ||
+      selected.actorClientId !== actor.clientId ||
+      acceptance.actorClientId !== actor.clientId ||
+      selected.generation !== currentGeneration ||
+      acceptance.observationDigest !== canonicalHash(selected) ||
+      !isDeepStrictEqual(selected.target, target)
+    )
+      refuse();
+    const observation = structuredClone(selected);
+    const verified = await ports.verifyObservation(observation, actor);
+    const programs = compileDocumentContinuationPrograms(
+      request,
+      verified?.checkpoint,
+    );
+    if (programs.guardDigest !== observation.stateDigest) refuse();
+    const descriptor: DocumentContinuation = {
+      version: 1,
+      actorClientId: actor.clientId,
+      requestHash: programs.requestHash,
+      target,
+      generation: currentGeneration,
+      observationId: observation.id,
+      acceptanceId: acceptance.id,
+      stateDigest: observation.stateDigest,
+      blockersDigest: fence.blockersDigest,
+      sourceHash: programs.guarded.sourceHash,
+    };
+    const entry: Entry = {
+      actor,
+      request,
+      observation,
+      programs,
+      descriptor,
+      verified: readVerified(verified, { observation, descriptor }),
+    };
+    let consumed = false;
+    return Object.freeze({
+      submit() {
+        if (consumed) refuse();
+        consumed = true;
+        live.add(entry);
+        try {
+          // No await after the final complete source check through core submission.
+          verify(entry);
+          const authority = domain.createDocumentContinuationAuthority(() =>
+            verify(entry),
+          );
+          const existing = new Set(Object.keys(domain.data.jobs));
+          const result = domain.submitDocumentContinuation(request, authority);
+          const id = result["id"];
+          if (typeof id === "string" && !existing.has(id)) {
+            const job = domain.data.jobs[id];
+            if (
+              job &&
+              ["queued", "preparing", "processing"].includes(job.state) &&
+              isDeepStrictEqual(job.documentContinuation, descriptor)
+            ) {
+              entry.jobId = id;
+              jobs.set(id, entry);
+              return result;
+            }
           }
+          // A repeated old request ID must never re-arm its retained marker/cap.
+          live.delete(entry);
+          return result;
+        } catch (error) {
+          live.delete(entry);
+          throw error;
         }
-        // A repeated old request ID must never re-arm its retained marker/cap.
-        live.delete(entry);
-        return result;
-      } catch (error) {
-        live.delete(entry);
-        throw error;
-      }
+      },
+    });
+  }
+
+  return Object.freeze({
+    prepareSubmit,
+    async submit(input: QueueRequest, principal: ContinuationActor) {
+      return (await prepareSubmit(input, principal)).submit();
     },
 
     async prepareWorker(

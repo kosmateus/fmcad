@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import * as fs from "node:fs";
 import type { DocumentObservation, QueueRequest, QueueJob } from "@fmcad/core";
 import type { DocumentContinuationBrokerPorts } from "../src/document-continuation-broker";
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
@@ -706,3 +707,166 @@ for (const newerFails of [false, true]) {
     );
   });
 }
+
+test("submission preparation has a private synchronous commit API for the existing project fence", () => {
+  const f = fixture();
+  assert.equal(
+    typeof Reflect.get(f.broker, "prepareSubmit"),
+    "function",
+    "async source verification must be separated from synchronous domain admission",
+  );
+});
+
+test("prepareSubmit creates no job and its one-shot commit is synchronous without another native verification", async () => {
+  const f = fixture(),
+    input = request(),
+    original = structuredClone(input);
+  const principal = { ...f.actor };
+  const prepared = await f.broker.prepareSubmit(input, principal);
+  assert.deepEqual(Object.keys(f.domain.data.jobs), []);
+  assert.equal(f.counts().verifications, 1);
+  assert.deepEqual(Object.keys(prepared), ["submit"]);
+  assert.equal(
+    JSON.stringify(prepared),
+    "{}",
+    "serialized data cannot recreate the private closure",
+  );
+  input.clientId = "foreign";
+  principal.clientId = "foreign";
+  const before = f.counts().finalChecks;
+  const result = prepared.submit();
+  assert.equal(result instanceof Promise, false);
+  const job = f.job(result);
+  assert.equal(job.hash, helper.continuationRequestHash(original));
+  assert.equal(job.clientId, f.actor.clientId);
+  assert.equal(f.counts().verifications, 1);
+  assert.ok(f.counts().finalChecks > before);
+  assert.throws(() => prepared.submit(), {
+    code: "DOCUMENT_CONTINUATION_UNPROVEN",
+  });
+  assert.equal(Object.keys(f.domain.data.jobs).length, 1);
+});
+
+test("prepared commit rechecks current head, rights, generation and source after the preparation await", async () => {
+  for (const change of ["head", "rights", "generation", "source"]) {
+    const f = fixture();
+    const prepared = await f.broker.prepareSubmit(request(), f.actor);
+    if (change === "head") f.moveHead();
+    if (change === "rights") f.revoke();
+    if (change === "generation") f.generation("generation-B");
+    if (change === "source") f.corruptSource();
+    assert.throws(() => prepared.submit());
+    assert.equal(Object.keys(f.domain.data.jobs).length, 0);
+    assert.equal(f.counts().verifications, 1);
+    assert.throws(
+      () => prepared.submit(),
+      { code: "DOCUMENT_CONTINUATION_UNPROVEN" },
+      "a refused commit cannot be silently retried with cached authority",
+    );
+  }
+});
+
+test("two prepared closures for a retained request cannot re-arm its private job entry", async () => {
+  const f = fixture(),
+    input = request();
+  const [older, newer] = await Promise.all([
+    f.broker.prepareSubmit(input, f.actor),
+    f.broker.prepareSubmit(input, f.actor),
+  ]);
+  const job = f.job(newer.submit());
+  f.broker.forget(job.id);
+  assert.equal(f.job(older.submit()).id, job.id);
+  await assert.rejects(
+    f.broker.prepareWorker(job, f.call(), createTurnIdentity(job.id)),
+  );
+  f.domain.readyTurn(job.id);
+  assert.equal(f.domain.next(), null);
+  assert.equal(f.domain.data.jobs[job.id]?.code, "CHECKPOINT_CHANGED");
+});
+
+test("prepared admission executes inside the real synchronous project-activity fence", async (t) => {
+  const directory = fs.mkdtempSync("/tmp/opencode/continuation-project-fence-");
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { openProjectRegistry } = load(
+    "./dist/node-adapters/persistence/project-history/registry",
+  ) as typeof import("../packages/node-adapters/src/persistence/project-history/registry");
+  const { registerProjectHistoryStore } = load(
+    "./dist/node-adapters/persistence/project-history/sqlite",
+  ) as typeof import("../packages/node-adapters/src/persistence/project-history/sqlite");
+  const { withProjectActivityFence } = load(
+    "./dist/node-adapters/persistence/project-history/activity",
+  ) as typeof import("../packages/node-adapters/src/persistence/project-history/activity");
+  const registry = openProjectRegistry({
+    filePath: path.join(directory, "registry.json"),
+  });
+  const projectRoot = path.join(directory, "project");
+  fs.mkdirSync(projectRoot);
+  const store = registerProjectHistoryStore(registry, {
+    projectRoot,
+    projectId: "owned-project",
+  });
+  store.close();
+  const f = fixture(),
+    verify = f.ports.verifyObservation;
+  let insideFence = false;
+  f.ports.verifyObservation = async (observation, actor) => {
+    assert.equal(
+      insideFence,
+      false,
+      "native/source awaits must precede the registry/SQLite fence",
+    );
+    return verify(observation, actor);
+  };
+  const prepared = await f.broker.prepareSubmit(
+    { ...request(), cwd: projectRoot },
+    f.actor,
+  );
+  const accepted = withProjectActivityFence(
+    projectRoot,
+    () => {
+      insideFence = true;
+      try {
+        assert.equal(Object.keys(f.domain.data.jobs).length, 0);
+        return prepared.submit();
+      } finally {
+        insideFence = false;
+      }
+    },
+    { registry },
+  );
+  assert.equal(accepted instanceof Promise, false);
+  assert.equal(f.job(accepted).state, "preparing");
+  assert.equal(f.counts().verifications, 1);
+  assert.equal(fs.existsSync(registry.readonlyPath + ".lock"), false);
+  const waiting = await f.broker.prepareSubmit(
+    {
+      ...request(),
+      requestId: "prepared-before-project-archive",
+      cwd: projectRoot,
+    },
+    f.actor,
+  );
+  const registered = registry.lookup("owned-project");
+  assert.ok(registered);
+  const now = Date.now();
+  registry.register({
+    projectId: registered.projectId,
+    projectPath: registered.path,
+    databaseId: registered.databaseId,
+    monitoring: false,
+    archivedAtMs: now,
+    nowMs: now,
+  });
+  assert.throws(
+    () =>
+      withProjectActivityFence(projectRoot, () => waiting.submit(), {
+        registry,
+      }),
+    { code: "PROJECT_ACTIVITY_BLOCKED" },
+  );
+  assert.equal(
+    Object.keys(f.domain.data.jobs).length,
+    1,
+    "archiving after preparation prevents admission before the closure is called",
+  );
+});
