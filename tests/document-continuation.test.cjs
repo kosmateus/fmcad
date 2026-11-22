@@ -159,6 +159,97 @@ function fixture() {
   };
 }
 
+test("deduplicated requests never rearm an old job after restart", () => {
+  const f = fixture();
+  const original = f.domain.submitDocumentContinuation(f.request, f.authority);
+  const restored = new core.QueueDomain({
+    ...f.options,
+    snapshot: f.domain.data,
+  });
+  const freshAuthority = restored.createDocumentContinuationAuthority(
+    () => f.permit,
+  );
+  assert.equal(
+    restored.submitDocumentContinuation(f.request, freshAuthority).id,
+    original.id,
+  );
+  assert.equal(restored.next(), null);
+  assert.equal(restored.data.jobs[original.id].state, "failed");
+});
+test("a fresh phased continuation keeps its capability through preparation", () => {
+  const f = fixture();
+  f.request.phased = true;
+  f.permit.requestHash = hash(core.canonical(f.request));
+  const job = f.domain.submitDocumentContinuation(f.request, f.authority);
+  assert.equal(job.state, "preparing");
+  f.domain.readyTurn(job.id);
+  assert.equal(f.domain.next().id, job.id);
+});
+for (const change of ["argv", "version"]) {
+  test(`continuation refuses contradictory ${change} even with matching request hash`, () => {
+    const f = fixture();
+    if (change === "argv")
+      f.request.argv = ["param", "inspect", "--doc-id", "doc-A"];
+    else f.request.payload.version = 2;
+    f.permit.requestHash = hash(core.canonical(f.request));
+    assert.throws(
+      () => f.domain.submitDocumentContinuation(f.request, f.authority),
+      { code: "DOCUMENT_CONTINUATION_UNPROVEN" },
+    );
+  });
+}
+test("a capacity-refused stale-job cleanup does not revoke the private capability", () => {
+  const f = fixture();
+  const job = f.domain.submitDocumentContinuation(f.request, f.authority);
+  let valid = false;
+  const head =
+    f.domain.data.documentCheckpoints.heads[
+      core.documentTargetKey(f.permit.target)
+    ];
+  f.domain.data.documentCheckpoints.heads[
+    core.documentTargetKey(f.permit.target)
+  ] = "new-head";
+  f.domain.commit = () => {
+    if (!valid)
+      throw Object.assign(new Error("capacity"), {
+        code: "SNAPSHOT_TOO_LARGE",
+      });
+  };
+  assert.throws(() => f.domain.next(), { code: "SNAPSHOT_TOO_LARGE" });
+  valid = true;
+  f.domain.data.documentCheckpoints.heads[
+    core.documentTargetKey(f.permit.target)
+  ] = head;
+  assert.equal(f.domain.next().id, job.id);
+});
+for (const code of [
+  "EPOCH_CLIENT_NOT_GRANTED",
+  "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+]) {
+  test(`${code} cannot block a different valid continuation`, () => {
+    const f = fixture();
+    let revoked = false;
+    const expired = f.domain.submitDocumentContinuation(
+      f.request,
+      f.domain.createDocumentContinuationAuthority(() => {
+        if (revoked)
+          throw Object.assign(new Error("grant revoked"), {
+            code,
+          });
+        return f.permit;
+      }),
+    );
+    const request = { ...f.request, requestId: "valid-next" };
+    const permit = { ...f.permit, requestHash: hash(core.canonical(request)) };
+    const fresh = f.domain.submitDocumentContinuation(
+      request,
+      f.domain.createDocumentContinuationAuthority(() => permit),
+    );
+    revoked = true;
+    assert.equal(f.domain.next().id, fresh.id);
+    assert.equal(f.domain.data.jobs[expired.id].state, "failed");
+  });
+}
 test("acceptance alone does not bypass UNKNOWN; one exact private guarded write may proceed", () => {
   const f = fixture();
   const ordinary = f.domain.submit({

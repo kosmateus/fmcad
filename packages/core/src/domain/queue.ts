@@ -132,6 +132,8 @@ function validContinuationJob(job: QueueJob) {
     !job.documentInspection && job.request.kind === "command" &&
     marker.actorClientId === job.clientId && marker.requestHash === job.hash &&
     !!target && canonical(target) === canonical(marker.target) &&
+    job.request.argv?.[0] === "param" && job.request.argv[1] === "apply" &&
+    invocation?.["kind"] === "cad" && invocation["version"] === 1 &&
     invocation?.["operation"] === "param.apply" &&
     invocation["docId"] === marker.target.creationId &&
     invocation["docFileId"] === marker.target.fileId &&
@@ -153,7 +155,8 @@ function documentContinuationAllowed(
   } catch (error) {
     const code = plain(error) ? error["code"] : undefined;
     if (typeof code === "string" &&
-      ["NOT_AUTHORIZED", "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED",
+      ["NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED", "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+        "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED",
         "DOCUMENT_CONTINUATION_UNPROVEN", "DOCUMENT_STATE_CHANGED"].includes(code))
       return false;
     // Namespace/owner/durability failures are not per-job expiration.
@@ -508,6 +511,11 @@ export class QueueDomain {
         throw error;
       }
       this.data = draft;
+      const capabilities = continuations.get(this);
+      if (capabilities)
+        for (const id of capabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state))
+            capabilities.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -729,11 +737,13 @@ export class QueueDomain {
   submitDocumentContinuation(
     request: unknown, authority: DocumentContinuationAuthority,
   ) {
+    const existingIds = new Set(Object.keys(this.data.jobs));
     const marker = verifiedDocumentContinuation(authority, this);
     const result = this._submit(request, undefined, undefined, { marker, authority });
     const id = result["id"];
     const job = typeof id === "string" ? this.data.jobs[id] : undefined;
-    if (job?.state === "queued" && job.documentContinuation &&
+    if (job && !existingIds.has(job.id) &&
+      ["queued", "preparing", "processing"].includes(job.state) && job.documentContinuation &&
       canonical(job.documentContinuation) === canonical(marker)) {
       let capabilities = continuations.get(this);
       if (!capabilities) continuations.set(this, capabilities = new Map());
@@ -1570,7 +1580,6 @@ export class QueueDomain {
     });
     if (job.sequenceId && d.lease?.id === job.sequenceId &&
       d.lease.clientId === job.clientId) d.lease = null;
-    continuations.get(this)?.delete(job.id);
   }
 
   /** Broker-authored readback only. Public clients cannot provide these fields.
