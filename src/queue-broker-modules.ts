@@ -31,9 +31,7 @@ function refuse(code: string, message: string): never {
 }
 
 export function isAddinMetadata(payload: P.Rpc) {
-  return (
-    payload.method === "tools/call" && payload.params?.name === metadataTool
-  );
+  return payload.method === "tools/call" && payload.params?.name === metadataTool;
 }
 
 function metadataWire(payload: P.Rpc) {
@@ -43,14 +41,10 @@ function metadataWire(payload: P.Rpc) {
   if (
     !isAddinMetadata(payload) ||
     payload.jsonrpc !== "2.0" ||
-    !(
-      (typeof id === "string" && id.length > 0) ||
-      (typeof id === "number" && Number.isSafeInteger(id))
-    ) ||
+    !((typeof id === "string" && id.length > 0) ||
+      (typeof id === "number" && Number.isSafeInteger(id))) ||
     Object.keys(payload).length !== 4 ||
-    !["jsonrpc", "method", "id", "params"].every((key) =>
-      Object.hasOwn(payload, key),
-    ) ||
+    !["jsonrpc", "method", "id", "params"].every((key) => Object.hasOwn(payload, key)) ||
     !params ||
     Object.keys(params).length !== 2 ||
     !Object.hasOwn(params, "name") ||
@@ -73,10 +67,7 @@ function metadataWire(payload: P.Rpc) {
     id,
     params: Object.freeze({
       name: metadataTool,
-      arguments: Object.freeze({
-        fileId: args["fileId"],
-        version: args["version"],
-      }),
+      arguments: Object.freeze({ fileId: args["fileId"], version: args["version"] }),
     }),
   });
 }
@@ -106,9 +97,7 @@ export function provisionAddinMetadata(
   backend: string | undefined,
   prepare: typeof createAddinAdmission,
   transport?: AdmissionTransport,
-  authorizePhysicalRequest?: (
-    endpoint: string,
-  ) => Readonly<Record<string, string>>,
+  authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>,
 ) {
   if (config === undefined) return null;
   if (
@@ -118,44 +107,15 @@ export function provisionAddinMetadata(
     !Number.isSafeInteger(config.pid) ||
     config.pid <= 0
   )
-    refuse(
-      "INVALID_ADMISSION_PROVISIONING",
-      "Expected a provisioned ADDIN metadata capability",
-    );
-  const {
-    endpoint,
-    token,
-    pid,
-    birth,
-    instance,
-    epoch,
-    source,
-    build,
-    owner: provisionedOwner,
-  } = config;
-  if (
-    [
-      endpoint,
-      token,
-      birth,
-      instance,
-      epoch,
-      source,
-      build,
-      provisionedOwner,
-    ].some((pin) => typeof pin !== "string" || !pin.trim())
-  )
-    refuse(
-      "INVALID_ADMISSION_PROVISIONING",
-      "ADDIN metadata provisioning is incomplete",
-    );
-  const dependencies: NonNullable<
-    Parameters<typeof createAdmissionRequest>[1]
-  > & {
-    authorizePhysicalRequest?: (
-      endpoint: string,
-    ) => Readonly<Record<string, string>>;
-  } = authorizePhysicalRequest ? { authorizePhysicalRequest } : {};
+    refuse("INVALID_ADMISSION_PROVISIONING", "Expected a provisioned ADDIN metadata capability");
+  const { endpoint, token, pid, birth, instance, epoch, source, build, owner: provisionedOwner } = config;
+  if ([endpoint, token, birth, instance, epoch, source, build, provisionedOwner].some(
+    (pin) => typeof pin !== "string" || !pin.trim(),
+  ))
+    refuse("INVALID_ADMISSION_PROVISIONING", "ADDIN metadata provisioning is incomplete");
+  const dependencies: NonNullable<Parameters<typeof createAdmissionRequest>[1]> & {
+    authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>;
+  } = authorizePhysicalRequest ? {authorizePhysicalRequest} : {};
   const requestPort = createAdmissionRequest(transport, dependencies);
 
   return {
@@ -168,21 +128,14 @@ export function provisionAddinMetadata(
       timeoutMs: number,
     ) {
       if (owner !== provisionedOwner)
-        refuse(
-          "ADMISSION_OWNER_MISMATCH",
-          "Client does not match the provisioned ADDIN owner",
-        );
+        refuse("ADMISSION_OWNER_MISMATCH", "Client does not match the provisioned ADDIN owner");
       const { fileId, version } = wire.params.arguments;
       const target = fields(observed?.documentState?.state?.identity);
       const creationId = target["creationId"];
-      const lineage = observed?.documents
-        ?.map(fields)
-        .filter(
-          (entry) => entry["id"] === creationId && entry["fileId"] === fileId,
-        );
-      const inventory = lineage?.filter(
-        (entry) => entry["version"] === version,
+      const lineage = observed?.documents?.map(fields).filter(
+        (entry) => entry["id"] === creationId && entry["fileId"] === fileId,
       );
+      const inventory = lineage?.filter((entry) => entry["version"] === version);
       const entry = inventory?.length === 1 ? inventory[0] : undefined;
       if (
         observed?.pid !== pid ||
@@ -195,20 +148,16 @@ export function provisionAddinMetadata(
         target["fileId"] !== fileId ||
         target["version"] !== version ||
         target["isSaved"] !== true ||
-        lineage?.some(
-          (row) =>
-            typeof row["version"] !== "number" ||
-            !Number.isSafeInteger(row["version"]) ||
-            row["version"] < 1 ||
-            row["dataFileError"] !== undefined,
+        lineage?.some((row) =>
+          typeof row["version"] !== "number" ||
+          !Number.isSafeInteger(row["version"]) ||
+          row["version"] < 1 ||
+          row["dataFileError"] !== undefined,
         ) ||
         !entry ||
         entry["isSaved"] !== true
       )
-        refuse(
-          "DOCUMENT_ADMISSION_UNPROVEN",
-          "Preflight did not prove the provisioned saved document",
-        );
+        refuse("DOCUMENT_ADMISSION_UNPROVEN", "Preflight did not prove the provisioned saved document");
 
       const identity = Object.freeze({
         owner,
@@ -222,22 +171,10 @@ export function provisionAddinMetadata(
       try {
         // Construction is local. It validates the credentials, endpoint and
         // exact bytes before a journal can imply that a send was possible.
-        const { binding, admitEvidence } = prepare(
-          { endpoint, token, timeoutMs },
-          identity,
-          wire,
-          requestPort,
-        );
-        return {
-          scope: Object.freeze({ endpoint, token, identity }),
-          binding,
-          admitEvidence,
-        };
+        const { binding, admitEvidence } = prepare({ endpoint, token, timeoutMs }, identity, wire, requestPort);
+        return { scope: Object.freeze({ endpoint, token, identity }), binding, admitEvidence };
       } catch {
-        refuse(
-          "INVALID_ADMISSION_PROVISIONING",
-          "Invalid ADDIN admission provisioning",
-        );
+        refuse("INVALID_ADMISSION_PROVISIONING", "Invalid ADDIN admission provisioning");
       }
     },
   };
@@ -245,7 +182,7 @@ export function provisionAddinMetadata(
 
 function fields(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? value as Record<string, unknown>
     : {};
 }
 
@@ -257,12 +194,9 @@ export function matchMetadataEvidence(
   decode: (raw: string) => unknown,
 ): P.Reply {
   function invalid(): never {
-    throw Object.assign(
-      new Error("Metadata response lacks original bound terminal evidence"),
-      {
-        code: "RECEIPT_MISMATCH",
-      },
-    );
+    throw Object.assign(new Error("Metadata response lacks original bound terminal evidence"), {
+      code: "RECEIPT_MISMATCH",
+    });
   }
   let envelope: Record<string, unknown>;
   try {
@@ -313,19 +247,10 @@ export function matchRetainedMetadataEvidence(
     original.response?.status !== response.status ||
     original.response.raw !== response.raw
   )
-    throw Object.assign(
-      new Error("ADDIN metadata differs from the original retained response"),
-      {
-        code: "RECEIPT_MISMATCH",
-      },
-    );
-  return matchMetadataEvidence(
-    response,
-    binding["addinAdmission"],
-    binding.rpcId,
-    wireRequest.id,
-    decode,
-  );
+    throw Object.assign(new Error("ADDIN metadata differs from the original retained response"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  return matchMetadataEvidence(response, binding["addinAdmission"], binding.rpcId, wireRequest.id, decode);
 }
 
 export function usesRetainedMetadataEvidence(
@@ -334,12 +259,9 @@ export function usesRetainedMetadataEvidence(
   const metadata = record.dispatchClass === "addin-metadata";
   const binding = Object.hasOwn(record.binding, "addinAdmission");
   if (metadata !== binding || (metadata && !record.binding["addinAdmission"]))
-    throw Object.assign(
-      new Error("ADDIN metadata dispatch is missing its exact binding"),
-      {
-        code: "RECEIPT_MISMATCH",
-      },
-    );
+    throw Object.assign(new Error("ADDIN metadata dispatch is missing its exact binding"), {
+      code: "RECEIPT_MISMATCH",
+    });
   return metadata;
 }
 
@@ -353,54 +275,27 @@ export function pinPhysicalTurn(
   runtime?: Pick<P.Instance, "pid" | "birth" | "version">,
 ): P.PhysicalTurnBinding {
   let targetMatches = false;
-  try {
-    targetMatches = isDeepStrictEqual(
-      JSON.parse(binding.target),
-      request.documentSelector ?? null,
-    );
-  } catch {
-    /* Refuse below. */
-  }
-  if (
-    !targetMatches ||
-    binding.version !== 1 ||
-    !/^[a-f0-9]{64}$/.test(binding.grantDigest) ||
-    binding.turnId !== request.physicalRequestId ||
-    !Number.isSafeInteger(binding.physicalRuntime?.pid) ||
-    binding.physicalRuntime.pid <= 0 ||
-    (runtime &&
-      (binding.physicalRuntime.pid !== runtime.pid ||
-        binding.physicalRuntime.birth !== runtime.birth ||
-        binding.physicalRuntime.version !== runtime.version)) ||
-    ![
-      binding.generation?.instance,
-      binding.generation?.epoch,
-      binding.physicalRuntime.birth,
-      binding.physicalRuntime.version,
-      binding.physicalRuntime.source,
-      binding.physicalRuntime.build,
-    ].every((value) => typeof value === "string" && value.length > 0)
-  )
-    refuse(
-      "PHYSICAL_BINDING_MISMATCH",
-      "Physical binding must identify the exact original dispatch",
-    );
+  try { targetMatches = isDeepStrictEqual(JSON.parse(binding.target), request.documentSelector ?? null); }
+  catch { /* Refuse below. */ }
+  if (!targetMatches || binding.version !== 1 || !/^[a-f0-9]{64}$/.test(binding.grantDigest) ||
+      binding.turnId !== request.physicalRequestId ||
+      !Number.isSafeInteger(binding.physicalRuntime?.pid) || binding.physicalRuntime.pid <= 0 ||
+      (runtime && (binding.physicalRuntime.pid !== runtime.pid ||
+        binding.physicalRuntime.birth !== runtime.birth || binding.physicalRuntime.version !== runtime.version)) ||
+      ![binding.generation?.instance, binding.generation?.epoch,
+        binding.physicalRuntime.birth, binding.physicalRuntime.version,
+        binding.physicalRuntime.source, binding.physicalRuntime.build].every(
+          (value) => typeof value === "string" && value.length > 0))
+    refuse("PHYSICAL_BINDING_MISMATCH", "Physical binding must identify the exact original dispatch");
   return Object.freeze({
-    version: 1,
-    grantDigest: binding.grantDigest,
-    generation: Object.freeze({
-      instance: binding.generation.instance,
-      epoch: binding.generation.epoch,
-    }),
+    version: 1, grantDigest: binding.grantDigest,
+    generation: Object.freeze({instance: binding.generation.instance, epoch: binding.generation.epoch}),
     physicalRuntime: Object.freeze({
-      pid: binding.physicalRuntime.pid,
-      birth: binding.physicalRuntime.birth,
-      version: binding.physicalRuntime.version,
-      source: binding.physicalRuntime.source,
+      pid: binding.physicalRuntime.pid, birth: binding.physicalRuntime.birth,
+      version: binding.physicalRuntime.version, source: binding.physicalRuntime.source,
       build: binding.physicalRuntime.build,
     }),
-    turnId: binding.turnId,
-    target: binding.target,
+    turnId: binding.turnId, target: binding.target,
   });
 }
 
@@ -427,7 +322,7 @@ export function createBrokerLane(
     activeWorker: () =>
       current?.context.postflight
         ? null
-        : (current?.context.worker ?? held?.context?.worker ?? null),
+        : current?.context.worker ?? held?.context?.worker ?? null,
     heldWorker: () => held?.context?.worker ?? null,
     heldContext: () => held?.context ?? null,
     heldReason() {
@@ -449,7 +344,7 @@ export function createBrokerLane(
       current = session.acquire(
         { job, executing: true },
         turn,
-        scoped ? (held ?? undefined) : undefined,
+        scoped ? held ?? undefined : undefined,
       );
       return current;
     },
@@ -556,15 +451,11 @@ export interface AuditPorts {
     payload: P.Rpc,
     artifact?: PreparedPythonArtifact,
   ): Promise<P.Certificate>;
-  post(
-    payload: P.Rpc,
-    sessionId?: string,
-    physicalContext?: {
-      binding: Record<string, unknown>;
-      documentSelector: { creationId: string } | undefined;
-      receiptPath: string;
-    },
-  ): Promise<P.Response>;
+  post(payload: P.Rpc, sessionId?: string, physicalContext?: {
+    binding: Record<string, unknown>;
+    documentSelector: {creationId: string} | undefined;
+    receiptPath: string;
+  }): Promise<P.Response>;
   match(response: P.Response, payload: P.Rpc): P.Reply | null;
   remoteReceipt(record: {
     receipt?: string;
