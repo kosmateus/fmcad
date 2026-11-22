@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 export const queueRuntimeModules = [
   "atomic-runtime-abi",
@@ -114,6 +115,7 @@ export function stageQueueTestFixtures(root: string): void {
     "saved-native-destination.cjs",
     "settled-probes.cjs",
     "native-source-envelope.cjs",
+    "frozen-inline-observer-evidence.json",
   ];
   const workspaceArtifacts = workspaceNames.map((filename) => ({
     filename,
@@ -139,6 +141,18 @@ export function stageQueueTestFixtures(root: string): void {
   fs.mkdirSync(target, { recursive: true });
   for (const artifact of artifacts)
     fs.writeFileSync(path.join(target, artifact.filename), artifact.bytes);
+  const corpus = [
+    "tests/dead-epoch-successor.test.js",
+    "tests/frozen-inline-observer.test.js",
+    "tests/frozen-metadata-profile.test.js",
+    "tests/integration/offline-cli.js",
+    ...workspaceNames.map((filename) => `tests/fixtures/${filename}`),
+  ].sort().map((file) => {
+    const bytes = fs.readFileSync(path.join(root, "dist", file));
+    return { file, sha256: createHash("sha256").update(bytes).digest("hex") };
+  });
+  fs.writeFileSync(path.join(root, "dist/frozen-metadata-test-corpus.json"),
+    JSON.stringify({ version: 1, files: corpus }, null, 2) + "\n");
 }
 
 if (require.main === module) {

@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import type { PreparedPythonArtifact, PythonCheckReport } from "@fmcad/core";
@@ -852,6 +852,30 @@ async function main() {
     ];
     assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed before qualification");
     for (const file of tests) assert.ok(fs.lstatSync(path.join(runtime, file)).isFile(), file);
+    const corpusFile = path.join(runtime, "frozen-metadata-test-corpus.json");
+    const corpusBytes = fs.readFileSync(corpusFile);
+    const corpusHash = createHash("sha256").update(corpusBytes).digest("hex");
+    const corpus = object(JSON.parse(corpusBytes.toString("utf8")) as unknown);
+    assert.equal(corpus["version"], 1);
+    assert.ok(Array.isArray(corpus["files"]));
+    const entries = corpus["files"].map((entry: unknown) => object(entry));
+    const names = new Set(entries.map((entry) => text(entry["file"])));
+    assert.equal(names.size, entries.length, "Duplicate test corpus entries");
+    for (const file of [...tests, "tests/fixtures/frozen-inline-observer-evidence.json"])
+      assert.ok(names.has(file), `Missing pinned corpus entry: ${file}`);
+    const assertCorpus = (): void => {
+      assert.equal(createHash("sha256").update(fs.readFileSync(corpusFile)).digest("hex"), corpusHash);
+      for (const entry of entries) {
+        const file = text(entry["file"]);
+        assert.ok(file.startsWith("tests/") && !file.split("/").includes("..") && !file.includes("\\"));
+        const absolute = path.join(runtime, file);
+        assert.equal(fs.realpathSync(absolute), absolute);
+        assert.ok(fs.lstatSync(absolute).isFile());
+        assert.equal(createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"),
+          text(entry["sha256"]), `Frozen test corpus changed: ${file}`);
+      }
+    };
+    assertCorpus();
     const child = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...tests], {
       cwd: runtime, encoding: "utf8", timeout: 240000,
       maxBuffer: 16 * 1024 * 1024,
@@ -869,8 +893,9 @@ async function main() {
     assert.equal(count("pass"), total);
     for (const field of ["fail", "cancelled", "skipped", "todo"]) assert.equal(count(field), 0);
     assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed during qualification");
+    assertCorpus();
     frozenQualification = { runtime, buildHash: fingerprint, tests: total, passed: total,
-      sdkRequestsSent: 0, backend: "offline-fake-http", log };
+      sdkRequestsSent: 0, backend: "offline-fake-http", corpusHash, corpusFiles: entries, log };
   }
   const result = {
     sourceCommit: options["--source-commit"],
