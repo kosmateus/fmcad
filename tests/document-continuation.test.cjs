@@ -120,6 +120,7 @@ function fixture() {
       data: { parameters: [{ name: "width", expression: "10 mm" }] },
     },
   };
+  request.argv = core.catalogPolicyArguments(request.payload);
   const permit = {
     version: 1,
     actorClientId: request.clientId,
@@ -178,6 +179,11 @@ test("deduplicated requests never rearm an old job after restart", () => {
 });
 test("a fresh phased continuation keeps its capability through preparation", () => {
   const f = fixture();
+  assert.deepEqual(
+    f.request.argv,
+    core.catalogPolicyArguments(f.request.payload),
+  );
+  assert.deepEqual(f.request.argv.slice(0, 3), ["cad", "param", "apply"]);
   f.request.phased = true;
   f.permit.requestHash = hash(core.canonical(f.request));
   const job = f.domain.submitDocumentContinuation(f.request, f.authority);

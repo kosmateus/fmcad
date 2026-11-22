@@ -128,11 +128,13 @@ function validContinuationJob(job: QueueJob) {
   const marker = job.documentContinuation;
   const invocation = cadInvocation(job.request);
   const target = quarantineTarget(job.request);
+  const argv = job.request.argv?.[0] === "cad"
+    ? job.request.argv.slice(1) : job.request.argv;
   return !!marker && validDocumentContinuation(marker) &&
     !job.documentInspection && job.request.kind === "command" &&
     marker.actorClientId === job.clientId && marker.requestHash === job.hash &&
     !!target && canonical(target) === canonical(marker.target) &&
-    job.request.argv?.[0] === "param" && job.request.argv[1] === "apply" &&
+    argv?.[0] === "param" && argv[1] === "apply" &&
     invocation?.["kind"] === "cad" && invocation["version"] === 1 &&
     invocation?.["operation"] === "param.apply" &&
     invocation["docId"] === marker.target.creationId &&
