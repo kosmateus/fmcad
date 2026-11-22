@@ -12,6 +12,7 @@ import type {
   DispatchPorts,
 } from "../packages/core/src";
 import type { PythonRpcCertificate } from "../packages/node-adapters/src/python/admission";
+import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
 import type { PhasedWorkerOptions } from "../packages/node-adapters/src/execution/phased-workers";
 const load = createRequire(
   path.join(process.cwd(), "tests/python-admission.test.js"),
@@ -450,6 +451,114 @@ test("real internal receipt wrapper passes with verified SDK definitions and rej
     );
   }
   assert.equal(fs.existsSync("/tmp/opencode/never-written.json"), false);
+});
+
+test("real admission accepts the compiled param.apply checkpoint guard", async () => {
+  const invocation = validateInvocation({
+    version: 1,
+    kind: "cad",
+    operation: "param.apply",
+    data: {
+      parameters: [{ name: "checkpointed", expression: "1 mm", unit: "mm" }],
+    },
+    doc: "Checkpoint target",
+    docId: "creation-1",
+    docFileId: "file-1",
+    purpose: "Apply a checkpointed parameter",
+  });
+  const guard: ParamCheckpointGuardV1 = {
+    schema: "fmcad.param-checkpoint-v1",
+    document: {
+      identity: {
+        creationId: "creation-1",
+        name: "Checkpoint target",
+        fileId: "file-1",
+        version: 7,
+        isSaved: true,
+        isModified: false,
+      },
+      fingerprint: "a".repeat(64),
+    },
+    parameters: [],
+  };
+  const artifact = prepareCadScript(
+    invocation.operation,
+    invocation.data,
+    {
+      doc: required(invocation.doc),
+      docId: required(invocation.docId),
+      docFileId: required(invocation.docFileId),
+      ...(invocation.component === undefined
+        ? {}
+        : { component: invocation.component }),
+      ...(invocation.projectId === undefined
+        ? {}
+        : { projectId: invocation.projectId }),
+      preview: invocation.preview === true,
+    },
+    undefined,
+    guard,
+  );
+  const certificate = await createProductionQueueAdmission(
+    runtime,
+  ).admission.check(official(artifact.script), artifact);
+  const checked = required(certificate.report);
+  assert.equal(checked.status, "passed", JSON.stringify(checked));
+  assert.deepEqual(checked.diagnostics, []);
+  assert.equal(checked.provenance.checker, "basedpyright");
+  assert.equal(checked.provenance.checkerVersion, "1.40.2");
+  assert.equal(
+    checked.provenance.definitionsHash,
+    documentStatusAdmission.checker.definitionsHash,
+  );
+  assert.ok(artifact.script.includes("_fmcadCheckpointGuard"));
+  assert.ok(artifact.units.some((unit) => unit.id === "legacy-queue_document"));
+});
+
+test("real admission accepts the private full param.inspect checkpoint readback", async () => {
+  const invocation = validateInvocation({
+    version: 1,
+    kind: "cad",
+    operation: "param.inspect",
+    data: { includeModel: true },
+    doc: "Checkpoint target",
+    docId: "creation-1",
+    docFileId: "file-1",
+    purpose: "Read the complete parameter checkpoint",
+  });
+  const artifact = prepareCadScript(
+    invocation.operation,
+    invocation.data,
+    {
+      doc: required(invocation.doc),
+      docId: required(invocation.docId),
+      docFileId: required(invocation.docFileId),
+      ...(invocation.component === undefined
+        ? {}
+        : { component: invocation.component }),
+      ...(invocation.projectId === undefined
+        ? {}
+        : { projectId: invocation.projectId }),
+      preview: invocation.preview === true,
+    },
+    undefined,
+    undefined,
+    "param-checkpoint",
+  );
+  assert.ok(artifact.script.includes("result = _cad_param_checkpoint(ctx)"));
+  const certificate = await createProductionQueueAdmission(
+    runtime,
+  ).admission.check(official(artifact.script), artifact);
+  const checked = required(certificate.report);
+  assert.equal(checked.status, "passed", JSON.stringify(checked));
+  assert.deepEqual(checked.diagnostics, []);
+  assert.equal(checked.provenance.checker, "basedpyright");
+  assert.equal(checked.provenance.checkerVersion, "1.40.2");
+  assert.equal(
+    checked.provenance.definitionsHash,
+    documentStatusAdmission.checker.definitionsHash,
+  );
+  assert.ok(artifact.units.some((unit) => unit.id === "legacy-queue_document"));
 });
 
 test("public document.status checks the current seven-unit artifact before exactly one send", async () => {
