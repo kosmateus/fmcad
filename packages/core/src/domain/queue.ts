@@ -8,9 +8,12 @@ import type {
   SequenceMode,
   AtomicWorkflowObservation,
   QueueQuarantine,
+  QueuePhysicalDispatch,
 } from "./queue-model";
 import { initialQueueSnapshot } from "./queue-model";
-import { conflictsWithQuarantine, validQuarantine } from "./queue-quarantine";
+import { conflictsWithQuarantine, validQuarantine,
+  validPhysicalDispatch,
+} from "./queue-quarantine";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "expired"]);
 const STATES = new Set([
@@ -41,24 +44,27 @@ const integer = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const plain = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
-function validWorkflowObservation(value: unknown): value is AtomicWorkflowObservation {
+function validWorkflowObservation(value: unknown,
+): value is AtomicWorkflowObservation {
   if (!plain(value)) return false;
   const keys = [
     "version", "kind", "targetJobId", "targetRequestId", "targetClientId", "targetJobHash", "observerJobHash",
     "targetBuildHash", "observerBuildHash", "projectDirectory", "paused", "controlGeneration", "contextEpoch",
     "reportPath", "reportFingerprint", "commandId", "sessionNonce", "docId",
   ];
-  return Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key)) &&
+  return (
+    Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key)) &&
     value["version"] === 1 && value["kind"] === "atomic-holder-status" &&
-    ["targetJobId", "targetRequestId", "targetClientId", "projectDirectory", "reportPath", "targetBuildHash", "observerBuildHash", "docId"].every(
-      (key) => identifier(value[key]),
-    ) &&
+    ["targetJobId", "targetRequestId", "targetClientId", "projectDirectory", "reportPath", "targetBuildHash", "observerBuildHash", "docId",
+    ].every(
+      (key) => identifier(value[key])) &&
       typeof value["targetJobHash"] === "string" && /^[a-f0-9]{64}$/.test(value["targetJobHash"]) &&
       typeof value["observerJobHash"] === "string" && /^[a-f0-9]{64}$/.test(value["observerJobHash"]) &&
       typeof value["reportFingerprint"] === "string" && /^[a-f0-9]{64}$/.test(value["reportFingerprint"]) &&
       typeof value["paused"] === "boolean" && integer(value["controlGeneration"]) && integer(value["contextEpoch"]) &&
     typeof value["commandId"] === "string" && /^fmcad_atomic_[a-f0-9]{32}$/.test(value["commandId"]) &&
-    typeof value["sessionNonce"] === "string" && /^[a-f0-9]{32}$/.test(value["sessionNonce"]);
+    typeof value["sessionNonce"] === "string" && /^[a-f0-9]{32}$/.test(value["sessionNonce"])
+  );
 }
 function cadInvocation(request: QueueRequest) {
   const payload = request.payload;
@@ -254,12 +260,13 @@ export class QueueDomain {
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id))
-        fail("CORRUPT_STATE", "Scoped workflow observation marker does not match its blocked owner job");
+        fail("CORRUPT_STATE", "Scoped workflow observation marker does not match its blocked owner job",
+        );
     }
     if (d.quarantined !== undefined &&
         (!plain(d.quarantined) || Object.entries(d.quarantined).some(
           ([id, record]) => !Object.hasOwn(d.jobs, id) || !plain(record) || record.jobId !== id ||
-            !validQuarantine(d.jobs[id]!, record),
+            !validQuarantine(d.jobs[id]!, record, this.hash),
         )))
       fail("CORRUPT_STATE", "Invalid UNKNOWN dispatch quarantine");
     const uncertain = jobs.filter((j) =>
@@ -272,9 +279,11 @@ export class QueueDomain {
       const observer = d.jobs[d.active!]!;
       const original = d.jobs[activeObservation.targetJobId]!;
       if (d.blocked?.id !== original.id || original.state !== "needs_reconciliation" ||
-          !["running", "sending", "needs_reconciliation"].includes(observer.state) ||
+          !["running", "sending", "needs_reconciliation"].includes(observer.state,
+        ) ||
           uncertain.length !== 2 || !uncertain.includes(observer) || !uncertain.includes(original))
-        fail("CORRUPT_STATE", "Scoped observation no longer matches the single blocked atomic job");
+        fail("CORRUPT_STATE", "Scoped observation no longer matches the single blocked atomic job",
+        );
     } else if (
       uncertain.length > 1 ||
       (d.active && !uncertain.some((j) => j.id === d.active)) ||
@@ -770,13 +779,15 @@ export class QueueDomain {
   /** Broker-only marker that lets the existing scheduler select one scoped observer past a block. */
   armWorkflowObservation(id: string, marker: AtomicWorkflowObservation) {
     if (!validWorkflowObservation(marker))
-      fail("INVALID_WORKFLOW_SCOPE", "Invalid broker-authored atomic observation marker");
+      fail("INVALID_WORKFLOW_SCOPE", "Invalid broker-authored atomic observation marker",
+      );
     return this._commit((d) => {
       const observer = this._job(d, id);
       const target = d.jobs[marker.targetJobId];
       if (observer.workflowObservation) {
         if (canonical(observer.workflowObservation) !== canonical(marker))
-          fail("REQUEST_CONFLICT", "Observation request is already bound to another workflow");
+          fail("REQUEST_CONFLICT", "Observation request is already bound to another workflow",
+          );
         return this._public(observer);
       }
       const invocation = cadInvocation(observer.request);
@@ -794,12 +805,16 @@ export class QueueDomain {
           invocation["docId"] !== marker.docId || observer.request.cwd !== marker.projectDirectory ||
           target.request.cwd !== marker.projectDirectory || marker.paused !== d.paused ||
           marker.controlGeneration !== (d.controlGeneration || 0) || marker.contextEpoch !== (d.contextEpoch || 0)) {
-        fail("WORKFLOW_OWNER_OR_JOB_MISMATCH", "Observer does not bind to the exact blocked atomic owner job");
+        fail("WORKFLOW_OWNER_OR_JOB_MISMATCH", "Observer does not bind to the exact blocked atomic owner job",
+        );
       }
-      const prior = Object.values(d.jobs).find(job => job.id !== id && job.workflowObservation?.targetJobId === target.id);
+      const prior = Object.values(d.jobs).find(
+        (job) => job.id !== id && job.workflowObservation?.targetJobId === target.id,
+      );
       if (prior && !(prior.state === "failed" && prior.details?.["executionOutcome"] === "not_started" &&
           prior.details?.["mayHaveMutated"] === false && (prior.dispatch?.rpcCount || 0) === 0))
-        fail("WORKFLOW_OBSERVATION_EXISTS", "A scoped observation was already sent or has an uncertain receipt");
+        fail("WORKFLOW_OBSERVATION_EXISTS", "A scoped observation was already sent or has an uncertain receipt",
+        );
       observer.workflowObservation = marker;
       return this._public(observer);
     });
@@ -825,7 +840,8 @@ export class QueueDomain {
           )
         : [];
       if (observers.length > 1)
-        fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job");
+        fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job",
+        );
       if (observers.length === 1) {
         return this._commit((draft) => {
           if (draft.controlBlocked || draft.localUnknown || !draft.blocked || draft.active !== draft.blocked.id)
@@ -834,7 +850,8 @@ export class QueueDomain {
             (job) => job.state === "queued" && workflowObservationFor(draft, job.id)?.targetJobId === draft.blocked?.id,
           );
           if (candidates.length !== 1 || candidates[0]!.id !== observers[0]!.id)
-            fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "Scoped observer selection changed before its durable grant");
+            fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "Scoped observer selection changed before its durable grant",
+            );
           const job = candidates[0]!;
           const now = this._time();
           if (draft.lease && draft.lease.clientId !== job.clientId) return null;
@@ -1193,15 +1210,37 @@ export class QueueDomain {
       reason: JSON.parse(canonical(reason)),
     });
   }
+  recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
+    return this._commit((d) => {
+      const job = this._active(d, id);
+      if (
+        !validPhysicalDispatch(job, entry) ||
+        job.physicalDispatches?.some(
+          (prior) => prior.physical.turnId === entry.physical.turnId,
+        )
+      )
+        fail(
+          "PHYSICAL_BINDING_MISMATCH",
+          "Physical intent must bind one original job and turn",
+        );
+      (job.physicalDispatches ??= []).push(copy(entry));
+      return this._public(job);
+    });
+  }
 
   /** Release only physical ownership. This never settles or rewrites the job's
    * UNKNOWN outcome, original request, hash, dispatch or receipt. */
   quarantineUnknown(id: string, record: QueueQuarantine) {
     return this._commit((d) => {
       const job = this._job(d, id);
-      if (d.active !== id || d.blocked?.id !== id ||
-          d.localUnknown || !validQuarantine(job, record))
-        fail("RECONCILIATION_REQUIRED", "Quarantine must bind the exact blocked UNKNOWN");
+      if (
+        d.active !== id || d.blocked?.id !== id ||
+        d.localUnknown || !validQuarantine(job, record, this.hash)
+      )
+        fail(
+          "RECONCILIATION_REQUIRED",
+          "Quarantine must bind the exact blocked UNKNOWN",
+        );
       (d.quarantined ??= {})[id] = copy(record);
       d.active = null;
       d.blocked = null;
@@ -1218,10 +1257,10 @@ export class QueueDomain {
         "Recovery must explicitly provide state succeeded or failed",
       );
     return this._commit((d) => {
-      const job = this._active(d, id, true);
+      const quarantined = d.quarantined?.[id];
+      const job = quarantined ? this._job(d, id) : this._active(d, id, true);
       if (
-        !d.blocked ||
-        d.blocked.id !== id ||
+        (!quarantined && (!d.blocked || d.blocked.id !== id)) ||
         job.state !== "needs_reconciliation"
       )
         fail("NOT_BLOCKED", "Only the blocked active job can be resolved");
@@ -1233,7 +1272,9 @@ export class QueueDomain {
         sequenceState: job.sequenceId ? "ended" : null,
       });
       if (typeof record.code === "string") job.code = record.code;
-      d.blocked = d.active = d.lease = null;
+      if (quarantined) {
+        delete d.quarantined![id];
+      } else d.blocked = d.active = d.lease = null;
       this._promoteLocalUnknown(d);
       return this._public(job);
     });

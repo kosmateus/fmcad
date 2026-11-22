@@ -79,8 +79,8 @@ const {resolveFmcadConfiguration} = load('dist/core');
 /** Real checker, transport preparation, broker IPC and worker processes. The
  * physical port records requests and emits synthetic receipts; it never runs
  * Python, contacts Fusion or makes a model/geometry correctness claim. */
-module.exports = async function fixture(t, {typedService = false, slowPeerChecker = false, physicalTurnQuiescence, bindPhysicalTurn, withPhysicalTurn, observeProtocol: initialObserveProtocol, unknownLocalOutcome = false} = {}) {
-  const home=fs.mkdtempSync('/tmp/opencode/admission-ports-');
+module.exports = async function fixture(t, {typedService = false, slowPeerChecker = false, physicalTurnQuiescence, bindPhysicalTurn, withPhysicalTurn, observeProtocol: initialObserveProtocol, unknownLocalOutcome = false, scopedService = false, scopedVariants = false, fixtureHome, initialDocumentIdentity = 'A'} = {}) {
+  const home=fixtureHome||fs.mkdtempSync('/tmp/opencode/admission-ports-');
   const oldState=process.env.XDG_STATE_HOME, oldCwd=process.cwd();
   process.env.XDG_STATE_HOME=home;process.chdir(home);
   const dir=queueDirectory();
@@ -90,8 +90,8 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     environment:{},file:slowPeerChecker?{queue:{preparationConcurrency:2}}:{},
     platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
-  const calls=[],clients=[];
-  let active=0,maximum=0,products=0,fingerprint='A-1',documentIdentity='A',observe=async()=>{},observeProduct=async()=>{},observeProtocol=initialObserveProtocol||(async()=>{});
+  const calls=[],clients=[],pendingProductReceipts=[];
+  let active=0,maximum=0,products=0,fingerprint='A-1',documentIdentity=initialDocumentIdentity,observe=async()=>{},observeProduct=async()=>{},observeProtocol=initialObserveProtocol||(async()=>{});
   const physical=createBrokerTransport(cfg,{version:'test',requestTimeout:s=>s.timeoutMs,bridgeSource:()=>{throw Error('No add-in bridge');}});
   physical._post=async payload=>{
     calls.push(payload);active++;maximum=Math.max(maximum,active);
@@ -107,7 +107,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
           documentState:{status:'complete',fingerprint,state:{identity:{creationId:documentIdentity},references:[]}}};
         const receipts=nativeReceipts(script,home,observation);
         const probe=receipts.some(receipt=>receipt.value.probeObservation);
-        if(!probe) {products++;await observeProduct(script);}
+        if(!probe) {products++;pendingProductReceipts.push(...receipts);await observeProduct(script);}
         for(const receipt of receipts)
           fs.writeFileSync(receipt.file,JSON.stringify(receipt.value));
         if(probe) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify(observation);
@@ -122,11 +122,30 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     const fs=require('node:fs');
     const {preparePythonArtifact,pythonArtifactManifest}=require(${JSON.stringify(path.join(packageRoot,'dist/src/python'))});
     require(${JSON.stringify(path.join(packageRoot,'dist/src/queue-worker'))}).run(process.argv[2],{async execute(request,backend,onOutcome){
-      const filename=request.argv[1];
-      const source=fs.readFileSync(filename,'utf8');
-      const artifact=preparePythonArtifact([{id:'fixture',filename,source,role:'user'}]);
-      const result=await backend.callTool({featureType:'script',object:{script:artifact.script,readOnly:true}},'fusion_mcp_execute',pythonArtifactManifest(artifact));
-      onOutcome(${JSON.stringify(unknownLocalOutcome)}&&source.includes('LOCAL_UNKNOWN')?{outcome:'unknown'}:{fixture:true});process.stdout.write(result.text+'\\n');return result.failed?1:0;
+      const filename=${JSON.stringify(scopedService)}?'scoped-parameter-inspection.py':request.argv[1];
+      const source=${JSON.stringify(scopedService)}?'def run(context: str) -> None:\\n    print("SCOPED_PARAMETER_INSPECTION")\\n':fs.readFileSync(filename,'utf8');
+      const invocation=request.payload?.invocation;
+      const variant=${JSON.stringify(scopedVariants)}?request.requestId:'';
+      const compiled=structuredClone(invocation);
+      if(variant==='scope-params')compiled.data.parameters[0].expression='31 mm';
+      if(variant==='scope-context')compiled.doc='Foreign document';
+      if(variant==='scope-creation')compiled.docId='FOREIGN';
+      let artifact=${JSON.stringify(scopedService)}?
+        require(${JSON.stringify(path.join(packageRoot,'dist/src/cad'))}).prepareCadScript(
+          compiled.operation,compiled.data,{
+            doc:compiled.doc,docId:compiled.docId,docFileId:compiled.docFileId,
+            component:compiled.component,projectId:compiled.projectId,preview:compiled.preview===true,
+          }):
+        preparePythonArtifact([{id:'fixture',filename,source,role:'user'}]);
+      if(['scope-suffix','scope-producer'].includes(variant))artifact=preparePythonArtifact(
+        artifact.units.map(unit=>({...unit,source:unit.source+(unit.role==='wrapper'?
+          (variant==='scope-producer'?'\\n# foreign producer source version\\n':
+            '\\nimport adsk.core\\n_escape_app = adsk.core.Application.get()\\nassert _escape_app is not None\\nfor _escape_doc in _escape_app.documents:\\n    _escape_doc.close(False)\\n'):'')})),
+        {context:artifact.context,request:artifact.request});
+      const manifest=pythonArtifactManifest(artifact);
+      const sentManifest=variant==='scope-manifest'?{...manifest,sha256:'f'.repeat(64)}:manifest;
+      const result=await backend.callTool({featureType:'script',object:{script:artifact.script,readOnly:!invocation||invocation.operation==='param.inspect'}},'fusion_mcp_execute',sentManifest);
+      onOutcome(${JSON.stringify(unknownLocalOutcome)}&&(source.includes('LOCAL_UNKNOWN')||request.requestId==='local-workflow-a')?{outcome:'unknown'}:{fixture:true});process.stdout.write(result.text+'\\n');return result.failed?1:0;
     }}).then(code=>{process.exitCode=code},error=>{process.stderr.write(error.message+'\\n');process.exitCode=1});
   `);
   let broker;
@@ -155,6 +174,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
     ...(typedService?{spawnWorker(executable,args,options){return spawn(executable,[worker,args[1]],options);}}:{}),
   });
   return {home,dir,cfg,calls,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
+    publishProductReceipts(){for(const receipt of pendingProductReceipts)fs.writeFileSync(receipt.file,JSON.stringify(receipt.value));},
     pauseNextPeerChecker(){
       if(!slowPeerChecker)throw Error('Slow peer checker is not enabled');
       if(peerCheckerWaiter||pausedPeerChecker)throw Error('A peer checker is already armed');

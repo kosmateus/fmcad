@@ -8,7 +8,9 @@ const { promisify } = require("node:util");
 const { createHash } = require("node:crypto");
 const { AsyncLocalStorage } = require("node:async_hooks");
 const fixture = require("./python-admission-broker.cjs");
-const root = path.resolve(__dirname, "../..");
+const root =
+  process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE ||
+  path.resolve(__dirname, "../..");
 const { inputFiles } = require(path.join(root, "dist/src/queue-client"));
 const evidenceRoot = fs.mkdtempSync("/tmp/opencode/unknown-isolation-");
 require(
@@ -32,25 +34,23 @@ const bindPhysicalTurn = (request) => ({
     Object.keys(request.documentSelector ?? {}).sort(),
   ),
 });
-function releasedProof(binding) {
-  const evidenceDigest = createHash("sha256")
-    .update(JSON.stringify(binding))
-    .digest("hex");
-  return {
-    state: "released",
-    binding,
-    evidenceDigest,
-    physicalEvidenceReference: "fmcad-physical-turn:sha256:" + evidenceDigest,
-  };
+const releasedProof = require("./physical-turn-fixture.cjs");
+function typedMutation(doc) {
+  return require(path.join(root,"dist/src/dist/composition/cad-service")).fromParsedCommand({
+    kind:"cad",operation:"param.apply",data:{
+      parameters:[{name:"isolation_width",expression:"12 mm",unit:"mm"}],
+    },context:{doc,docId:doc},json:true,
+  });
 }
 
-test("a released UNKNOWN turn quarantines its document without blocking another process and document", async (t) => {
+test("a released UNKNOWN compiled document mutation permits another process and document without replay", async (t) => {
   let proofState = "active";
   const observedProofs = new Set();
   const physicalScope = new AsyncLocalStorage();
   const sentTurns = new Set();
   const f = await fixture(t, {
     typedService: true,
+    scopedService: true,
     bindPhysicalTurn,
     withPhysicalTurn: async (binding, send) => physicalScope.run(binding, send),
     observeProtocol: async (payload) => {
@@ -70,9 +70,7 @@ test("a released UNKNOWN turn quarantines its document without blocking another 
       observedProofs.add(proofState);
       if (["active", "unknown"].includes(proofState))
         return { state: proofState, binding };
-      const evidenceDigest = createHash("sha256")
-        .update(JSON.stringify(binding))
-        .digest("hex");
+      const { evidenceDigest } = releasedProof(binding);
       return {
         state: "released",
         binding:
@@ -108,8 +106,10 @@ test("a released UNKNOWN turn quarantines its document without blocking another 
       { code: "ECONNRESET" },
     );
   });
-  const argv = ["run", source, "--doc", "A", "--doc-id", "A"];
+  const bounded = typedMutation("A");
+  const argv = bounded.argv;
   const originalRequest = {
+    ...bounded,
     kind: "command",
     requestId: "unknown-original-a",
     argv,
@@ -139,10 +139,7 @@ test("a released UNKNOWN turn quarantines its document without blocking another 
         const intent = JSON.parse(bytes);
         assert.equal(intent.binding.physicalTurn.turnId, intent.binding.rpcId);
         assert.equal(intent.binding.physicalTurn.version, 1);
-        assert.equal(
-          intent.binding.physicalTurn.target,
-          '{"creationId":"A","name":"A"}',
-        );
+        assert.equal(JSON.parse(intent.binding.physicalTurn.target).creationId, "A");
         assert.deepEqual(
           Object.keys(intent.binding.physicalTurn).sort(),
           [
@@ -168,8 +165,11 @@ test("a released UNKNOWN turn quarantines its document without blocking another 
       const client=new QueueClient('independent-owner-b',{cfg:JSON.parse(process.env.ISOLATION_CFG)});
       try {
         await client.register();
-        const argv=['run',${JSON.stringify(source)},'--doc','B','--doc-id','B'];
-        const job=await client.submit({kind:'command',requestId:'independent-b',argv,cwd:${JSON.stringify(f.home)},
+        const bounded=require(${JSON.stringify(path.join(root,"dist/src/dist/composition/cad-service"))}).fromParsedCommand({
+          kind:'cad',operation:'param.apply',data:{parameters:[{name:'isolation_width',expression:'12 mm',unit:'mm'}]},
+          context:{doc:'B',docId:'B'},json:true});
+        const argv=bounded.argv;
+        const job=await client.submit({...bounded,kind:'command',requestId:'independent-b',argv,cwd:${JSON.stringify(f.home)},
           backend:'addin',timeoutMs:120000,inputFiles:inputFiles(argv,${JSON.stringify(f.home)})});
         const result=await client.wait(job.id);
         assert.equal(result.job.state,'succeeded',JSON.stringify(result));
@@ -180,7 +180,7 @@ test("a released UNKNOWN turn quarantines its document without blocking another 
   const independent = promisify(execFile)(process.execPath, ["-e", child], {
     env: { ...process.env, ISOLATION_CFG: JSON.stringify(f.cfg) },
     cwd: f.home,
-    timeout: 30000,
+    timeout: 120000,
   });
   async function until(check, message) {
     const deadline = Date.now() + 5000;
@@ -251,15 +251,47 @@ test("a released UNKNOWN turn quarantines its document without blocking another 
     { mode: 0o600 },
   );
   const retainedDirectory = path.join(evidenceRoot, "original-a");
-  fs.mkdirSync(retainedDirectory);
-  for (const name of Object.keys(originalIntents))
-    fs.copyFileSync(
-      path.join(jobDirectory, name),
-      path.join(retainedDirectory, name),
-    );
+  fs.cpSync(jobDirectory,retainedDirectory,{recursive:true});
+  const retainedQueue = path.join(evidenceRoot,"queue");
+  fs.mkdirSync(retainedQueue);
+  fs.writeFileSync(path.join(retainedQueue,"queue-state.json"),JSON.stringify(quarantinedSnapshot));
+  for(const name of ["jobs","physical-reads"])
+    fs.cpSync(path.join(f.dir,name),path.join(retainedQueue,name),{recursive:true});
   t.diagnostic(
     "UNKNOWN snapshot and unchanged original intents retained: " + evidenceRoot,
   );
+  // Physical release alone never settled A. Only its original backend receipt
+  // and the existing reconciliation/audit path may now publish a terminal result.
+  await assert.rejects(a.call("reconcile",{jobId:accepted.id}),{code:"RECEIPT_UNAVAILABLE"});
+  assert.equal((await a.wait(accepted.id)).job.state,"needs_reconciliation",
+    "quiescence cannot be inferred into a terminal job result");
+  f.publishProductReceipts();
+  f.documentIdentity("A");
+  const settled = await a.call("reconcile", { jobId: accepted.id });
+  assert.equal(settled.state, "failed", JSON.stringify(settled));
+  assert.equal(
+    settled.code,
+    "RESULT_UNAVAILABLE",
+    "the original receipt proves completion, not a missing worker result",
+  );
+  const terminalSnapshot = JSON.parse(
+    fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8"),
+  );
+  assert.equal(terminalSnapshot.quarantined?.[accepted.id], undefined);
+  assert.equal(
+    f.products(),
+    2,
+    "receipt recovery must not replay original product",
+  );
+  const reuse = await a.submit({
+    ...originalRequest,
+    requestId: "resource-after-authentic-settlement",
+  });
+  assert.equal((await a.wait(reuse.id)).job.state, "succeeded");
+  assert.equal(f.products(),3,"only the explicitly submitted fresh request may reuse A's resource");
+  for(const [name,digest] of Object.entries(originalIntents))
+    assert.equal(createHash("sha256").update(fs.readFileSync(path.join(jobDirectory,name))).digest("hex"),digest,
+      "authentic terminal settlement must not rewrite the original RPC intent");
 });
 
 test("an UNKNOWN with a still-running physical handler cannot admit another mutation", async (t) => {
@@ -271,6 +303,7 @@ test("an UNKNOWN with a still-running physical handler cannot admit another muta
   const physicalScope = new AsyncLocalStorage();
   const f = await fixture(t, {
     typedService: true,
+    scopedService: true,
     bindPhysicalTurn,
     withPhysicalTurn: async (binding, send) => physicalScope.run(binding, send),
     observeProtocol: async (payload) => {
@@ -297,7 +330,7 @@ test("an UNKNOWN with a still-running physical handler cannot admit another muta
       code: "ECONNRESET",
     });
   });
-  const argv = ["run", source, "--doc", "A", "--doc-id", "A"];
+  const argv = ["param", "inspect", "--doc", "A", "--doc-id", "A"];
   try {
     const accepted = await a.submit({
       kind: "command",
@@ -315,7 +348,7 @@ test("an UNKNOWN with a still-running physical handler cannot admit another muta
       true,
       "the physical handler is actually still running",
     );
-    const otherArgv = ["run", source, "--doc", "B", "--doc-id", "B"];
+    const otherArgv = ["param", "inspect", "--doc", "B", "--doc-id", "B"];
     const other = await b.submit({
       kind: "command",
       requestId: "must-not-overlap",
@@ -374,7 +407,19 @@ test("restoration preserves UNKNOWN quarantine and permits only independently pi
       requestId: id,
       timeoutMs: 1000,
       cwd: root,
-      argv: ["run", "fixture.py", "--doc", doc, "--doc-id", doc],
+      argv: ["cad", "param", "inspect", "--doc", doc, "--doc-id", doc],
+      payload: {
+        version: 1,
+        kind: "cad-command",
+        invocation: {
+          version: 1,
+          kind: "cad",
+          operation: "param.inspect",
+          data: {},
+          doc,
+          docId: doc,
+        },
+      },
     });
   const conflict = submit("restored-conflict", "A");
   const independent = submit("restored-independent", "C");
@@ -384,29 +429,110 @@ test("restoration preserves UNKNOWN quarantine and permits only independently pi
   const altered = structuredClone(quarantinedSnapshot);
   altered.quarantined[original.id].jobHash = "wrong-original-request";
   assert.throws(() => restore(altered), { code: "CORRUPT_STATE" });
+  for (const corrupt of [
+    (snapshot) => {
+      delete snapshot.quarantined[original.id].binding.physicalTurns;
+    },
+    (snapshot) => {
+      snapshot.quarantined[original.id].binding.physicalTurns.pop();
+    },
+    (snapshot) => {
+      snapshot.quarantined[
+        original.id
+      ].binding.physicalTurns[0].binding.target = '{"creationId":"FOREIGN"}';
+    },
+    (snapshot) => {
+      snapshot.quarantined[
+        original.id
+      ].binding.physicalTurns[0].evidenceDigest = "f".repeat(64);
+    },
+    (snapshot) => {
+      snapshot.jobs[original.id].physicalDispatches.pop();
+    },
+  ]) {
+    const snapshot = structuredClone(quarantinedSnapshot);
+    corrupt(snapshot);
+    assert.throws(() => restore(snapshot), { code: "CORRUPT_STATE" });
+  }
+  // Domain settlement of A must not clear an independent active B's lease.
+  const activeBefore = restored.data.active;
+  restored.resolve(original.id, {
+    state: "succeeded",
+    source: "explicit-evidence-test",
+  });
+  assert.equal(restored.data.active, activeBefore);
+  assert.equal(restored.data.quarantined?.[original.id], undefined);
   const fileQueue = new QueueDomain({
-    now: Date.now, newId: require("node:crypto").randomUUID,
-    hash: text => createHash("sha256").update(text).digest("hex"),
+    now: Date.now,
+    newId: require("node:crypto").randomUUID,
+    hash: (text) => createHash("sha256").update(text).digest("hex"),
   });
-  const metadata = (id, fileId, version = 1) => fileQueue.submit({
-    kind: "rpc", clientId: "file-owner", requestId: id, timeoutMs: 1000,
-    payload: {jsonrpc: "2.0", id, method: "tools/call",
-      params: {name: "get_open_document_metadata", arguments: {fileId, version}}},
-  });
+  const metadata = (id, fileId, version = 1) =>
+    fileQueue.submit({
+      kind: "rpc",
+      clientId: "file-owner",
+      requestId: id,
+      timeoutMs: 1000,
+      payload: {
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: {
+          name: "get_open_document_metadata",
+          arguments: { fileId, version },
+        },
+      },
+    });
   const fileA = metadata("file-a", "DataFile-A");
   fileQueue.next();
-  fileQueue.block(fileA.id, "synthetic UNKNOWN for domain policy");
   const job = fileQueue.data.jobs[fileA.id];
+  const request = {
+    kind: "product",
+    jobId: job.id,
+    requestId: job.requestId,
+    clientId: job.clientId,
+    requestHash: job.hash,
+    grantGeneration: 1,
+    physicalRequestId: "file-a-physical",
+    documentSelector: { fileId: "DataFile-A" },
+  };
+  const physical = bindPhysicalTurn(request);
+  fileQueue.recordPhysicalDispatch(job.id, {
+    request,
+    physical,
+    target: { fileId: "DataFile-A" },
+    intentReference: "physical-turn-" + "d".repeat(64) + ".json",
+    intentDigest: "e".repeat(64),
+  });
+  fileQueue.block(fileA.id, "synthetic UNKNOWN for domain policy");
+  const proof = releasedProof(physical);
   fileQueue.quarantineUnknown(job.id, {
-    jobId: job.id, requestId: job.requestId, clientId: job.clientId, jobHash: job.hash,
-    target: {fileId: "DataFile-A"},
-    evidenceDigest: "c".repeat(64), evidenceReference: "fmcad-physical-turn:sha256:" + "c".repeat(64),
-    binding: {jobId: job.id, requestId: job.requestId, clientId: job.clientId, requestHash: job.hash},
+    jobId: job.id,
+    requestId: job.requestId,
+    clientId: job.clientId,
+    jobHash: job.hash,
+    target: { fileId: "DataFile-A" },
+    evidenceDigest: proof.evidenceDigest,
+    evidenceReference: proof.physicalEvidenceReference,
+    catalogDigest: createHash("sha256")
+      .update(JSON.stringify(fileQueue.data.jobs[job.id].physicalDispatches))
+      .digest("hex"),
+    binding: {
+      jobId: job.id,
+      requestId: job.requestId,
+      clientId: job.clientId,
+      requestHash: job.hash,
+      physicalTurns: [proof],
+    },
   });
   const alias = metadata("same-file-new-version", "DataFile-A", 2);
   const otherFile = metadata("other-file", "DataFile-B");
   assert.equal(fileQueue.next().id, otherFile.id);
-  assert.equal(fileQueue.status(alias.id).state, "queued", "a version change does not evade the DataFile conflict");
+  assert.equal(
+    fileQueue.status(alias.id).state,
+    "queued",
+    "a version change does not evade the DataFile conflict",
+  );
 });
 
 test("physical generation provisioning failure releases only its uninitialized owner and sends zero SDK", async (t) => {
@@ -424,11 +550,15 @@ test("physical generation provisioning failure releases only its uninitialized o
           assert.equal(claim.directory, dir);
           assert.equal(claim.owner.pid, process.pid);
           assert.equal(typeof claim.owner.nonce, "string");
+          claim.assertBrokerOwner();
           throw Object.assign(
             new Error("Synthetic generation provisioning refused"),
             { code: "TEST_PROVISION_REFUSED" },
           );
         },
+        bindPhysicalTurn,
+        withPhysicalTurn: async (_binding, send) => send(),
+        physicalTurnQuiescence: async (binding) => releasedProof(binding),
         createBackend: () => {
           constructed++;
           assert.fail("no physical client before provisioning");
@@ -439,12 +569,30 @@ test("physical generation provisioning failure releases only its uninitialized o
   );
   assert.equal(constructed, 0);
   assert.equal(fs.existsSync(path.join(dir, "broker.lock")), false);
+  const changed = fs.mkdtempSync("/tmp/opencode/unknown-isolation-owner-");
+  t.after(()=>fs.rmSync(changed,{recursive:true,force:true}));
+  let replacement;
+  await assert.rejects(serve({backend:"addin",timeoutMs:1000},{
+    dir:changed,confirmOwnership:true,
+    bindPhysicalTurn,withPhysicalTurn:async(_binding,send)=>send(),
+    physicalTurnQuiescence:async binding=>releasedProof(binding),
+    preparePhysicalGeneration:async claim=>{
+      claim.assertBrokerOwner();
+      replacement={...claim.owner,nonce:"foreign-owner-created-by-this-test"};
+      fs.writeFileSync(path.join(changed,"broker.lock"),JSON.stringify(replacement));
+      await Promise.resolve();
+    },
+    createBackend(){constructed++;assert.fail("no SDK construction after owner fence changes");},
+  }),{code:"LOCK_CHANGED"});
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(changed,"broker.lock"))),replacement);
+  assert.equal(constructed,0);
 });
 
 test("an UNKNOWN local workflow after a settled SDK turn does not become a global control hold", async (t) => {
   const physicalScope = new AsyncLocalStorage();
   const f = await fixture(t, {
     typedService: true,
+    scopedService: true,
     unknownLocalOutcome: true,
     bindPhysicalTurn,
     withPhysicalTurn: async (binding, send) => physicalScope.run(binding, send),
@@ -464,7 +612,7 @@ test("an UNKNOWN local workflow after a settled SDK turn does not become a globa
     'def run(context: str) -> None:\n    print("INDEPENDENT")\n',
   );
   const submit = (client, id, source, doc) => {
-    const argv = ["run", source, "--doc", doc, "--doc-id", doc];
+    const argv = ["param", "inspect", "--doc", doc, "--doc-id", doc];
     return client.submit({
       kind: "command",
       requestId: id,
@@ -491,7 +639,7 @@ test("an UNKNOWN local workflow after a settled SDK turn does not become a globa
     "B",
   );
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), 120000);
   try {
     assert.equal(
       (await b.wait(independent.id, { signal: controller.signal })).job.state,

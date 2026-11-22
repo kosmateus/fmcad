@@ -372,14 +372,8 @@ export interface TrustedAddinMetadataAdmission {
   readonly build: string;
 }
 /** Token-free exact physical dispatch identity. Never accepted from IPC/config. */
-export interface PhysicalTurnBinding {
-  version: 1;
-  grantDigest: string;
-  generation: { instance: string; epoch: string };
-  physicalRuntime: { pid: number; birth: string; version: string; source: string; build: string };
-  turnId: string;
-  target: string;
-}
+export type PhysicalTurnBinding =
+  import("../packages/core/src/domain/queue-model").QueuePhysicalBinding;
 export type IsolationTarget = import("../packages/core/src/domain/queue-model").QueueIsolationTarget;
 export interface PhysicalTurnRequest {
   kind?: "product" | "system-read";
@@ -397,17 +391,22 @@ export interface PhysicalTurnRequest {
 }
 export type PhysicalTurnQuiescence =
   | { state: "unknown" | "active"; binding: PhysicalTurnBinding }
-  | { state: "released"; binding: PhysicalTurnBinding; physicalEvidenceReference: string; evidenceDigest: string };
+  | { state: "released"; binding: PhysicalTurnBinding; physicalEvidenceReference: string; evidenceDigest: string;
+    };
 export interface Options {
-  authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>;
+  authorizePhysicalRequest?: (endpoint: string,
+  ) => Readonly<Record<string, string>>;
   preparePhysicalGeneration?: (claim: {
     directory: string; owner: Owner; buildHash: string; configHash: string;
-    assertBrokerOwner?: () => void;
+    assertBrokerOwner: () => void;
   }) => Promise<void>;
-  bindPhysicalTurn?: (request: PhysicalTurnRequest) => PhysicalTurnBinding | undefined;
-  withPhysicalTurn?: <T>(binding: PhysicalTurnBinding, send: () => Promise<T>) => Promise<T>;
+  bindPhysicalTurn?: (request: PhysicalTurnRequest,
+  ) => PhysicalTurnBinding | undefined;
+  withPhysicalTurn?: <T>(binding: PhysicalTurnBinding, send: () => Promise<T>,
+  ) => Promise<T>;
   /** Exact, irreversible remote dispatch revocation; absence is fail-closed. */
-  physicalTurnQuiescence?: (binding: Readonly<PhysicalTurnBinding>) => Promise<PhysicalTurnQuiescence>;
+  physicalTurnQuiescence?: (binding: Readonly<PhysicalTurnBinding>,
+  ) => Promise<PhysicalTurnQuiescence>;
   backendTransition?: import("./queue-backend-transition").BackendTransitionApproval;
   confirmOwnership?: boolean;
   confirmVersionTransition?: boolean;

@@ -114,6 +114,8 @@ export interface QueueJob {
     | undefined;
   /** Present only on the one broker-authorized observer for the blocked atomic job. */
   workflowObservation?: AtomicWorkflowObservation | undefined;
+  /** Broker-authored complete catalog, registered durably before SDK dispatch. */
+  physicalDispatches?: QueuePhysicalDispatch[];
 }
 export interface QueueLease {
   id: string;
@@ -135,6 +137,45 @@ export interface QueueIsolationTarget {
   creationId?: string;
   fileId?: string;
 }
+export interface QueuePhysicalBinding {
+  version: 1;
+  grantDigest: string;
+  generation: { instance: string; epoch: string };
+  physicalRuntime: {
+    pid: number;
+    birth: string;
+    version: string;
+    source: string;
+    build: string;
+  };
+  turnId: string;
+  target: string;
+}
+export interface QueuePhysicalDispatch {
+  request: {
+    kind?: "product" | "system-read";
+    brokerNonce?: string;
+    jobId: string;
+    requestId: string;
+    requestHash: string;
+    clientId: string;
+    grantGeneration: number;
+    physicalRequestId: string;
+    documentSelector:
+      | {
+          metadataOnly?: true;
+          name?: string;
+          creationId?: string;
+          fileId?: string;
+          version?: number;
+        }
+      | undefined;
+  };
+  physical: QueuePhysicalBinding;
+  target: QueueIsolationTarget | null;
+  intentReference: string;
+  intentDigest: string;
+}
 export interface QueueQuarantine {
   jobId: string;
   requestId: string;
@@ -144,6 +185,7 @@ export interface QueueQuarantine {
   evidenceReference: string;
   evidenceDigest: string;
   binding: Record<string, unknown>;
+  catalogDigest: string;
 }
 export interface QueueSnapshot {
   version: 1;
