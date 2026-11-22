@@ -102,7 +102,8 @@ if(envelope.action==="grant"){
  console.log(JSON.stringify({state:"granted",handoffId:envelope.descriptor.handoffId}));return;
 }
 if(envelope.action==="verify"){
- record({operation:"verify"});const data=fs.readFileSync(nativePath(envelope.output));
+  record({operation:"verify"});const data=fs.readFileSync(nativePath(envelope.output));
+ if(mode==="owner-lost-at-verify")fs.writeFileSync(${JSON.stringify(path.join(directory, "owner-lost"))},"during-native-verify");
  console.log(mode==="mismatch"?"0".repeat(64):digest(data));return;
 }
 process.exit(19);
@@ -548,6 +549,88 @@ test(
       assert.ok(fs.existsSync(path.join(f.mapped, attempt, "grant.json")));
       assert.equal(fs.readdirSync(f.linux).length, 0);
     } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test(
+  "owner loss during native grant verification refuses before Linux copy and stays UNKNOWN",
+  platformOptions,
+  async () => {
+    const f = fixture("owner-lost-at-verify");
+    try {
+      const port = createNativePhysicalGenerationProvision({
+        ...f.options,
+        assertBrokerOwner() {
+          if (fs.existsSync(path.join(f.directory, "owner-lost")))
+            throw new Error("Owned fixture lost its actual broker owner");
+        },
+      });
+      await assert.rejects(
+        port.provision(descriptor),
+        (error: unknown) =>
+          error instanceof PhysicalGenerationProvisionError &&
+          error.grantIssuance === "unknown",
+      );
+      assert.deepEqual(
+        f.records().map((record) => record["operation"]),
+        ["prepare", "grant", "verify"],
+      );
+      assert.equal(fs.readdirSync(f.linux).length, 0);
+      const attempt = fs.readdirSync(f.mapped)[0]!;
+      assert.ok(fs.existsSync(path.join(f.mapped, attempt, "grant.json")));
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test(
+  "owner loss at the final Linux publication fence refuses the returned grant without retry",
+  platformOptions,
+  async () => {
+    const f = fixture();
+    const original = Object.getOwnPropertyDescriptor(fs, "lstatSync")!;
+    let held = true;
+    Object.defineProperty(fs, "lstatSync", {
+      ...original,
+      value: new Proxy(fs.lstatSync, {
+        apply(target, receiver, args) {
+          const observed = Reflect.apply(target, receiver, args);
+          if (
+            String(args[0]) === f.linux &&
+            fs.readdirSync(f.linux).some((name) => name.endsWith(".grant.json"))
+          )
+            held = false;
+          return observed;
+        },
+      }),
+    });
+    try {
+      const port = createNativePhysicalGenerationProvision({
+        ...f.options,
+        assertBrokerOwner() {
+          if (!held)
+            throw new Error("Owned fixture lost its actual broker owner");
+        },
+      });
+      await assert.rejects(
+        port.provision(descriptor),
+        (error: unknown) =>
+          error instanceof PhysicalGenerationProvisionError &&
+          error.grantIssuance === "unknown",
+      );
+      assert.equal(held, false);
+      assert.deepEqual(
+        f.records().map((record) => record["operation"]),
+        ["prepare", "grant", "verify"],
+      );
+      assert.equal(fs.readdirSync(f.linux).length, 1);
+      const attempt = fs.readdirSync(f.mapped)[0]!;
+      assert.ok(fs.existsSync(path.join(f.mapped, attempt, "grant.json")));
+    } finally {
+      Object.defineProperty(fs, "lstatSync", original);
       f.cleanup();
     }
   },
