@@ -3,24 +3,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-interface LegacyFixture {
-  fixture(
-    t: import("node:test").TestContext,
-  ): Promise<{
-    requests: { action: string }[];
-    calls(): {
-      name: string;
-      arguments: { featureType: string; object: { script: string } };
-    }[];
-    run(words: string[]): Promise<unknown>;
-  }>;
+import { randomUUID } from "node:crypto";
+interface LegacyHelpers {
   ok(result: unknown): void;
 }
 const load = createRequire(path.join(process.cwd(), "tests/param-add.test.ts"));
 const { buildOpScript } = load(
   "../src/ops",
 ) as typeof import("../packages/node-adapters/src/python/legacy-operations");
-const { fixture, ok } = load("./helpers/legacy") as LegacyFixture;
+const { ok } = load("./helpers/legacy") as LegacyHelpers;
 
 // Execute the shipped Python dispatcher and handler with only Fusion services mocked.
 const instrument = `
@@ -71,6 +62,116 @@ function execute(script: string) {
   };
 }
 
+async function fixture() {
+  const { resolveFmcadConfiguration } = load(
+    "../packages/core/dist/domain/config",
+  );
+  const config = resolveFmcadConfiguration({
+    adapter: {},
+    environment: {},
+    file: {
+      backend: "addin",
+      routing: "queue",
+      backends: {
+        addin: {
+          url: "http://127.0.0.1:8765/mcp",
+          tool: "fusion_mcp_execute",
+          transport: "node",
+        },
+      },
+    },
+    platformDefaults: {},
+    acceptedService: null,
+  });
+  const requests: { action: string; request: { backend: string } }[] = [];
+  const calls: {
+    name: string;
+    arguments: { featureType: string; object: { script: string } };
+  }[] = [];
+  async function run(words: string[]) {
+    let stdout = "";
+    let stderr = "";
+    const argv = ["--backend", "addin", ...words];
+    const dependencies = {
+      stdout: {
+        write(value: unknown) {
+          stdout += String(value);
+        },
+      },
+      stderr: {
+        write(value: unknown) {
+          stderr += String(value);
+        },
+      },
+      setExitCode() {},
+      loadConfig: () => ({ cfg: config }),
+      async runQueued(
+        rawArgv: string[],
+        selectedConfig: {
+          backend: string;
+          timeoutMs: number;
+          [key: string]: unknown;
+        },
+      ) {
+        const { prepareRequest } = load("../src/composition/execution-request");
+        const request = {
+          requestId: randomUUID(),
+          kind: "command",
+          argv: rawArgv,
+          cwd: process.cwd(),
+          timeoutMs: selectedConfig.timeoutMs,
+          backend: selectedConfig.backend,
+          buildHash: "param-add-fixture",
+        };
+        requests.push({ action: "submit", request });
+        const backend = {
+          boundary: "fmcad-broker",
+          server: selectedConfig,
+          capabilities: {
+            backend: selectedConfig.backend,
+            automaticFallback: false,
+            readOnlyEnforced: false,
+          },
+          async callTool(
+            argumentsValue: {
+              featureType: string;
+              object: { script: string };
+            },
+            name = "fusion_mcp_execute",
+          ) {
+            calls.push({ name, arguments: argumentsValue });
+            return { text: "DONE", failed: false };
+          },
+        };
+        const originalOut = process.stdout.write;
+        const originalErr = process.stderr.write;
+        process.stdout.write = (value) => {
+          stdout += String(value);
+          return true;
+        };
+        process.stderr.write = (value) => {
+          stderr += String(value);
+          return true;
+        };
+        try {
+          return await load("../src/composition/legacy-worker").execute(
+            prepareRequest({ request }),
+            backend,
+            () => {},
+          );
+        } finally {
+          process.stdout.write = originalOut;
+          process.stderr.write = originalErr;
+        }
+      },
+    };
+    const code = await load("../src/cli").main(argv, dependencies);
+    return { code, signal: null, stdout, stderr };
+  }
+
+  return { requests, calls: () => calls, run };
+}
+
 const doc = "RF_Ownership_20260910_01 v2";
 const cases = [
   { args: ["height", "width * 2"], unit: "mm", comment: "" },
@@ -92,12 +193,13 @@ const cases = [
 ];
 
 for (const { args, unit, comment } of cases) {
-  test(`param_add CLI dispatch and Python target ${JSON.stringify(args)}`, async (t) => {
+  test(`param_add CLI dispatch and Python target ${JSON.stringify(args)}`, async () => {
     const expected = [args[0], args[1], args[2] ?? "", args[3] ?? "", doc];
-    const h = await fixture(t);
-    ok(await h.run(["param_add", ...args, "--doc", doc]));
+    const h = await fixture();
+    ok(await h.run(["--backend", "addin", "param_add", ...args, "--doc", doc]));
     assert.equal(h.requests.length, 1);
     assert.equal(h.requests[0]!.action, "submit");
+    assert.equal(h.requests[0]!.request.backend, "addin");
     const dispatched = h
       .calls()
       .filter((call) => call.name === "fusion_mcp_execute");
