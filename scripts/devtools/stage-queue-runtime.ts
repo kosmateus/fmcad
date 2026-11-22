@@ -151,7 +151,7 @@ export function stageQueueTestFixtures(root: string): void {
     const bytes = fs.readFileSync(path.join(root, "dist", file));
     return { file, sha256: createHash("sha256").update(bytes).digest("hex") };
   });
-  fs.writeFileSync(path.join(root, "dist/frozen-metadata-test-corpus.json"),
+  fs.writeFileSync(path.join(root, "dist/src/frozen-metadata-test-corpus.json"),
     JSON.stringify({ version: 1, files: corpus }, null, 2) + "\n");
 }
 
