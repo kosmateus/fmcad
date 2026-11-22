@@ -68,6 +68,7 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
       const base = fs.mkdtempSync("/tmp/opencode/nr-public-");
       const nodeWrapper = createFakeWslNodeWrapper(base);
       const stateHome = path.join(base, "s");
+      const dataHome = path.join(base, "d");
       const fixtureRoot = path.join(stateHome, "fmcad");
       fs.mkdirSync(fixtureRoot, { recursive: true });
       const fixture = load(
@@ -382,6 +383,7 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
           {
             env: {
               ...process.env,
+              XDG_DATA_HOME: dataHome,
               XDG_STATE_HOME: stateHome,
               FMCAD_CONFIG: config,
               FMCAD_BACKEND: "addin",

@@ -119,7 +119,7 @@ test("typed public add-in adapter preserves protocol metadata and refuses direct
   }
 });
 
-test("typed compatibility factory preserves selection and direct-routing denial before construction", () => {
+test("typed compatibility factory selects ADDIN and rejects retired backends and direct routing before construction", () => {
   const before = historical("backends"),
     after = load(path.join(root, "src/backends")) as Modules["backends"];
   function observe(api: Modules["backends"], server: Record<string, unknown>) {
@@ -159,11 +159,36 @@ test("typed compatibility factory preserves selection and direct-routing denial 
     5,
     Symbol("invalid"),
   ])
-    for (const routing of [undefined, "queue", "direct"])
-      assert.deepEqual(
-        observe(after, { backend, routing }),
-        observe(before, { backend, routing }),
-      );
+    for (const routing of [undefined, "queue", "direct"]) {
+      const server = { backend, routing };
+      const current = observe(after, server);
+      if (routing === "direct" || backend === "addin") {
+        assert.deepEqual(current, observe(before, server));
+        if (routing === "direct") {
+          assert.equal(current.code, "UNSUPPORTED_ROUTING");
+          assert.deepEqual(current.calls, []);
+        } else {
+          assert.deepEqual(current, {
+            kind: "Addin",
+            calls: [["addin", server]],
+          });
+        }
+      } else if (backend === undefined) {
+        // The public default changed deliberately; keep the historical oracle intact.
+        assert.deepEqual(current, {
+          kind: "Addin",
+          calls: [["addin", server]],
+        });
+      } else {
+        assert.deepEqual(current, {
+          name: "Error",
+          error:
+            "Unsupported physical backend; use autodesk-fusion-mcp on port 8765 (backend=addin)",
+          code: "UNSUPPORTED_BACKEND",
+          calls: [],
+        });
+      }
+    }
 });
 
 test("typed bridge retains canonical checked bytes, executable parity and unsupported-operation errors", () => {
