@@ -469,11 +469,18 @@ class QueueClient {
         // job. That work is not a metadata lookup and can exceed its deadline.
         // Observe this one submission until reply or connection loss; never
         // resend it merely because preparation outlives the IPC lookup budget.
-        ...(action === "submit" &&
-        input &&
-        typeof input === "object" &&
-        "kind" in input &&
-        input.kind === "rpc"
+        // Document inspection/acceptance also await real queued SDK readback.
+        // Keep observing that original request, not a thirty-second lookup.
+        ...((action === "document-unlock" &&
+          input &&
+          typeof input === "object" &&
+          "action" in input &&
+          ["inspect", "accept"].includes(String(input.action))) ||
+        (action === "submit" &&
+          input &&
+          typeof input === "object" &&
+          "kind" in input &&
+          input.kind === "rpc")
           ? { timeoutMs: 0 }
           : {}),
       },
