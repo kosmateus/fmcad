@@ -43,6 +43,26 @@ const { bootstrapSuccessor, inspectSuccessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
 
+// Archived MCP configuration is evidence only; newly opened clients use ADDIN.
+const backendTransitionConfig = {
+  sourceConfig: {
+    backend: "mcp",
+    url: "http://127.0.0.1:1/never-called",
+    headers: {},
+    tool: "fusion_mcp_execute",
+    transport: "node",
+    protocolVersion: "2025-06-18",
+    timeoutMs: 180000,
+    routing: "queue",
+    queue: {},
+  },
+  effectiveConfig: {
+    backend: "addin",
+    url: "http://127.0.0.1:8765/mcp",
+    tool: "execute_python",
+  },
+};
+
 function fixture(t: TestContext, backendTransition = false) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "successor-bootstrap-"));
   const keys = [
@@ -89,9 +109,17 @@ function fixture(t: TestContext, backendTransition = false) {
     ) as (
       base: string,
       root: string,
-      options?: { oldProcessAlive?: boolean; inFlight?: boolean },
+      options?: {
+        oldProcessAlive?: boolean;
+        inFlight?: boolean;
+        sourceConfig?: Record<string, unknown>;
+        effectiveConfig?: Record<string, unknown>;
+      },
     ) => DeadEpochFixture
-  )(stateRoot, repository, { inFlight: true });
+  )(stateRoot, repository, {
+    inFlight: true,
+    ...(backendTransition ? backendTransitionConfig : {}),
+  });
   fs.rmSync(path.join(f.audit, "isolated-scratch-qualification"), {
     recursive: true,
     force: true,
@@ -175,11 +203,12 @@ test("FAKE published successor: reopening uses its identity without replaying th
     load("./fixtures/backend-successor.cjs") as (
       base: string,
       repo: string,
+      options: typeof backendTransitionConfig,
     ) => DeadEpochFixture & {
       headFile: string;
       publish(): { pointer: DeadEpochFixture["pointer"] };
     }
-  )(base, repository);
+  )(base, repository, backendTransitionConfig);
   const headBytes = fs.readFileSync(f.headFile);
   const previousFile = path.join(f.inspection.pointer.root, "queue-state.json");
   const previousBytes = fs.readFileSync(previousFile);

@@ -57,7 +57,7 @@ const { createSuccessorControl } = load(
   ): ReturnType<ProductionControl>;
 };
 
-test("full broker MCP callsites use the real pinned production checker before synthetic observe/create/close", () => {
+test("full broker ADDIN callsites use the real pinned production checker before synthetic observe/create/close", () => {
   const root = fs.mkdtempSync("/tmp/opencode/successor-mcp-production-");
   try {
     const output = spawnSync(
@@ -94,7 +94,7 @@ test("full broker MCP callsites use the real pinned production checker before sy
   }
 });
 
-test("full broker refuses a changed selected process before constructing the physical MCP client", () => {
+test("full broker refuses a changed selected process before constructing the physical ADDIN client", () => {
   const root = fs.mkdtempSync("/tmp/opencode/successor-mcp-process-refusal-");
   try {
     const output = spawnSync(
@@ -123,7 +123,7 @@ test("full broker refuses a changed selected process before constructing the phy
 
 for (const mode of ["server-error", "missing-receipt", "wrong-receipt"])
   test(
-    "native MCP full broker preserves " +
+    "ADDIN full broker preserves " +
       mode +
       " response without settlement or replay",
     () => {

@@ -176,6 +176,10 @@ test("transport boundary detects a missing owner, duplicate construction and for
 });
 
 test("legacy direct factory/config and worker environment grant no physical access", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-direct-refusal-"));
+  const config = path.join(home, "config.json");
+  fs.writeFileSync(config, JSON.stringify({ backend: "addin" }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   let physicalRequests = 0;
   const server = http.createServer((request, response) => {
     physicalRequests++;
@@ -214,7 +218,7 @@ test("legacy direct factory/config and worker environment grant no physical acce
         load(
           "./src/config",
         ) as typeof import("../src/composition/library-configuration")
-      ).loadConfig({ routing: "direct" }),
+      ).loadConfig({ routing: "direct", config }),
     (error) => {
       assert.ok(error instanceof Error && "code" in error);
       assert.equal(error.code, "UNSUPPORTED_ROUTING");
