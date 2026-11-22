@@ -343,7 +343,7 @@ test("exact request intent remains bound after completion and reopening the cont
   const f = fixture(t);
   f.ports.probeIdentity = async () => ({ ...f.observed, fileId: "file-A" });
   await f.controller.handle(inspect, actor);
-  const reopened = openIsolatedEpoch(f.directory, { recover: false });
+  const reopened = openIsolatedEpoch(f.directory, { recover: true });
   assert.ok(reopened.data.documentUnlockIntents);
   const controller = createDocumentUnlockController({
     ...f.ports,
