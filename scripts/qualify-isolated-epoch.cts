@@ -43,6 +43,42 @@ function text(value: unknown): string {
   return value;
 }
 
+const frozenTests = [
+  "tests/dead-epoch-successor.test.js",
+  "tests/frozen-inline-observer.test.js",
+  "tests/frozen-metadata-profile.test.js",
+];
+
+function pinFrozenCorpus(runtime: string) {
+  const corpusFile = path.join(runtime, "src/frozen-metadata-test-corpus.json");
+  assert.equal(fs.realpathSync(corpusFile), corpusFile);
+  assert.ok(fs.lstatSync(corpusFile).isFile());
+  const bytes = fs.readFileSync(corpusFile);
+  const corpusHash = createHash("sha256").update(bytes).digest("hex");
+  const corpus = object(JSON.parse(bytes.toString("utf8")) as unknown);
+  assert.equal(corpus["version"], 1);
+  assert.ok(Array.isArray(corpus["files"]));
+  const entries = corpus["files"].map((entry: unknown) => object(entry));
+  const names = new Set(entries.map((entry) => text(entry["file"])));
+  assert.equal(names.size, entries.length, "Duplicate test corpus entries");
+  for (const file of [...frozenTests, "tests/fixtures/frozen-inline-observer-evidence.json"])
+    assert.ok(names.has(file), `Missing pinned corpus entry: ${file}`);
+  const assertCurrent = (): void => {
+    assert.equal(createHash("sha256").update(fs.readFileSync(corpusFile)).digest("hex"), corpusHash);
+    for (const entry of entries) {
+      const file = text(entry["file"]);
+      assert.ok(file.startsWith("tests/") && !file.split("/").includes("..") && !file.includes("\\"));
+      const absolute = path.join(runtime, file);
+      assert.equal(fs.realpathSync(absolute), absolute);
+      assert.ok(fs.lstatSync(absolute).isFile());
+      assert.equal(createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"),
+        text(entry["sha256"]), `Frozen test corpus changed: ${file}`);
+    }
+  };
+  assertCurrent();
+  return { corpusHash, entries, assertCurrent };
+}
+
 // Installed-artifact offline qualification; frozen mode uses owned fake-HTTP
 // brokers only. No live SDK or canonical lifecycle port is invoked.
 
@@ -109,7 +145,9 @@ async function main() {
     ) as unknown,
   );
   const fingerprint = text(manifest["fingerprint"]);
-  assert.equal(api.buildHash(runtime), fingerprint);
+  assert.equal(api.buildHash(runtime), fingerprint,
+    "Installed runtime differs from its staged fingerprint");
+  const frozenCorpus = options["--frozen-metadata"] === "true" ? pinFrozenCorpus(runtime) : undefined;
   const admission = load(runtime + "/src/queue-admission") as {
     createProductionQueueAdmission(runtime: string): {
       admission: {
@@ -845,39 +883,10 @@ async function main() {
   }
   let frozenQualification: Record<string, unknown> | undefined;
   if (options["--frozen-metadata"] === "true") {
-    const tests = [
-      "tests/dead-epoch-successor.test.js",
-      "tests/frozen-inline-observer.test.js",
-      "tests/frozen-metadata-profile.test.js",
-    ];
+    const tests = frozenTests;
     assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed before qualification");
-    for (const file of tests) assert.ok(fs.lstatSync(path.join(runtime, file)).isFile(), file);
-    const corpusFile = path.join(runtime, "src/frozen-metadata-test-corpus.json");
-    assert.equal(fs.realpathSync(corpusFile), corpusFile);
-    assert.ok(fs.lstatSync(corpusFile).isFile());
-    const corpusBytes = fs.readFileSync(corpusFile);
-    const corpusHash = createHash("sha256").update(corpusBytes).digest("hex");
-    const corpus = object(JSON.parse(corpusBytes.toString("utf8")) as unknown);
-    assert.equal(corpus["version"], 1);
-    assert.ok(Array.isArray(corpus["files"]));
-    const entries = corpus["files"].map((entry: unknown) => object(entry));
-    const names = new Set(entries.map((entry) => text(entry["file"])));
-    assert.equal(names.size, entries.length, "Duplicate test corpus entries");
-    for (const file of [...tests, "tests/fixtures/frozen-inline-observer-evidence.json"])
-      assert.ok(names.has(file), `Missing pinned corpus entry: ${file}`);
-    const assertCorpus = (): void => {
-      assert.equal(createHash("sha256").update(fs.readFileSync(corpusFile)).digest("hex"), corpusHash);
-      for (const entry of entries) {
-        const file = text(entry["file"]);
-        assert.ok(file.startsWith("tests/") && !file.split("/").includes("..") && !file.includes("\\"));
-        const absolute = path.join(runtime, file);
-        assert.equal(fs.realpathSync(absolute), absolute);
-        assert.ok(fs.lstatSync(absolute).isFile());
-        assert.equal(createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"),
-          text(entry["sha256"]), `Frozen test corpus changed: ${file}`);
-      }
-    };
-    assertCorpus();
+    assert.ok(frozenCorpus);
+    frozenCorpus.assertCurrent();
     const child = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...tests], {
       cwd: runtime, encoding: "utf8", timeout: 240000,
       maxBuffer: 16 * 1024 * 1024,
@@ -895,9 +904,10 @@ async function main() {
     assert.equal(count("pass"), total);
     for (const field of ["fail", "cancelled", "skipped", "todo"]) assert.equal(count(field), 0);
     assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed during qualification");
-    assertCorpus();
+    frozenCorpus.assertCurrent();
     frozenQualification = { runtime, buildHash: fingerprint, tests: total, passed: total,
-      sdkRequestsSent: 0, backend: "offline-fake-http", corpusHash, corpusFiles: entries, log };
+      sdkRequestsSent: 0, backend: "offline-fake-http",
+      corpusHash: frozenCorpus.corpusHash, corpusFiles: frozenCorpus.entries, log };
   }
   const result = {
     sourceCommit: options["--source-commit"],
