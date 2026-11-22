@@ -3,15 +3,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { postHttp } from "../fusion-transport/http";
-import { postCurl } from "../fusion-transport/curl";
 import { admissionData, decodeAdmissionJson } from "./admission-json";
-import type {
-  ObjectValue,
-  Response,
-  Server,
-  Spawn,
-} from "../fusion-transport/contracts";
+import {
+  createPhysicalTurnStatusRequest,
+  type PhysicalTurnStatusRequest,
+} from "./admission-http";
+import type { Spawn } from "../fusion-transport/contracts";
 
 export interface PhysicalGenerationDescriptor {
   kind: "fmcad-physical-grant";
@@ -61,6 +58,38 @@ function denied(): never {
     },
   );
 }
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+/** Exact Python AdmissionStore._encode projection: sorted ASCII keys, compact
+ * separators and ensure_ascii=True. Target remains an opaque exact string. */
+function releasedDigest(
+  binding: PhysicalTurnBinding,
+  releasedBy: string,
+): string {
+  const { physicalRuntime: runtime, generation } = binding;
+  const encoded = JSON.stringify({
+    binding: {
+      generation: { epoch: generation.epoch, instance: generation.instance },
+      grantDigest: binding.grantDigest,
+      physicalRuntime: {
+        birth: runtime.birth,
+        build: runtime.build,
+        pid: runtime.pid,
+        source: runtime.source,
+        version: runtime.version,
+      },
+      target: binding.target,
+      turnId: binding.turnId,
+      version: binding.version,
+    },
+    releasedBy,
+    state: "released",
+  }).replace(
+    /[\u007f-\uffff]/g,
+    (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"),
+  );
+  return createHash("sha256").update(encoded, "utf8").digest("hex");
+}
 
 /** Only the trusted broker composition constructs this capability. Neither its
  * descriptor nor the grant path is taken from a public request/admission DTO. */
@@ -77,7 +106,7 @@ export function createPhysicalGenerationAuthorization(
   dependencies: {
     spawn?: Spawn;
     /** Private test/transport seam, never a request-controlled capability. */
-    request?: (server: Server, body: ObjectValue) => Promise<Response>;
+    request?: PhysicalTurnStatusRequest;
   } = {},
 ) {
   const expected = structuredClone(options.expected);
@@ -168,7 +197,7 @@ export function createPhysicalGenerationAuthorization(
         createHash("sha256").update(bytes).digest("hex") !== grantDigest
       )
         denied();
-      const value: unknown = decodeAdmissionJson(bytes.toString("utf8"));
+      const value: unknown = decodeAdmissionJson(utf8.decode(bytes));
       if (!value || typeof value !== "object" || Array.isArray(value)) denied();
       const { token: privateToken, ...descriptor } = value as Record<
         string,
@@ -265,24 +294,20 @@ export function createPhysicalGenerationAuthorization(
       return unknown();
     const endpoint = new URL("/physical/v1/turn-status", base).href;
     try {
-      const server: Server = {
-        url: endpoint,
+      const request =
+        dependencies.request ??
+        createPhysicalTurnStatusRequest(
+          { transport: options.transport },
+          { spawn: dependencies.spawn },
+        );
+      const response = await request({
+        endpoint,
         headers: headers(endpoint),
+        body: Buffer.from(JSON.stringify(original), "utf8"),
         timeoutMs: options.timeoutMs ?? 10000,
-        maxBuffer: 65536,
-      };
-      const response = await (dependencies.request
-        ? dependencies.request(server, { ...original })
-        : options.transport === "windows-curl"
-          ? postCurl(
-              { ...server, curlPath: "/mnt/c/Windows/System32/curl.exe" },
-              { ...original },
-              {},
-              dependencies.spawn,
-            )
-          : postHttp(server, { ...original }, {}));
+      });
       if (response.status !== 200) return unknown();
-      const value: unknown = decodeAdmissionJson(response.raw);
+      const value: unknown = decodeAdmissionJson(utf8.decode(response.body));
       if (!value || typeof value !== "object" || Array.isArray(value))
         return unknown();
       const proof = value as Record<string, unknown>;
@@ -296,7 +321,9 @@ export function createPhysicalGenerationAuthorization(
       if (
         proof["state"] !== "released" ||
         typeof evidence !== "string" ||
-        !/^[a-f0-9]{64}$/.test(evidence) ||
+        !["dispatch-finally", "cancelled-before-sdk"].some(
+          (reason) => releasedDigest(original, reason) === evidence,
+        ) ||
         proof["physicalEvidenceReference"] !==
           `fmcad-physical-turn:sha256:${evidence}` ||
         Object.keys(proof).sort().join(",") !==

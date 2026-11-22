@@ -13,6 +13,8 @@ test("prepared broker RPC authorizes at dispatch, not preparation or request sco
       request.headers["x-fmcad-physical-grant"],
       "current-private-grant",
     );
+    assert.equal(request.headers["x-fmcad-physical-turn"], undefined);
+    assert.equal(request.headers["x-fmcad-physical-target"], undefined);
     response.end("{}");
   });
   server.listen(0, "127.0.0.1");
@@ -45,7 +47,11 @@ test("prepared broker RPC authorizes at dispatch, not preparation or request sco
   const allowed = await client.preparePost({ method: "tools/call", id: 2 });
   await client.withRequest(
     {
-      headers: { "x-fmcad-physical-grant": "request-cannot-replace-grant" },
+      headers: {
+        "x-fmcad-physical-grant": "request-cannot-replace-grant",
+        "X-FMCAD-Physical-Turn": "request-cannot-provide-turn",
+        "x-fmcad-PHYSICAL-target": "request-cannot-provide-target",
+      },
     },
     () => allowed.send(),
   );

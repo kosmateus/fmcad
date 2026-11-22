@@ -2,11 +2,32 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+import { createPhysicalTurnStatusRequest } from "../packages/node-adapters/src/execution/admission-http";
 import {
   createPhysicalGenerationAuthorization,
   type PhysicalGenerationDescriptor,
 } from "../packages/node-adapters/src/execution/physical-generation";
+
+function pythonEvidence(
+  binding: unknown,
+  releasedBy = "dispatch-finally",
+): string {
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      "import hashlib,json,sys; print(hashlib.sha256(json.dumps(json.load(sys.stdin),sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')).hexdigest())",
+    ],
+    {
+      input: JSON.stringify({ binding, state: "released", releasedBy }),
+      encoding: "utf8",
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
 
 function fixture(t: { after(action: () => void): void }) {
   const root = fs.mkdtempSync("/tmp/opencode/private-physical-grant-");
@@ -163,6 +184,10 @@ test("broker binding factory pins the physical child ID and exact canonical sele
 
 for (const state of [
   "released",
+  "released-before-sdk",
+  "released-unicode",
+  "arbitrary-digest",
+  "unrecognized-reason",
   "active",
   "unknown",
   "foreign-target",
@@ -178,17 +203,23 @@ for (const state of [
     const before = fs.readFileSync(f.grantFile);
     let queries = 0;
     const authorization = createPhysicalGenerationAuthorization(f.options, {
-      async request(server, body) {
+      async request(request) {
+        const body: Record<string, unknown> = JSON.parse(
+          Buffer.from(request.body).toString("utf8"),
+        );
         queries++;
         assert.equal(
-          server.url,
+          request.endpoint,
           "http://127.0.0.1:8765/physical/v1/turn-status",
         );
-        assert.equal(server.headers?.["X-Fmcad-Physical-Grant"], f.secret);
+        assert.equal(request.headers["X-Fmcad-Physical-Grant"], f.secret);
         if (state === "disconnected") throw new Error("Connection lost");
-        const digest = "a".repeat(64);
         const release =
           state === "released" ||
+          state === "released-before-sdk" ||
+          state === "released-unicode" ||
+          state === "arbitrary-digest" ||
+          state === "unrecognized-reason" ||
           state === "bad-evidence" ||
           state === "foreign-target" ||
           state === "foreign-grant" ||
@@ -217,6 +248,17 @@ for (const state of [
                       },
                     }
                   : body;
+        const digest =
+          state === "arbitrary-digest"
+            ? "a".repeat(64)
+            : pythonEvidence(
+                responseBinding,
+                state === "released-before-sdk"
+                  ? "cancelled-before-sdk"
+                  : state === "unrecognized-reason"
+                    ? "operator-assumption"
+                    : "dispatch-finally",
+              );
         const raw = JSON.stringify({
           state: release ? "released" : state,
           binding: responseBinding,
@@ -229,24 +271,32 @@ for (const state of [
         });
         return {
           status: 200,
-          raw:
+          body: Buffer.from(
             state === "duplicate-state"
               ? raw.replace(
                   '"state":"released"',
                   '"state":"active","state":"released"',
                 )
               : raw,
+            "utf8",
+          ),
         };
       },
     });
     const binding = authorization.turnBinding(
       "original-turn",
-      '{"creationId":"original"}',
+      state === "released-unicode"
+        ? '{"creationId":"zażółć 📐 \ufffd"}'
+        : '{"creationId":"original"}',
     );
     const proof = await authorization.physicalTurnQuiescence(binding);
     assert.equal(
       proof.state,
-      ["released", "active", "unknown"].includes(state) ? state : "unknown",
+      state.startsWith("released")
+        ? "released"
+        : ["active", "unknown"].includes(state)
+          ? state
+          : "unknown",
     );
     assert.deepEqual(proof.binding, binding);
     assert.equal(queries, 1);
@@ -267,9 +317,27 @@ for (const kind of [
   "duplicate-field",
   "foreign-endpoint",
   "retired-owner",
+  "malformed-utf8",
 ]) {
   test(`physical capability refuses ${kind} without exposing the secret`, (t) => {
     const f = fixture(t);
+    if (kind === "malformed-utf8") {
+      f.expected.physicalRuntime.source = "source-\ufffd";
+      const encoded = Buffer.from(
+        JSON.stringify({ ...f.expected, token: f.secret }),
+      );
+      const position = encoded.indexOf(Buffer.from("\ufffd"));
+      assert.ok(position >= 0);
+      const corrupt = Buffer.concat([
+        encoded.subarray(0, position),
+        Buffer.from([0xff]),
+        encoded.subarray(position + 3),
+      ]);
+      fs.writeFileSync(f.grantFile, corrupt);
+      f.options.grantDigest = createHash("sha256")
+        .update(corrupt)
+        .digest("hex");
+    }
     if (kind === "retired-owner")
       f.options.assertBrokerOwner = () => {
         throw new Error("Broker lifetime was retired");
@@ -327,3 +395,92 @@ for (const kind of [
     );
   });
 }
+
+for (const transport of ["node", "windows-curl"] as const) {
+  test(`quiescence ${transport} refuses malformed UTF-8 before JSON can replace bytes`, async (t) => {
+    const f = fixture(t);
+    const original = createPhysicalGenerationAuthorization(f.options);
+    const binding = original.turnBinding(
+      "invalid-utf8-turn",
+      '{"creationId":"document-\ufffd"}',
+    );
+    const digest = pythonEvidence(binding);
+    const encoded = Buffer.from(
+      JSON.stringify({
+        state: "released",
+        binding,
+        evidenceDigest: digest,
+        physicalEvidenceReference: `fmcad-physical-turn:sha256:${digest}`,
+      }),
+    );
+    const position = encoded.indexOf(Buffer.from("\ufffd"));
+    assert.ok(position >= 0);
+    const corrupt = Buffer.concat([
+      encoded.subarray(0, position),
+      Buffer.from([0xff]),
+      encoded.subarray(position + 3),
+    ]);
+    let sends = 0;
+    const port = createPhysicalTurnStatusRequest(
+      { transport },
+      {
+        fetch: async () => {
+          assert.equal(transport, "node");
+          sends++;
+          return new Response(corrupt, { status: 200 });
+        },
+        spawn: (executable, _args, options) => {
+          assert.equal(transport, "windows-curl");
+          assert.equal(executable, "/mnt/c/Windows/System32/curl.exe");
+          sends++;
+          const response = Buffer.concat([
+            Buffer.from(
+              `HTTP/1.1 200 OK\r\nContent-Length: ${corrupt.length}\r\n\r\n`,
+            ),
+            corrupt,
+          ]);
+          return spawn(
+            process.execPath,
+            [
+              "-e",
+              `process.stdin.resume();process.stdin.on("end",()=>process.stdout.write(Buffer.from("${response.toString("base64")}","base64")));`,
+            ],
+            options,
+          );
+        },
+      },
+    );
+    const authorization = createPhysicalGenerationAuthorization(
+      { ...f.options, transport },
+      { request: port },
+    );
+    assert.equal(
+      (await authorization.physicalTurnQuiescence(binding)).state,
+      "unknown",
+    );
+    assert.equal(sends, 1);
+  });
+}
+
+test("physical control byte port cannot dispatch to an SDK endpoint", () => {
+  const port = createPhysicalTurnStatusRequest(
+    {},
+    {
+      fetch: async () => assert.fail("No physical SDK dispatch"),
+    },
+  );
+  for (const endpoint of [
+    "http://127.0.0.1:8765/mcp",
+    "http://127.0.0.1:8765/admission/v1",
+  ])
+    assert.throws(
+      () =>
+        port({
+          endpoint,
+          headers: {},
+          body: new Uint8Array(),
+          timeoutMs: 1000,
+        }),
+      /exact private control endpoint/,
+    );
+});

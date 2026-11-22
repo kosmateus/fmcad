@@ -41,9 +41,12 @@ function post(
   options: RequestOptions,
 ) {
   const authorizedHeaders = dependencies.authorizePhysicalRequest?.(server.url);
-  const privateNames = new Set(
-    Object.keys(authorizedHeaders ?? {}).map((name) => name.toLowerCase()),
-  );
+  const privateNames = new Set([
+    "x-fmcad-physical-grant",
+    "x-fmcad-physical-turn",
+    "x-fmcad-physical-target",
+    ...Object.keys(authorizedHeaders ?? {}).map((name) => name.toLowerCase()),
+  ]);
   const requestServer = {
     ...server,
     headers: {
