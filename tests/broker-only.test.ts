@@ -50,6 +50,14 @@ function assertPhysicalTransportBoundary(name: string, source: string) {
     const rawCurl = /require\(["']\.\.\/\.\.\/fusion-transport\/curl["']\)/g;
     assert.equal(source.match(rawCurl)?.length ?? 0, 1, name);
     source = source.replace(rawCurl, "");
+  } else if ([
+    "composition/queue-frozen-inline-observer.js",
+    "dist/composition/queue-frozen-inline-observer.js",
+  ].includes(name)) {
+    // These four immutable path/hash pairs describe historical bytes, not imports.
+    const archivedHashes = /"src\/dist\/fusion-transport\/(?:broker|addin|mcp|curl)\.js"\s*:\s*"[a-f0-9]{64}"/g;
+    assert.equal(source.match(archivedHashes)?.length ?? 0, 4, name);
+    source = source.replace(archivedHashes, "");
   }
   assert.doesNotMatch(source, physicalTransport, name);
 }
@@ -84,6 +92,16 @@ test("only the broker bootstrap imports the private physical transport", () => {
       name.split(path.sep).join("/"),
       fs.readFileSync(path.join(runtime, name), "utf8"),
     );
+  }
+  for (const name of [
+    "composition/queue-frozen-inline-observer.js",
+    "dist/composition/queue-frozen-inline-observer.js",
+  ]) {
+    assert.ok(files.includes(path.normalize(name)));
+    const source = fs.readFileSync(path.join(runtime, name), "utf8");
+    assert.throws(() => assertPhysicalTransportBoundary(
+      name, source + '\nrequire("./dist/fusion-transport/mcp");\n',
+    ), "Historical source hashes must never authorize a physical import");
   }
   assert.equal(
     record(load("./src/queue-client"))["assertDirectAccess"],

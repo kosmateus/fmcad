@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import type { PreparedPythonArtifact, PythonCheckReport } from "@fmcad/core";
@@ -43,7 +43,44 @@ function text(value: unknown): string {
   return value;
 }
 
-// Installed-artifact offline qualification. No broker, SDK or lifecycle port.
+const frozenTests = [
+  "tests/dead-epoch-successor.test.js",
+  "tests/frozen-inline-observer.test.js",
+  "tests/frozen-metadata-profile.test.js",
+];
+
+function pinFrozenCorpus(runtime: string) {
+  const corpusFile = path.join(runtime, "src/frozen-metadata-test-corpus.json");
+  assert.equal(fs.realpathSync(corpusFile), corpusFile);
+  assert.ok(fs.lstatSync(corpusFile).isFile());
+  const bytes = fs.readFileSync(corpusFile);
+  const corpusHash = createHash("sha256").update(bytes).digest("hex");
+  const corpus = object(JSON.parse(bytes.toString("utf8")) as unknown);
+  assert.equal(corpus["version"], 1);
+  assert.ok(Array.isArray(corpus["files"]));
+  const entries = corpus["files"].map((entry: unknown) => object(entry));
+  const names = new Set(entries.map((entry) => text(entry["file"])));
+  assert.equal(names.size, entries.length, "Duplicate test corpus entries");
+  for (const file of [...frozenTests, "tests/fixtures/frozen-inline-observer-evidence.json"])
+    assert.ok(names.has(file), `Missing pinned corpus entry: ${file}`);
+  const assertCurrent = (): void => {
+    assert.equal(createHash("sha256").update(fs.readFileSync(corpusFile)).digest("hex"), corpusHash);
+    for (const entry of entries) {
+      const file = text(entry["file"]);
+      assert.ok(file.startsWith("tests/") && !file.split("/").includes("..") && !file.includes("\\"));
+      const absolute = path.join(runtime, file);
+      assert.equal(fs.realpathSync(absolute), absolute);
+      assert.ok(fs.lstatSync(absolute).isFile());
+      assert.equal(createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"),
+        text(entry["sha256"]), `Frozen test corpus changed: ${file}`);
+    }
+  };
+  assertCurrent();
+  return { corpusHash, entries, assertCurrent };
+}
+
+// Installed-artifact offline qualification; frozen mode uses owned fake-HTTP
+// brokers only. No live SDK or canonical lifecycle port is invoked.
 
 async function main() {
   const options: Record<string, string> = {},
@@ -59,6 +96,7 @@ async function main() {
         "--source-commit",
         "--closed-fixture",
         "--normal-currentstore",
+        "--frozen-metadata",
       ].includes(key) ||
       options[key] ||
       !value
@@ -68,6 +106,8 @@ async function main() {
   }
   const runtime = path.resolve(options["--runtime"] || ""),
     output = path.resolve(options["--output"] || "");
+  if (options["--frozen-metadata"] !== undefined && options["--frozen-metadata"] !== "true")
+    throw new Error("--frozen-metadata supports only true");
   if (options["--normal-currentstore"] !== undefined && options["--normal-currentstore"] !== "true") throw new Error("--normal-currentstore supports only true");
   if (
     !options["--runtime"] ||
@@ -105,7 +145,9 @@ async function main() {
     ) as unknown,
   );
   const fingerprint = text(manifest["fingerprint"]);
-  assert.equal(api.buildHash(runtime), fingerprint);
+  assert.equal(api.buildHash(runtime), fingerprint,
+    "Installed runtime differs from its staged fingerprint");
+  const frozenCorpus = options["--frozen-metadata"] === "true" ? pinFrozenCorpus(runtime) : undefined;
   const admission = load(runtime + "/src/queue-admission") as {
     createProductionQueueAdmission(runtime: string): {
       admission: {
@@ -839,6 +881,34 @@ async function main() {
       { flag: "wx", mode: 0o600 },
     );
   }
+  let frozenQualification: Record<string, unknown> | undefined;
+  if (options["--frozen-metadata"] === "true") {
+    const tests = frozenTests;
+    assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed before qualification");
+    assert.ok(frozenCorpus);
+    frozenCorpus.assertCurrent();
+    const child = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...tests], {
+      cwd: runtime, encoding: "utf8", timeout: 240000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const log = path.join(output, "frozen-metadata-profile.tap");
+    fs.writeFileSync(log, child.stdout + child.stderr, { flag: "wx", mode: 0o600 });
+    assert.equal(child.status, 0, child.stderr || String(child.error) || log);
+    const count = (name: string): number => {
+      const match = child.stdout.match(new RegExp(`^# ${name} (\\d+)$`, "m"));
+      assert.ok(match, `Missing ${name} in ${log}`);
+      return Number(match[1]);
+    };
+    const total = count("tests");
+    assert.ok(total >= 122, "The complete frozen profile corpus is required");
+    assert.equal(count("pass"), total);
+    for (const field of ["fail", "cancelled", "skipped", "todo"]) assert.equal(count(field), 0);
+    assert.equal(api.buildHash(runtime), fingerprint, "Frozen runtime changed during qualification");
+    frozenCorpus.assertCurrent();
+    frozenQualification = { runtime, buildHash: fingerprint, tests: total, passed: total,
+      sdkRequestsSent: 0, backend: "offline-fake-http",
+      corpusHash: frozenCorpus.corpusHash, corpusFiles: frozenCorpus.entries, log };
+  }
   const result = {
     sourceCommit: options["--source-commit"],
     buildHash: fingerprint,
@@ -855,6 +925,10 @@ async function main() {
     auditFactsCaptureQualified: true,
     deadEpochSuccessorReadQualified: true,
     deadEpochSuccessorRestoreQualified: true,
+    ...(frozenQualification ? {
+      frozenPredecessorMetadataQualified: true,
+      frozenMetadataProfileQualification: frozenQualification,
+    } : {}),
     ...(options["--normal-currentstore"] === "true" ? { normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true } : {}),
     regionalFixtureTypedOperationsQualified: true,
     fixedContainmentProgramQualified: true,

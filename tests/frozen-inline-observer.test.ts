@@ -6,7 +6,7 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
-const root = path.resolve(__dirname, "../..");
+const root = process.cwd();
 const load = createRequire(path.join(root, "package.json"));
 const subject = load(
   "./src/dist/composition/queue-frozen-inline-observer",

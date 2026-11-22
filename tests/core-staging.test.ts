@@ -104,6 +104,32 @@ function fixture(root: string): void {
   }
 }
 
+test("packaged fusion transport loads its bundled core outside the workspace", (t) => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "core-staging-transport-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fixture(root);
+  write(root, "packages/core/src/index.ts", "export const value = 42;\n");
+  write(root, "packages/core/dist/index.js", "exports.value = 42;\n");
+  write(
+    root,
+    "packages/node-adapters/src/fusion-transport/broker.ts",
+    "export {};\n",
+  );
+  write(
+    root,
+    "packages/node-adapters/dist/fusion-transport/broker.js",
+    'exports.value = require("@fmcad/core").value;\n',
+  );
+  stageCore(root);
+  const file = path.join(root, "dist/src/dist/fusion-transport/broker.js");
+  const output = execFileSync(
+    process.execPath,
+    ["-e", `console.log(require(${JSON.stringify(file)}).value)`],
+    { encoding: "utf8", env: { ...process.env, NODE_PATH: "" } },
+  );
+  assert.equal(output.trim(), "42");
+});
+
 test("incremental staging removes renamed modules from compiler output and both runtime copies", (t) => {
   const root = fs.mkdtempSync(path.join(tmpdir(), "core-staging-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
