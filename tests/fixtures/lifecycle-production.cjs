@@ -3,6 +3,7 @@
 // imports or constructs a real Fusion transport and never uses the global dir.
 const fs = require("node:fs");
 const path = require("node:path");
+const assert = require("node:assert/strict");
 require("./fake-wsl-platform.cjs")();
 const { decodeNativeProgram } = require("./native-source-envelope.cjs");
 const { runBoundInstanceProbe } = require("./bound-instance-probe.cjs");
@@ -21,14 +22,18 @@ const identity = {
   documents: [],
 };
 const physical = {
-  server: { timeoutMs: 2000 },
+  server: {
+    backend: "addin",
+    url: "http://127.0.0.1:8765/mcp",
+    tool: "execute_python",
+    timeoutMs: 2000,
+  },
   _parse: JSON.parse,
   async _post(payload) {
-    const script = decodeNativeProgram(
-      payload.params?.arguments?.code ||
-        payload.params?.arguments?.object?.script ||
-        "",
-    );
+    assert.equal(payload.method, "tools/call");
+    assert.equal(payload.params?.name, "execute_python");
+    assert.equal(payload.params.arguments.persistent, false);
+    const script = decodeNativeProgram(payload.params.arguments.code);
     const match = script.match(
       /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
     );
@@ -58,33 +63,43 @@ const physical = {
       raw: JSON.stringify({
         jsonrpc: "2.0",
         id: payload.id,
-        result: { content: [{ type: "text", text }] },
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ success: true, stdout: text, stderr: "" }),
+            },
+          ],
+        },
       }),
     };
   },
-  async callTool(value) {
+  async callTool(value, toolName) {
+    assert.equal(toolName, "fusion_mcp_execute");
+    assert.equal(value.featureType, "script");
     const response = await this._post({
       jsonrpc: "2.0",
       id: "fake-probe",
       method: "tools/call",
-      params: { name: "fusion_mcp_execute", arguments: value },
+      params: {
+        name: "execute_python",
+        arguments: {
+          code: value.object.script + '\n\nrun("")\n',
+          persistent: false,
+        },
+      },
     });
-    return {
-      failed: false,
-      text: JSON.parse(response.raw).result.content[0].text,
-    };
+    const output = JSON.parse(JSON.parse(response.raw).result.content[0].text);
+    return { failed: !output.success, text: output.stdout };
   },
 };
-serve(
-  { backend: "mcp", timeoutMs: 2000 },
-  {
-    dir,
-    confirmOwnership: true,
-    createBackend: () => physical,
-    pollMs: 5,
-    startPaused: process.argv.includes("--paused"),
-  },
-).then(
+serve(physical.server, {
+  dir,
+  confirmOwnership: true,
+  createBackend: () => physical,
+  pollMs: 5,
+  startPaused: process.argv.includes("--paused"),
+}).then(
   (broker) => {
     counts.starts++;
     durable(countsFile, counts);
