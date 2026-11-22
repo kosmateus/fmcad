@@ -605,7 +605,7 @@ test("last temporary unlink is followed by fsync on the pinned directory", (t) =
   assert.deepEqual(events, ["directory-fsync", "unlink", "directory-fsync"]);
 });
 
-test("interrupted temporary unlink is reconciled by exact-byte retry without overwriting", (t) => {
+test("interrupted temporary unlink fails closed on retry without touching either name", (t) => {
   const f = fixture(t);
   let armed = true;
   const io = {
@@ -627,17 +627,20 @@ test("interrupted temporary unlink is reconciled by exact-byte retry without ove
   const file = path.join(directory, final);
   const before = fs.statSync(file),
     bytes = fs.readFileSync(file);
+  const names = fs.readdirSync(directory);
   assert.equal(before.nlink, 2);
   const recovered = createDocumentObservationStore(f.options);
-  const readback = recovered.persist(f.context, f.proof);
+  assert.throws(
+    () => recovered.persist(f.context, f.proof),
+    /private, owned and regular/,
+  );
   assert.equal(fs.statSync(file).ino, before.ino);
-  assert.equal(fs.statSync(file).nlink, 1);
+  assert.equal(fs.statSync(file).nlink, 2);
   assert.deepEqual(fs.readFileSync(file), bytes);
-  assert.deepEqual(fs.readdirSync(directory), [final]);
-  recovered.verify({ ...f.context, readback });
+  assert.deepEqual(fs.readdirSync(directory), names);
 });
 
-test("restore reconciles only the matching publication temporary hardlink", (t) => {
+test("restore never cleans a discovered UUID temporary hardlink or unrelated file", (t) => {
   const f = fixture(t);
   const observation = f.publish();
   const file = path.join(f.root, observation.readback.reference);
@@ -645,10 +648,13 @@ test("restore reconciles only the matching publication temporary hardlink", (t) 
   fs.linkSync(file, temporary); // Model a resurrected unsynced unlink after crash.
   const foreign = `${file}.${randomUUID()}.tmp`;
   fs.writeFileSync(foreign, "unrelated owned file", { mode: 0o600 });
-  createDocumentObservationStore(f.options).verify(observation);
-  assert.equal(fs.existsSync(temporary), false);
+  assert.throws(
+    () => createDocumentObservationStore(f.options).verify(observation),
+    /private, owned and regular/,
+  );
+  assert.equal(fs.existsSync(temporary), true);
   assert.equal(fs.readFileSync(foreign, "utf8"), "unrelated owned file");
-  assert.equal(fs.statSync(file).nlink, 1);
+  assert.equal(fs.statSync(file).nlink, 2);
 });
 
 test("foreign hardlink is not forcibly removed during restore or retry", (t) => {
@@ -659,14 +665,53 @@ test("foreign hardlink is not forcibly removed during restore or retry", (t) => 
   fs.linkSync(file, foreign);
   assert.throws(
     () => f.store.verify(observation),
-    /foreign or unverified hardlinks/,
+    /private, owned and regular/,
   );
   assert.throws(
     () => f.store.persist(f.context, f.proof),
-    /foreign or unverified hardlinks/,
+    /private, owned and regular/,
   );
   assert.equal(fs.statSync(file).nlink, 2);
   assert.deepEqual(fs.readFileSync(foreign), fs.readFileSync(file));
+});
+
+test("multi-link restore and retry reject before any discovered-name unlink or swap", (t) => {
+  const f = fixture(t);
+  const observation = f.publish();
+  const file = path.join(f.root, observation.readback.reference);
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  fs.linkSync(file, temporary);
+  const originalBytes = fs.readFileSync(temporary);
+  let unlinkAttempts = 0;
+  const io = {
+    ...fs,
+    unlinkSync(entry: fs.PathLike) {
+      unlinkAttempts++;
+      // If stat-then-unlink recovery regresses, another process substitutes a
+      // foreign file at the EXACT discovered UUID name before this unlink.
+      if (String(entry).endsWith(path.basename(temporary))) {
+        execFileSync(process.execPath, [
+          "-e",
+          `
+          const fs=require('node:fs'),file=process.argv[1];
+          fs.renameSync(file,file+'.original');
+          fs.writeFileSync(file,'foreign replacement',{mode:0o600});
+        `,
+          temporary,
+        ]);
+      }
+      fs.unlinkSync(entry);
+    },
+  };
+  const store = createDocumentObservationStore({ ...f.options, io });
+  assert.throws(() => store.verify(observation));
+  assert.equal(unlinkAttempts, 0);
+  assert.throws(() => store.persist(f.context, f.proof));
+  assert.equal(unlinkAttempts, 0);
+  assert.deepEqual(fs.readFileSync(temporary), originalBytes);
+  assert.equal(fs.statSync(temporary).ino, fs.statSync(file).ino);
+  assert.equal(fs.statSync(file).nlink, 2);
+  assert.equal(fs.existsSync(temporary + ".original"), false);
 });
 
 test("reopen reasserts final-unlink durability even when visible nlink is already one", (t) => {

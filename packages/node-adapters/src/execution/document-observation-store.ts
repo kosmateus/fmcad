@@ -101,19 +101,19 @@ export function createDocumentObservationStore(
       "Observation store requires a namespace and trusted producer verifier",
     );
   const uid = process.getuid?.();
-  function privateStat(stat: fs.Stats, directory: boolean, links = 1) {
+  function privateStat(stat: fs.Stats, directory: boolean) {
     if (
       stat.isSymbolicLink() ||
       (directory ? !stat.isDirectory() : !stat.isFile()) ||
       (stat.mode & 0o077) !== 0 ||
       (uid !== undefined && stat.uid !== uid) ||
-      (!directory && stat.nlink !== links)
+      (!directory && stat.nlink !== 1)
     )
       reject("Observation evidence must be private, owned and regular");
     return stat;
   }
-  function privateNode(file: string, directory: boolean, links = 1) {
-    return privateStat(io.lstatSync(file), directory, links);
+  function privateNode(file: string, directory: boolean) {
+    return privateStat(io.lstatSync(file), directory);
   }
   // Reject symlinked parents too, without imposing private permissions on /tmp.
   for (let current = root; ; current = path.dirname(current)) {
@@ -198,7 +198,7 @@ export function createDocumentObservationStore(
       stat.nlink,
     ];
   }
-  function read(reference: string, links = 1) {
+  function read(reference: string) {
     stableRoot();
     const file = resolve(reference);
     const parents: { file: string; stat: fs.Stats }[] = [];
@@ -209,7 +209,7 @@ export function createDocumentObservationStore(
     ) {
       parents.push({ file: current, stat: privateNode(current, true) });
     }
-    const before = privateNode(file, false, links);
+    const before = privateNode(file, false);
     let opened: fs.Stats | undefined;
     // Reuse the bounded/nonblocking reader, but strengthen its actual FD
     // checks. Path lstat before/after alone cannot authenticate the inode read.
@@ -219,7 +219,7 @@ export function createDocumentObservationStore(
       {
         ...io,
         fstatSync(fd: number) {
-          const stat = privateStat(io.fstatSync(fd), false, links);
+          const stat = privateStat(io.fstatSync(fd), false);
           if (!isDeepStrictEqual(stamp(stat), stamp(before)))
             reject("Opened observation inode differs from its checked path");
           opened = stat;
@@ -230,7 +230,7 @@ export function createDocumentObservationStore(
             if (
               opened &&
               !isDeepStrictEqual(
-                stamp(privateStat(io.fstatSync(fd), false, links)),
+                stamp(privateStat(io.fstatSync(fd), false)),
                 stamp(opened),
               )
             )
@@ -242,7 +242,7 @@ export function createDocumentObservationStore(
       } as typeof fs,
       file,
     );
-    const after = privateNode(file, false, links);
+    const after = privateNode(file, false);
     if (
       !isDeepStrictEqual(stamp(before), stamp(after)) ||
       parents.some(
@@ -257,11 +257,13 @@ export function createDocumentObservationStore(
     stableRoot();
     return bytes;
   }
-  function reconcilePublication(reference: string, expectedHash: string) {
+  function reassertPublication(reference: string) {
     stableRoot();
     const file = resolve(reference);
-    const stat = io.lstatSync(file);
-    privateStat(stat, false, stat.nlink === 2 ? 2 : 1);
+    // A pinned directory does not pin a discovered entry. Never delete a
+    // recovered temporary name: stat-then-unlink could delete a replacement.
+    // An ambiguous multi-linked publication needs explicit storage recovery.
+    privateNode(file, false);
     const fd = io.openSync(
       directory,
       io.constants.O_RDONLY |
@@ -270,37 +272,9 @@ export function createDocumentObservationStore(
     );
     try {
       if (!isDeepStrictEqual(identity(io.fstatSync(fd)), directoryIdentity))
-        reject("Observation cleanup directory changed");
-      if (stat.nlink === 1) {
-        // A previous final-unlink fsync may have failed. Visible nlink=1 alone
-        // is not a durability proof, including on a fresh adapter instance.
-        io.fsyncSync(fd);
-        stableRoot();
-        return;
-      }
-      const pinned =
-        process.platform === "linux" ? `/proc/self/fd/${fd}` : directory;
-      const prefix = path.basename(file) + ".";
-      const matches = io
-        .readdirSync(pinned)
-        .filter(
-          (name) =>
-            name.startsWith(prefix) &&
-            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/.test(
-              name.slice(prefix.length),
-            ) &&
-            isDeepStrictEqual(
-              identity(io.lstatSync(path.join(pinned, name))),
-              identity(stat),
-            ),
-        );
-      if (matches.length !== 1 || sha256(read(reference, 2)) !== expectedHash)
-        reject("Publication has foreign or unverified hardlinks");
-      const temporary = path.join(pinned, matches[0]!);
-      const temporaryStat = privateNode(temporary, false, 2);
-      if (!isDeepStrictEqual(stamp(temporaryStat), stamp(io.lstatSync(file))))
-        reject("Publication temporary inode changed");
-      io.unlinkSync(temporary);
+        reject("Observation publication directory changed");
+      // A previous final-unlink fsync may have failed. Visible nlink=1 alone
+      // is not a durability proof, including on a fresh adapter instance.
       io.fsyncSync(fd);
       privateNode(file, false);
       stableRoot();
@@ -422,6 +396,18 @@ export function createDocumentObservationStore(
         reject("Observation exceeds size limit");
       const file = resolve(reference);
       stableRoot();
+      let existing = false;
+      try {
+        io.lstatSync(file);
+        existing = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (existing) {
+        reassertPublication(reference);
+        if (!read(reference).equals(bytes))
+          reject("Immutable observation ID already contains different bytes");
+      }
       // Pin the output directory, so a concurrent directory rename/symlink
       // substitution cannot redirect the temporary file or exclusive link.
       const fd = io.openSync(
@@ -437,14 +423,17 @@ export function createDocumentObservationStore(
           process.platform === "linux"
             ? `/proc/self/fd/${fd}/${path.basename(file)}`
             : file;
-        try {
-          durableBytes(pinned, bytes, true, io);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-          reconcilePublication(reference, sha256(bytes));
-          if (!read(reference).equals(bytes))
-            reject("Immutable observation ID already contains different bytes");
-          // Reassert durability after an earlier ambiguous publication.
+        if (!existing) {
+          try {
+            durableBytes(pinned, bytes, true, io);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+            reassertPublication(reference);
+            if (!read(reference).equals(bytes))
+              reject(
+                "Immutable observation ID already contains different bytes",
+              );
+          }
         }
         // durableBytes links+syncs, then unlinks its temporary name in finally.
         // Persist that final unlink too, otherwise crash can resurrect nlink=2.
@@ -474,7 +463,7 @@ export function createDocumentObservationStore(
         !text(readback.probeRequestId)
       )
         reject("Invalid observation readback reference");
-      reconcilePublication(readback.reference, readback.sha256);
+      reassertPublication(readback.reference);
       const bytes = read(readback.reference);
       if (sha256(bytes) !== readback.sha256)
         reject("Observation record changed");
