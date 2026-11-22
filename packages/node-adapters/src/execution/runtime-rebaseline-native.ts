@@ -126,7 +126,7 @@ export interface NativeRuntimeRebaselineOptions {
   pins: NativeRuntimeRebaselinePins;
   native: Omit<
     NativePhysicalGenerationProvisionOptions,
-    "getVerifiedActivation"
+    "getVerifiedActivation" | "assertBrokerOwner"
   >;
   runtimeVersion: string;
   originalEvidence: NativeRebaselineOriginalEvidence;

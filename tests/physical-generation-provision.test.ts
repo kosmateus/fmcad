@@ -82,6 +82,7 @@ if(envelope.action==="prepare"){
  if(envelope.activationRaw!==undefined)fs.writeFileSync(path.join(dir,"activation.json"),envelope.activationRaw,{flag:"wx",mode:384});
  record({operation:"prepare",descriptor:JSON.parse(raw),activationRaw:envelope.activationRaw,cwd:process.cwd(),env:process.env,startupFlags:args.slice(0,4),bootstrap:args[4]});
  if(mode==="changed-fork")fs.writeFileSync(${JSON.stringify(path.join(directory, "lib/physical_lifecycle.py"))},"# changed");
+ if(mode==="owner-lost")fs.writeFileSync(${JSON.stringify(path.join(directory, "owner-lost"))},"during-native-prepare");
  console.log(digest(raw));return;
 }
 if(envelope.action==="grant"){
@@ -90,6 +91,7 @@ if(envelope.action==="grant"){
  record({operation:"grant",args,activationRaw:envelope.activationRaw});
  if(mode==="symlink"){fs.writeFileSync(grant+".target",data);fs.symlinkSync(grant+".target",grant);}
  else fs.writeFileSync(grant,data,{flag:"wx",mode:384});
+ if(mode==="owner-lost-at-grant")fs.writeFileSync(${JSON.stringify(path.join(directory, "owner-lost"))},"after-grant-started");
  if(mode==="error"){console.error(${JSON.stringify(secret)});process.exit(17);}
  if(mode==="overflow"){console.log(${JSON.stringify(secret)}.repeat(300));return;}
  if(mode==="foreign-ack"){console.log(JSON.stringify({state:"granted",handoffId:"foreign"}));return;}
@@ -455,6 +457,101 @@ const activation = {
   publicationDigest: "b".repeat(64),
   receiptDigest: "d".repeat(64),
 };
+
+test(
+  "owner loss during native preparation refuses before issuing any grant",
+  platformOptions,
+  async () => {
+    const f = fixture("owner-lost");
+    try {
+      const port = createNativePhysicalGenerationProvision({
+        ...f.options,
+        assertBrokerOwner() {
+          if (fs.existsSync(path.join(f.directory, "owner-lost")))
+            throw new Error("Owned broker fixture no longer owns the queue");
+        },
+      });
+      await assert.rejects(
+        port.provision(descriptor),
+        (error: unknown) =>
+          error instanceof PhysicalGenerationProvisionError &&
+          error.grantIssuance === "notStarted",
+      );
+      assert.deepEqual(
+        f.records().map((record) => record["operation"]),
+        ["prepare"],
+      );
+      assert.equal(fs.readdirSync(f.linux).length, 0);
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test(
+  "missing owner initially or after activation lookup refuses without a native process",
+  platformOptions,
+  async () => {
+    for (const phase of ["initial", "activation"]) {
+      const f = fixture();
+      try {
+        let held = phase !== "initial";
+        const port = createNativePhysicalGenerationProvision({
+          ...f.options,
+          assertBrokerOwner() {
+            if (!held)
+              throw new Error("Owned fixture lost its actual broker owner");
+          },
+          async getVerifiedActivation() {
+            held = false;
+            return activation;
+          },
+        });
+        await assert.rejects(
+          port.provision(descriptor),
+          (error: unknown) =>
+            error instanceof PhysicalGenerationProvisionError &&
+            error.grantIssuance === "notStarted",
+        );
+        assert.equal(f.records().length, 0);
+      } finally {
+        f.cleanup();
+      }
+    }
+  },
+);
+
+test(
+  "owner loss after grant spawn remains UNKNOWN and preserves private issuance evidence",
+  platformOptions,
+  async () => {
+    const f = fixture("owner-lost-at-grant");
+    try {
+      const port = createNativePhysicalGenerationProvision({
+        ...f.options,
+        assertBrokerOwner() {
+          if (fs.existsSync(path.join(f.directory, "owner-lost")))
+            throw new Error("Owned fixture lost its actual broker owner");
+        },
+      });
+      await assert.rejects(
+        port.provision(descriptor),
+        (error: unknown) =>
+          error instanceof PhysicalGenerationProvisionError &&
+          error.grantIssuance === "unknown",
+      );
+      assert.deepEqual(
+        f.records().map((record) => record["operation"]),
+        ["prepare", "grant"],
+      );
+      const attempt = fs.readdirSync(f.mapped)[0]!;
+      assert.ok(fs.existsSync(path.join(f.mapped, attempt, "grant.json")));
+      assert.equal(fs.readdirSync(f.linux).length, 0);
+    } finally {
+      f.cleanup();
+    }
+  },
+);
 
 test(
   "trusted native approval reaches the private grant channel without changing the public descriptor",
