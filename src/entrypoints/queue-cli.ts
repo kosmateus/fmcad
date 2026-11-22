@@ -3,7 +3,11 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { FmcadConfiguration } from "../api";
-import { decodeDocumentUnlockRequest } from "@fmcad/core";
+import {
+  decodeDocumentUnlockPublicError,
+  decodeDocumentUnlockRequest,
+  documentUnlockIpcFailure,
+} from "@fmcad/core";
 
 const runtimeRequire = createRequire(__filename);
 
@@ -420,7 +424,10 @@ export const descriptors = Object.fromEntries(
   ]),
 ) as Record<QueueCommandName, QueueDescriptor>;
 
-function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
+function parse(
+  argv: string[],
+  documentUnlock = false,
+): { opts: QueueOptions; rest: string[] } {
   const delimiter = argv.indexOf("--");
   const own = delimiter < 0 ? argv : argv.slice(0, delimiter);
   const rest = delimiter < 0 ? [] : argv.slice(delimiter + 1);
@@ -472,16 +479,23 @@ function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
   ]);
   const opts: QueueOptions = {};
   for (let index = 0; index < own.length; index++) {
-    const key = own[index]!.slice(2);
-    const value = own[++index];
+    const option = own[index]!;
+    const separator = documentUnlock ? option.indexOf("=") : -1;
+    const key = option.slice(2, separator < 0 ? undefined : separator);
+    const value =
+      separator < 0 ? own[++index] : option.slice(separator + 1);
     if (
-      !own[index - 1]!.startsWith("--") ||
+      !option.startsWith("--") ||
       !allowed.has(key) ||
       Object.hasOwn(opts, key) ||
       value === undefined ||
-      value.startsWith("--")
+      (separator < 0 && value.startsWith("--"))
     )
-      throw new Error("Invalid or duplicate queue option: " + own[index - 1]);
+      throw new Error(
+        documentUnlock
+          ? "Unsupported document-unlock option; see help"
+          : "Invalid or duplicate queue option: " + option,
+      );
     opts[key] = value;
   }
   return { opts, rest };
@@ -530,7 +544,7 @@ export async function queueCommand(
   const name = argv[0] ?? "";
   if (!Object.hasOwn(descriptors, name))
     throw new Error("Unknown queue command");
-  const { opts, rest } = parse(argv.slice(1));
+  const { opts, rest } = parse(argv.slice(1), name === "document-unlock");
   let documentUnlockInput:
     | ReturnType<typeof decodeDocumentUnlockRequest>
     | undefined;
@@ -1215,15 +1229,31 @@ export async function queueCommand(
     }
   }
   if (rest.length) throw new Error("Unexpected child argv");
-  await client.register(); // Metadata/control commands must not start Fusion access.
   if (name === "document-unlock") {
+    let result: unknown;
     try {
-      write(await client.documentUnlock(documentUnlockInput));
-      return 0;
+      await client.register(); // Metadata/control commands do not start Fusion access.
+      result = await client.documentUnlock(documentUnlockInput);
+    } catch {
+      write(documentUnlockIpcFailure());
+      return 1;
     } finally {
       client.dispose();
     }
+    try {
+      if (result instanceof Error) {
+        write(documentUnlockIpcFailure());
+        return 1;
+      }
+      const publicError = decodeDocumentUnlockPublicError(result);
+      write(publicError ?? result);
+      return publicError ? 1 : 0;
+    } catch {
+      write(documentUnlockIpcFailure());
+      return 1;
+    }
   }
+  await client.register(); // Metadata/control commands must not start Fusion access.
   if (name === "audit-atomic") {
     try {
       write(

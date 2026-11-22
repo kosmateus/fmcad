@@ -70,7 +70,6 @@ async function fixture(
     }
     fs.rmSync(directory, { recursive: true, force: true });
   });
-  const hostPackage = host === "v1" ? ["@opencode-ai/plugin@1.18.29"] : [];
   const packed = JSON.parse(
     execFileSync(
       "npm",
@@ -95,13 +94,27 @@ async function fixture(
       directory,
       "--ignore-scripts",
       "--omit=dev",
+      "--omit=peer",
       "--no-audit",
       "--no-fund",
       path.join(directory, packed.filename),
-      ...hostPackage,
     ],
     { cwd: directory, encoding: "utf8" },
   );
+  if (host === "v1") {
+    const sdkLink = path.join(directory, "node_modules/@opencode-ai/plugin");
+    fs.mkdirSync(path.dirname(sdkLink), { recursive: true });
+    fs.symlinkSync(
+      path.join(root, "node_modules/@opencode-ai/plugin"),
+      sdkLink,
+      "dir",
+    );
+    fs.symlinkSync(
+      path.join(root, "node_modules/zod"),
+      path.join(directory, "node_modules/zod"),
+      "dir",
+    );
+  }
   for (const entry of fs.readdirSync(pkg, {
     recursive: true,
     withFileTypes: true,
@@ -139,6 +152,8 @@ async function fixture(
     disposed = 0,
     transforms = 0,
     eventAborted = false,
+    mutateDocumentUnlockPermissionInput = false,
+    rejectPermissionAction: string | undefined,
     rejectPermission: unknown;
   let execute: (...input: unknown[]) => Promise<unknown> = async () => ({
     version: 1,
@@ -241,7 +256,25 @@ async function fixture(
   };
   const authorize = async (value: unknown) => {
     permissions.push(value);
-    if (rejectPermission) throw rejectPermission;
+    const permission = record(value);
+    const action = permission["action"] || permission["permission"];
+    if (mutateDocumentUnlockPermissionInput && action === "fmcad_execute") {
+      const metadata = record(permission["metadata"]);
+      const input = record(metadata["input"]);
+      const target = record(input["target"]);
+      assert.equal(Object.isFrozen(input), true);
+      assert.equal(Object.isFrozen(target), true);
+      assert.equal(Reflect.set(input, "action", "accept"), false);
+      assert.equal(Reflect.set(input, "requestId", "mutated-request"), false);
+      assert.equal(Reflect.set(target, "docFileId", "mutated-file"), false);
+      mutateDocumentUnlockPermissionInput = false;
+    }
+    if (
+      rejectPermission &&
+      (rejectPermissionAction === undefined ||
+        action === rejectPermissionAction)
+    )
+      throw rejectPermission;
   };
   if (host === "v1") {
     await assert.rejects(
@@ -367,6 +400,14 @@ async function fixture(
     plugin,
     deny(value: unknown) {
       rejectPermission = value;
+      rejectPermissionAction = undefined;
+    },
+    denyAction(value: unknown, action: string) {
+      rejectPermission = value;
+      rejectPermissionAction = action;
+    },
+    mutateDocumentUnlockPermissionInput() {
+      mutateDocumentUnlockPermissionInput = true;
     },
     execute(value: (...args: unknown[]) => Promise<unknown>) {
       execute = value;
@@ -395,6 +436,34 @@ for (const host of ["v1", "v2"] as const) {
     const rejection = Object.assign(new Error("denied"), {
       code: "HOST_PERMISSION_DENIED",
     });
+    const controlRejection = Object.assign(new Error("shell denied"), {
+      code: "HOST_PERMISSION_DENIED",
+    });
+    const unlockInput = {
+      action: "inspect",
+      target: { docFileId: "file-1" },
+      requestId: "inspect-1",
+    };
+    const secondPermission = host === "v2" ? "shell" : "bash";
+    f.denyAction(controlRejection, secondPermission);
+    await assert.rejects(
+      f.invoke("fmcad_document_unlock", unlockInput),
+      (error) => error === controlRejection,
+    );
+    assert.deepEqual(
+      f.permissions
+        .slice(-2)
+        .map((value) => record(value)["action"] || record(value)["permission"]),
+      ["fmcad_execute", secondPermission],
+    );
+    assert.equal(f.instances.length, 0);
+    assert.equal(
+      f.calls.length,
+      0,
+      "denying the second permission must stop before service creation",
+    );
+    f.deny(undefined);
+    f.permissions.length = 0;
     f.deny(rejection);
     const input = {
       invocation: {
@@ -450,10 +519,7 @@ for (const host of ["v1", "v2"] as const) {
         },
       ],
     );
-    const unlockInput = {
-      action: "status",
-      target: { docFileId: "file-1" },
-    };
+    f.mutateDocumentUnlockPermissionInput();
     assert.deepEqual(await f.invoke("fmcad_document_unlock", unlockInput), {
       state: "inspection_required",
       next: { action: "inspect", requestId: "inspect-next" },
@@ -463,10 +529,29 @@ for (const host of ["v1", "v2"] as const) {
       unlockInput,
     );
     assert.equal(
-      record(f.permissions.at(-1))["action"] ||
-        record(f.permissions.at(-1))["permission"],
+      Object.isFrozen(
+        present(f.calls.find((value) => value[0] === "documentUnlock"))[1],
+      ),
+      true,
+    );
+    assert.equal(
+      Object.isFrozen(
+        record(
+          present(f.calls.find((value) => value[0] === "documentUnlock"))[1],
+        )["target"],
+      ),
+      true,
+    );
+    assert.equal(
+      record(f.permissions.at(-2))["action"] ||
+        record(f.permissions.at(-2))["permission"],
       "fmcad_execute",
       "document control requires its own explicit permission",
+    );
+    assert.equal(
+      record(f.permissions.at(-1))["action"] ||
+        record(f.permissions.at(-1))["permission"],
+      secondPermission,
     );
     await assert.rejects(
       f.invoke("fmcad_document_unlock", {
@@ -610,14 +695,18 @@ for (const host of ["v1", "v2"] as const) {
     fs.writeFileSync(
       configPath,
       JSON.stringify({
-        backend: "mcp",
+        backend: "addin",
         routing: "queue",
-        url: `http://127.0.0.1:${record(present(server.address()))["port"]}/mcp`,
-        headers: {},
-        timeoutMs: 1000,
-        tool: "fusion_mcp_execute",
-        transport: "node",
-        protocolVersion: "2025-06-18",
+        backends: {
+          addin: {
+            url: `http://127.0.0.1:${record(present(server.address()))["port"]}/mcp`,
+            headers: {},
+            timeoutMs: 1000,
+            tool: "fusion_mcp_execute",
+            transport: "node",
+            protocolVersion: "2025-06-18",
+          },
+        },
         queue: { autoStart: false, autoRecover: false },
       }),
     );

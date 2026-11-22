@@ -99,6 +99,19 @@ export function createV2(deps: Dependencies): Plugin.Plugin {
               metadata,
               action: "fmcad_execute",
             });
+            tool.signal.throwIfAborted();
+            await ctx.permission.assert({
+              sessionID: tool.sessionID,
+              agent: tool.agent,
+              source: {
+                type: "tool",
+                messageID: tool.messageID,
+                id: tool.id,
+              },
+              resources: [resource],
+              metadata,
+              action: "shell",
+            });
           },
         };
       }

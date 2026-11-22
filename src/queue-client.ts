@@ -9,7 +9,10 @@ import type {
   DebugTraceContext,
   DebugTraceEvent,
 } from "../packages/node-adapters/src/telemetry/diagnostic-log";
-import { decodeDocumentUnlockRequest } from "@fmcad/core";
+import {
+  decodeDocumentUnlockRequest,
+  DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE,
+} from "@fmcad/core";
 const runtimeRequire = createRequire(__filename);
 const { queueDirectory, request } = runtimeRequire("./queue-connection") as {
   queueDirectory(): string;
@@ -492,9 +495,15 @@ class QueueClient {
       return value;
     });
   }
-  documentUnlock(value: unknown): Promise<unknown> {
+  async documentUnlock(value: unknown): Promise<unknown> {
     const input = decodeDocumentUnlockRequest(value);
-    return this.call("document-unlock", { request: { ...input } });
+    try {
+      return await this.call("document-unlock", { request: { ...input } });
+    } catch {
+      throw Object.assign(new Error(DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE), {
+        code: "DOCUMENT_UNLOCK_ERROR",
+      });
+    }
   }
   private ipcTrace(action: string, requestId?: string, jobId?: string) {
     if (

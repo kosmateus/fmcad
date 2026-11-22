@@ -1,6 +1,7 @@
 import {
   decodeCadWorkerInvocation as decode,
   decodeDocumentUnlockRequest,
+  DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE,
 } from "@fmcad/core";
 import type { DocumentUnlockRequest } from "@fmcad/core";
 import { homedir } from "node:os";
@@ -291,7 +292,18 @@ export function createTools(
         ctx.signal.throwIfAborted();
         return api.documentUnlock(request);
       })();
-      return JSON.stringify(await wait(work, ctx.signal));
+      try {
+        const result = await wait(work, ctx.signal);
+        if (result instanceof Error)
+          throw new Error(DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE);
+        return JSON.stringify(result);
+      } catch (error) {
+        if (ctx.signal.aborted) throw error;
+        throw new AdapterError(
+          "FMCAD_DOCUMENT_UNLOCK_ERROR",
+          DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE,
+        );
+      }
     },
     async dispose() {
       disposed = true;

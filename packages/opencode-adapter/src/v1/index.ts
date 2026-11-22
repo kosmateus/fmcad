@@ -51,6 +51,12 @@ export function createV1(deps: Dependencies): Plugin {
             metadata,
           });
           ctx.abort.throwIfAborted();
+          await ctx.ask({
+            permission: "bash",
+            patterns: [resource],
+            always: [],
+            metadata,
+          });
         },
       };
     }

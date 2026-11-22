@@ -10,6 +10,8 @@ const load = createRequire(
 );
 const core = load("@fmcad/core") as {
   decodeDocumentUnlockRequest(value: unknown): unknown;
+  decodeDocumentUnlockPublicError(value: unknown): unknown;
+  documentUnlockIpcFailure(): unknown;
 };
 
 test("document unlock decoder accepts only the three exact request shapes", () => {
@@ -123,6 +125,30 @@ test("document unlock decoder rejects missing, mixed, malformed, and privileged 
     assert.throws(() => core.decodeDocumentUnlockRequest(request));
 });
 
+test("public broker errors accept only the safe DTO fields and fixed messages", () => {
+  const failure = core.documentUnlockIpcFailure() as Record<string, unknown>;
+  assert.deepEqual(core.decodeDocumentUnlockPublicError(failure), failure);
+  assert.throws(
+    () =>
+      core.decodeDocumentUnlockPublicError({
+        ...failure,
+        error: {
+          ...(failure["error"] as Record<string, unknown>),
+          message: "PRIVATE_ERROR_MESSAGE_SENTINEL",
+        },
+      }),
+    /Invalid document unlock public error/,
+  );
+  assert.throws(
+    () =>
+      core.decodeDocumentUnlockPublicError({
+        ...failure,
+        stack: "PRIVATE_STACK_SENTINEL",
+      }),
+    /Invalid document unlock public error/,
+  );
+});
+
 test("MCP registers one strict document unlock tool and preserves broker next values", async () => {
   const { createMcpApplication } = load("../src/dist/entrypoints/mcp.js") as {
     createMcpApplication(
@@ -130,11 +156,12 @@ test("MCP registers one strict document unlock tool and preserves broker next va
     ): (request: Record<string, unknown>) => Promise<{ raw: string }>;
   };
   const calls: unknown[] = [];
-  const brokerResponse = {
+  let brokerResponse: unknown = {
     state: "inspection_required",
     blockers: [{ requestId: "old-unknown" }],
     next: { action: "inspect", requestId: "inspect-1" },
   };
+  let ipcFailure: unknown;
   let starts = 0;
   const app = createMcpApplication({
     catalog: {
@@ -149,6 +176,7 @@ test("MCP registers one strict document unlock tool and preserves broker next va
       },
       documentUnlock: async (request: unknown) => {
         calls.push(request);
+        if (ipcFailure) throw ipcFailure;
         return brokerResponse;
       },
     }),
@@ -190,11 +218,78 @@ test("MCP registers one strict document unlock tool and preserves broker next va
   assert.deepEqual(response.result.structuredContent, brokerResponse);
   assert.equal(starts, 1);
 
-  const invalidResponse = JSON.parse(
+  const refusal = {
+    error: {
+      code: "REQUEST_CONFLICT",
+      message:
+        "This request ID is already bound to different content. Use a fresh request ID for any new request; do not retry the same ID with changed content.",
+    },
+    next: {
+      kind: "operator_action",
+      action: "review_original_request_without_replay",
+      instruction:
+        "Check the original request's durable status only if authorized; do not replay it. Use a fresh request ID for genuinely new content.",
+    },
+  };
+  brokerResponse = refusal;
+  const refusalResponse = JSON.parse(
     (
       await app({
         jsonrpc: "2.0",
         id: 3,
+        method: "tools/call",
+        params: { name: "fmcad_document_unlock", arguments: input },
+      })
+    ).raw,
+  ) as {
+    result: {
+      isError: boolean;
+      content: Array<{ text: string }>;
+      structuredContent: unknown;
+    };
+  };
+  assert.equal(refusalResponse.result.isError, true);
+  assert.equal(refusalResponse.result.content[0]?.text, refusal.error.message);
+  assert.deepEqual(refusalResponse.result.structuredContent, refusal);
+
+  ipcFailure = Object.assign(new Error("PRIVATE_IPC_MESSAGE_SENTINEL"), {
+    code: "PRIVATE_IPC_CODE_SENTINEL",
+    cause: new Error("PRIVATE_CAUSE_SENTINEL"),
+    next: { token: "PRIVATE_NEXT_SENTINEL" },
+  });
+  const ipcErrorResponse = JSON.parse(
+    (
+      await app({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "fmcad_document_unlock", arguments: input },
+      })
+    ).raw,
+  ) as {
+    result: {
+      isError: boolean;
+      content: Array<{ text: string }>;
+      structuredContent: unknown;
+    };
+  };
+  assert.equal(ipcErrorResponse.result.isError, true);
+  assert.doesNotMatch(
+    JSON.stringify(ipcErrorResponse),
+    /PRIVATE_(?:IPC_MESSAGE|IPC_CODE|CAUSE|NEXT)_SENTINEL/,
+  );
+  assert.deepEqual(
+    ipcErrorResponse.result.structuredContent,
+    core.documentUnlockIpcFailure(),
+  );
+  ipcFailure = undefined;
+  assert.equal(starts, 3);
+
+  const invalidResponse = JSON.parse(
+    (
+      await app({
+        jsonrpc: "2.0",
+        id: 5,
         method: "tools/call",
         params: {
           name: "fmcad_document_unlock",
@@ -208,7 +303,7 @@ test("MCP registers one strict document unlock tool and preserves broker next va
     ).raw,
   ) as { error: { code: number } };
   assert.equal(invalidResponse.error.code, -32602);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 3);
 });
 
 test("OpenCode v1 and v2 document unlock tools use the permission-checked control service", async () => {
@@ -223,6 +318,23 @@ test("OpenCode v1 and v2 document unlock tools use the permission-checked contro
   };
   const permissions: unknown[] = [];
   const calls: unknown[] = [];
+  const checkAndAttemptMutation = (permission: unknown) => {
+    permissions.push(permission);
+    const input = permission as Record<string, unknown>;
+    const action = input["action"] || input["permission"];
+    if (action !== "fmcad_execute") return;
+    const metadata = input["metadata"] as Record<string, unknown>;
+    const authorized = metadata["input"] as Record<string, unknown>;
+    const target = authorized["target"] as Record<string, unknown>;
+    assert.equal(Object.isFrozen(authorized), true);
+    assert.equal(Object.isFrozen(target), true);
+    assert.equal(Reflect.set(authorized, "action", "accept"), false);
+    assert.equal(
+      Reflect.set(authorized, "requestId", "changed-request"),
+      false,
+    );
+    assert.equal(Reflect.set(target, "docId", "changed-document"), false);
+  };
   const deps = {
     catalog: { list: () => [] },
     create: () => ({
@@ -275,9 +387,7 @@ test("OpenCode v1 and v2 document unlock tools use the permission-checked contro
     sessionID: "v1-session",
     agent: "build",
     abort: new AbortController().signal,
-    ask: async (permission: unknown) => {
-      permissions.push(permission);
-    },
+    ask: async (permission: unknown) => checkAndAttemptMutation(permission),
   });
   assert.deepEqual(JSON.parse(String(v1Result)), response);
   assert.deepEqual(calls.slice(0, 2), ["start", input]);
@@ -314,9 +424,8 @@ test("OpenCode v1 and v2 document unlock tools use the permission-checked contro
       }),
     },
     permission: {
-      assert: async (permission: unknown) => {
-        permissions.push(permission);
-      },
+      assert: async (permission: unknown) =>
+        checkAndAttemptMutation(permission),
     },
     event: {
       subscribe: async function* () {},
@@ -378,14 +487,17 @@ test("QueueClient and queue CLI send a nested strict request on the document-unl
   };
   const originalRequest = connection.request;
   const messages: Record<string, unknown>[] = [];
-  const brokerResponse = {
-    code: "DOCUMENT_UNLOCK_REQUIRED",
+  let brokerResponse: unknown = {
     state: "inspection_required",
     next: { action: "inspect", requestId: "next-inspect" },
   };
+  let ipcFailure: unknown;
   connection.request = async (_directory, message) => {
     messages.push(message);
-    if (message["action"] === "document-unlock") return brokerResponse;
+    if (message["action"] === "document-unlock") {
+      if (ipcFailure) throw ipcFailure;
+      return brokerResponse;
+    }
     return { clientId: message["clientId"] };
   };
   t.after(() => {
@@ -423,8 +535,28 @@ test("QueueClient and queue CLI send a nested strict request on the document-unl
     assert.equal(message["clientToken"], undefined);
     assert.equal(message["owner"], undefined);
 
+    ipcFailure = Object.assign(new Error("PRIVATE_IPC_MESSAGE_SENTINEL"), {
+      code: "PRIVATE_IPC_CODE_SENTINEL",
+      cause: new Error("PRIVATE_CAUSE_SENTINEL"),
+    });
+    await assert.rejects(client.documentUnlock(input), (error: unknown) => {
+      const failure = error as Error & { code?: string; cause?: unknown };
+      assert.equal(failure.code, "DOCUMENT_UNLOCK_ERROR");
+      assert.equal(
+        failure.message,
+        "The document unlock operation failed. No private error details are available.",
+      );
+      assert.equal(failure.cause, undefined);
+      assert.doesNotMatch(
+        JSON.stringify(failure),
+        /PRIVATE_(?:IPC_MESSAGE|IPC_CODE|CAUSE)_SENTINEL/,
+      );
+      return true;
+    });
+    ipcFailure = undefined;
+
     const beforeInvalid = messages.length;
-    assert.throws(() =>
+    await assert.rejects(
       client.documentUnlock({
         ...input,
         requestId: "accept-2",
@@ -447,6 +579,7 @@ test("QueueClient and queue CLI send a nested strict request on the document-unl
     ): Promise<number>;
   };
   let output = "";
+  let stderrOutput = "";
   const dependencies = {
     loadConfig: () => ({
       cfg: {
@@ -463,7 +596,7 @@ test("QueueClient and queue CLI send a nested strict request on the document-unl
       },
     }),
     stdout: { write: (text: string) => (output += text) },
-    stderr: { write: () => undefined },
+    stderr: { write: (text: string) => (stderrOutput += text) },
   };
   const code = await queueCommand(
     ["document-unlock", "--action", "status", "--doc-file-id", "file-2"],
@@ -479,11 +612,61 @@ test("QueueClient and queue CLI send a nested strict request on the document-unl
     )?.["request"],
     { action: "status", target: { docFileId: "file-2" } },
   );
+  output = "";
+  const leadingDashExit = await queueCommand(
+    ["document-unlock", "--action=status", "--doc-id=--fixture-id"],
+    dependencies,
+  );
+  assert.equal(leadingDashExit, 0);
+  assert.deepEqual(messages.at(-1)?.["request"], {
+    action: "status",
+    target: { docId: "--fixture-id" },
+  });
   assert.equal(
     messages.some((entry) => entry["action"] === "submit"),
     false,
     "document unlock must not submit a CAD operation",
   );
+  const refusal = {
+    error: {
+      code: "REQUEST_CONFLICT",
+      message:
+        "This request ID is already bound to different content. Use a fresh request ID for any new request; do not retry the same ID with changed content.",
+    },
+    next: {
+      kind: "operator_action",
+      action: "review_original_request_without_replay",
+      instruction:
+        "Check the original request's durable status only if authorized; do not replay it. Use a fresh request ID for genuinely new content.",
+    },
+  };
+  brokerResponse = refusal;
+  output = "";
+  const refusalExit = await queueCommand(
+    ["document-unlock", "--action", "status", "--doc-id", "creation-1"],
+    dependencies,
+  );
+  assert.equal(refusalExit, 1);
+  assert.deepEqual(JSON.parse(output), refusal);
+
+  brokerResponse = { state: "clear" };
+  ipcFailure = Object.assign(new Error("PRIVATE_IPC_MESSAGE_SENTINEL"), {
+    code: "PRIVATE_IPC_CODE_SENTINEL",
+    next: { token: "PRIVATE_NEXT_SENTINEL" },
+  });
+  output = "";
+  const ipcFailureExit = await queueCommand(
+    ["document-unlock", "--action", "status", "--doc-id", "creation-1"],
+    dependencies,
+  );
+  assert.equal(ipcFailureExit, 1);
+  assert.deepEqual(JSON.parse(output), core.documentUnlockIpcFailure());
+  assert.doesNotMatch(
+    output + stderrOutput,
+    /PRIVATE_(?:IPC_MESSAGE|IPC_CODE|NEXT)_SENTINEL/,
+  );
+  ipcFailure = undefined;
+
   await assert.rejects(
     queueCommand(["status", "--action", "status"], dependencies),
     /restricted to document-unlock/,
@@ -501,6 +684,16 @@ test("QueueClient and queue CLI send a nested strict request on the document-unl
       ],
       dependencies,
     ),
-    /Invalid or duplicate queue option/,
+    /Unsupported document-unlock option; see help/,
   );
+  const secret = "CLIENT_TOKEN_SENTINEL";
+  await assert.rejects(
+    queueCommand(["document-unlock", `--client-token=${secret}`], dependencies),
+    /Unsupported document-unlock option; see help/,
+  );
+  await assert.rejects(
+    queueCommand(["document-unlock", secret], dependencies),
+    /Unsupported document-unlock option; see help/,
+  );
+  assert.doesNotMatch(output + stderrOutput, /CLIENT_TOKEN_SENTINEL/);
 });

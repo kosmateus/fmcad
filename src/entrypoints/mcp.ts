@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { decodeDocumentUnlockRequest } from "@fmcad/core";
+import {
+  decodeDocumentUnlockPublicError,
+  decodeDocumentUnlockRequest,
+  documentUnlockIpcFailure,
+} from "@fmcad/core";
 import { createCatalogServices } from "../api";
 import type {
   CatalogMcpTool,
@@ -191,9 +195,13 @@ export function createMcpApplication(options: McpApplicationOptions) {
       raw: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
       ...ownership,
     });
-    const toolResult = (value: unknown, isError = false) =>
+    const toolResult = (
+      value: unknown,
+      isError = false,
+      text = JSON.stringify(value),
+    ) =>
       reply({
-        content: [{ type: "text", text: JSON.stringify(value) }],
+        content: [{ type: "text", text }],
         structuredContent: value,
         isError,
       });
@@ -290,16 +298,29 @@ export function createMcpApplication(options: McpApplicationOptions) {
           instanceId: randomUUID(),
           sessionId: randomUUID(),
         };
-        const project = await options.clientContext?.resolveProject({});
-        executionContext = createMcpExecutionContext({
-          clientId: identity.clientId,
-          sessionId: identity.sessionId,
-          requestId: input.requestId ?? randomUUID(),
-          projectDirectory: project?.projectDirectory ?? null,
-        });
-        services = options.services(false, executionContext);
-        await services.start();
-        return toolResult(await services.documentUnlock(input));
+        try {
+          const project = await options.clientContext?.resolveProject({});
+          executionContext = createMcpExecutionContext({
+            clientId: identity.clientId,
+            sessionId: identity.sessionId,
+            requestId: input.requestId ?? randomUUID(),
+            projectDirectory: project?.projectDirectory ?? null,
+          });
+          services = options.services(false, executionContext);
+          await services.start();
+          const result = await services.documentUnlock(input);
+          if (result instanceof Error) {
+            const publicError = documentUnlockIpcFailure();
+            return toolResult(publicError, true, publicError.error.message);
+          }
+          const publicError = decodeDocumentUnlockPublicError(result);
+          return publicError
+            ? toolResult(publicError, true, publicError.error.message)
+            : toolResult(result);
+        } catch {
+          const publicError = documentUnlockIpcFailure();
+          return toolResult(publicError, true, publicError.error.message);
+        }
       }
       const queueTool = queueByName.get(name);
       if (queueTool || legacyTools.some((tool) => tool.name === name)) {
