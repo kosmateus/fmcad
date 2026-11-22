@@ -52,6 +52,8 @@ export interface DocumentUnlockControllerPorts {
   /** Authenticate historical source/native evidence without a current CAD
    * identity/read probe. This returns history, never fresh continuation rights. */
   verifyStoredObservation(observation: DocumentObservation): void | Promise<void>;
+  /** No await is permitted from this final source check through CAS/disclosure. */
+  verifyFinal(observation: DocumentObservation): void;
   /** Authorize/filter all metadata before constructing the public DTO. */
   resolution(
     actor: UnlockPrincipal,
@@ -140,6 +142,7 @@ export function createDocumentUnlockController(
           acceptance.observationDigest !== canonicalHash(selected))
         refused("REQUEST_CONFLICT");
       await ports.verifyStoredObservation(selected);
+      ports.verifyFinal(selected);
       metadata.recheck();
       // Do not mint a current target from historical identity or repeat a CAD
       // read for an already committed request. The result is explicitly history.
@@ -174,6 +177,7 @@ export function createDocumentUnlockController(
       );
     if (selected) {
       await ports.verifyObservation(selected, target);
+      ports.verifyFinal(selected);
       permission.recheck();
       if (request.action === "accept") {
         ports.domain.acceptDocumentObservation({
@@ -217,6 +221,7 @@ export function createDocumentUnlockController(
       createdAt: read.createdAt,
     };
     await ports.verifyObservation(observation, target);
+    ports.verifyFinal(observation);
     permission.recheck();
     const stored = ports.domain.recordDocumentObservation(observation);
     return serializeDocumentUnlockStatus(

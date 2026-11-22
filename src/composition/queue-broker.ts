@@ -93,7 +93,7 @@ const { decodeAdmissionJson } = runtimeRequire(
 const { createBrokerRecords } = runtimeRequire(
   "./dist/node-adapters/persistence/broker-records",
 ) as typeof import("../../packages/node-adapters/src/persistence/broker-records");
-const { createBrokerCheckpointEvidence, checkpointGeneration } = runtimeRequire(
+const { createBrokerCheckpointEvidence, checkpointGeneration, checkpointDisclosableConflicts } = runtimeRequire(
   "./document-checkpoint-broker",
 ) as typeof import("../document-checkpoint-broker");
 const { createDocumentUnlockAdmission } = runtimeRequire(
@@ -1296,7 +1296,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
   type ProductGrant = BrokerGrant<P.LaneContext>;
-  const { quarantineTarget, validRelease } = runtimeRequire(
+  const { quarantineTarget, validRelease, physicalReleaseInput } = runtimeRequire(
     "./dist/core/domain/queue-quarantine",
   ) as typeof import("../../packages/core/src/domain/queue-quarantine");
   let quiescencePending = false;
@@ -1371,6 +1371,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const checkpointActor = new AsyncLocalStorage<CheckpointActor>();
   const checkpointViews = new AsyncLocalStorage<{
     states: Map<string, CheckpointState>; justProduced: Set<string>;
+    finalChecks: Map<string, (() => void)[]>;
   }>();
   const checkpointIdentity = new AsyncLocalStorage<boolean>();
   const checkpointReads = new Map<string, {
@@ -1972,11 +1973,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         createdAt: observation.createdAt, readback: observation.readback };
     },
     async verifyStoredObservation(observation) {
-      await checkpointEvidence.verify(observation, true);
+      const verified = await checkpointEvidence.verify(observation, true);
+      required(checkpointViews.getStore()).finalChecks.set(observation.id, [verified.reverify]);
+    },
+    verifyFinal(observation) {
+      const checks = required(checkpointViews.getStore()).finalChecks.get(observation.id);
+      if (!checks?.length) fail("STORAGE_UNAVAILABLE", "Final checkpoint verification is unavailable");
+      for (const verify of checks) verify();
     },
     async verifyObservation(observation, target) {
       const original = await checkpointEvidence.verify(observation);
       const scope = required(checkpointViews.getStore());
+      const finalChecks = [original.reverify];
       if (!scope.justProduced.delete(observation.id)) {
         const actor = required(checkpointActor.getStore());
         const fence = state.documentInspectionFence(observation.target, currentCheckpointGeneration());
@@ -1995,10 +2003,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }, current.jobId);
         if (confirmation.stateDigest !== observation.stateDigest)
           fail("DOCUMENT_STATE_CHANGED", "Parameters changed after the original observation");
+        const fresh = await checkpointEvidence.verify(confirmation);
+        finalChecks.push(fresh.reverify);
       }
-      scope.states.set(observation.id, original);
+      scope.states.set(observation.id, original.checkpoint);
+      scope.finalChecks.set(observation.id, finalChecks);
     },
-    resolution(_actor, selector, observation) {
+    resolution(actor, selector, observation) {
       const target: import("../document-unlock-diagnostics").DocumentUnlockTarget = observation ? {
         docId: required(observation.target.creationId),
         ...(observation.target.fileId ? { docFileId: observation.target.fileId } : {}),
@@ -2014,14 +2025,28 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const raw = conflicts.some((entry) => entry.target === null &&
         (!("fenceKind" in entry) || entry.fenceKind !== "runtime_retired"));
       const observed = observation && checkpointViews.getStore()?.states.get(observation.id);
-      const accepted = observation && Object.values(state.data.documentCheckpoints?.acceptances ?? {})
-        .some((entry) => entry.observationId === observation.id);
+      const checkpoints = state.data.documentCheckpoints;
+      const accepted = observation && observed &&
+        observation.generation === currentCheckpointGeneration() &&
+        same(observation.blockers, conflicts.map((entry) => ({
+          jobId: entry.jobId, requestId: entry.requestId, originalHash: entry.jobHash,
+          catalogDigest: entry.catalogDigest, barrierRef: entry.evidenceReference,
+        }))) &&
+        Object.values(checkpoints?.acceptances ?? {}).some((entry) =>
+          entry.actorClientId === actor.clientId &&
+          entry.observationId === observation.id &&
+          entry.observationDigest === checkpointStateHash(observation) &&
+          checkpoints?.heads[entry.targetKey] === entry.id);
+      // Knowing a target's identity does not authorize another client's job
+      // namespace. Hidden conflicts remain in all admission/CAS checks above.
+      const visible = checkpointDisclosableConflicts(conflicts, actor.clientId, (id) => state.lookup(id));
       return {
         target, state: unfenced ? "execution_unfenced" : raw ? "scope_unproven" :
           accepted && observed ? "checkpoint_current" :
           conflicts.length || observation ? "inspection_required" : "clear",
         executionFence: unfenced ? "unknown" : "released",
-        disclosableBlockers: conflicts.map((entry) => ({
+        hasOperatorOnlyBlocker: visible.length !== conflicts.length,
+        disclosableBlockers: visible.map((entry) => ({
           jobId: entry.jobId, requestId: entry.requestId,
           scope: "fenceKind" in entry && entry.fenceKind === "runtime_retired" ? "runtime" as const :
             entry.target ? "document" as const : "global" as const,
@@ -5631,7 +5656,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           { action: "accept", target, requestId: decoded.requestId, observationId: decoded.observationId };
         const actor = { clientId, clientTokenHash: required(clientHashes()[clientId]) };
         return checkpointActor.run(actor, () => checkpointViews.run({
-          states: new Map(), justProduced: new Set(),
+          states: new Map(), justProduced: new Set(), finalChecks: new Map(),
         }, () => checkpointController.handle(request, actor)));
       }
       case "probe-saved-destination":
@@ -7106,6 +7131,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         executionOutcome: "not_started", userScriptSubmitted: false, mayHaveMutated: false,
       });
     }
+    try {
+      await runCheckpointRead(job, grant, task);
+    } catch (cause) {
+      // Includes setup, durable outcome/hold and diagnostics failures. Client
+      // terminal notification must not depend on a successful disk write.
+      task.reject(cause);
+    } finally {
+      checkpointReads.delete(job.id);
+    }
+  }
+
+  async function runCheckpointRead(job: P.Job, grant: ProductGrant,
+    task: NonNullable<ReturnType<typeof checkpointReads.get>>) {
     const directory = privateDirectory(jobDir(job.id));
     const context: P.ProductContext = {
       job, productTurn: grant.turn, token: randomBytes(32).toString("hex"),
@@ -7118,9 +7156,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     timeout.catch(() => {});
     context.budget = new PauseBudget(job.timeoutMs, () => {
       context.timedOut = true;
-      if (context.dispatched && lane.currentGrant() === grant)
-        hold(grant, "Checkpoint read execution deadline expired; no replay");
-      rejectTimeout(Object.assign(new Error("Checkpoint read timed out"), { code: "RUN_TIMEOUT" }));
+      let cause: unknown = Object.assign(new Error("Checkpoint read timed out"), { code: "RUN_TIMEOUT" });
+      try {
+        if (context.dispatched && lane.currentGrant() === grant)
+          hold(grant, "Checkpoint read execution deadline expired; no replay");
+      } catch (error) { cause = error; }
+      finally { rejectTimeout(cause); }
     });
     grant.context.worker = context;
     let settled = false;
@@ -7141,7 +7182,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       for (const entry of retained?.physicalDispatches ?? []) {
         const proof = await required(options.physicalTurnQuiescence)(entry.physical);
         lane.assertCurrent(grant);
-        if (!validRelease(proof, entry.physical, hash))
+        if (!validRelease(proof, entry.physical, hash) ||
+            (proof as { evidenceDigest?: string }).evidenceDigest !==
+              hash(physicalReleaseInput(entry.physical, "dispatch-finally")))
           fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint SDK turn is not irreversibly released");
       }
       if (!retained?.physicalDispatches?.length ||
@@ -7161,6 +7204,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       });
       task.resolve({ jobId: job.id, checkpoint });
     } catch (cause) {
+      task.reject(cause);
       if (lane.currentGrant() === grant) {
         if ((!context.dispatched && !context.unknown) || settled) {
           const details = {
@@ -7172,7 +7216,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           finishTurn(grant, details);
         } else hold(grant, "Checkpoint read outcome is unknown; original request is not replayed");
       }
-      task.reject(cause);
     } finally {
       context.workerClosed = true;
       context.budget.close();

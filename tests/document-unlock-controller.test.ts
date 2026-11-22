@@ -79,6 +79,7 @@ function fixture(t: TestContext) {
       assert.equal(value.actorClientId, actor.clientId);
       assert.equal(value.readback.sha256, "d".repeat(64));
     },
+    verifyFinal() {},
     resolution(_actor, selector, observation) {
       const accepted =
         Object.keys(domain.data.documentCheckpoints?.heads ?? {}).length > 0;

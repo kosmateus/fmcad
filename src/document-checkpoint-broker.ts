@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createRequire } from "node:module";
-import type { DocumentObservation, QueueJob, QueuePhysicalBinding, PreparedPythonArtifact } from "@fmcad/core";
+import type { DocumentObservation, QueueJob, QueuePhysicalBinding, PreparedPythonArtifact, QueueDomain } from "@fmcad/core";
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
 import type { CheckpointRpc } from "../packages/node-adapters/src/execution/document-checkpoint-producer";
 import type { ObservationProof } from "../packages/node-adapters/src/execution/document-observation-store";
@@ -24,7 +24,7 @@ const { createDocumentObservationStore } = load("./dist/node-adapters/execution/
   typeof import("../packages/node-adapters/src/execution/document-observation-store");
 const { readBytes, MAX_JSON_RECORD_BYTES } = load("./dist/node-adapters/persistence/records") as
   typeof import("../packages/node-adapters/src/persistence/records");
-const { validRelease } = load("./dist/core/domain/queue-quarantine") as
+const { validRelease, physicalReleaseInput } = load("./dist/core/domain/queue-quarantine") as
   typeof import("../packages/core/src/domain/queue-quarantine");
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -35,6 +35,15 @@ function reject(): never {
 }
 export function checkpointGeneration(binding: QueuePhysicalBinding): string {
   return canonicalHash({ generation: binding.generation, physicalRuntime: binding.physicalRuntime });
+}
+/** Public metadata projection only. All conflicts, including hidden ones, must
+ * still participate in queue admission and checkpoint CAS. */
+export function checkpointDisclosableConflicts(
+  conflicts: ReturnType<QueueDomain["documentConflicts"]>,
+  actorClientId: string,
+  lookup: (jobId: string) => Pick<QueueJob, "clientId"> | undefined,
+): ReturnType<QueueDomain["documentConflicts"]> {
+  return conflicts.filter((entry) => lookup(entry.jobId)?.clientId === actorClientId);
 }
 export interface BrokerCheckpointEvidencePorts {
   directory: string;
@@ -112,7 +121,9 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
     ports.verifyReceipt(record, receipt);
     const authenticated = await ports.authenticatePhysical(structuredClone(binding));
     ports.recheck();
-    if (!validRelease(authenticated, binding, hash)) reject();
+    if (!validRelease(authenticated, binding, hash) ||
+        (authenticated as { evidenceDigest: string }).evidenceDigest !==
+          hash(physicalReleaseInput(binding, "dispatch-finally"))) reject();
     const exactRecord = structuredClone(record), exactReceipt = structuredClone(receipt);
     const verifyProducer = createDocumentCheckpointProducer({
       buildHash: ports.buildHash, records: ports.records.evidence,
@@ -193,7 +204,7 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
       ports.recheck();
       return { ...observation, readback };
     },
-    async verify(observation: DocumentObservation, historical = false): Promise<ParamCheckpointGuardV1> {
+    async verify(observation: DocumentObservation, historical = false) {
       ports.recheck();
       if (!historical && observation.generation !== ports.currentGeneration()) reject();
       const reference = `document-observations/${hash(observation.id)}.json`;
@@ -217,7 +228,17 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
         parseNativeResult(payload.stdout)["result"], observation.target,
       );
       if (canonicalHash(checkpoint) !== observation.stateDigest) reject();
-      return checkpoint;
+      // This capability is only retained in the caller's operation scope.
+      // Re-read all immutable artifacts synchronously after its last await,
+      // immediately before queue CAS or public disclosure.
+      return Object.freeze({
+        checkpoint,
+        reverify() {
+          ports.recheck();
+          store.verify(observation);
+          ports.recheck();
+        },
+      });
     },
     /** Canonical parsed state after existing client normalization. This proves
      * shape only; persist/verify above must authenticate original RPC evidence. */
