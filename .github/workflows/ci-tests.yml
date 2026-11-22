@@ -146,6 +146,11 @@ jobs:
       - run: node --test dist/tests/physical-generation-profile.test.js
       - run: node --test dist/tests/document-unlock-domain.test.js
       - run: node --test dist/tests/document-observation-store.test.js
+      - run: node --test dist/tests/document-unlock-diagnostics.test.js
+      - run: node --test dist/tests/document-unlock-controller.test.js
+      - run: node --test dist/tests/runtime-rebaseline-native.test.js
+      - run: node --test dist/tests/runtime-verification-realm.test.js
+      - run: node --test dist/tests/param-checkpoint-guard.test.js dist/tests/param-checkpoint-readback.test.js
       - run: node --test dist/tests/runtime-upgrade-lineage.test.js
       - run: node --test dist/tests/frozen-qualification-corpus.test.js
       - run: node --test dist/tests/frozen-inline-observer.test.js

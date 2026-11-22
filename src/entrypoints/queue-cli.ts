@@ -3,6 +3,11 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { FmcadConfiguration } from "../api";
+import {
+  decodeDocumentUnlockPublicError,
+  decodeDocumentUnlockRequest,
+  documentUnlockIpcFailure,
+} from "@fmcad/core";
 
 const runtimeRequire = createRequire(__filename);
 
@@ -31,6 +36,7 @@ interface QueueClientPort {
   wait(jobId: string): Promise<QueueResult>;
   register(): Promise<void>;
   call(action: string, options?: Record<string, unknown>): Promise<unknown>;
+  documentUnlock(input: unknown): Promise<unknown>;
   dispose(): void;
 }
 
@@ -369,10 +375,13 @@ const summaries = {
     "Owner-only separate publication read for the original settled first-save job. Never submits another save; accepted/pending/complete facts do not grant modeling authority.",
   "retain-saved-fixture":
     "Owner-only one UI close of the exact separately published unmodified new file, retaining the DataFile and restoring the captured active document. No cloud deletion, implicit save or retry after uncertainty.",
+  "document-unlock":
+    "Read, inspect, or accept broker-verified state for one exact document. Does not execute a CAD operation.",
 } as const;
 
 const optionsHelp = `
 Options: --client LABEL, --request-id ID, --timeout MS (active command execution), --queue-timeout MS (waiting only), --sequence-action begin|continue|end, --sequence-id ID, --sequence-mode automatic|exclusive, --expected-revision N.
+document-unlock: --action status|inspect|accept --doc-id ID or --doc-file-id ID; inspect and accept require --request-id, accept also requires --observation-id.
 serve: --backend mcp|addin, --config PATH, --confirm-ownership true; optional --confirm-version-transition true, --idle-ms MS, --lease-ms MS, --max-queued N, --max-per-client N. Version transition additionally requires a dead prior Fusion process, an unpaused queue with no active, blocked, leased or nonterminal work, an idle UI and all current documents unmodified; it records the transition and does not restart Fusion.
 transition-backend: after an owner-authenticated idle stop, --backend mcp|addin --backend-approval PATH --confirm-ownership true. The private JSON approval pins requestId, existing epoch clientId/clientToken, previousConfig and nextConfig; a preserved stop pause additionally requires its exact completed stopRequestId. Only backend, URL, headers, tool and protocolVersion may change; all other settings remain exact. A live transition requires the same live Fusion. A dead-SDK transition additionally requires the exact completed owner-stop release, a source-bound dead-process proof, and settled normal-epoch work; its single target probe must observe an idle UI and clean documents. Immutable predecessor identities/receipts are retained. The stop pause remains closed until a separate explicit owner resume. This starts the sole shared broker, not a second SDK queue.
 status without --job returns bounded queue totals and broker control state; with --job it returns that job. result/cancel/reconcile require --job ID. Atomic owner acknowledgment: reconcile --job ID --accept-outcome committed|aborted, only after reviewing the exact scoped proof; this does not claim rollback or model validation. release: --sequence-id ID.
@@ -415,11 +424,18 @@ export const descriptors = Object.fromEntries(
   ]),
 ) as Record<QueueCommandName, QueueDescriptor>;
 
-function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
+function parse(
+  argv: string[],
+  documentUnlock = false,
+): { opts: QueueOptions; rest: string[] } {
   const delimiter = argv.indexOf("--");
   const own = delimiter < 0 ? argv : argv.slice(0, delimiter);
   const rest = delimiter < 0 ? [] : argv.slice(delimiter + 1);
   const allowed = new Set([
+    "action",
+    "doc-id",
+    "doc-file-id",
+    "observation-id",
     "observation-job",
     "client",
     "request-id",
@@ -463,16 +479,23 @@ function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
   ]);
   const opts: QueueOptions = {};
   for (let index = 0; index < own.length; index++) {
-    const key = own[index]!.slice(2);
-    const value = own[++index];
+    const option = own[index]!;
+    const separator = documentUnlock ? option.indexOf("=") : -1;
+    const key = option.slice(2, separator < 0 ? undefined : separator);
+    const value =
+      separator < 0 ? own[++index] : option.slice(separator + 1);
     if (
-      !own[index - 1]!.startsWith("--") ||
+      !option.startsWith("--") ||
       !allowed.has(key) ||
       Object.hasOwn(opts, key) ||
       value === undefined ||
-      value.startsWith("--")
+      (separator < 0 && value.startsWith("--"))
     )
-      throw new Error("Invalid or duplicate queue option: " + own[index - 1]);
+      throw new Error(
+        documentUnlock
+          ? "Unsupported document-unlock option; see help"
+          : "Invalid or duplicate queue option: " + option,
+      );
     opts[key] = value;
   }
   return { opts, rest };
@@ -521,7 +544,51 @@ export async function queueCommand(
   const name = argv[0] ?? "";
   if (!Object.hasOwn(descriptors, name))
     throw new Error("Unknown queue command");
-  const { opts, rest } = parse(argv.slice(1));
+  const { opts, rest } = parse(argv.slice(1), name === "document-unlock");
+  let documentUnlockInput:
+    | ReturnType<typeof decodeDocumentUnlockRequest>
+    | undefined;
+  if (name === "document-unlock") {
+    const allowed = new Set([
+      "action",
+      "doc-id",
+      "doc-file-id",
+      "request-id",
+      "observation-id",
+      "client",
+      "config",
+    ]);
+    if (
+      rest.length ||
+      Object.keys(opts).some((key) => !allowed.has(key))
+    )
+      throw new Error(
+        "document-unlock accepts only action, target IDs, requestId, observationId and normal client/config options",
+      );
+    documentUnlockInput = decodeDocumentUnlockRequest({
+      action: opts["action"],
+      target: {
+        ...(opts["doc-id"] === undefined ? {} : { docId: opts["doc-id"] }),
+        ...(opts["doc-file-id"] === undefined
+          ? {}
+          : { docFileId: opts["doc-file-id"] }),
+      },
+      ...(opts["request-id"] === undefined
+        ? {}
+        : { requestId: opts["request-id"] }),
+      ...(opts["observation-id"] === undefined
+        ? {}
+        : { observationId: opts["observation-id"] }),
+    });
+  } else if (
+    ["action", "doc-id", "doc-file-id", "observation-id"].some(
+      (key) => opts[key] !== undefined,
+    )
+  ) {
+    throw new Error(
+      "--action, --doc-id, --doc-file-id and --observation-id are restricted to document-unlock",
+    );
+  }
   if (opts["backend-approval"] !== undefined && name !== "transition-backend")
     throw new Error(
       "--backend-approval requires transition-backend; ordinary serve never reconfigures",
@@ -1162,6 +1229,30 @@ export async function queueCommand(
     }
   }
   if (rest.length) throw new Error("Unexpected child argv");
+  if (name === "document-unlock") {
+    let result: unknown;
+    try {
+      await client.register(); // Metadata/control commands do not start Fusion access.
+      result = await client.documentUnlock(documentUnlockInput);
+    } catch {
+      write(documentUnlockIpcFailure());
+      return 1;
+    } finally {
+      client.dispose();
+    }
+    try {
+      if (result instanceof Error) {
+        write(documentUnlockIpcFailure());
+        return 1;
+      }
+      const publicError = decodeDocumentUnlockPublicError(result);
+      write(publicError ?? result);
+      return publicError ? 1 : 0;
+    } catch {
+      write(documentUnlockIpcFailure());
+      return 1;
+    }
+  }
   await client.register(); // Metadata/control commands must not start Fusion access.
   if (name === "audit-atomic") {
     try {

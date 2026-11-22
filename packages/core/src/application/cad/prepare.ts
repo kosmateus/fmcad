@@ -1,6 +1,9 @@
 import type { OperationDeclaration } from "../../catalog";
 import type { CadContext, CadData } from "./contracts";
 
+/** Compiler-only selection, never decoded from a public CAD invocation. */
+export type CadPrivateReadback = "param-checkpoint";
+
 export interface CadScriptPlan {
   wrapper: string;
   request: CadData;
@@ -14,7 +17,22 @@ export function planCadScript(
   context: CadContext,
   entry: OperationDeclaration,
   pythonLiteral: (value: unknown) => string,
+  privateReadback?: CadPrivateReadback,
 ): CadScriptPlan {
+  if (
+    privateReadback !== undefined &&
+    (privateReadback !== "param-checkpoint" ||
+      operation !== "param.inspect" ||
+      entry.readOnly !== true ||
+      data["includeModel"] !== true ||
+      Object.keys(data).length !== 1 ||
+      typeof context.docId !== "string" ||
+      !context.docId.trim() ||
+      context.component != null)
+  )
+    throw new Error(
+      "Checkpoint readback requires an exact whole-document full parameter inspection",
+    );
   const lightStatus =
     operation === "document.status" && context.component == null;
   const minimal = lightStatus
@@ -67,7 +85,7 @@ def run(_context: str):
         ctx.activate_target()
     ctx.assert_identity()
     print('FMCAD_PROGRESS ' + json.dumps({'operation': request['operation'], 'document': ctx.doc.name, 'state': 'started'}))
-    result = ctx.call(${pythonLiteral(operation)}, request['data'])
+    result = ${privateReadback === "param-checkpoint" ? "_cad_param_checkpoint(ctx)" : `ctx.call(${pythonLiteral(operation)}, request['data'])`}
     success = not (isinstance(result, dict) and (result.get('passed') is False or (result.get('restored') is False and result.get('leftRequestedState') is not True and result.get('status') != 'pass') or result.get('sampledPassed') is False or result.get('checkOutcome') == 'fail' or result.get('status') in ('fail', 'failed', 'blocked', 'unknown', 'missing', 'stale')))
     print('FMCAD_RESULT ' + json.dumps(_cad_json({'success': success, 'operation': request['operation'], 'document': ctx.doc.name, 'result': result, 'created': ctx.created}), allow_nan=False))
 `;

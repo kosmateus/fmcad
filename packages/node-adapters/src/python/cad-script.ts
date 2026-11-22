@@ -3,6 +3,7 @@ import {
   planCadScript,
   type CadContext,
   type CadData,
+  type CadPrivateReadback,
   type OperationDeclaration,
 } from "@fmcad/core";
 import { pythonLiteral } from "./artifact.js";
@@ -115,11 +116,14 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
     context: CadContext,
     pathMapper: (value: unknown) => string = fusionPath,
     checkpointGuard?: ParamCheckpointGuardV1,
+    privateReadback?: CadPrivateReadback,
   ) {
     if (Object.hasOwn(data, PARAM_CHECKPOINT_FIELD))
       throw new Error("Parameter checkpoint guard is compiler-owned");
     if (checkpointGuard !== undefined && operation !== "param.apply")
-      throw new Error("Parameter checkpoint guard is only valid for param.apply");
+      throw new Error(
+        "Parameter checkpoint guard is only valid for param.apply",
+      );
     const entry = ports.validate(operation, data);
     if (operation === "inspect.pack") data = ports.inspection(data);
     if (entry["curve"]) data = ports.curve(operation, data);
@@ -143,6 +147,7 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
       context,
       entry,
       pythonLiteral,
+      privateReadback,
     );
     return prepareCadBundle(
       resolveRuntimePaths({ anchor: __filename }).installation,

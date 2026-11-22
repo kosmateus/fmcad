@@ -202,6 +202,11 @@ export interface QueueSnapshot {
   lastClient: string | null;
   quarantined?: Record<string, QueueQuarantine>;
   documentCheckpoints?: import("./document-checkpoint").DocumentCheckpoints;
+  documentUnlockIntents?: Record<string, {
+    actorClientId: string;
+    requestId: string;
+    requestHash: string;
+  }>;
   localUnknown?: QueueBlock | undefined;
   controlBlocked?: unknown;
   controlGeneration?: number | undefined;
