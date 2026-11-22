@@ -43,6 +43,16 @@ async function fixture(
   uncertainty?: "localUnknown" | "controlBlocked",
   epochUncertainty = false,
   invalidCounter?: { field: "grantCount" | "admissionCount"; value: number },
+  executionMetadata?: {
+    field:
+      | "physicalDispatchCount"
+      | "dispatchCount"
+      | "rpcCount"
+      | "completedCount"
+      | "catalogIndex"
+      | "controlGeneration";
+    raw: string;
+  },
 ) {
   const directory = fs.mkdtempSync(
     path.join(
@@ -113,6 +123,83 @@ async function fixture(
       d.controlBlocked = params;
       return null;
     });
+  let queuedJobId: string | undefined;
+  if (executionMetadata) {
+    const queued = queue.submit({
+      kind: "rpc",
+      clientId: "queued-owner",
+      requestId: "queued-before-start",
+      timeoutMs: 1000,
+      payload: { jsonrpc: "2.0", method: "owned-queued", id: "queued", params },
+    });
+    const id = queued["id"];
+    assert.ok(typeof id === "string");
+    queuedJobId = id;
+    queue._commit((d) => {
+      const stored = d.jobs[id];
+      assert.ok(stored);
+      const field = executionMetadata.field;
+      if (field === "physicalDispatchCount")
+        stored.physicalDispatchCount = 314159;
+      else if (field === "controlGeneration") d.controlGeneration = 314159;
+      else if (field === "catalogIndex")
+        stored.physicalDispatches = [
+          {
+            catalogIndex: 314159,
+            request: {
+              kind: "product",
+              brokerNonce: "fixture-broker",
+              jobId: id,
+              requestId: stored.requestId,
+              requestHash: stored.hash,
+              clientId: stored.clientId,
+              grantGeneration: 0,
+              physicalRequestId: "fixture-physical",
+              documentSelector: { creationId: "fixture-doc" },
+            },
+            physical: {
+              version: 1,
+              grantDigest: "a".repeat(64),
+              generation: { instance: "prior-instance", epoch: "prior-epoch" },
+              physicalRuntime: {
+                pid: 123,
+                birth: "prior-birth",
+                version: "prior",
+                source: "prior",
+                build: "prior",
+              },
+              turnId: "prior-turn",
+              target: "fixture-doc",
+            },
+            target: { creationId: "fixture-doc" },
+            intentReference: "fixture://prior-intent",
+            intentDigest: "b".repeat(64),
+          },
+        ];
+      else {
+        stored.dispatch = {
+          dispatchCount: 0,
+          rpcCount: 0,
+          completedCount: 0,
+          updatedAt: 0,
+        };
+        Reflect.set(stored.dispatch, field, 314159);
+      }
+      return null;
+    });
+    const file = path.join(store, "queue-state.json"),
+      raw = fs.readFileSync(file, "utf8");
+    const marker = `"${executionMetadata.field}":314159`;
+    assert.ok(raw.includes(marker));
+    assert.equal(raw.indexOf(marker), raw.lastIndexOf(marker));
+    fs.writeFileSync(
+      file,
+      raw.replace(
+        marker,
+        `"${executionMetadata.field}":${executionMetadata.raw}`,
+      ),
+    );
+  }
   const history = fs.readFileSync(path.join(store, "queue-state.json"));
   const write = (file: string, bytes: string | Buffer) => {
     fs.writeFileSync(file, bytes, { mode: 0o600 });
@@ -387,6 +474,7 @@ c.execute("INSERT INTO consumed VALUES (?,?)",("owned-request",sys.stdin.read())
     store,
     history,
     jobId,
+    queuedJobId,
     queue,
     options,
     database,
@@ -855,8 +943,18 @@ for (const { uncertainty, epoch } of [
 
 test("opaque queue numeric policy does not relax protocol, duplicate-key or finite-value checks", () => {
   assert.deepEqual(
-    decodeOpaqueQueueJson('{"params":{"measurement":1e20,"tiny":5e-324}}'),
-    { params: { measurement: 1e20, tiny: Number.MIN_VALUE } },
+    decodeOpaqueQueueJson(
+      '{"jobs":{"owned":{"request":{"payload":{"params":{"measurement":1e20,"tiny":5e-324}}}}}}',
+    ),
+    {
+      jobs: {
+        owned: {
+          request: {
+            payload: { params: { measurement: 1e20, tiny: Number.MIN_VALUE } },
+          },
+        },
+      },
+    },
   );
   for (const raw of [
     '{"pid":1e20}',
@@ -955,6 +1053,52 @@ test("runtime record numeric policy is limited to original uncertainty blobs and
     );
 });
 
+test("snapshot finite numbers are confined to known user blobs, never execution metadata", () => {
+  const data = { measurement: 1e20, tiny: Number.MIN_VALUE, rpcCount: 1e20 };
+  const allowed = [
+    { jobs: { owned: { request: { payload: data } } } },
+    { jobs: { owned: { request: { rpc: { payload: data } } } } },
+    {
+      jobs: {
+        owned: {
+          details: { reason: data, result: data, response: data, rpcCount: 0 },
+        },
+      },
+    },
+    {
+      jobs: {
+        owned: {
+          dispatch: {
+            rpcCount: 0,
+            details: {
+              reason: data,
+              result: data,
+              response: data,
+              completedCount: 0,
+            },
+          },
+        },
+      },
+    },
+    { blocked: { id: "owned", at: 1, reason: data } },
+    { localUnknown: { id: "owned", at: 1, reason: data } },
+    { controlBlocked: { cause: data } },
+  ];
+  for (const value of allowed)
+    assert.deepEqual(decodeOpaqueQueueJson(JSON.stringify(value)), value);
+  for (const raw of [
+    '{"jobs":{"owned":{"physicalDispatchCount":1e-400}}}',
+    '{"jobs":{"owned":{"details":{"rpcCount":1e-400}}}}',
+    '{"jobs":{"owned":{"dispatch":{"details":{"completedCount":1.00000000000000001}}}}}',
+    '{"jobs":{"owned":{"request":{"timeoutMs":9007199254740993}}}}',
+    '{"jobs":{"owned":{"physicalDispatches":[{"catalogIndex":1e-400}]}}}',
+    '{"jobs":{"owned":{"physicalDispatches":[{"physical":{"physicalRuntime":{"pid":1e20}}}]}}}',
+    '{"lease":{"epoch":1e-400}}',
+    '{"documentCheckpoints":{"observations":{"owned":{"createdAt":9007199254740993}}}}',
+  ])
+    assert.throws(() => decodeOpaqueQueueJson(raw), /Ambiguous/);
+});
+
 test("protocol admission counters remain schema-rejected outside opaque historical data", async (t) => {
   for (const field of ["grantCount", "admissionCount"] as const)
     for (const value of [-1, 1e20])
@@ -962,6 +1106,64 @@ test("protocol admission counters remain schema-rejected outside opaque historic
         fixture(t, "bad-counter-", {}, undefined, false, { field, value }),
         { code: "RUNTIME_BARRIER_UNPROVEN" },
       );
+});
+
+for (const metadata of [
+  { field: "physicalDispatchCount", raw: "1e-400" },
+  { field: "physicalDispatchCount", raw: "1.00000000000000001" },
+  { field: "rpcCount", raw: "1e-400" },
+  { field: "completedCount", raw: "9007199254740993" },
+  { field: "dispatchCount", raw: "1.00000000000000001" },
+  { field: "catalogIndex", raw: "1e-400" },
+  { field: "controlGeneration", raw: "9007199254740993" },
+] as const)
+  test(`lexical execution metadata ${metadata.field} rejects ${metadata.raw} before deriving disposition`, async (t) => {
+    let f: Awaited<ReturnType<typeof fixture>>;
+    try {
+      f = await fixture(
+        t,
+        "lexical-counter-",
+        {},
+        undefined,
+        false,
+        undefined,
+        metadata,
+      );
+    } catch (error) {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Ambiguous admission JSON/);
+      return;
+    }
+    const root = await core.runtimeRebaselineRoot(f.store, f.reader);
+    assert.ok(root);
+    assert.ok(f.queuedJobId);
+    assert.fail(
+      `Ambiguous ${metadata.field}=${metadata.raw} admitted as ${root.record.dispositions[f.queuedJobId]?.outcome}`,
+    );
+  });
+
+test("real zero dispatch count remains not_started while opaque user measurements remain finite", async (t) => {
+  const params = { measurement: 1e20, tiny: Number.MIN_VALUE };
+  const f = await fixture(
+    t,
+    "zero-counter-",
+    params,
+    undefined,
+    false,
+    undefined,
+    { field: "physicalDispatchCount", raw: "0" },
+  );
+  const root = await core.runtimeRebaselineRoot(f.store, f.reader);
+  assert.ok(root);
+  assert.ok(f.queuedJobId);
+  assert.equal(root.record.dispositions[f.queuedJobId]?.outcome, "not_started");
+  const frozen = JSON.parse(JSON.stringify(root.snapshot));
+  assert.equal(frozen.jobs[f.queuedJobId].physicalDispatchCount, 0);
+  assert.deepEqual(frozen.jobs[f.queuedJobId].request.payload.params, params);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.store, "queue-state.json")),
+    f.history,
+  );
 });
 
 test("an early failed core attempt also revokes an older staged finalizer", async (t) => {

@@ -5,10 +5,33 @@ export function decodeAdmissionJson(text: string): unknown {
   return decodeJson(text, "protocol");
 }
 
-/** Opaque historical queue/user values use finite JSON numbers, not the
- * protocol identity/counter integer policy. Duplicate-key checks are shared. */
+/** Queue execution metadata stays protocol-strict; only declared user blobs
+ * use finite JSON numbers. Numeric policy is applied before returning values. */
 export function decodeOpaqueQueueJson(text: string): unknown {
-  return decodeJson(text, "opaque");
+  return decodeJson(text, "queue-snapshot");
+}
+function opaqueSnapshotPath(path: readonly string[]): boolean {
+  if (path[0] === "controlBlocked") return true;
+  if (
+    (path[0] === "blocked" || path[0] === "localUnknown") &&
+    path[1] === "reason"
+  )
+    return true;
+  if (path[0] !== "jobs" || path[1] === undefined) return false;
+  if (
+    path[2] === "request" &&
+    (path[3] === "payload" || (path[3] === "rpc" && path[4] === "payload"))
+  )
+    return true;
+  const detail =
+    path[2] === "details"
+      ? 3
+      : path[2] === "dispatch" && path[3] === "details"
+        ? 4
+        : -1;
+  return (
+    detail >= 0 && ["reason", "result", "response"].includes(path[detail] ?? "")
+  );
 }
 
 /** Only the original uncertainty blobs are opaque inside a runtime record.
@@ -34,7 +57,7 @@ function opaqueRecordPath(path: readonly string[]): boolean {
 
 function decodeJson(
   text: string,
-  numberPolicy: "protocol" | "opaque" | "runtime-record",
+  numberPolicy: "protocol" | "queue-snapshot" | "runtime-record",
 ): unknown {
   let cursor = 0;
   const fail = (): never => {
@@ -91,7 +114,7 @@ function decodeJson(
           entries.push(
             value(
               depth + 1,
-              numberPolicy === "runtime-record"
+              numberPolicy !== "protocol"
                 ? [...path, String(entries.length)]
                 : path,
             ),
@@ -106,7 +129,7 @@ function decodeJson(
           Object.defineProperty(result, key, {
             value: value(
               depth + 1,
-              numberPolicy === "runtime-record" ? [...path, key] : path,
+              numberPolicy !== "protocol" ? [...path, key] : path,
             ),
             enumerable: true,
             configurable: true,
@@ -134,11 +157,16 @@ function decodeJson(
     )?.[0];
     if (!raw) return fail();
     cursor += raw.length;
+    const opaque =
+      numberPolicy === "queue-snapshot"
+        ? opaqueSnapshotPath(path)
+        : numberPolicy === "runtime-record"
+          ? opaqueRecordPath(path)
+          : false;
     const number = Number(raw);
     if (
       !Number.isFinite(number) ||
-      ((numberPolicy === "protocol" ||
-        (numberPolicy === "runtime-record" && !opaqueRecordPath(path))) &&
+      (!opaque &&
         ((Number.isInteger(number) && !Number.isSafeInteger(number)) ||
           decimal(raw) !== decimal(String(number))))
     )
