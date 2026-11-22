@@ -2,6 +2,63 @@ import { types } from "node:util";
 
 /** Decode evidence without discarding duplicate keys or numeric information. */
 export function decodeAdmissionJson(text: string): unknown {
+  return decodeJson(text, "protocol");
+}
+
+/** Queue execution metadata stays protocol-strict; only declared user blobs
+ * use finite JSON numbers. Numeric policy is applied before returning values. */
+export function decodeOpaqueQueueJson(text: string): unknown {
+  return decodeJson(text, "queue-snapshot");
+}
+function opaqueSnapshotPath(path: readonly string[]): boolean {
+  if (path[0] === "controlBlocked") return true;
+  if (
+    (path[0] === "blocked" || path[0] === "localUnknown") &&
+    path[1] === "reason"
+  )
+    return true;
+  if (path[0] !== "jobs" || path[1] === undefined) return false;
+  if (
+    path[2] === "request" &&
+    (path[3] === "payload" || (path[3] === "rpc" && path[4] === "payload"))
+  )
+    return true;
+  const detail =
+    path[2] === "details"
+      ? 3
+      : path[2] === "dispatch" && path[3] === "details"
+        ? 4
+        : -1;
+  return (
+    detail >= 0 && ["reason", "result", "response"].includes(path[detail] ?? "")
+  );
+}
+
+/** Only the original uncertainty blobs are opaque inside a runtime record.
+ * All bindings, counters, versions and other evidence remain protocol-strict. */
+export function decodeRuntimeRebaselineRecordJson(text: string): unknown {
+  return decodeJson(text, "runtime-record");
+}
+function opaqueRecordPath(path: readonly string[]): boolean {
+  const start = path[0] === "layers" ? 2 : 0;
+  if (path[start] !== "carriedExposures" || path[start + 2] !== "original")
+    return false;
+  const entry = path[start + 1] ?? "";
+  return (
+    /^(?:admission-epochs\/[A-Za-z0-9_-]{1,128}\/)?runtime:controlBlocked:*$/.test(
+      entry,
+    ) ||
+    (/^(?:admission-epochs\/[A-Za-z0-9_-]{1,128}\/)?runtime:localUnknown:*$/.test(
+      entry,
+    ) &&
+      path[start + 3] === "reason")
+  );
+}
+
+function decodeJson(
+  text: string,
+  numberPolicy: "protocol" | "queue-snapshot" | "runtime-record",
+): unknown {
   let cursor = 0;
   const fail = (): never => {
     throw new Error("Ambiguous admission JSON");
@@ -34,7 +91,7 @@ export function decodeAdmissionJson(text: string): unknown {
     }
     return `${negative ? "-" : ""}${digits}e${scale}`;
   }
-  function value(depth: number): unknown {
+  function value(depth: number, path: readonly string[] = []): unknown {
     if (depth > 128) return fail();
     space();
     const char = text[cursor];
@@ -53,7 +110,15 @@ export function decodeAdmissionJson(text: string): unknown {
       }
       while (true) {
         space();
-        if (array) entries.push(value(depth + 1));
+        if (array)
+          entries.push(
+            value(
+              depth + 1,
+              numberPolicy !== "protocol"
+                ? [...path, String(entries.length)]
+                : path,
+            ),
+          );
         else {
           if (text[cursor] !== '"') return fail();
           const key = string();
@@ -62,7 +127,10 @@ export function decodeAdmissionJson(text: string): unknown {
           space();
           if (text[cursor++] !== ":") return fail();
           Object.defineProperty(result, key, {
-            value: value(depth + 1),
+            value: value(
+              depth + 1,
+              numberPolicy !== "protocol" ? [...path, key] : path,
+            ),
             enumerable: true,
             configurable: true,
             writable: true,
@@ -89,11 +157,18 @@ export function decodeAdmissionJson(text: string): unknown {
     )?.[0];
     if (!raw) return fail();
     cursor += raw.length;
+    const opaque =
+      numberPolicy === "queue-snapshot"
+        ? opaqueSnapshotPath(path)
+        : numberPolicy === "runtime-record"
+          ? opaqueRecordPath(path)
+          : false;
     const number = Number(raw);
     if (
       !Number.isFinite(number) ||
-      (Number.isInteger(number) && !Number.isSafeInteger(number)) ||
-      decimal(raw) !== decimal(String(number))
+      (!opaque &&
+        ((Number.isInteger(number) && !Number.isSafeInteger(number)) ||
+          decimal(raw) !== decimal(String(number))))
     )
       return fail();
     return number;
