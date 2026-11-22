@@ -17,6 +17,12 @@ for (const scenario of [
     t.after(() => fs.rmSync(base, { recursive: true, force: true }));
     const runtime = path.join(base, "runtime");
     fs.cpSync(path.join(repository, "dist"), runtime, { recursive: true });
+    // A package has its installed dependencies beside it, not in its fingerprint.
+    fs.symlinkSync(
+      path.join(repository, "node_modules"),
+      path.join(base, "node_modules"),
+      "dir",
+    );
     const fixture = path.join(
       runtime,
       "tests/fixtures/frozen-inline-observer-evidence.json",
