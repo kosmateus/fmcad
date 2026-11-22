@@ -55,6 +55,9 @@ export interface Dependencies {
   readonly bridgeSource: () => string;
   readonly requestTimeout: (server: Server) => number;
   readonly spawn?: typeof spawn | undefined;
+  /** Broker-owned capability, evaluated at dispatch, never copied into DTOs. */
+  readonly authorizePhysicalRequest?:
+    ((endpoint: string) => Readonly<Record<string, string>>) | undefined;
 }
 export type Spawn = (
   executable: string,
