@@ -7137,6 +7137,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // Includes setup, durable outcome/hold and diagnostics failures. Client
       // terminal notification must not depend on a successful disk write.
       task.reject(cause);
+      // Keep the existing scheduler's failure route authoritative: it records a
+      // durable UNKNOWN hold if the read crossed the SDK boundary. Swallowing
+      // this would leave an active sending job without reconciliation.
+      throw cause;
     } finally {
       checkpointReads.delete(job.id);
     }

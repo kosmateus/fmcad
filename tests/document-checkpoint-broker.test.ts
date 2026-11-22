@@ -42,6 +42,7 @@ async function fixture(t: TestContext, foreignConflict = false) {
   let failOutcome = false;
   let beforeHistory: (() => void) | undefined;
   const released = new Set<string>();
+  const productJobs: string[] = [];
   const clients: QueueClient[] = [];
   if (foreignConflict) {
     const { openIsolatedEpoch } = load("./queue-isolated-epoch") as typeof import("../src/queue-isolated-epoch");
@@ -130,6 +131,7 @@ async function fixture(t: TestContext, foreignConflict = false) {
       stdout = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observed);
     } else {
       products++;
+      productJobs.push((JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as { active: string }).active);
       assert.ok(script!.includes("result = _cad_param_checkpoint(ctx)"),
         "owned unlock read must execute the actual private compiler callback");
       stdout = "FMCAD_RESULT " + JSON.stringify({
@@ -201,7 +203,8 @@ async function fixture(t: TestContext, foreignConflict = false) {
     change() { expression = "20 mm"; },
     historyUnknown(value: boolean) { unknownHistory = value; },
     cancelledRead(value: boolean) { cancelledRead = value; },
-    failOutcome() { failOutcome = true; },
+    failOutcome(value = true) { failOutcome = value; },
+    productJobs: () => [...productJobs],
     revoke(value: boolean) { revoked = value; },
     wrongReply() { wrongReply = true; },
     beforeHistory(value: (() => void) | undefined) { beforeHistory = value; },
@@ -491,6 +494,7 @@ test("client resolves despite an outcome-record write failure after a dispatched
     }
     const f = await fixture(t), client = await f.client();
     process.stdout.write(`CHECKPOINT_FAULT_HOME ${path.dirname(path.dirname(f.dir))}\n`);
+    try {
     f.failOutcome();
     const result = record(await client.documentUnlock({
       action: "inspect", target, requestId: "fault-outcome",
@@ -501,8 +505,43 @@ test("client resolves despite an outcome-record write failure after a dispatched
     const jobs = path.join(f.dir, "jobs");
     assert.ok(fs.readdirSync(jobs).some((id) =>
       fs.statSync(path.join(jobs, id, "outcome.json")).isDirectory()));
+    const deadline = Date.now() + 1000;
+    let snapshot: { blocked?: { id: string }; quarantined?: Record<string, unknown>; jobs: Record<string, { state: string }> };
+    do {
+      snapshot = JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")) as typeof snapshot;
+      if (snapshot.blocked) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    } while (Date.now() < deadline);
+    process.stdout.write(`CHECKPOINT_FAULT_HOLD ${JSON.stringify({
+      blocked: snapshot.blocked ?? null, states: Object.values(snapshot.jobs).map((job) => job.state),
+    })}\n`);
+    assert.ok(snapshot.blocked, "the existing scheduler must durably hold the unresolved original read");
+    const originalId = snapshot.blocked.id;
+    assert.equal(snapshot.jobs[originalId]?.state, "needs_reconciliation");
+    const recoveryDeadline = Date.now() + 3000;
+    while (!snapshot.quarantined?.[originalId] && Date.now() < recoveryDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      snapshot = JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")) as typeof snapshot;
+    }
+    assert.ok(snapshot.quarantined?.[originalId],
+      "the existing recovery path must authenticate the original release and preserve its UNKNOWN exposure");
+    assert.equal(snapshot.jobs[originalId]?.state, "needs_reconciliation");
+    f.failOutcome(false);
+    const following = record(await client.documentUnlock({
+      action: "inspect", target, requestId: "fresh-after-outcome-failure",
+    }));
+    assert.equal(following["error"], undefined, JSON.stringify(following));
+    assert.equal(following["state"], "inspection_required");
+    assert.equal(f.counts().products, 2, "a fresh explicit inspection may run after the original SDK turn is fenced");
+    assert.deepEqual(f.productJobs().filter((id) => id === originalId), [originalId],
+      "the original unknown request must never be replayed");
+    assert.equal(new Set(f.productJobs()).size, 2);
     process.stdout.write("CHECKPOINT_FAULT_REFUSED\n");
     // Simulate process loss with retained UNKNOWN state, not successful cleanup.
     // This child owns all its resources; the parent preserves the terminal result.
     process.exit(0);
+    } catch (error) {
+      process.stderr.write(String(error) + "\n");
+      process.exit(1);
+    }
   });
