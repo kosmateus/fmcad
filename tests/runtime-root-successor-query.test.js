@@ -19,7 +19,7 @@ test("private successor query executes real pinned PR4 SQLite guards offline", (
     fragment, directory,
   ], { encoding: "utf8", timeout: 30000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /Ran 26 tests/);
+  assert.match(result.stderr, /Ran 27 tests/);
   assert.match(result.stderr, /\nOK\s*$/);
   assert.equal(result.stdout, "");
   // Keep owned fixture artifacts on failures; successful cases need no recovery.

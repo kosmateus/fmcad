@@ -47,7 +47,7 @@ def _fmcad_query_runtime_root(authority, request):
                     refuse()
                 original_generation = generation(binding["generation"])
                 current_generation = generation(current["generation"])
-                if (binding["physicalRuntime"] != current["physicalRuntime"]
+                if (_encode(binding["physicalRuntime"]) != _encode(current["physicalRuntime"])
                         or binding["endpointURL"] != current["endpointURL"]):
                     refuse()
                 retirement = None
@@ -78,16 +78,18 @@ def _fmcad_query_runtime_root(authority, request):
                                       "publicationDigest", "record", "initiatorOperatorId"))
                     publication = decode_json(row[5])
                     activation = decode_json(publication["activationBytes"])
+                    # Compare JSON containers by canonical encoding: Python
+                    # equality aliases booleans and numbers (True == 1).
                     if (receipt["kind"] != "fmcad-rebaseline-consumed"
                             or type(receipt["version"]) is not int or receipt["version"] != 1
-                            or receipt["fence"] != binding
+                            or _encode(receipt["fence"]) != _encode(binding)
                             or approval["requestId"] != request_id
-                            or approval["fenceNonce"] != binding["fenceNonce"]
-                            or approval["initiatorOperatorId"] != binding["initiatorOperatorId"]
+                            or _encode(approval["fenceNonce"]) != _encode(binding["fenceNonce"])
+                            or _encode(approval["initiatorOperatorId"]) != _encode(binding["initiatorOperatorId"])
                             or approval["publicationDigest"] != hashlib.sha256(row[5].encode("utf-8")).hexdigest()
-                            or approval["newHead"] != activation["newHead"]
-                            or approval["record"] != activation["record"]
-                            or approval["record"] != publication["record"]):
+                            or _encode(approval["newHead"]) != _encode(activation["newHead"])
+                            or _encode(approval["record"]) != _encode(activation["record"])
+                            or _encode(approval["record"]) != _encode(publication["record"])):
                         refuse()
                 if original_generation == current_generation:
                     if retirement is not None or binding["handoffId"] != current["handoffId"]:
@@ -133,7 +135,8 @@ def _fmcad_query_runtime_root(authority, request):
                         cursor = generation(value["nextGeneration"])
                     if (not chain or current_generation in edges
                             or chain[0]["handoffId"] != retirement[0]
-                            or chain[0]["nextGeneration"] != dict(instance=retirement[1], epoch=retirement[2])
+                            or generation(chain[0]["nextGeneration"]) != generation(
+                                dict(instance=retirement[1], epoch=retirement[2]))
                             or chain[-1]["handoffId"] != current["handoffId"]):
                         refuse()
                     database = _database(store)
@@ -150,7 +153,7 @@ def _fmcad_query_runtime_root(authority, request):
             # Revalidate the process and named DB inode at the snapshot boundary.
             # This detects a replaced file even though SQLite still holds its FD.
             _verify_runtime(store, authority)
-            if authority.runtime != current:
+            if _encode(authority.runtime) != _encode(current):
                 refuse()
             return result
 `;

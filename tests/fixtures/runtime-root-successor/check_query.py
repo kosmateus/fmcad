@@ -290,6 +290,18 @@ class SuccessorQuery(unittest.TestCase):
                 self.query()
             signer.assert_not_called()
 
+    def test_boolean_device_in_receipt_cannot_equal_numeric_binding_before_signer(self):
+        self.handoff(1)
+        receipt = json.loads(self.original["receiptJson"])
+        self.assertEqual(receipt["fence"]["store"]["device"], 1)
+        receipt["fence"]["store"]["device"] = True
+        self.store._db.execute(
+            "UPDATE provision_fences SET receipt_json=?", (_encode(receipt),))
+        with patch.object(native, "_response", wraps=native._response) as signer:
+            with self.assertRaises(AdmissionError):
+                self.query()
+            signer.assert_not_called()
+
     def test_original_consumer_need_not_be_current_query_operator(self):
         self.handoff(1)
         self.authority.operator_id = "different-current-query-operator"
