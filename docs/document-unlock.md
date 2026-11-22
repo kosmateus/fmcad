@@ -2,7 +2,7 @@
 
 Ta procedura pozwala uprawnionemu agentowi wznowić pracę, gdy broker wymaga sprawdzenia stanu dokumentu. Agent nie przejmuje tokenu poprzedniego właściciela i nie ponawia niepewnej operacji CAD.
 
-> **Status dostępności:** front MCP/CLI jest w trakcie integracji z brokerem. Do czasu integracji i walidacji przez rzeczywistą pomoc CLI oraz testy kontraktu funkcja nie jest gotowa do użycia produkcyjnego. Poniższe nazwy i kształty wejścia odpowiadają aktualnemu kandydatowi frontu; wyników ani zachowania live nie potwierdzono.
+> **Status dostępności:** front MCP/CLI jest w trakcie integracji z brokerem. Przykłady sprawdzono względem dekodera i definicji pomocy CLI z aktualnego kandydata frontu, ale nie potwierdzono jeszcze zintegrowanego buildu ani zachowania live. Funkcja nie jest gotowa do użycia produkcyjnego.
 
 ## Szybki start
 
@@ -52,7 +52,7 @@ fmcad queue document-unlock --action inspect --doc-file-id FILE_ID --request-id 
 fmcad queue document-unlock --action accept --doc-file-id FILE_ID --request-id accept-unique-id --observation-id OBSERVATION_ID_FROM_INSPECT
 ```
 
-Możesz zamiast `--doc-file-id` wskazać `--doc-id`. CLI dopuszcza też normalne opcje klienta i konfiguracji; nie dodawaj parametrów uprzywilejowanych. Szczegóły pomocy CLI dla tego polecenia pozostają **NOTRUN** do czasu integracji frontu i weryfikacji jego rzeczywistego katalogu pomocy.
+Możesz zamiast `--doc-file-id` wskazać `--doc-id`. CLI dopuszcza też normalne opcje klienta i konfiguracji; nie dodawaj parametrów uprzywilejowanych. Definicję pomocy CLI sprawdzono w kandydacie frontu. Uruchomienie zintegrowanego polecenia pomocy pozostaje **NOTRUN**, bo gotowy artefakt CLI nie jest dostępny.
 
 ## Co zrobić po odpowiedzi
 
@@ -82,4 +82,4 @@ Kieruj się polem `next` zwróconym przez brokera; nie odtwarzaj go na podstawie
 
 ## Weryfikacja kontraktu
 
-Aktualny kandydat frontu ogranicza żądania do `action`, `target`, `requestId` i `observationId`; cel wymaga co najmniej jednego dokładnego identyfikatora (`docId` lub `docFileId`). Wspólny decoder sprawdza również wymagane identyfikatory dla `inspect` i `accept`. Przykłady powyżej są zgodne z tym kandydatem, ale wykonane testy decoder/frontów oraz pomoc CLI pozostają **NOTRUN dla zintegrowanego buildu**. Zanim funkcja zostanie uznana za gotową, sprawdź je ponownie względem zintegrowanego frontu i odpowiedzi rzeczywistego brokera. Nie traktuj tego dokumentu jako dowodu działania live.
+Wspólny decoder z aktualnego kandydata frontu zaakceptował trzy przykładowe żądania i odrzucił cztery nieprawidłowe lub uprzywilejowane warianty. Sprawdzono też definicję pomocy CLI w źródle; wygenerowany artefakt `dist/entrypoints/queue-cli.js` nie jest dostępny, więc wykonanie polecenia pomocy jest **NOTRUN**. Po integracji powtórz kontrole względem zintegrowanego buildu i odpowiedzi rzeczywistego brokera. Nie traktuj tej walidacji jako dowodu działania live.
