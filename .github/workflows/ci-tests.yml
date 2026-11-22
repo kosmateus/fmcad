@@ -148,6 +148,7 @@ jobs:
       - run: node --test dist/tests/document-observation-store.test.js
       - run: node --test dist/tests/document-unlock-diagnostics.test.js
       - run: node --test dist/tests/document-unlock-controller.test.js
+      - run: node --test dist/tests/document-checkpoint-broker.test.js
       - run: node --test dist/tests/document-checkpoint-producer.test.js
       - run: node --test tests/runtime-retirement.test.cjs
       - run: node --test tests/runtime-retirement-bootstrap.test.cjs

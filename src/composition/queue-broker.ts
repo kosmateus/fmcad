@@ -93,6 +93,24 @@ const { decodeAdmissionJson } = runtimeRequire(
 const { createBrokerRecords } = runtimeRequire(
   "./dist/node-adapters/persistence/broker-records",
 ) as typeof import("../../packages/node-adapters/src/persistence/broker-records");
+const { createBrokerCheckpointEvidence, checkpointGeneration, checkpointDisclosableConflicts } = runtimeRequire(
+  "./document-checkpoint-broker",
+) as typeof import("../document-checkpoint-broker");
+const { createDocumentUnlockAdmission } = runtimeRequire(
+  "./document-unlock-admission",
+) as typeof import("../document-unlock-admission");
+const { createDocumentUnlockController } = runtimeRequire(
+  "./document-unlock-controller",
+) as typeof import("../document-unlock-controller");
+const { decodeDocumentUnlockRequest } = runtimeRequire(
+  "./dist/core/application/document-unlock",
+) as typeof import("../../packages/core/src/application/document-unlock");
+const { parseNativeResult } = runtimeRequire(
+  "./dist/core/application/cad/native-result",
+) as typeof import("../../packages/core/src/application/cad/native-result");
+const { hash: checkpointStateHash } = runtimeRequire(
+  "./dist/core/application/cad/json",
+) as typeof import("../../packages/core/src/application/cad/json");
 const { createBrokerRecovery } = runtimeRequire(
   "./dist/core/application/broker-recovery",
 ) as typeof import("../../packages/core/src/application/broker-recovery");
@@ -1278,7 +1296,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
   type ProductGrant = BrokerGrant<P.LaneContext>;
-  const { quarantineTarget, validRelease } = runtimeRequire(
+  const { quarantineTarget, validRelease, physicalReleaseInput } = runtimeRequire(
     "./dist/core/domain/queue-quarantine",
   ) as typeof import("../../packages/core/src/domain/queue-quarantine");
   let quiescencePending = false;
@@ -1346,6 +1364,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       }
   );
   const localPlans = new Map<string, LocalPlan>();
+  type CheckpointActor = import("../document-unlock-admission").UnlockPrincipal;
+  type CheckpointTarget = import("../document-unlock-admission").ConfirmedUnlockTarget;
+  type CheckpointState = import("../../packages/node-adapters/src/python/cad-script").ParamCheckpointGuardV1;
+  type CheckpointReadResult = { jobId: string; checkpoint: CheckpointState };
+  const checkpointActor = new AsyncLocalStorage<CheckpointActor>();
+  const checkpointViews = new AsyncLocalStorage<{
+    states: Map<string, CheckpointState>; justProduced: Set<string>;
+    finalChecks: Map<string, (() => void)[]>;
+  }>();
+  const checkpointIdentity = new AsyncLocalStorage<boolean>();
+  const checkpointReads = new Map<string, {
+    actor: CheckpointActor; target: CheckpointTarget;
+    turn: TurnIdentity; send?: P.Send;
+    resolve(value: CheckpointReadResult): void; reject(error: unknown): void;
+  }>();
+  let checkpointGenerationPin: string | undefined;
   let postPrepared = (
     payload: P.Rpc,
     sessionId: string | undefined,
@@ -1519,6 +1553,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (!candidate) fail("PHYSICAL_BINDING_MISSING", "System read has no exact physical binding",
         );
       const physical = pinPhysicalTurn(candidate, request);
+      if (checkpointIdentity.getStore() &&
+          checkpointGeneration(physical) !== currentCheckpointGeneration())
+        fail("DOCUMENT_STATE_CHANGED", "Identity probe generation changed before dispatch");
       const currentJob = jobId ? state.data.jobs[jobId] : undefined;
       const catalogIndex = currentJob && state.data.active === currentJob.id &&
         ["running","sending"].includes(currentJob.state)
@@ -1726,6 +1763,303 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     identifyForStartup,
   );
   initializing = false;
+
+  function assertCheckpointOwner() {
+    resetFence();
+    if (lifetime.stopping || buildHash() !== codeHash ||
+        !same(readJson(lock), marker))
+      fail("STORAGE_UNAVAILABLE", "Checkpoint broker ownership changed");
+    const actor = checkpointActor.getStore();
+    if (actor && clientHashes()[actor.clientId] !== actor.clientTokenHash)
+      fail("NOT_AUTHORIZED", "The checkpoint principal is no longer registered");
+  }
+  function currentCheckpointGeneration() {
+    assertCheckpointOwner();
+    if (!physicalIsolation)
+      fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint reads require native physical capabilities");
+    const id = randomUUID();
+    const request: P.PhysicalTurnRequest = {
+      kind: "system-read", brokerNonce: marker.nonce, jobId: `generation:${marker.nonce}`,
+      requestId: id, clientId: `broker:${marker.nonce}`, requestHash: hash(id),
+      grantGeneration: lane.snapshot().generation, physicalRequestId: id,
+      documentSelector: { metadataOnly: true },
+    };
+    // Binding validates the actual current private grant. This deliberately
+    // creates no physical intent and submits no SDK request.
+    const binding = pinPhysicalTurn(required(options.bindPhysicalTurn)(request)!, request, instance);
+    const generation = checkpointGeneration(binding);
+    if (checkpointGenerationPin && checkpointGenerationPin !== generation)
+      fail("DOCUMENT_STATE_CHANGED", "Native generation changed");
+    checkpointGenerationPin = generation;
+    return generation;
+  }
+  const checkpointAdmission = createDocumentUnlockAdmission(() => ({
+    state: state as unknown as import("../document-unlock-admission").UnlockAdmissionContext["state"],
+    clients: clientHashes(), generation: currentCheckpointGeneration(),
+    scope: frozenMetadataScope === undefined ? "ordinary" : "frozen-metadata",
+  }));
+  const checkpointEvidence = createBrokerCheckpointEvidence({
+    directory: dir, buildHash: codeHash, records: executionRecords,
+    readJob: (id) => required(state.data.jobs[id]),
+    recheck() {
+      assertCheckpointOwner();
+      // Revalidate the actual current private authorization too, not just the
+      // local owner marker. Historical reads still use their original binding.
+      currentCheckpointGeneration();
+    },
+    currentGeneration: currentCheckpointGeneration,
+    compile: (operation, data, context, pathMapper, guard, privateReadback) =>
+      (runtimeRequire("./dist/composition/cad") as typeof import("./cad")).prepareCadScript(
+        operation, data, context, pathMapper, guard, privateReadback,
+      ),
+    wrapReceipt: (code, receipt, binding) =>
+      prepareReceiptScript(code, false, receipt, binding, nativePaths),
+    matchResponse: (record) => matchRecordedResponse(record),
+    verifyReceipt(record, receipt) {
+      remoteReceipt(record, true, receipt);
+      const declaration = nativeReceipts.start(record);
+      const end = declaration ? nativeReceipts.completion(record, declaration) : null;
+      if ((declaration && (!end || end.outcome !== "succeeded")) ||
+          (!declaration && (object(record)["nativeDeclaration"] || record.nativeCompletion)))
+        fail("STORAGE_UNAVAILABLE", "Original native checkpoint workflow is incomplete");
+      if (end && !same(end.native?.state, record.nativeCompletion))
+        fail("STORAGE_UNAVAILABLE", "Native completion differs from its retained record");
+    },
+    authenticatePhysical: (binding) => {
+      assertCheckpointOwner();
+      return required(options.physicalTurnQuiescence)(binding);
+    },
+  });
+  function checkpointConflicts(target: import("@fmcad/core").QueueIsolationTarget | null) {
+    return state.documentConflicts(target);
+  }
+  async function probeCheckpointIdentity(actor: CheckpointActor,
+    selector: import("../document-unlock-admission").UnlockTargetSelector) {
+    assertCheckpointOwner();
+    checkpointAdmission.authorizeStatus(actor, selector).recheck();
+    state.assertDocumentProbeAllowed();
+    if (state.data.paused || busy() || activeContext() || gate.resuming || gate.adminTransition || gate.active.size)
+      fail("SDK_TURN_ACTIVE", "Another SDK turn is still active");
+    currentCheckpointGeneration();
+    lane.setAdministrative(true);
+    try {
+      return await checkpointIdentity.run(true, () => gate.administrative(async () => {
+        assertCheckpointOwner();
+        state.assertDocumentProbeAllowed();
+        const id = randomUUID();
+        const folder = privateDirectory(path.join(dir, "document-identity-reads"));
+        const observed = await checkInstance({
+          requireIdle: true,
+          binding: { jobId: `identity-${id}`, rpcId: id,
+            requestHash: hash(canonical(selector)), buildHash: codeHash },
+          receiptPath: path.join(folder, `${id}.json`),
+          documentSelector: {
+            ...(selector.docId === undefined ? {} : { creationId: selector.docId }),
+            ...(selector.docFileId === undefined ? {} : { fileId: selector.docFileId }),
+          },
+        });
+        checkpointAdmission.authorizeStatus(actor, selector).recheck();
+        const document = observed.documentState;
+        const identity = object(object(document?.state)["identity"]);
+        if (document?.status !== "complete" ||
+            typeof document.fingerprint !== "string" ||
+            !/^[a-f0-9]{64}$/.test(document.fingerprint) ||
+            typeof identity["creationId"] !== "string" ||
+            typeof identity["name"] !== "string" ||
+            (identity["fileId"] != null && typeof identity["fileId"] !== "string"))
+          fail("DOCUMENT_TARGET_UNAVAILABLE", "An exact current document identity is unavailable");
+        return {
+          complete: true as const, creationId: identity["creationId"],
+          name: identity["name"], fingerprint: document.fingerprint,
+          ...(typeof identity["fileId"] === "string" ? { fileId: identity["fileId"] } : {}),
+          ...(typeof identity["version"] === "number" ? { version: identity["version"] } : {}),
+        };
+      }));
+    } finally {
+      lane.setAdministrative(false);
+      lifetime.progress();
+    }
+  }
+  async function readCheckpoint(actor: CheckpointActor,
+    target: import("../document-unlock-admission").CurrentUnlockTarget,
+    fence: import("@fmcad/core").DocumentInspection) {
+    assertCheckpointOwner();
+    const confirmed = target as CheckpointTarget; // Runtime admission WeakMap still checks the original object.
+    checkpointAdmission.authorize(actor, "inspect", confirmed).recheck();
+    if (fence.generation !== currentCheckpointGeneration())
+      fail("DOCUMENT_STATE_CHANGED", "Checkpoint generation changed before admission");
+    const payload = {
+      version: 1, kind: "cad", operation: "param.inspect",
+      doc: target.name, docId: target.creationId,
+      ...(target.fileId ? { docFileId: target.fileId } : {}),
+      data: { includeModel: true },
+    };
+    const commands = runtimeRequire("./dist/core/application/cad/worker-command") as
+      typeof import("../../packages/core/src/application/cad/worker-command");
+    const decoded = commands.decodeCadWorkerInvocation(payload);
+    const request: P.Request = {
+      requestId: randomUUID(), clientId: actor.clientId, ownerToken: actor.clientTokenHash,
+      kind: "command", cwd: dir, timeoutMs: 15000, queueTimeoutMs: 15000,
+      phased: true,
+      buildHash: codeHash, backend: "addin", payload,
+      argv: commands.cadWorkerPolicyArguments(decoded),
+    };
+    if (state.epoch) admitEpochRequest(request);
+    const status = state.submitDocumentInspection(request, fence);
+    const jobId = status["id"];
+    if (typeof jobId !== "string") fail("STORAGE_UNAVAILABLE", "Inspection admission lost its job identity");
+    const job = required(state.data.jobs[jobId]);
+    if (!["queued", "preparing", "processing"].includes(job.state))
+      fail(job.code || "DOCUMENT_UNLOCK_REQUIRED", "Checkpoint read was not admitted");
+    const result = new Promise<CheckpointReadResult>((resolve, reject) => {
+      checkpointReads.set(job.id, { actor: { ...actor }, target: confirmed,
+        turn: brokerExecution.createTurnIdentity(job.id), resolve, reject });
+    });
+    result.catch(() => {});
+    try {
+      const task = required(checkpointReads.get(job.id));
+      privateDirectory(jobDir(job.id));
+      executionRecords.createIntent(job.id, {
+        id: job.id, request: job.request, buildHash: codeHash,
+        properties: {}, deadline: Date.now() + job.timeoutMs,
+      });
+      const compiled = checkpointEvidence.compile(job);
+      const origin = load("./python").pythonArtifactManifest(compiled);
+      const compiledScope = {
+        producer: "compiled-cad-v1", operation: "param.inspect",
+        sourceHash: hash(compiled.script), buildHash: codeHash, target: fence.target,
+      };
+      // Ordinary offline preparation remains outside the sole physical lane.
+      // Its prepared turn identity and checker fence are consumed only once.
+      task.send = await preparingJob.run({ job, turn: task.turn, compiledScope }, () =>
+        required(client.prepareCallTool).call(client, {
+          featureType: "script", object: { script: compiled.script, readOnly: true },
+        }, "fusion_mcp_execute", origin),
+      );
+      assertCheckpointOwner();
+      checkpointAdmission.authorize(actor, "inspect", confirmed).recheck();
+      state.readyTurn(job.id);
+    } catch (cause) {
+      checkpointReads.get(job.id)?.reject(cause);
+      checkpointReads.delete(job.id);
+      state.finishLocal(job.id, {
+        state: "failed", code: errorInfo(cause).code || "CHECKPOINT_PREPARATION_FAILED",
+        executionOutcome: "not_started", mayHaveMutated: false, userScriptSubmitted: false,
+      });
+    }
+    // The existing scheduler owns lane.begin, SDK turn and failure isolation.
+    // No direct physical send and no whole-application reservation is added.
+    lifetime.progress();
+    return result;
+  }
+  const checkpointController = createDocumentUnlockController({
+    domain: state as unknown as import("@fmcad/core").QueueDomain,
+    admission: checkpointAdmission, generation: currentCheckpointGeneration,
+    probeIdentity: probeCheckpointIdentity,
+    async inspect(actor, requestId, target, fence) {
+      const blockers = checkpointConflicts(fence.target).map((value) => ({
+        jobId: value.jobId, requestId: value.requestId, originalHash: value.jobHash,
+        catalogDigest: value.catalogDigest, barrierRef: value.evidenceReference,
+      }));
+      const read = await readCheckpoint(actor, target, fence);
+      const observation = await checkpointEvidence.persist({
+        version: 1, id: randomUUID(), requestId, actorClientId: actor.clientId,
+        target: fence.target, generation: fence.generation, scope: "parameters",
+        stateDigest: checkpointStateHash(read.checkpoint), blockers,
+        priorCheckpointId: fence.priorCheckpointId, createdAt: Date.now(),
+      }, read.jobId);
+      checkpointViews.getStore()?.justProduced.add(observation.id);
+      return { id: observation.id, stateDigest: observation.stateDigest,
+        createdAt: observation.createdAt, readback: observation.readback };
+    },
+    async verifyStoredObservation(observation) {
+      const verified = await checkpointEvidence.verify(observation, true);
+      required(checkpointViews.getStore()).finalChecks.set(observation.id, [verified.reverify]);
+    },
+    verifyFinal(observation) {
+      const checks = required(checkpointViews.getStore()).finalChecks.get(observation.id);
+      if (!checks?.length) fail("STORAGE_UNAVAILABLE", "Final checkpoint verification is unavailable");
+      for (const verify of checks) verify();
+    },
+    async verifyObservation(observation, target) {
+      const original = await checkpointEvidence.verify(observation);
+      const scope = required(checkpointViews.getStore());
+      const finalChecks = [original.reverify];
+      if (!scope.justProduced.delete(observation.id)) {
+        const actor = required(checkpointActor.getStore());
+        const fence = state.documentInspectionFence(observation.target, currentCheckpointGeneration());
+        const current = await readCheckpoint(actor, target, fence);
+        // Authenticate this new original read too, not just its client output.
+        const { readback: previousReadback, ...previousContext } = observation;
+        void previousReadback;
+        const confirmation = await checkpointEvidence.persist({
+          ...previousContext, id: randomUUID(), createdAt: Date.now(),
+          stateDigest: checkpointStateHash(current.checkpoint),
+          priorCheckpointId: fence.priorCheckpointId,
+          blockers: checkpointConflicts(fence.target).map((value) => ({
+            jobId: value.jobId, requestId: value.requestId, originalHash: value.jobHash,
+            catalogDigest: value.catalogDigest, barrierRef: value.evidenceReference,
+          })),
+        }, current.jobId);
+        if (confirmation.stateDigest !== observation.stateDigest)
+          fail("DOCUMENT_STATE_CHANGED", "Parameters changed after the original observation");
+        const fresh = await checkpointEvidence.verify(confirmation);
+        finalChecks.push(fresh.reverify);
+      }
+      scope.states.set(observation.id, original.checkpoint);
+      scope.finalChecks.set(observation.id, finalChecks);
+    },
+    resolution(actor, selector, observation) {
+      const target: import("../document-unlock-diagnostics").DocumentUnlockTarget = observation ? {
+        docId: required(observation.target.creationId),
+        ...(observation.target.fileId ? { docFileId: observation.target.fileId } : {}),
+      } : selector.docId ? {
+        docId: selector.docId,
+        ...(selector.docFileId ? { docFileId: selector.docFileId } : {}),
+      } : { docFileId: required(selector.docFileId) };
+      const conflicts = checkpointConflicts({
+        ...(target.docId === undefined ? {} : { creationId: target.docId }),
+        ...(target.docFileId === undefined ? {} : { fileId: target.docFileId }),
+      });
+      const unfenced = !!(state.data.blocked || state.data.localUnknown || state.data.controlBlocked);
+      const raw = conflicts.some((entry) => entry.target === null &&
+        (!("fenceKind" in entry) || entry.fenceKind !== "runtime_retired"));
+      const observed = observation && checkpointViews.getStore()?.states.get(observation.id);
+      const checkpoints = state.data.documentCheckpoints;
+      const accepted = observation && observed &&
+        observation.generation === currentCheckpointGeneration() &&
+        same(observation.blockers, conflicts.map((entry) => ({
+          jobId: entry.jobId, requestId: entry.requestId, originalHash: entry.jobHash,
+          catalogDigest: entry.catalogDigest, barrierRef: entry.evidenceReference,
+        }))) &&
+        Object.values(checkpoints?.acceptances ?? {}).some((entry) =>
+          entry.actorClientId === actor.clientId &&
+          entry.observationId === observation.id &&
+          entry.observationDigest === checkpointStateHash(observation) &&
+          checkpoints?.heads[entry.targetKey] === entry.id);
+      // Knowing a target's identity does not authorize another client's job
+      // namespace. Hidden conflicts remain in all admission/CAS checks above.
+      const visible = checkpointDisclosableConflicts(conflicts, actor.clientId, (id) => state.lookup(id));
+      return {
+        target, state: unfenced ? "execution_unfenced" : raw ? "scope_unproven" :
+          accepted && observed ? "checkpoint_current" :
+          conflicts.length || observation ? "inspection_required" : "clear",
+        executionFence: unfenced ? "unknown" : "released",
+        hasOperatorOnlyBlocker: visible.length !== conflicts.length,
+        disclosableBlockers: visible.map((entry) => ({
+          jobId: entry.jobId, requestId: entry.requestId,
+          scope: "fenceKind" in entry && entry.fenceKind === "runtime_retired" ? "runtime" as const :
+            entry.target ? "document" as const : "global" as const,
+          executionFence: "released" as const,
+        })),
+        ...(observation && observed ? { currentObservation: {
+          observationId: observation.id,
+          coverage: ["document_identity", "document_version", "parameter_readback"] as const,
+          observed, stateDigest: observation.stateDigest,
+        } } : {}),
+      };
+    },
+  });
 
   async function identifyForStartup({
     binding: startupBinding,
@@ -2257,7 +2591,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     for (const key of ["doc", "docId", "docFileId", "component", "projectId"] as const)
       if (invocation[key] !== undefined) compilerContext[key] = invocation[key];
     compilerContext.preview = invocation.preview === true;
-    const expected = prepareCadScript(invocation.operation, invocation.data, compilerContext);
+    const expected = prepareCadScript(invocation.operation, invocation.data, compilerContext,
+      undefined, undefined, job.documentInspection ? "param-checkpoint" : undefined);
     const catalog = runtimeRequire("./catalog/index") as {
       catalog: Record<string,{readOnly?: boolean}>;
     };
@@ -2300,6 +2635,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Product SDK dispatch has no original physical binding",
       );
     const physical = pinPhysicalTurn(binding, request, instance);
+    if (job.documentInspection &&
+        (checkpointGeneration(physical) !== job.documentInspection.generation ||
+         checkpointGeneration(physical) !== currentCheckpointGeneration()))
+      fail("DOCUMENT_STATE_CHANGED", "Checkpoint physical turn differs from its current native pin");
     const current = required(state.data.jobs[job.id]);
     const catalogIndex = (current.physicalDispatchCount ?? current.physicalDispatches?.length ?? 0) + 1;
     prepared.record["physicalCatalogIndex"] = catalogIndex;
@@ -5305,6 +5644,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   async function dispatchCommand(message: P.Message, clientId: string, successorAction: boolean,
   ) {
     switch (message.action) {
+      case "document-unlock": {
+        const decoded = decodeDocumentUnlockRequest(message.request);
+        const target: import("../document-unlock-diagnostics").DocumentUnlockTarget = decoded.target.docId ? {
+          docId: decoded.target.docId,
+          ...(decoded.target.docFileId ? { docFileId: decoded.target.docFileId } : {}),
+        } : { docFileId: required(decoded.target.docFileId) };
+        const request: import("../document-unlock-diagnostics").DocumentUnlockMcpRequest =
+          decoded.action === "status" ? { action: "status", target } :
+          decoded.action === "inspect" ? { action: "inspect", target, requestId: decoded.requestId } :
+          { action: "accept", target, requestId: decoded.requestId, observationId: decoded.observationId };
+        const actor = { clientId, clientTokenHash: required(clientHashes()[clientId]) };
+        return checkpointActor.run(actor, () => checkpointViews.run({
+          states: new Map(), justProduced: new Set(), finalChecks: new Map(),
+        }, () => checkpointController.handle(request, actor)));
+      }
       case "probe-saved-destination":
         return savedFixtureControl.probe(message, clientId);
       case "observe-saved-first-save":
@@ -6479,6 +6833,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   async function execute(job: P.Job, grant: ProductGrant) {
+    if (job.documentInspection) return executeCheckpointRead(job, grant);
     const directory = privateDirectory(jobDir(job.id));
     const plan = localPlans.get(job.id);
     localPlans.delete(job.id);
@@ -6762,6 +7117,115 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter, observed,
         ),
     });
+  }
+
+  async function executeCheckpointRead(job: P.Job, grant: ProductGrant) {
+    const task = checkpointReads.get(job.id);
+    if (!task) {
+      // A process restart does not reconstruct/replay a retained private read.
+      // Dispatched reads remain UNKNOWN in the existing domain recovery path.
+      if (job.dispatch?.rpcCount)
+        return hold(grant, "Original checkpoint read has no live producer");
+      return finishTurn(grant, {
+        state: "failed", code: "CHECKPOINT_READ_NOT_STARTED",
+        executionOutcome: "not_started", userScriptSubmitted: false, mayHaveMutated: false,
+      });
+    }
+    try {
+      await runCheckpointRead(job, grant, task);
+    } catch (cause) {
+      // Includes setup, durable outcome/hold and diagnostics failures. Client
+      // terminal notification must not depend on a successful disk write.
+      task.reject(cause);
+      // Keep the existing scheduler's failure route authoritative: it records a
+      // durable UNKNOWN hold if the read crossed the SDK boundary. Swallowing
+      // this would leave an active sending job without reconciliation.
+      throw cause;
+    } finally {
+      checkpointReads.delete(job.id);
+    }
+  }
+
+  async function runCheckpointRead(job: P.Job, grant: ProductGrant,
+    task: NonNullable<ReturnType<typeof checkpointReads.get>>) {
+    const directory = privateDirectory(jobDir(job.id));
+    const context: P.ProductContext = {
+      job, productTurn: grant.turn, token: randomBytes(32).toString("hex"),
+      pending: new Set(), dispatched: false, unknown: false, timedOut: false,
+      workerClosed: false, executionFailed: false, deadline: Date.now() + job.timeoutMs,
+      contextEpoch: state.data.contextEpoch || 0, turnRpcs: [], localDispatchErrors: new Set(),
+    };
+    let rejectTimeout!: (error: unknown) => void;
+    const timeout = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
+    timeout.catch(() => {});
+    context.budget = new PauseBudget(job.timeoutMs, () => {
+      context.timedOut = true;
+      let cause: unknown = Object.assign(new Error("Checkpoint read timed out"), { code: "RUN_TIMEOUT" });
+      try {
+        if (context.dispatched && lane.currentGrant() === grant)
+          hold(grant, "Checkpoint read execution deadline expired; no replay");
+      } catch (error) { cause = error; }
+      finally { rejectTimeout(cause); }
+    });
+    grant.context.worker = context;
+    let settled = false;
+    try {
+      assertCheckpointOwner();
+      checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
+      if (job.documentInspection?.generation !== currentCheckpointGeneration())
+        fail("DOCUMENT_STATE_CHANGED", "Checkpoint generation changed before its turn");
+      const send = required(task.send);
+      checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
+      send.fence();
+      const pending = physicalGrant.run(grant, () => send());
+      context.pending.add(pending);
+      void pending.finally(() => context.pending.delete(pending)).catch(() => {});
+      const result = await Promise.race([pending, timeout]);
+      lane.assertCurrent(grant);
+      const retained = state.data.jobs[job.id];
+      for (const entry of retained?.physicalDispatches ?? []) {
+        const proof = await required(options.physicalTurnQuiescence)(entry.physical);
+        lane.assertCurrent(grant);
+        if (!validRelease(proof, entry.physical, hash) ||
+            (proof as { evidenceDigest?: string }).evidenceDigest !==
+              hash(physicalReleaseInput(entry.physical, "dispatch-finally")))
+          fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint SDK turn is not irreversibly released");
+      }
+      if (!retained?.physicalDispatches?.length ||
+          !context.turnRpcs.length || context.turnRpcs.some((item) => !item.record.terminal))
+        fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint terminal RPC is unavailable");
+      settled = true;
+      checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
+      if (!isToolResult(result) || result.failed || context.executionFailed)
+        fail("DOCUMENT_STATE_CHANGED", "Checkpoint read did not return a successful result");
+      const parsed = parseNativeResult(result.text);
+      if (parsed["success"] !== true || parsed["operation"] !== "param.inspect")
+        fail("DOCUMENT_STATE_CHANGED", "Checkpoint result operation changed");
+      const checkpoint = checkpointEvidence.decode(parsed["result"], job.documentInspection!.target);
+      finishTurn(grant, {
+        state: "succeeded", code: "CHECKPOINT_READ_COMPLETE", sdkSettled: true,
+        userScriptSubmitted: false, mayHaveMutated: false, currentTurnSubmitted: true,
+      });
+      task.resolve({ jobId: job.id, checkpoint });
+    } catch (cause) {
+      task.reject(cause);
+      if (lane.currentGrant() === grant) {
+        if ((!context.dispatched && !context.unknown) || settled) {
+          const details = {
+            state: "failed", code: errorInfo(cause).code || "CHECKPOINT_READ_FAILED",
+            ...(context.dispatched ? { sdkSettled: true } : { executionOutcome: "not_started" }),
+            userScriptSubmitted: false, mayHaveMutated: false,
+          };
+          durable(path.join(directory, "outcome.json"), details);
+          finishTurn(grant, details);
+        } else hold(grant, "Checkpoint read outcome is unknown; original request is not replayed");
+      }
+    } finally {
+      context.workerClosed = true;
+      context.budget.close();
+      checkpointReads.delete(job.id);
+      diagnostics();
+    }
   }
 
   async function executePreparedProduct(
@@ -7305,6 +7769,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           )
             localPlans.delete(id);
         }
+        for (const [id, task] of checkpointReads) {
+          const job = state.data.jobs[id];
+          if (!job || ["failed", "cancelled", "expired"].includes(job.state)) {
+            checkpointReads.delete(id);
+            task.reject(Object.assign(new Error("Checkpoint read was not completed"), {
+              code: job?.code || "DOCUMENT_STATE_CHANGED",
+            }));
+          }
+        }
       },
       canSelect,
       select() {
@@ -7317,10 +7790,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       async start(job) {
         const plan = localPlans.get(job.id);
-        const turn =
+        const turn = checkpointReads.get(job.id)?.turn ?? (
           plan?.kind === "raw"
             ? plan.turn.turn
-            : (plan?.turn ?? brokerExecution.createTurnIdentity(job.id));
+            : (plan?.turn ?? brokerExecution.createTurnIdentity(job.id)));
         const grant = lane.begin(job, turn, !!job.workflowObservation);
         try {
           await execute(job, grant);
