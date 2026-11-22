@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createNativeRuntimeRebaselineAuthorityPorts } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import type { FmcadConfiguration } from "../src/api/contracts";
 
@@ -253,8 +254,28 @@ process.stdout.write(JSON.stringify(s));
   write(path.join(store, "runtime-rebaseline-current-instance.json"), {
     buildHash: currentBuild,
     configHash,
+    instance: { ...pins.process, version: "test" },
   });
-  write(path.join(store, "broker.lock"), { protocol: 2 });
+  const owner = {
+    pid: process.pid,
+    birth: "broker-process-birth",
+    nonce: "ba6a6872-c7c7-4b1a-bf1c-b9f327aa31aa",
+    protocol: 2,
+  };
+  write(path.join(store, "broker.lock"), owner);
+  write(path.join(store, `broker-lifecycle-${owner.nonce}.json`), {
+    owner,
+    buildHash: currentBuild,
+    configHash,
+    stage: "ready",
+    binding: {
+      brokerNonce: owner.nonce,
+      ownerPid: owner.pid,
+      ownerBirth: owner.birth,
+      buildHash: currentBuild,
+      stage: "startup",
+    },
+  });
   const profile = evidence("profile.json", {
     version: 1,
     clientId: "broker-client",
@@ -326,6 +347,8 @@ process.stdout.write(JSON.stringify(s));
     return api;
   };
   return {
+    config,
+    owner,
     store,
     epoch,
     profile,
@@ -396,6 +419,7 @@ for (const failure of [
       f.write(path.join(f.store, "runtime-rebaseline-current-instance.json"), {
         buildHash: failure === "wrong-build" ? "0".repeat(64) : f.currentBuild,
         configHash: failure === "wrong-config" ? "0".repeat(64) : f.configHash,
+        instance: { pid: 22, birth: "new-birth", version: "test" },
       });
     if (failure === "wrong-state-version")
       f.write(path.join(f.store, "queue-state.json"), {
@@ -463,3 +487,143 @@ test("public native-root fence waits for a non-UUID epoch pending snapshot witho
   await settled;
   assert.deepEqual(f.calls, ["register", "control-status"]);
 });
+
+test("native public start rejects a foreign Fusion process even when both runtime hashes match", async (t) => {
+  const f = await fixture(t);
+  f.write(path.join(f.store, "runtime-rebaseline-current-instance.json"), {
+    buildHash: f.currentBuild,
+    configHash: f.configHash,
+    instance: { pid: 1, birth: "foreign-physical-birth", version: "test" },
+  });
+  await assert.rejects(f.service().start(), /instance|process|identity/i);
+  assert.deepEqual(f.calls, []);
+});
+
+test("native public status rejects duplicate protocol keys in the current snapshot", async (t) => {
+  const f = await fixture(t),
+    api = f.service();
+  await api.start();
+  f.write(
+    path.join(f.store, "queue-state.json"),
+    '{"version":99,"version":1,"jobs":{}}',
+  );
+  await assert.rejects(api.query.status(), /Ambiguous admission JSON/);
+  assert.deepEqual(f.calls, ["register", "control-status"]);
+});
+
+for (const name of ["isolated-admission-epoch.json", "broker.lock"]) {
+  test(`native public fence rejects a FIFO ${name} within its deadline before native QUERY`, async (t) => {
+    const f = await fixture(t),
+      file = path.join(f.store, name);
+    fs.unlinkSync(file);
+    execFileSync("mkfifo", [file]);
+    const before = fs.readFileSync(f.trace, "utf8");
+    const child = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const assert=require('node:assert/strict');
+      const {createFmcad}=require(${JSON.stringify(load.resolve("./dist/api"))});
+      const api=createFmcad({version:1,config:${JSON.stringify(f.config)},context:{
+        clientId:'fifo-owner',instanceId:'fifo-instance',source:'system',
+        projectDirectory:${JSON.stringify(path.dirname(f.store))}
+      }});
+      assert.rejects(api.start(), /regular file/).then(()=>api.dispose()).catch(e=>{console.error(e);process.exitCode=1});
+    `,
+      ],
+      { encoding: "utf8", timeout: 1500, env: process.env },
+    );
+    assert.ifError(child.error);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(fs.readFileSync(f.trace, "utf8"), before);
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+for (const failure of [
+  "missing-instance",
+  "wrong-version",
+  "owner-mismatch",
+  "missing-owner-binding",
+  "duplicate-owner",
+]) {
+  test(`native public start refuses ${failure} independently of matching build/config`, async (t) => {
+    const f = await fixture(t);
+    if (failure === "missing-instance" || failure === "wrong-version")
+      f.write(path.join(f.store, "runtime-rebaseline-current-instance.json"), {
+        buildHash: f.currentBuild,
+        configHash: f.configHash,
+        ...(failure === "wrong-version"
+          ? {
+              instance: {
+                pid: 22,
+                birth: "new-birth",
+                version: "foreign-version",
+              },
+            }
+          : {}),
+      });
+    if (failure === "owner-mismatch")
+      f.write(path.join(f.store, "broker.lock"), {
+        ...f.owner,
+        pid: f.owner.pid + 1,
+      });
+    if (failure === "missing-owner-binding")
+      fs.unlinkSync(
+        path.join(f.store, `broker-lifecycle-${f.owner.nonce}.json`),
+      );
+    if (failure === "duplicate-owner")
+      f.write(
+        path.join(f.store, "broker.lock"),
+        `{"pid":1,${JSON.stringify(f.owner).slice(1)}`,
+      );
+    await assert.rejects(f.service().start());
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+test("native current queue decoding rejects invalid UTF-8 but preserves opaque finite numbers", async (t) => {
+  const f = await fixture(t),
+    api = f.service(),
+    file = path.join(f.store, "queue-state.json");
+  await api.start();
+  const current = fs.readFileSync(file, "utf8");
+  f.write(
+    file,
+    current.replace(
+      '"kind":"run"',
+      '"kind":"run","payload":{"distance":0.125,"large":1e100}',
+    ),
+  );
+  assert.equal((await api.query.status()).build, f.currentBuild);
+  fs.writeFileSync(
+    file,
+    Buffer.concat([
+      Buffer.from('{"version":1,"jobs":{},"controlBlocked":{"reason":"'),
+      Buffer.from([0xff]),
+      Buffer.from('"}}'),
+    ]),
+  );
+  await assert.rejects(api.query.status(), /encoded data|UTF-8/i);
+  assert.deepEqual(f.calls, ["register", "control-status", "control-status"]);
+});
+
+for (const failure of ["oversized", "invalid-utf8", "symlink"]) {
+  test(`native pointer metadata refuses ${failure} before native QUERY`, async (t) => {
+    const f = await fixture(t),
+      file = path.join(f.store, "isolated-admission-epoch.json");
+    const before = fs.readFileSync(f.trace, "utf8");
+    if (failure === "oversized")
+      fs.writeFileSync(file, Buffer.alloc(1024 * 1024 + 1, 32));
+    if (failure === "invalid-utf8") fs.writeFileSync(file, Buffer.from([0xff]));
+    if (failure === "symlink") {
+      const target = file + ".owned-test";
+      fs.renameSync(file, target);
+      fs.symlinkSync(target, file);
+    }
+    await assert.rejects(f.service().start());
+    assert.equal(fs.readFileSync(f.trace, "utf8"), before);
+    assert.deepEqual(f.calls, []);
+  });
+}

@@ -109,6 +109,42 @@ export function createQueueSession(
   let build: string;
   let ready = false;
   let nativeRoot = false;
+  function bytes(file: string, limit = 1024 * 1024): Buffer {
+    const { readBytes } =
+      require("../node-adapters/persistence/records") as typeof import("../../packages/node-adapters/src/persistence/records");
+    return readBytes(file, limit, fs, file);
+  }
+  function text(value: Buffer): string {
+    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+  }
+  function protocol(file: string): Record<string, unknown> {
+    const { decodeAdmissionJson } =
+      require("../node-adapters/execution/admission-json") as typeof import("../../packages/node-adapters/src/execution/admission-json");
+    const value = decodeAdmissionJson(text(bytes(file)));
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw Object.assign(new Error("Invalid queue protocol record"), {
+        code: "CORRUPT_STATE",
+      });
+    return value as Record<string, unknown>;
+  }
+  function nativeOwnerFile(marker: Record<string, unknown>): string {
+    if (
+      Object.keys(marker).sort().join(",") !== "birth,nonce,pid,protocol" ||
+      !Number.isSafeInteger(marker["pid"]) ||
+      (marker["pid"] as number) <= 0 ||
+      typeof marker["birth"] !== "string" ||
+      !marker["birth"] ||
+      marker["protocol"] !== 2 ||
+      typeof marker["nonce"] !== "string" ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+        marker["nonce"],
+      )
+    )
+      throw Object.assign(new Error("Invalid current broker owner identity"), {
+        code: "RUNTIME_ROOT_AUTHORITY_REQUIRED",
+      });
+    return path.join(directory, `broker-lifecycle-${marker["nonce"]}.json`);
+  }
   const rootProfile = () =>
     require("../node-adapters/execution/physical-generation-profile") as typeof import("../../packages/node-adapters/src/execution/physical-generation-profile");
   function hasNativeRootEvidence() {
@@ -130,11 +166,9 @@ export function createQueueSession(
     return possible && rootProfile().hasRuntimeRootEvidence(directory);
   }
   async function readFence() {
-    const marker = JSON.parse(
-      fs.readFileSync(path.join(directory, "broker.lock"), "utf8"),
-    );
-    if (marker.protocol !== 2)
-      throw new CompatibilityError("broker", marker.protocol, 2);
+    const marker = protocol(path.join(directory, "broker.lock"));
+    if (marker["protocol"] !== 2)
+      throw new CompatibilityError("broker", marker["protocol"], 2);
     const current: string = require("../queue-instance").buildHash();
     const configHash: string =
       require("../queue-instance").brokerConfigHash(config);
@@ -142,7 +176,28 @@ export function createQueueSession(
     let approved:
       | import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot
       | undefined;
+    let physicalVersion: string | undefined;
     if (hasNativeRoot) {
+      const lifecycle = protocol(nativeOwnerFile(marker));
+      const binding = lifecycle["binding"] as
+        Record<string, unknown> | undefined;
+      if (
+        !require("node:util").isDeepStrictEqual(lifecycle["owner"], marker) ||
+        lifecycle["stage"] !== "ready" ||
+        lifecycle["buildHash"] !== current ||
+        lifecycle["configHash"] !== configHash ||
+        binding?.["brokerNonce"] !== marker["nonce"] ||
+        binding?.["ownerPid"] !== marker["pid"] ||
+        binding?.["ownerBirth"] !== marker["birth"] ||
+        binding?.["buildHash"] !== current ||
+        binding?.["stage"] !== "startup"
+      )
+        throw Object.assign(
+          new Error(
+            "Current broker owner identity is not bound to this runtime",
+          ),
+          { code: "RUNTIME_ROOT_AUTHORITY_REQUIRED" },
+        );
       // Use the same private profile and authenticated QUERY-only reader as the
       // broker, before any legacy epoch selector. Marker presence grants nothing.
       const wiring =
@@ -150,7 +205,10 @@ export function createQueueSession(
       const physical = rootProfile().physicalBrokerPortsFromEnvironment<
         import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot
       >(process.env, {
-        runtimeRootFactory: wiring.createRuntimeRootPhysicalProfileFactory(),
+        runtimeRootFactory(profile) {
+          physicalVersion = profile.runtime.physicalRuntime.version;
+          return wiring.createRuntimeRootPhysicalWiring(profile);
+        },
       });
       if (!physical)
         throw Object.assign(
@@ -171,14 +229,18 @@ export function createQueueSession(
     const admissionDirectory: string = approved
       ? directory
       : require("../queue-isolated-epoch").isolatedEpochDirectory(directory);
-    const state = JSON.parse(
-      approved
-        ? approved.currentFiles["queue-state.json"]!.toString("utf8")
-        : fs.readFileSync(
-            path.join(admissionDirectory, "queue-state.json"),
-            "utf8",
-          ),
-    );
+    const { decodeOpaqueQueueJson } =
+      require("../node-adapters/execution/admission-json") as typeof import("../../packages/node-adapters/src/execution/admission-json");
+    const state = decodeOpaqueQueueJson(
+      text(
+        approved
+          ? approved.currentFiles["queue-state.json"]!
+          : bytes(
+              path.join(admissionDirectory, "queue-state.json"),
+              128 * 1024 * 1024,
+            ),
+      ),
+    ) as { version?: unknown };
     if (state.version !== 1)
       throw new CompatibilityError("persistedState", state.version, 1);
     const backend = approved
@@ -194,17 +256,7 @@ export function createQueueSession(
       admissionDirectory,
       approved ? "runtime-rebaseline-current-instance.json" : "instance.json",
     );
-    const { readBytes } =
-      require("../node-adapters/persistence/records") as typeof import("../../packages/node-adapters/src/persistence/records");
-    const identity =
-      backend?.current?.identity ??
-      JSON.parse(
-        approved
-          ? readBytes(identityFile, 1024 * 1024, fs, identityFile).toString(
-              "utf8",
-            )
-          : fs.readFileSync(identityFile, "utf8"),
-      );
+    const identity = backend?.current?.identity ?? protocol(identityFile);
     if (identity.configHash !== configHash)
       throw new CompatibilityError(
         "configuration",
@@ -218,6 +270,18 @@ export function createQueueSession(
       );
     if (identity.buildHash !== current)
       throw new CompatibilityError("build", identity.buildHash, current);
+    if (
+      approved &&
+      (identity.instance?.pid !== approved.record.binding.process.pid ||
+        identity.instance?.birth !== approved.record.binding.process.birth ||
+        identity.instance?.version !== physicalVersion)
+    )
+      throw Object.assign(
+        new Error(
+          "Current Fusion instance identity differs from the approved runtime process",
+        ),
+        { code: "RUNTIME_ROOT_AUTHORITY_REQUIRED" },
+      );
     return { build: current, nativeRoot: hasNativeRoot };
   }
   // Snapshot commits synchronously publish pending -> atomic snapshot -> remove
@@ -225,11 +289,17 @@ export function createQueueSession(
   // Retry only this read; never recover storage, register, or resubmit a job here.
   function metadataSample() {
     const pointerFile = path.join(directory, "isolated-admission-epoch.json");
-    const pointerBytes = fs.existsSync(pointerFile)
-      ? fs.readFileSync(pointerFile)
-      : null;
+    let pointerBytes: Buffer | null;
+    try {
+      pointerBytes = bytes(pointerFile);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      pointerBytes = null;
+    }
+    const { decodeAdmissionJson } =
+      require("../node-adapters/execution/admission-json") as typeof import("../../packages/node-adapters/src/execution/admission-json");
     const pointer = pointerBytes
-      ? (JSON.parse(pointerBytes.toString("utf8")) as {
+      ? (decodeAdmissionJson(text(pointerBytes)) as {
           epochId?: string;
         })
       : null;
@@ -279,6 +349,7 @@ export function createQueueSession(
             ...nativeFiles.map((file) => path.join(directory, file)),
             path.join(directory, "runtime-rebaseline-current-instance.json"),
             path.join(directory, "runtime-rebaseline-publication.json"),
+            nativeOwnerFile(protocol(path.join(directory, "broker.lock"))),
           ]
         : []),
       ...stores.flatMap((store) => [
