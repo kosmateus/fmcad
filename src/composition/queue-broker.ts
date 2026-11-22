@@ -12,6 +12,7 @@ import type { BrokerGrant } from "../../packages/core/src/application/broker-ses
 import {
   addinMetadataSelector,
   createBrokerLane,
+  pinPhysicalTurn,
   isAddinMetadata,
   matchMetadataEvidence,
   matchRetainedMetadataEvidence,
@@ -155,8 +156,7 @@ function errorInfo(value: unknown): P.BrokerError {
 const {
   retainPythonOrigin,
   prepareWireArtifact,
-  classifyPythonRpc,
-} = load("./python");
+  classifyPythonRpc } = load("./python");
 const { createProductionQueueAdmission } = load("./queue-admission");
 const { atomicObservationIdentityHash, assertAtomicObservationWire } = load(
   "./atomic-observation-binding",
@@ -465,8 +465,10 @@ export function matching(
   return reply;
 }
 
-const { responseForCaller, decodeBoundPublicPythonResponse, verifyBoundRemoteReceipt } =
-  runtimeRequire("./dist/composition/queue-public-python-result") as
+const { responseForCaller, decodeBoundPublicPythonResponse, verifyBoundRemoteReceipt,
+} =
+  runtimeRequire("./dist/composition/queue-public-python-result",
+) as
     typeof import("./queue-public-python-result");
 
 function privateDirectory(dir: string) {
@@ -491,6 +493,25 @@ function commandEntry(argv: string[]) {
 }
 
 export async function serve(cfg: P.Config, options: P.Options = {}) {
+  const physicalIsolation = [
+    options.bindPhysicalTurn,
+    options.withPhysicalTurn,
+    options.physicalTurnQuiescence,
+    options.authorizePhysicalRequest,
+    options.preparePhysicalGeneration,
+  ].some((value) => value !== undefined);
+  if (
+    physicalIsolation &&
+    ![
+      options.bindPhysicalTurn,
+      options.withPhysicalTurn,
+      options.physicalTurnQuiescence,
+    ].every((value) => typeof value === "function")
+  )
+    fail(
+      "PHYSICAL_CAPABILITY_INCOMPLETE",
+      "Physical isolation requires binder, dispatch scope and quiescence capability",
+    );
   if (options.nativePath && !options.createBackend)
     fail(
       "INVALID_BACKEND",
@@ -517,6 +538,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     cfg.backend,
     createAddinAdmission,
     { transport: cfg.transport, curlPath: admissionCurlPath },
+    options.authorizePhysicalRequest,
   );
   if (!options.createBackend)
     assertPlatformCapability(detectPlatform(), "fusion");
@@ -754,7 +776,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ? effectiveBackend.identity.buildHash
         : codeHash,
     );
-  (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+  (runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
+    ) as
     typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataReopen(
     dir, options.addinMetadataAdmission, options.deadEpochSuccessorNonce,
   );
@@ -804,6 +827,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
   });
   const { owner: marker, lock, close } = lifetime;
+  try {
+    lifetime.assertOwner();
+    await options.preparePhysicalGeneration?.({
+      directory: dir, owner: marker, buildHash: codeHash, configHash,
+      assertBrokerOwner: lifetime.assertOwner,
+    });
+    lifetime.assertOwner();
+  } catch (error) {
+    lifetime.abortBeforeInitialize();
+    throw error;
+  }
   const { successorRuntime, migrationSnapshotHash } = startupClaims;
   const executionRecords = createBrokerRecords(dir);
   const currentAuditScopeFile = path.join(
@@ -818,6 +852,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ).createPhaseTimingProducer();
   const measuredStateOptions = {
     ...options.stateOptions,
+    physicalCatalogDirectory: dir,
     onCommittedSnapshot: phaseTimings.queueCommitted,
   };
   const state = openIsolatedEpoch(
@@ -830,15 +865,28 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       : measuredStateOptions,
   );
+  function assertPhysicalIsolationAuthority() {
+    if (!physicalIsolation && Object.keys(state.data.quarantined ?? {}).length)
+      fail("PHYSICAL_CAPABILITY_REQUIRED",
+        "Persisted quarantine permits only historical inspection without current physical capabilities");
+  }
+  try {
+    assertPhysicalIsolationAuthority();
+  } catch (error) {
+    lifetime.abortBeforeInitialize();
+    throw error;
+  }
   const metadataSuccessorAuthority = successorRuntime?.authority ??
     (state.epoch?.succession
-      ? (runtimeRequire("./queue-epoch-lineage") as typeof import("../queue-epoch-lineage"))
+      ? (runtimeRequire("./queue-epoch-lineage",
+          ) as typeof import("../queue-epoch-lineage"))
         .successionAuthority(dir, state.epoch.succession).authority
       : undefined);
   const frozenMetadataScope = metadataSuccessorAuthority && "frozenMetadata" in metadataSuccessorAuthority
     ? metadataSuccessorAuthority.frozenMetadata : undefined;
   if (frozenMetadataScope !== undefined)
-    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
+      ) as
       typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataProvisioning(
       frozenMetadataScope, options.addinMetadataAdmission,
     );
@@ -848,21 +896,23 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (frozenMetadataScope === undefined)
       return epochAdmission(state, request, clientHashes());
     if (!request || !frozenMetadataAuthority)
-      fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "A bound fresh fixture request is required");
-    const admission = runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+      fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "A bound fresh fixture request is required",
+      );
+    const admission = runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
+    ) as
       typeof import("./queue-frozen-metadata-admission");
     if (request.kind === "command") {
       admission.proveFrozenFirstSave(dir, frozenMetadataAuthority, request);
       return epochAdmission(state, request, clientHashes());
     }
     const wire = rpcPayload(request.rpc?.payload || request.payload);
-    (runtimeRequire("./dist/composition/queue-frozen-metadata-profile") as
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-profile",
+      ) as
       typeof import("./queue-frozen-metadata-profile")).assertFrozenMetadataRequest(
       frozenMetadataScope, {
         clientId: request.clientId, requestId: request.requestId, kind: request.kind,
         metadata: isAddinMetadata(wire),
-      },
-    );
+      });
     const selector = addinMetadataSelector(wire);
     admission.proveFrozenMetadataDocument(dir, frozenMetadataAuthority, {
       clientId: request.clientId, clientTokenHash: required(clientHashes()[request.clientId]),
@@ -870,16 +920,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     });
     return null;
   }
-  function assertFrozenMetadataObservation(request: P.Request, wire: P.Rpc, observed: P.Instance) {
+  function assertFrozenMetadataObservation(request: P.Request, wire: P.Rpc, observed: P.Instance,
+  ) {
     if (frozenMetadataScope === undefined) return;
     if (!frozenMetadataAuthority)
-      fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "The original metadata authority is required");
+      fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "The original metadata authority is required",
+      );
     const selector = addinMetadataSelector(wire);
-    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
+      ) as
       typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataProvisioning(
       frozenMetadataScope, options.addinMetadataAdmission,
     );
-    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
+      ) as
       typeof import("./queue-frozen-metadata-admission")).proveFrozenMetadataDocument(
       dir, frozenMetadataAuthority, {
         clientId: request.clientId, clientTokenHash: required(clientHashes()[request.clientId]),
@@ -975,6 +1029,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           version: load("../package.json").version,
           requestTimeout: load("./request-timeout").requestTimeout,
           bridgeSource: load("./addin-bridge").addinBridgeSource,
+          ...(options.authorizePhysicalRequest
+            ? { authorizePhysicalRequest: options.authorizePhysicalRequest } : {}),
         },
       );
     });
@@ -1189,6 +1245,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
   type ProductGrant = BrokerGrant<P.LaneContext>;
+  const { quarantineTarget, validRelease } = runtimeRequire(
+    "./dist/core/domain/queue-quarantine",
+  ) as typeof import("../../packages/core/src/domain/queue-quarantine");
+  let quiescencePending = false;
+  let nextQuiescenceCheck = 0;
   const { createBrokerSession } = runtimeRequire(
     "./dist/core/application/broker-session",
   ) as typeof import("../../packages/core/src/application/broker-session");
@@ -1229,7 +1290,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return send();
   }
   const preparingJob = new AsyncLocalStorage<
-    { job: P.Job; turn: TurnIdentity } | false
+    { job: P.Job; turn: TurnIdentity; compiledScope?: Record<string,unknown> } | false
   >();
   const preparingSignal = new AsyncLocalStorage<AbortSignal>();
   function localCheckOptions() {
@@ -1239,7 +1300,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   type Flights = { preflight: P.Flight; postflight: P.Flight };
   type OwnedTurn = PreparedTurn<P.PreparedCall>;
   type PostPreparation =
-    | { kind: "owned"; turn: OwnedTurn; metadataObservation?: P.Instance | undefined }
+    | { kind: "owned"; turn: OwnedTurn; metadataObservation?: P.Instance | undefined;
+      }
     | { kind: "unowned"; checked: P.PreparedPost };
   type LocalPlan = { flights: Flights | null } & (
     | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
@@ -1285,7 +1347,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const ready: PostPreparation = owned
         ? {
             kind: "owned",
-            turn: await prepareOwnedTurn(outgoing, owned.job, owned.turn, origin),
+            turn: await prepareOwnedTurn(outgoing, owned.job, owned.turn, origin,
+            ),
           }
         : {
             kind: "unowned",
@@ -1399,9 +1462,51 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     typeof client.withRequest === "function"
       ? client.withRequest(settings, action)
       : action();
+  function systemReadTurn(probe: P.ProbeOptions, purpose: string) {
+    let consumed = false;
+    const physicalRequestId = typeof probe.binding?.rpcId === "string"
+      ? probe.binding.rpcId : randomUUID();
+    const selector = probe.documentSelector ?? {metadataOnly: true as const};
+    const jobId = typeof probe.binding?.jobId === "string" ? probe.binding.jobId : undefined;
+    const request: P.PhysicalTurnRequest = Object.freeze({
+      kind: "system-read", brokerNonce: marker.nonce, jobId: jobId ?? "system:" + marker.nonce,
+      requestId: physicalRequestId, clientId: "broker:" + marker.nonce,
+      requestHash: hash(canonical({purpose, physicalRequestId, selector, buildHash: codeHash,
+        }),
+      ),
+      grantGeneration: lane.snapshot().generation,
+      physicalRequestId, documentSelector: Object.freeze({...selector}),
+    });
+    return async <T>(send: () => Promise<T>): Promise<T> => {
+      if (!physicalIsolation) return send();
+      if (consumed) fail("PHYSICAL_BINDING_REUSED", "A system read may be dispatched only once",
+        );
+      consumed = true;
+      const candidate = required(options.bindPhysicalTurn)(request);
+      if (!candidate) fail("PHYSICAL_BINDING_MISSING", "System read has no exact physical binding",
+        );
+      const physical = pinPhysicalTurn(candidate, request);
+      const currentJob = jobId ? state.data.jobs[jobId] : undefined;
+      const catalogIndex = currentJob && state.data.active === currentJob.id &&
+        ["running","sending"].includes(currentJob.state)
+        ? (currentJob.physicalDispatchCount ?? currentJob.physicalDispatches?.length ?? 0) + 1
+        : undefined;
+      durable(path.join(privateDirectory(path.join(dir, "physical-reads")), hash(physicalRequestId) + ".json",
+        ), {
+        version: 1, purpose, request, physicalTurn: physical,
+        ...(catalogIndex === undefined ? {} : {catalogIndex}),
+        receiptPath: probe.receiptPath ?? null,
+      }, true,
+      );
+      if (currentJob && catalogIndex !== undefined)
+        registerPhysicalDispatch(currentJob, request, physical, catalogIndex);
+      return required(options.withPhysicalTurn)(physical, send);
+    };
+  }
   // Transitional probe orchestration still adjusts its client timeout. Give it
   // invocation-local settings, never the immutable physical adapter config.
   const instanceProbe = (options: P.ProbeOptions) => {
+    const read = systemReadTurn(options, "instance-probe");
     const server = { timeoutMs: client.server.timeoutMs };
     const port: {
       server: { timeoutMs: number };
@@ -1413,7 +1518,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         withRequest({ timeoutMs: server.timeoutMs }, () => {
           // Without a prepared wire call, entry to the injected tool port is
           // the last boundary where the broker can prove the probe was unsent.
-          return sendProbe(() => client.callTool(...args));
+          return read(() => sendProbe(() => client.callTool(...args)));
         }),
     };
     if (client.prepareCallTool)
@@ -1427,7 +1532,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 send.dispatchBoundary !== "broker-post"
               )
                 send.fence();
-              return sendProbe(send, send.dispatchBoundary);
+               return read(() => sendProbe(send, send.dispatchBoundary));
             }),
           { fence: () => send.fence() },
         );
@@ -1467,6 +1572,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           fail("WORKER_CLOSED", "Local worker closed during preparation");
       },
       prepare(binding, receiptPath, diagnosticPath) {
+        const read = systemReadTurn({
+          binding, receiptPath, documentSelector: selector,
+        }, "job-flight",
+        );
         const server = { timeoutMs: Math.min(client.server.timeoutMs, 15000) };
         const prepare = () =>
           preparingJob.run(false, () =>
@@ -1483,7 +1592,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                       withRequest({ timeoutMs: server.timeoutMs }, () => {
                         if (send.dispatchBoundary !== "broker-post")
                           send.fence();
-                        return sendProbe(send, send.dispatchBoundary);
+                        return read(() => sendProbe(send, send.dispatchBoundary),
+                        );
                       }),
                     { fence: () => send.fence() },
                   );
@@ -1879,8 +1989,32 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       phaseTimings.localPhase(state.epoch?.root ?? dir, job, phase);
     },
     async checkSdkRequest(message, signal) {
+      assertPhysicalIsolationAuthority();
       const job = required(state.data.jobs[message.jobId]);
       const turn = brokerExecution.createTurnIdentity(job.id);
+      const compiled = physicalIsolation && job.request.kind === "command" &&
+        quarantineTarget(job.request) ? constrainedCadProgram(job) : null;
+      if (compiled && (message.method !== "callTool" ||
+          (message.args[1] && message.args[1] !== "fusion_mcp_execute") ||
+          object(object(message.args[0])["object"])["script"] !== compiled.script))
+        fail("PHYSICAL_SCOPE_MISMATCH", "Actual pre-wrapper source differs from the broker-compiled constrained program");
+      const envelope = compiled ? {
+        featureType:"script",object:{script:compiled.script,readOnly:compiled.readOnly},
+      } : null;
+      if (compiled && (message.args.length !== 3 ||
+          message.args[1] !== "fusion_mcp_execute" || !same(message.args[0],envelope)))
+        fail("PHYSICAL_ENVELOPE_MISMATCH",
+          "Actual call differs from the compiled CAD envelope, including featureType and readOnly");
+      if (compiled && !same(message.args[2],compiled.manifest))
+        fail("PHYSICAL_PROVENANCE_MISMATCH",
+          "Actual inventory differs from the trusted compiler artifact provenance");
+      const adapterArgs = compiled
+        ? [envelope,"fusion_mcp_execute",compiled.manifest]
+        : message.args;
+      const compiledScope = compiled ? {
+        producer:"compiled-cad-v1", operation:compiled.operation,sourceHash:hash(compiled.script),
+        buildHash:codeHash,target:compiled.target,
+      } : undefined;
       const prepare =
         message.method === "callTool"
           ? client.prepareCallTool
@@ -1888,9 +2022,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ? client.prepareUiGuardedScript
             : client.prepareListTools;
       if (prepare) {
-        const send = await preparingJob.run({ job, turn }, () =>
+        const send = await preparingJob.run({ job, turn, ...(compiledScope ? {compiledScope} : {}) }, () =>
           preparingSignal.run(signal, () =>
-            prepare.apply(client, message.args),
+            prepare.apply(client, adapterArgs),
           ),
         );
         if (phased.pending(job.id)?.message !== message)
@@ -1905,7 +2039,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "WORKER_CLOSED",
             "Local worker closed during final artifact preparation",
           );
-        localPlans.set(job.id, { kind: "worker", turn, message, send, flights });
+        localPlans.set(job.id, { kind: "worker", turn, message, send, flights,
+        });
         return;
       }
       // Injected test clients have no native prepare methods. Snapshot once for
@@ -1961,6 +2096,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       diagnostics();
     },
     onUnknown(job, reason) {
+      if (state.data.quarantined?.[job.id]) return;
       const turnGrant = lane.currentGrant();
       if (turnGrant?.jobId === job.id && state.data.active === job.id)
         hold(turnGrant, reason);
@@ -2007,6 +2143,154 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       })
     )
       diagnostics();
+  }
+  async function quarantineReleasedTurn() {
+    const port = options.physicalTurnQuiescence;
+    const context = lane.heldContext();
+    const jobId = context?.job.id ?? state.data.blocked?.id;
+    const job = jobId ? state.data.jobs[jobId] : undefined;
+    if (
+      !port || quiescencePending || Date.now() < nextQuiescenceCheck ||
+      !job || context?.executing || state.data.controlBlocked ||
+      state.data.localUnknown || state.data.blocked?.id !== job.id
+    ) return;
+    const originals = job.physicalDispatches;
+    if (!originals?.length) return;
+    const catalogDigest = hash(JSON.stringify(originals));
+    const request = {
+      jobId: job.id, requestId: job.requestId,
+      clientId: job.clientId, requestHash: job.hash,
+    };
+    const recoveryHold = lane.captureRecovery();
+    quiescencePending = true;
+    nextQuiescenceCheck = Date.now() + 250;
+    try {
+      const proofs = await Promise.all(
+        originals.map(async (entry) => {
+          const proof = await port(pinPhysicalTurn(entry.physical, entry.request));
+          if (
+            proof.state !== "released" ||
+            !validRelease(proof, entry.physical, hash)
+          ) return null;
+          return proof;
+        }),
+      );
+      recoveryHold.assertCurrent();
+      if (
+        lane.heldContext() !== context || context?.executing ||
+        state.data.blocked?.id !== job.id ||
+        hash(JSON.stringify(state.data.jobs[job.id]?.physicalDispatches)) !==
+          catalogDigest || proofs.some((proof) => !proof)
+      ) return;
+      const proof = proofs[0]!;
+      recoveryHold.settle(() => state.quarantineUnknown(request.jobId, {
+        jobId: request.jobId, requestId: request.requestId,
+        clientId: request.clientId, jobHash: request.requestHash,
+        target: quarantineTarget(job.request),
+        catalogDigest,
+        evidenceReference: proof.physicalEvidenceReference,
+        evidenceDigest: proof.evidenceDigest,
+        binding: { ...request, physicalTurns: proofs },
+      }));
+      diagnostics();
+    } catch {
+      // No proof, stale grant, or failed durable publication never authorizes
+      // releasing ownership or rewriting the UNKNOWN result.
+    } finally {
+      quiescencePending = false;
+    }
+  }
+  function constrainedCadProgram(job: P.Job) {
+    const {prepareRequest} = runtimeRequire("./dist/composition/execution-request") as
+      typeof import("./execution-request");
+    const commands = runtimeRequire("./dist/core/application/cad/worker-command") as
+      typeof import("../../packages/core/src/application/cad/worker-command");
+    const decoded = commands.decodeCadWorkerInvocation(prepareRequest({
+      request: {
+        ...job.request, cwd: required(job.request.cwd),
+        argv: required(job.request.argv),
+      },
+    }).payload);
+    const invocation = decoded.kind === "cad-command" ? decoded.invocation :
+      decoded.kind === "cad" ? decoded : null;
+    if (
+      !invocation || !["param.inspect", "param.apply"].includes(invocation.operation) ||
+      !same(commands.cadWorkerPolicyArguments(decoded),
+        job.request.argv?.[0] === "cad" ? job.request.argv : ["cad", ...(job.request.argv ?? [])])
+    ) fail("PHYSICAL_SCOPE_MISMATCH", "Document isolation requires a bounded compiled CAD invocation");
+    const {prepareCadScript} = runtimeRequire("./dist/composition/cad") as
+      typeof import("./cad");
+    const compilerContext: import("@fmcad/core").CadContext = {};
+    for (const key of ["doc", "docId", "docFileId", "component", "projectId"] as const)
+      if (invocation[key] !== undefined) compilerContext[key] = invocation[key];
+    compilerContext.preview = invocation.preview === true;
+    const expected = prepareCadScript(invocation.operation, invocation.data, compilerContext);
+    const catalog = runtimeRequire("./catalog/index") as {
+      catalog: Record<string,{readOnly?: boolean}>;
+    };
+    return {
+      script: expected.script, operation: invocation.operation,
+      manifest: load("./python").pythonArtifactManifest(expected),
+      target: quarantineTarget(job.request),
+      readOnly: catalog.catalog[invocation.operation]?.readOnly === true,
+    };
+  }
+  function bindProductPhysicalTurn(grant: ProductGrant, prepared: P.PreparedCall,
+  ) {
+    if (!physicalIsolation) return;
+    const job = grant.context.job;
+    const constrainedTarget = quarantineTarget(job.request);
+    if (constrainedTarget && !prepared.metadataProof) {
+      const compiled = constrainedCadProgram(job);
+      const scope = object(prepared.record.binding["documentScope"]);
+      if (scope["producer"] !== "compiled-cad-v1" ||
+          scope["operation"] !== compiled.operation ||
+          scope["sourceHash"] !== hash(compiled.script) ||
+          scope["wireSourceHash"] !== prepared.record.binding.sourceHash ||
+          scope["buildHash"] !== codeHash || !same(scope["target"],constrainedTarget))
+        fail("PHYSICAL_SCOPE_MISMATCH", "SDK source lacks the broker-verified pre-wrapper compiler scope");
+    }
+    const selector = prepared.metadataProof
+      ? addinMetadataSelector(prepared.outgoing)
+      : (constrainedTarget ?? documentSelector(job));
+    const request: P.PhysicalTurnRequest = Object.freeze({
+      kind: "product", brokerNonce: marker.nonce,
+      jobId: job.id, requestId: job.requestId, clientId: job.clientId,
+      requestHash: job.hash, grantGeneration: grant.generation,
+      physicalRequestId: prepared.rpcId,
+      documentSelector: selector ? Object.freeze({ ...selector }) : undefined,
+    });
+    const binding = required(options.bindPhysicalTurn)(request);
+    if (!binding)
+      fail(
+        "PHYSICAL_BINDING_MISSING",
+        "Product SDK dispatch has no original physical binding",
+      );
+    const physical = pinPhysicalTurn(binding, request, instance);
+    const current = required(state.data.jobs[job.id]);
+    const catalogIndex = (current.physicalDispatchCount ?? current.physicalDispatches?.length ?? 0) + 1;
+    prepared.record["physicalCatalogIndex"] = catalogIndex;
+    prepared.record.binding["physicalTurn"] = physical;
+    return {request,physical,catalogIndex};
+  }
+  function registerPhysicalDispatch(
+    job: P.Job,
+    request: P.PhysicalTurnRequest,
+    physical: P.PhysicalTurnBinding,
+    catalogIndex: number,
+    dispatch?: {rpcCount:number;completedCount:number;rpcId:string},
+  ) {
+    const body = { request, physical, target: quarantineTarget(job.request), catalogIndex };
+    const intentReference = `physical-turn-${hash(physical.turnId)}.json`;
+    const file = path.join(privateDirectory(jobDir(job.id)), intentReference);
+    durable(file, body, true);
+    const entry = {
+      ...body,
+      intentReference,
+      intentDigest: hash(fs.readFileSync(file)),
+    };
+    if (dispatch) state.markDispatch(job.id,dispatch,entry);
+    else state.recordPhysicalDispatch(job.id,entry);
   }
   function nativeActivity(context: P.Context) {
     if (context.nativeActivityId) return;
@@ -2109,7 +2393,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         start() {
           assertCurrent();
           if (sent)
-            fail("PREPARED_RPC_CONSUMED", "An instance probe cannot be replayed");
+            fail("PREPARED_RPC_CONSUMED", "An instance probe cannot be replayed",
+            );
           sent = true;
           writeIntent();
         },
@@ -2649,8 +2934,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         scope.rpcJournal = journal;
       },
       send(prepared) {
-        return withRequest({ timeoutMs: prepared.dispatchTimeoutMs }, () =>
+        const read = systemReadTurn({
+          binding: prepared.record.binding,
+          receiptPath: required(prepared.record.receipt),
+          documentSelector: {creationId: scope.prepared.identity.resolvedIdentity.creationId,
+            },
+        }, "atomic-holder-status",
+        );
+        return read(() => withRequest({ timeoutMs: prepared.dispatchTimeoutMs }, () =>
           originalPost(prepared.outgoing, sessionId),
+          ),
         );
       },
       settle(prepared, response: P.Response) {
@@ -2816,6 +3109,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         bindSource(source, nativePublicPython) {
           record.receipt = path.join(jobDir(job.id), `remote-${rpcId}.json`);
           binding.sourceHash = hash(source);
+          const local = preparingJob.getStore();
+          if (local && local.job.id === job.id && local.compiledScope)
+            binding["documentScope"] = {
+              ...local.compiledScope,wireSourceHash:binding.sourceHash,
+            };
           if (nativePublicPython)
             binding["publicPythonResultSchema"] = "fmcad-public-python-result-v1";
         },
@@ -2857,7 +3155,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     let prepared: P.PreparedCall;
     if (rawMetadata) {
       if (!metadataAdmission)
-        fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned");
+        fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned",
+        );
       const metadataProof = prepareMetadataWire(outgoing);
       record.dispatchClass = "addin-metadata";
       prepared = {
@@ -2882,7 +3181,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
     // Test observer may suspend local preparation, never replace checking.
     if (!prepared.metadataProof) await options.testCheckPrepared?.(prepared);
-    (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
+    (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing,
+    );
     verifyPreparedJob(job, prepared.contextEpoch);
     return prepared;
   }
@@ -3033,7 +3333,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ready?.kind === "owned" ||
         (!administrative && activeContext()?.productTurn)
       )
-        fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
+        fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC",
+        );
       return unownedPost(payload, sessionId, requestOptions, ready?.checked);
     }
     const context = required(grant.context.worker);
@@ -3099,7 +3400,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       check(prepared) {
         try {
-          (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
+          (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing,
+          );
         } catch (error) {
           if (context.job.kind === "rpc")
             writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3184,15 +3486,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             );
           if (prepared.metadataProof) {
             if (!metadataAdmission || ready?.kind !== "owned" || context.job.kind !== "rpc")
-              fail("PREPARED_RPC_UNAVAILABLE", "Missing owned ADDIN metadata route");
+              fail("PREPARED_RPC_UNAVAILABLE", "Missing owned ADDIN metadata route",
+              );
             if (
               record.binding.rpcId !== rpcId ||
               record.wireRequest?.id !== `fmcad:${rpcId}` ||
               prepared.metadataProof.wire.id !== record.wireRequest.id
             )
-              fail("PREPARED_RPC_UNAVAILABLE", "ADDIN metadata identity changed before send");
+              fail("PREPARED_RPC_UNAVAILABLE", "ADDIN metadata identity changed before send",
+              );
             assertFrozenMetadataObservation(context.job.request, prepared.metadataProof.wire,
-              required(ready.metadataObservation));
+              required(ready.metadataObservation),
+            );
             admission = metadataAdmission.bind(
               prepared.metadataProof.wire,
               ready.metadataObservation,
@@ -3206,13 +3511,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           const before = state.status(context.job.id).dispatch;
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
-          const journal = executionRecords.createRpcIntent(context.job.id, record);
+          const physical = bindProductPhysicalTurn(grant, prepared);
+          const journal = executionRecords.createRpcIntent(context.job.id, record,
+          );
           context.turnRpcs.push({ record, journal });
-          state.markDispatch(context.job.id, {
+          const dispatch = {
             rpcCount: count,
             completedCount: before?.completedCount || 0,
             rpcId,
-          });
+          };
+          if (physical)
+            registerPhysicalDispatch(context.job,physical.request,physical.physical,physical.catalogIndex,dispatch);
+          else state.markDispatch(context.job.id,dispatch);
           context.dispatched = true;
           Object.assign(prepared, { journal, dispatchRemaining });
           if (context.job.kind === "rpc") {
@@ -3241,6 +3551,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       },
       send: async (prepared) => {
+        assertPhysicalIsolationAuthority();
         const startedAt = Date.now();
         debugDispatchStarted.set(prepared, startedAt);
         writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3258,8 +3569,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         try {
           if (prepared.metadataProof)
             assertFrozenMetadataObservation(context.job.request, prepared.metadataProof.wire,
-              required(ready?.kind === "owned" ? ready.metadataObservation : undefined));
-          const response = prepared.metadataProof
+              required(ready?.kind === "owned" ? ready.metadataObservation : undefined,
+              ),
+            );
+          const sendPhysical = async () => prepared.metadataProof
             ? await postAddinAdmission(
                 required(admission).scope,
                 prepared.metadataProof.wire,
@@ -3269,7 +3582,25 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             : await withRequest(
                 { timeoutMs: required(prepared.dispatchRemaining) },
                 () => originalPost(prepared.outgoing, sessionId, requestOptions),
-              );
+               );
+          const bound = state.data.jobs[
+            context.job.id
+          ]?.physicalDispatches?.find(
+            (entry) => entry.physical.turnId === prepared.rpcId,
+          )?.physical;
+          if (
+            physicalIsolation &&
+            (!bound || !same(bound, prepared.record.binding["physicalTurn"]))
+          )
+            fail(
+              "PHYSICAL_BINDING_MISSING",
+              "Every physical product dispatch requires its complete original intent",
+            );
+          const response = physicalIsolation
+            ? await required(options.withPhysicalTurn)(
+                required(bound), sendPhysical,
+              )
+            : await sendPhysical();
           if (prepared.metadataProof) receivedAdmission = response;
           writeRequestTrace(context.job.request, context.job.clientId, {
             stage: "sdk-dispatch",
@@ -3368,7 +3699,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         let reply: P.Reply | null;
         try {
           reply = prepared.metadataProof
-            ? matchMetadataEvidence(response, required(admission).binding, record.binding.rpcId, outgoing.id, decodeAdmissionJson)
+            ? matchMetadataEvidence(response, required(admission).binding, record.binding.rpcId, outgoing.id, decodeAdmissionJson,
+              )
             : matching(client, response, outgoing);
         } catch (error) {
           if (trace)
@@ -3453,7 +3785,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ? { status: response.status, raw: "" } : response;
         const returned = record.binding["publicPythonResultSchema"] &&
           receipt?.outcome === "succeeded"
-          ? decodeBoundPublicPythonResponse(record, receipt, payload, callerResponse, reply)
+          ? decodeBoundPublicPythonResponse(record, receipt, payload, callerResponse, reply,
+              )
           : responseForCaller(callerResponse, payload, reply);
         const declaration = nativeReceipts.start(record);
         const nativeEnd = declaration
@@ -3510,7 +3843,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 : undefined);
             if (
               response &&
-              !executionRecords.evidence.readReceivedResponse(context.job.id, prepared.rpcId)
+              !executionRecords.evidence.readReceivedResponse(context.job.id, prepared.rpcId,
+              )
             )
               executionRecords.recordReceivedResponse(context.job.id, {
                 version: 1,
@@ -4145,8 +4479,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
     admit: (send) => gate.administrative(() => gate.run(send)),
     check: (payload, artifact) => pythonAdmission.check(payload, artifact),
-    post: (payload, sessionId) =>
-      withRequest({ timeoutMs: 30000 }, () => originalPost(payload, sessionId)),
+    post: (payload, sessionId, physicalContext) => {
+      if (["initialize", "notifications/initialized"].includes(payload.method))
+        return withRequest({ timeoutMs: 30000 }, () => originalPost(payload, sessionId),
+        );
+      if (!physicalContext)
+        fail("PHYSICAL_BINDING_MISSING", "Audit SDK dispatch requires its original read binding",
+        );
+      const read = systemReadTurn(physicalContext, "atomic-recovery-audit");
+      return read(() => withRequest({ timeoutMs: 30000 }, () => originalPost(payload, sessionId),
+        ),
+      );
+    },
     match: (response, payload) => matching(client, response, payload),
     remoteReceipt: (record) => remoteReceipt(record, false),
     sendScript: (scope, script) =>
@@ -4465,7 +4809,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (error.code !== "ENOENT") throw error;
     }
     if (priorAcceptance) {
-      atomicAcceptance.requirePersistedOwnerAcceptance(priorAcceptance, ownerRequest);
+      atomicAcceptance.requirePersistedOwnerAcceptance(priorAcceptance, ownerRequest,
+      );
       const priorObserver = state.data.jobs[priorAcceptance.observerJobId];
       const expectedProofPath = priorObserver
         ? path.join(jobDir(priorObserver.id), "atomic-observation-proof.json")
@@ -4480,7 +4825,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         },
       );
       const persistedProof = readAtomicProofRecord(expectedProofPath);
-      atomicAcceptance.requirePersistedAtomicProof(priorAcceptance, persistedProof);
+      atomicAcceptance.requirePersistedAtomicProof(priorAcceptance, persistedProof,
+      );
       const priorProof = persistedProof.value;
       const priorRemote = remoteReceipt(
         {
@@ -4494,7 +4840,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const persistedFacts = () => ({
         ...queueFacts(),
         otherNonterminal: atomicAcceptance.hasOtherNonterminal(
-          Object.values(state.data.jobs).map(({ id, state }) => ({ id, state })),
+          Object.values(state.data.jobs).map(({ id, state }) => ({ id, state,
+          })),
           target.id,
           priorObserverId,
         ),
@@ -4550,7 +4897,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return { ...priorAcceptance, job: result };
     }
     atomicAcceptance.requireFreshAtomicAdmission(target.id, {
-      candidate: isAtomicObservationCandidate(target, target.request.buildHash, observationScopeConfig),
+      candidate: isAtomicObservationCandidate(target, target.request.buildHash, observationScopeConfig,
+      ),
       fence: queueFacts(),
       active: active && {
         jobId: active.job?.id,
@@ -4558,7 +4906,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         pending: !!active.pending.size,
         childRunning: !!active.child && !active.workerClosed,
       },
-      otherActivity: [...gate.active.keys()].some((key) => key !== active?.nativeActivityId),
+      otherActivity: [...gate.active.keys()].some((key) => key !== active?.nativeActivityId,
+      ),
     });
     const identity = readJson<P.Identity>(identityFile);
     atomicAcceptance.requireFreshAtomicInstance(
@@ -4606,7 +4955,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
     atomicAcceptance.requireFreshAtomicRemoteBinding(proof, {
       instance: identity.instance,
-      receiptPath: path.join(jobDir(observer.id), `atomic-observation-${proof.rpcId}.receipt.json`),
+      receiptPath: path.join(jobDir(observer.id), `atomic-observation-${proof.rpcId}.receipt.json`,
+      ),
       observerId: observer.id,
       targetId: target.id,
       build: codeHash,
@@ -4699,7 +5049,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         generation: data.controlGeneration || 0,
         contextEpoch: data.contextEpoch || 0,
         activeJobId: data.active,
-        blockedJobId: data.blocked?.id ?? null,
+        blockedJobId: data.quarantined?.[id] ? id : (data.blocked?.id ?? null),
       };
     } catch {
       // Unreadable durable ownership or state is not recovery authority.
@@ -4712,8 +5062,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const wire = record.wireRequest || record.request;
     if (usesRetainedMetadataEvidence(record)) {
       const { jobId, rpcId } = record.binding;
-      const original = executionRecords.evidence.readReceivedResponse(jobId, rpcId);
-      return matchRetainedMetadataEvidence(record, original, decodeAdmissionJson);
+      const original = executionRecords.evidence.readReceivedResponse(jobId, rpcId,
+      );
+      return matchRetainedMetadataEvidence(record, original, decodeAdmissionJson,
+      );
     }
     return matching(client, record.response, wire);
   }
@@ -4796,7 +5148,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               : response;
           },
           publishOutput(response) {
-            durable(responsePath(dir, job, "rpc-result.json", true), response);
+            durable(responsePath(dir, job, "rpc-result.json", true), response,
+              );
           },
           successfulOutput(response) {
             const reply = object(client._parse(response.raw));
@@ -4816,7 +5169,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             diagnostics();
             return result;
           },
-        });
+        },
+        );
       },
     });
   }
@@ -4915,7 +5269,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       };
   }
 
-  async function dispatchCommand(message: P.Message, clientId: string, successorAction: boolean) {
+  async function dispatchCommand(message: P.Message, clientId: string, successorAction: boolean,
+  ) {
     switch (message.action) {
       case "probe-saved-destination":
         return savedFixtureControl.probe(message, clientId);
@@ -5044,16 +5399,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "workflowObservation is broker-authored and cannot be supplied by a client",
           );
         decodeRequest(r);
-        const request = { ...r, clientId, ownerToken: clientHashes()[clientId] };
+        const request = { ...r, clientId, ownerToken: clientHashes()[clientId],
+        };
         if (frozenMetadataScope !== undefined && request.kind !== "command")
-          (runtimeRequire("./dist/composition/queue-frozen-metadata-profile") as
+          (runtimeRequire("./dist/composition/queue-frozen-metadata-profile",
+            ) as
           typeof import("./queue-frozen-metadata-profile")).assertFrozenMetadataRequest(
           frozenMetadataScope,
           {
             clientId, requestId: request.requestId, kind: request.kind,
             metadata: request.kind === "rpc" && isAddinMetadata(rpcPayload(r.rpc?.payload || r.payload)),
-          },
-        );
+          });
         if (state.epoch) {
           if (own(r, "isolatedEpoch"))
             fail(
@@ -5338,7 +5694,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           const raw = rpcPayload(request.payload);
           if (isAddinMetadata(raw)) {
             if (!metadataAdmission)
-              fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned");
+              fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned",
+              );
             addinMetadataSelector(raw);
           } else validateRaw(raw);
         }
@@ -5694,7 +6051,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
 
-  function dispatchResult(clientId: string, publicJob: ReturnType<typeof owned> | undefined) {
+  function dispatchResult(clientId: string, publicJob: ReturnType<typeof owned> | undefined,
+  ) {
         if (!publicJob)
           return {
             ...state.status(),
@@ -6114,7 +6472,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             plan?.kind !== "worker" ||
             phased.pending(job.id)?.message !== plan.message
           )
-            fail("PREPARED_RPC_UNAVAILABLE", "The prepared worker turn is gone");
+            fail("PREPARED_RPC_UNAVAILABLE", "The prepared worker turn is gone",
+            );
           plan.send.fence();
         }
         if (job.kind === "rpc") {
@@ -6124,7 +6483,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "The original checked RPC is unavailable; it is never reconstructed for replay",
             );
           plan.turn.inspect((prepared) => {
-            (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
+            (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing,
+            );
             localContextChanged =
               !prepared.metadataOnly &&
               prepared.contextEpoch !== (state.data.contextEpoch || 0);
@@ -6154,7 +6514,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         : undefined,
       verifyLocalInputs() {
         if (job.request.phased && job.physicalTurns) {
-          previousTurn = readJson<P.Instance>(path.join(directory, "postflight.json"))
+          previousTurn = readJson<P.Instance>(path.join(directory, "postflight.json"),
+          )
             .documentState;
           archiveCompletedBrokerTurn(directory, job.physicalTurns, {
             privateDirectory,
@@ -6197,16 +6558,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             : ["tools", "doctor"].includes(entry?.kind ?? "");
         const allowsBusy =
           protocolOnly ||
-          ["ui.inspect", "ui.respond", "ui.resolve"].includes(entry?.target ?? "");
+          ["ui.inspect", "ui.respond", "ui.resolve"].includes(entry?.target ?? "",
+          );
         allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
         guardSelector = raw && isAddinMetadata(raw)
           ? addinMetadataSelector(raw)
           : job.request.phased ||
             job.sequenceMode === "automatic" ||
             job.contextRefreshRequired ||
-            load("./composition/stage-dependencies").requiresPhysicalStageOwner(
-              job.request.payload,
-            )
+            load("./composition/stage-dependencies",
+                ).requiresPhysicalStageOwner(
+              job.request.payload)
             ? documentSelector(job)
             : undefined;
         // Record completion before applying idle policy. A lost response
@@ -6364,7 +6726,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return true;
       },
       executeAndComplete: () =>
-        executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter, observed),
+        executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter, observed,
+        ),
     });
   }
 
@@ -6452,7 +6815,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // logical caller payload without changing its original receipt hash
         // or the checked transport bytes.
         if (hash(canonical(rawPayload)) !== plan.callerPayloadHash)
-          fail("PREPARED_RPC_UNAVAILABLE", "Prepared raw input no longer matches");
+          fail("PREPARED_RPC_UNAVAILABLE", "Prepared raw input no longer matches",
+          );
         const physicalCatalogRead = [
           "resources/list",
           "resources/templates/list",
@@ -6490,8 +6854,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                   ...(admissionRoute ? { metadataObservation: observed } : {}),
                 }),
             );
-          },
-        );
+          });
         context.pending.add(operation);
         operation.then(
           () => context.pending.delete(operation),
@@ -6731,7 +7094,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }),
           );
           lane.assertCurrent(grant);
-          executionRecords.recordProbeTerminal(job.id, "postflight", observation);
+          executionRecords.recordProbeTerminal(job.id, "postflight", observation,
+          );
         } catch (cause) {
           lane.assertCurrent(grant);
           const error = errorInfo(cause);
@@ -6897,7 +7261,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ).createBrokerScheduler<P.Job>({
       maintain() {
         if (!schedulingOpen()) return;
-        if (!canSelect()) state.next({ grant: false });
+        void quarantineReleasedTurn();
+      if (!canSelect()) state.next({ grant: false });
         // Only outstanding prepared plans, never retained terminal history.
         for (const id of localPlans.keys()) {
           const job = state.data.jobs[id];
@@ -6922,7 +7287,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const turn =
           plan?.kind === "raw"
             ? plan.turn.turn
-            : plan?.turn ?? brokerExecution.createTurnIdentity(job.id);
+            : (plan?.turn ?? brokerExecution.createTurnIdentity(job.id));
         const grant = lane.begin(job, turn, !!job.workflowObservation);
         try {
           await execute(job, grant);
