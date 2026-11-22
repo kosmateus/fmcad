@@ -116,7 +116,7 @@ export function sealFreshCheckpointReceipt(
     const opened = io.fstatSync(fd);
     fileStat(opened);
     if (!isDeepStrictEqual(stamp(before), stamp(opened))) refused();
-    const checkPaths = () => {
+    const checkPaths = (finalMode = false) => {
       for (const entry of chain) {
         const named = io.lstatSync(entry.named),
           actual = io.fstatSync(entry.fd);
@@ -126,8 +126,8 @@ export function sealFreshCheckpointReceipt(
       }
       const named = io.lstatSync(input.receiptPath),
         actual = io.fstatSync(fd);
-      fileStat(named);
-      fileStat(actual);
+      fileStat(named, finalMode);
+      fileStat(actual, finalMode);
       if (
         !isDeepStrictEqual(stamp(named), stamp(actual)) ||
         !isDeepStrictEqual(identity(actual), identity(opened))
@@ -172,12 +172,17 @@ export function sealFreshCheckpointReceipt(
     checkPaths();
     const final = io.fstatSync(fd);
     fileStat(final, true);
+    const finalDigest = createHash("sha256").update(bytes()).digest("hex");
+    const afterRead = io.fstatSync(fd);
+    fileStat(afterRead, true);
     if (
       final.size !== opened.size ||
       final.mtimeMs !== opened.mtimeMs ||
-      createHash("sha256").update(bytes()).digest("hex") !== digest
+      !isDeepStrictEqual(stamp(final), stamp(afterRead)) ||
+      finalDigest !== digest
     )
       refused();
+    checkPaths(true);
   } catch {
     refused();
   } finally {

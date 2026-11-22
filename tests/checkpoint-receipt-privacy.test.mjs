@@ -134,6 +134,40 @@ test("sealing retains its original selector across verifier input mutation", () 
   }
 });
 
+for (const kind of ["path-replaced", "inode-written"]) {
+  test(`sealing refuses ${kind} during its last descriptor read`, () => {
+    const f = fixture();
+    let reads = 0;
+    const replacement = Buffer.alloc(f.bytes.length, 88);
+    try {
+      assert.throws(
+        () =>
+          sealFreshCheckpointReceipt(f.input, {
+            ...fs,
+            readSync(fd, buffer, offset, length, position) {
+              const count = fs.readSync(fd, buffer, offset, length, position);
+              if (position === 0 && ++reads === 3) {
+                if (kind === "path-replaced") {
+                  fs.renameSync(f.receiptPath, f.receiptPath + ".original");
+                  fs.writeFileSync(f.receiptPath, replacement, { mode: 0o644 });
+                } else fs.writeFileSync(f.receiptPath, replacement);
+              }
+              return count;
+            },
+          }),
+        { code: "STORAGE_UNAVAILABLE" },
+      );
+      assert.deepEqual(fs.readFileSync(f.receiptPath), replacement);
+      assert.equal(
+        fs.statSync(f.receiptPath).mode & 0o7777,
+        kind === "path-replaced" ? 0o644 : 0o600,
+      );
+    } finally {
+      f.close();
+    }
+  });
+}
+
 test("failed original authentication never changes the new receipt's mode", () => {
   const f = fixture();
   try {
