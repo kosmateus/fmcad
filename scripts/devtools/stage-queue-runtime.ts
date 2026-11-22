@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 export const queueRuntimeModules = [
+  "document-unlock-admission",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",
   "queue-audit-facts-capture",
@@ -35,6 +36,7 @@ export const queueRuntimeModules = [
   "queue-broker-modules",
   "composition/queue-broker",
   "queue-backend-transition",
+  "queue-runtime-rebaseline",
   "queue-client",
   "queue-closed-epoch-proof",
   "queue-isolated-epoch",
@@ -65,6 +67,7 @@ export function stageQueueRuntime(root: string): void {
         ? Buffer.from(
             emitted
               .toString("utf8")
+              .replaceAll('"@fmcad/core"', `"${fromSource}/dist/core"`)
               .replaceAll(
                 `${toWorkspace}/packages/core/src`,
                 `${fromSource}/dist/core`,
@@ -83,6 +86,10 @@ export function stageQueueRuntime(root: string): void {
               ),
           )
         : emitted;
+    if (extension === ".d.ts" && /["']@fmcad\//.test(bytes.toString("utf8")))
+      throw new Error(
+        "Unmapped workspace import in queue declaration: " + filename,
+      );
     return { filename, bytes };
   }
   const artifacts = queueRuntimeModules.flatMap((name) =>
