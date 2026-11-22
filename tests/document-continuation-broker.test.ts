@@ -648,3 +648,61 @@ test("stale generation and head are per-job refusal, not an exception that stops
     assert.equal(f.domain.data.jobs[job.id]?.code, "CHECKPOINT_CHANGED");
   }
 });
+
+for (const newerFails of [false, true]) {
+  test(`an older pending prepare cannot supersede a newer ${newerFails ? "failed" : "successful"} attempt`, async () => {
+    const f = fixture(),
+      job = f.job(await f.broker.submit(request(), f.actor));
+    const original = f.ports.verifyObservation;
+    let releaseOlder!: () => void,
+      markStarted!: () => void,
+      calls = 0;
+    const waiting = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    f.ports.verifyObservation = async (observation, actor) => {
+      const ordinal = ++calls;
+      const proof = await original(observation, actor);
+      if (ordinal === 1) {
+        markStarted();
+        await waiting;
+      } else if (ordinal === 2 && newerFails) {
+        throw Object.assign(new Error("newer native verification failed"), {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      return proof;
+    };
+    const olderTurn = createTurnIdentity(job.id),
+      newerTurn = createTurnIdentity(job.id);
+    const older = f.broker.prepareWorker(job, f.call(), olderTurn);
+    await started;
+    if (newerFails) {
+      await assert.rejects(f.broker.prepareWorker(job, f.call(), newerTurn), {
+        code: "STORAGE_UNAVAILABLE",
+      });
+      assert.throws(() => f.broker.expectedProduct(job, newerTurn));
+    } else {
+      await f.broker.prepareWorker(job, f.call(), newerTurn);
+      f.broker.expectedProduct(job, newerTurn);
+    }
+    releaseOlder();
+    await assert.rejects(older, { code: "DOCUMENT_CONTINUATION_UNPROVEN" });
+    assert.throws(() => f.broker.expectedProduct(job, olderTurn));
+    if (!newerFails) f.broker.expectedProduct(job, newerTurn);
+    else {
+      f.ports.verifyObservation = original;
+      const fresh = createTurnIdentity(job.id);
+      await f.broker.prepareWorker(job, f.call(), fresh);
+      f.broker.expectedProduct(job, fresh);
+    }
+    assert.equal(
+      f.domain.data.active,
+      null,
+      "neither verification grants an SDK lane",
+    );
+  });
+}

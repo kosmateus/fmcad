@@ -186,6 +186,7 @@ export function createDocumentContinuationBroker(
   >();
   const usedTurns = new WeakSet<TurnIdentity>();
   const activeTurn = new Map<string, TurnIdentity>();
+  const latestAttempt = new Map<string, object>();
   if (
     !ports ||
     typeof ports.recheck !== "function" ||
@@ -382,6 +383,11 @@ export function createDocumentContinuationBroker(
       const entry = entryFor(job);
       if (turn.jobId !== job.id || usedTurns.has(turn)) refuse();
       usedTurns.add(turn);
+      // Attempt order, not completion order, owns the next private turn.
+      // Even a newer failed attempt invalidates older pending verification.
+      const attempt = {};
+      latestAttempt.set(job.id, attempt);
+      activeTurn.delete(job.id);
       const ordinary = entry.programs.ordinary;
       const envelope = {
         featureType: "script",
@@ -395,15 +401,16 @@ export function createDocumentContinuationBroker(
         !isDeepStrictEqual(call.args[2], ordinary.manifest)
       )
         refuse();
-      activeTurn.delete(job.id);
       const proof = await ports.verifyObservation(
         structuredClone(entry.observation),
         entry.actor,
       );
+      if (latestAttempt.get(job.id) !== attempt) refuse();
       entry.verified = readVerified(proof, entry);
       // Both native/source verification and authorization finish before issuing
       // the one turn-scoped guarded program. This is still not an SDK grant.
       entryFor(job);
+      if (latestAttempt.get(job.id) !== attempt) refuse();
       turns.set(turn, { entry, verified: entry.verified });
       activeTurn.set(job.id, turn);
       return structuredClone(entry.programs.guarded);
@@ -428,6 +435,7 @@ export function createDocumentContinuationBroker(
       if (entry) live.delete(entry);
       jobs.delete(jobId);
       activeTurn.delete(jobId);
+      latestAttempt.delete(jobId);
     },
   });
 }
