@@ -205,15 +205,20 @@ export async function withRuntimeRebaselineWriter<T>(
         )
       )
         failure("BROKER_OWNER_UNPROVEN");
-      const lifecycleBytes = optional(
-        `broker-lifecycle-${previous["nonce"]}.json`,
-      );
-      if (lifecycleBytes) {
-        const lifecycle = decodeAdmissionJson(lifecycleBytes.toString("utf8"));
-        if (!record(lifecycle)) failure("BROKER_OWNER_UNPROVEN");
-        if (String(lifecycle["stage"]).startsWith("runtime-rebaseline"))
-          failure("RUNTIME_REBASELINE_WRITER_RETAINED");
+      function assertPreviousReclaimable() {
+        const lifecycleBytes = optional(
+          `broker-lifecycle-${(previous as Owner).nonce}.json`,
+        );
+        if (lifecycleBytes) {
+          const lifecycle = decodeAdmissionJson(
+            lifecycleBytes.toString("utf8"),
+          );
+          if (!record(lifecycle)) failure("BROKER_OWNER_UNPROVEN");
+          if (String(lifecycle["stage"]).startsWith("runtime-rebaseline"))
+            failure("RUNTIME_REBASELINE_WRITER_RETAINED");
+        }
       }
+      assertPreviousReclaimable();
       const owner = previous as Owner;
       const alive = priorProcessAlive(owner);
       if (alive !== false)
@@ -221,7 +226,21 @@ export async function withRuntimeRebaselineWriter<T>(
       assertDirectory();
       // Supported reclaim archives the exact dead Node owner. Deliberately omit
       // recoverCurrent: no legacy snapshot restoration or UNKNOWN settlement.
-      reclaim(store);
+      reclaim(store, undefined, (current) => {
+        assertDirectory();
+        if (
+          !isDeepStrictEqual(current, previous) ||
+          !optional("broker.lock")?.equals(previousBytes)
+        )
+          failure("RUNTIME_REBASELINE_WRITER_CHANGED");
+        requireNoPublication();
+        assertPreviousReclaimable();
+        const stillAlive = priorProcessAlive(owner);
+        if (stillAlive !== false)
+          failure(
+            stillAlive === true ? "BROKER_ALIVE" : "BROKER_OWNER_UNPROVEN",
+          );
+      });
       assertDirectory();
     }
     requireNoPublication();
@@ -280,8 +299,10 @@ export async function withRuntimeRebaselineWriter<T>(
     // Durable before callback entry, hence before any native external action.
     durable(path.join(anchored, lifecycleName), lifecycle, true);
     active = true;
+    let innerFailed = false;
     function assertHeld() {
       if (!active) failure("RUNTIME_REBASELINE_WRITER_CLOSED");
+      if (innerFailed) failure("RUNTIME_REBASELINE_WRITER_FAILED");
       assertOwner();
       const bytes = optional(lifecycleName);
       if (
@@ -297,7 +318,6 @@ export async function withRuntimeRebaselineWriter<T>(
     const head = literalRuntimeHead(store);
     assertHeld();
     let innerActive = false;
-    let innerFailed = false;
     const pending = new Set<Promise<unknown>>();
     const writer: RuntimeRebaselineWriterScope = Object.freeze({
       generation: owner.nonce,

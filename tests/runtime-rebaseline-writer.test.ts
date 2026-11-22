@@ -349,6 +349,51 @@ test("catching an inner writer failure does not manufacture outer success", asyn
   f.preserved();
 });
 
+test("a caught inner failure immediately revokes outer authority and denies every subsequent callback", async (t) => {
+  const f = fixture(t),
+    marker = path.join(f.store, "runtime-rebaseline-publication.json");
+  const publication = Buffer.from(
+    '{"requestId":"first-uncertain-operation","outcome":"unknown"}\n',
+  );
+  let checksCompleted = false;
+  let entered = false,
+    nonce = "";
+  let owner!: Buffer;
+  await assert.rejects(
+    withRuntimeRebaselineWriter(f.options, async (writer) => {
+      nonce = writer.generation;
+      owner = fs.readFileSync(path.join(f.store, "broker.lock"));
+      await assert.rejects(
+        writer.withExclusiveWriter(async (lease) => {
+          lease.assertHeld();
+          fs.writeFileSync(marker, publication, { mode: 0o600 });
+          throw new Error("uncertain first operation");
+        }),
+      );
+      assert.throws(() => writer.assertHeld(), {
+        code: "RUNTIME_REBASELINE_WRITER_FAILED",
+      });
+      assert.throws(
+        () =>
+          writer.withExclusiveWriter(async (lease) => {
+            entered = true;
+            lease.assertHeld();
+            fs.unlinkSync(marker);
+          }),
+        { code: "RUNTIME_REBASELINE_WRITER_FAILED" },
+      );
+      checksCompleted = true;
+    }),
+    { code: "RUNTIME_REBASELINE_WRITER_FAILED" },
+  );
+  assert.equal(entered, false);
+  assert.equal(checksCompleted, true);
+  assert.deepEqual(fs.readFileSync(path.join(f.store, "broker.lock")), owner);
+  assert.deepEqual(fs.readFileSync(marker), publication);
+  assert.equal(lifecycle(f.store, nonce)["safeToRecover"], false);
+  f.preserved();
+});
+
 test("captured inner leases expire before the next serial call, without changing owner generation", async (t) => {
   const f = fixture(t);
   await withRuntimeRebaselineWriter(f.options, async (writer) => {
@@ -391,6 +436,194 @@ test("callback-controlled error codes cannot disclose secrets", async (t) => {
   );
   f.preserved();
 });
+
+for (const successor of [
+  "dead-admin",
+  "alive",
+  "uncertain",
+  "same-owner-admin",
+  "pending",
+] as const) {
+  test(`guarded reclaim denies ${successor} substitution at the actual primitive boundary without archiving the successor`, async (t) => {
+    const f = fixture(t);
+    const dead = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const {claimBrokerLifetime}=require(process.argv[1]),{processBirth}=require(process.argv[2]);
+      const store=process.argv[3];
+      const held=claimBrokerLifetime({dir:store,socket:store+"/queue.sock",buildHash:process.argv[4],
+        configHash:process.argv[5],processBirth,disposeClient(){}});
+      process.stdout.write(JSON.stringify(held.owner));
+    `,
+        lifetimeModule,
+        instanceModule,
+        f.store,
+        buildHash,
+        configHash,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    assert.equal(dead.status, 0, dead.stderr);
+    const run = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const fs=require("node:fs"),path=require("node:path"),assert=require("node:assert/strict");
+      const instance=require(process.argv[1]),original=instance.reclaim,store=process.argv[3],kind=process.argv[4];
+      const lock=path.join(store,"broker.lock"),old=JSON.parse(fs.readFileSync(lock,"utf8"));
+      let entered=false,successorBytes,lifecycleBytes,publicationBytes;
+      instance.reclaim=(...args)=>{
+        const next=kind==="same-owner-admin"||kind==="pending"?old:
+          {...old,nonce:require("node:crypto").randomUUID(),
+            ...(kind==="alive"?{pid:process.pid,birth:instance.processBirth()}:
+              kind==="uncertain"?{pid:process.pid,birth:"unknown"}:{})};
+        successorBytes=Buffer.from(JSON.stringify(next));
+        fs.unlinkSync(lock);
+        fs.writeFileSync(lock,successorBytes,{mode:0o600});
+        if(kind==="dead-admin"||kind==="same-owner-admin"){
+          lifecycleBytes=Buffer.from(JSON.stringify({owner:next,stage:"runtime-rebaseline",safeToRecover:false}));
+          fs.writeFileSync(path.join(store,"broker-lifecycle-"+next.nonce+".json"),lifecycleBytes,{mode:0o600});
+        }
+        if(kind==="pending"){
+          publicationBytes=Buffer.from('{"requestId":"original-pending","outcome":"unknown"}');
+          fs.writeFileSync(path.join(store,"runtime-rebaseline-publication.json"),publicationBytes,{mode:0o600});
+        }
+        return original(...args);
+      };
+      const {withRuntimeRebaselineWriter}=require(process.argv[2]);
+      withRuntimeRebaselineWriter({store,buildHash:process.argv[5],configHash:process.argv[6]},
+        async()=>{entered=true})
+        .then(()=>{throw Error("unexpected successful reclaim")},error=>{
+          assert.equal(entered,false);
+          assert.deepEqual(fs.readFileSync(lock),successorBytes);
+          assert.equal(fs.readdirSync(store).some(name=>name.startsWith("reclaimed-")),false);
+          assert.equal(fs.existsSync(path.join(store,"broker-reclaimed-head.json")),false);
+          assert.equal(fs.existsSync(path.join(store,"recovery.lock")),false);
+          if(publicationBytes)assert.deepEqual(fs.readFileSync(path.join(store,"runtime-rebaseline-publication.json")),publicationBytes);
+          if(lifecycleBytes){
+            const next=JSON.parse(successorBytes);
+            assert.deepEqual(fs.readFileSync(path.join(store,"broker-lifecycle-"+next.nonce+".json")),lifecycleBytes);
+          }
+          process.stdout.write(error.code);
+        }).catch(error=>{process.stderr.write(String(error.stack));process.exitCode=1});
+    `,
+        instanceModule,
+        writerModule,
+        f.store,
+        successor,
+        buildHash,
+        configHash,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    assert.equal(run.status, 0, run.stderr + run.stdout);
+    assert.equal(
+      run.stdout,
+      successor === "same-owner-admin"
+        ? "RUNTIME_REBASELINE_WRITER_RETAINED"
+        : successor === "pending"
+          ? "RUNTIME_REBASELINE_PUBLICATION_PENDING"
+          : successor === "alive"
+            ? "BROKER_ALIVE"
+            : "RUNTIME_REBASELINE_WRITER_CHANGED",
+    );
+    f.preserved();
+  });
+}
+
+for (const swap of ["owner", "identical-bytes", "namespace"] as const) {
+  test(`guarded reclaim rechecks ${swap} after archive and before head publication or unlink`, async (t) => {
+    const f = fixture(t);
+    const dead = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const {claimBrokerLifetime}=require(process.argv[1]),{processBirth}=require(process.argv[2]);
+      const store=process.argv[3];
+      const held=claimBrokerLifetime({dir:store,socket:store+"/queue.sock",buildHash:process.argv[4],
+        configHash:process.argv[5],processBirth,disposeClient(){}});
+      process.stdout.write(JSON.stringify(held.owner));
+    `,
+        lifetimeModule,
+        instanceModule,
+        f.store,
+        buildHash,
+        configHash,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    assert.equal(dead.status, 0, dead.stderr);
+    const recordsModule = path.join(
+      root,
+      "dist/src/dist/node-adapters/persistence/records.js",
+    );
+    const run = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const fs=require("node:fs"),path=require("node:path"),assert=require("node:assert/strict");
+      const records=require(process.argv[1]),original=records.durable,store=process.argv[3],kind=process.argv[4];
+      const old=JSON.parse(fs.readFileSync(path.join(store,"broker.lock"),"utf8"));
+      let changed=false,entered=false,nextBytes,held=store;
+      records.durable=(file,...args)=>{
+        const result=original(file,...args);
+        if(!changed&&path.basename(file).startsWith("reclaimed-")){
+          changed=true;
+          const next=kind==="owner"?{...old,nonce:require("node:crypto").randomUUID()}:old;
+          nextBytes=Buffer.from(JSON.stringify(next));
+          if(kind==="namespace"){
+            held=store+"-original";
+            fs.renameSync(store,held);
+            fs.mkdirSync(store,{mode:0o700});
+            fs.writeFileSync(path.join(store,"recovery.lock"),"unrelated-recovery",{mode:0o600});
+          }else fs.renameSync(path.join(store,"broker.lock"),path.join(store,"original-owner.json"));
+          fs.writeFileSync(path.join(store,"broker.lock"),nextBytes,{mode:0o600});
+        }
+        return result;
+      };
+      const {withRuntimeRebaselineWriter}=require(process.argv[2]);
+      withRuntimeRebaselineWriter({store,buildHash:process.argv[5],configHash:process.argv[6]},
+        async()=>{entered=true}).then(()=>{throw Error("unexpected success")},error=>{
+          assert.equal(changed,true);assert.equal(entered,false);
+          assert.deepEqual(fs.readFileSync(path.join(store,"broker.lock")),nextBytes);
+          assert.equal(fs.existsSync(path.join(held,"broker-reclaimed-head.json")),false);
+          for(const file of fs.readdirSync(held).filter(name=>name.startsWith("reclaimed-")))
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(held,file),"utf8")),old);
+          assert.equal(fs.existsSync(path.join(held,"recovery.lock")),false);
+          if(kind==="namespace")
+            assert.equal(fs.readFileSync(path.join(store,"recovery.lock"),"utf8"),"unrelated-recovery");
+          process.stdout.write(error.code);
+        }).catch(error=>{process.stderr.write(String(error.stack));process.exitCode=1});
+    `,
+        recordsModule,
+        writerModule,
+        f.store,
+        swap,
+        buildHash,
+        configHash,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    assert.equal(run.status, 0, run.stderr + run.stdout);
+    assert.equal(
+      run.stdout,
+      swap === "namespace"
+        ? "RUNTIME_REBASELINE_WRITER_CHANGED"
+        : "LOCK_CHANGED",
+    );
+    if (swap !== "namespace") f.preserved();
+    else
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.store + "-original", "queue-state.json")),
+        f.snapshot,
+      );
+  });
+}
 
 function publisher(t: TestContext, store: string, pending: boolean) {
   const child = spawn(

@@ -10,7 +10,12 @@ import {
 import { verifyPythonArtifact } from "../python/artifact";
 import { pythonArtifactManifest } from "../python/context-binding";
 import { queueDocumentSnapshotSource } from "../python/document-probe";
-import { durable, readJson } from "../persistence/records";
+import {
+  durable,
+  readJson,
+  readBytes,
+  MAX_JSON_RECORD_BYTES,
+} from "../persistence/records";
 import type { PythonArtifactManifest } from "../../../core/src/domain/python-artifact";
 
 const PROBE_OBSERVATION_SCHEMA = "fmcad-instance-probe-v1";
@@ -201,80 +206,150 @@ export function createQueueInstance(
     }
   }
 
-  function reclaim(dir: string, recoverCurrent?: () => void) {
-    const file = path.join(dir, "broker.lock");
-    const marker = readJson(file) as ProcessIdentity & { nonce?: string };
-    if (
-      !Number.isSafeInteger(marker.pid) ||
-      marker.pid <= 0 ||
-      typeof marker.birth !== "string"
-    )
-      fail("INVALID_LOCK", "Invalid broker ownership marker");
-    let dead = false;
+  function reclaim(
+    dir: string,
+    recoverCurrent?: () => void,
+    /** Administrative admission only; runs under recovery.lock, never recovery. */
+    assertReclaimable?: (owner: unknown) => void,
+  ) {
+    const directoryFd = assertReclaimable
+      ? fs.openSync(
+          dir,
+          fs.constants.O_RDONLY |
+            fs.constants.O_DIRECTORY |
+            fs.constants.O_NOFOLLOW,
+        )
+      : undefined;
+    const operationDir =
+      directoryFd === undefined ? dir : `/proc/self/fd/${directoryFd}`;
     try {
-      dead = processBirth(marker.pid) !== marker.birth;
-    } catch (error) {
-      if (
-        (error as NodeJS.ErrnoException).code === "ENOENT" ||
-        (error as NodeJS.ErrnoException).code === "ESRCH"
-      )
-        dead = true;
-      else throw error;
-    }
-    if (!dead)
-      fail(
-        "BROKER_ALIVE",
-        "The original broker PID and birth identity are still alive",
-      );
-    // An exclusive recovery claim prevents two recovery commands removing a new lock.
-    const claim = path.join(dir, "recovery.lock");
-    durable(claim, { pid: process.pid, birth: processBirth() }, true);
-    try {
-      // A graceful close must not race with a new serve while recovery owns the directory.
-      const current = readJson(file);
-      if (JSON.stringify(current) !== JSON.stringify(marker))
-        fail("LOCK_CHANGED", "Broker ownership changed during recovery");
-      // The broker composition may classify interrupted current-epoch work.
-      // Keep both ownership markers until that durable recovery has completed,
-      // so no new broker can observe or race a partially recovered snapshot.
-      recoverCurrent?.();
-      const reclaimedFile = path.join(dir, `reclaimed-${randomUUID()}.json`);
-      durable(reclaimedFile, marker, true);
-      const lifecycleFile = path.join(
-        dir,
-        `broker-lifecycle-${String(marker.nonce)}.json`,
-      );
-      const lifecycleValue = fs.existsSync(lifecycleFile)
-        ? readJson(lifecycleFile)
-        : {};
-      const lifecycle = isRecord(lifecycleValue) ? lifecycleValue : {};
-      // A bounded local rejection never replaces the last actual SDK owner.
-      if (!(
-        lifecycle["stage"] === "rejected" &&
-        lifecycle["code"] === "NORMAL_RESTART_UNPROVEN" &&
-        lifecycle["probeNotSubmitted"] === true &&
-        lifecycle["safeToRecover"] === true
-      ))
-        durable(path.join(dir, "broker-reclaimed-head.json"), {
-          ownerReference: {
-            path: reclaimedFile,
-            sha256: hash(fs.readFileSync(reclaimedFile)),
-          },
-        });
-      fs.unlinkSync(file);
-      const fd = fs.openSync(dir, "r");
-      try {
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-      return {
-        reclaimed: true,
-        previous: { pid: marker.pid, birth: marker.birth },
-        reconciliationRequired: true,
-      };
+      return reclaimHeld();
     } finally {
-      fs.unlinkSync(claim);
+      if (directoryFd !== undefined) fs.closeSync(directoryFd);
+    }
+    function reclaimHeld() {
+      const file = path.join(operationDir, "broker.lock");
+      const marker = readJson(file) as ProcessIdentity & { nonce?: string };
+      if (
+        !Number.isSafeInteger(marker.pid) ||
+        marker.pid <= 0 ||
+        typeof marker.birth !== "string"
+      )
+        fail("INVALID_LOCK", "Invalid broker ownership marker");
+      let dead = false;
+      try {
+        dead = processBirth(marker.pid) !== marker.birth;
+      } catch (error) {
+        if (
+          (error as NodeJS.ErrnoException).code === "ENOENT" ||
+          (error as NodeJS.ErrnoException).code === "ESRCH"
+        )
+          dead = true;
+        else throw error;
+      }
+      if (!dead)
+        fail(
+          "BROKER_ALIVE",
+          "The original broker PID and birth identity are still alive",
+        );
+      // An exclusive recovery claim prevents two recovery commands removing a new lock.
+      const claim = path.join(operationDir, "recovery.lock");
+      durable(claim, { pid: process.pid, birth: processBirth() }, true);
+      let ownerFd: number | undefined;
+      try {
+        // A graceful close must not race with a new serve while recovery owns the directory.
+        const current = readJson(file);
+        if (JSON.stringify(current) !== JSON.stringify(marker))
+          fail("LOCK_CHANGED", "Broker ownership changed during recovery");
+        let assertGuarded = () => {};
+        if (assertReclaimable) {
+          ownerFd = fs.openSync(
+            file,
+            fs.constants.O_RDONLY |
+              fs.constants.O_NOFOLLOW |
+              fs.constants.O_NONBLOCK,
+          );
+          const identity = fs.fstatSync(ownerFd, { bigint: true });
+          const bytes = readBytes(file, MAX_JSON_RECORD_BYTES);
+          assertGuarded = () => {
+            const held = fs.fstatSync(ownerFd!, { bigint: true });
+            const named = fs.lstatSync(file, { bigint: true });
+            if (!held.isFile() || named.isSymbolicLink())
+              fail("LOCK_CHANGED", "Broker ownership changed during recovery");
+            for (const key of [
+              "dev",
+              "ino",
+              "size",
+              "mtimeNs",
+              "ctimeNs",
+            ] as const)
+              if (held[key] !== identity[key] || named[key] !== identity[key])
+                fail(
+                  "LOCK_CHANGED",
+                  "Broker ownership changed during recovery",
+                );
+            if (
+              !readBytes(file, MAX_JSON_RECORD_BYTES).equals(bytes) ||
+              !isDeepStrictEqual(readJson(file), marker)
+            )
+              fail("LOCK_CHANGED", "Broker ownership changed during recovery");
+            assertReclaimable(current);
+          };
+          assertGuarded();
+        }
+        // The broker composition may classify interrupted current-epoch work.
+        // Keep both ownership markers until that durable recovery has completed,
+        // so no new broker can observe or race a partially recovered snapshot.
+        recoverCurrent?.();
+        assertGuarded();
+        const reclaimedFile = path.join(dir, `reclaimed-${randomUUID()}.json`);
+        const reclaimedArtifact = path.join(
+          operationDir,
+          path.basename(reclaimedFile),
+        );
+        durable(reclaimedArtifact, marker, true);
+        const lifecycleFile = path.join(
+          operationDir,
+          `broker-lifecycle-${String(marker.nonce)}.json`,
+        );
+        const lifecycleValue = fs.existsSync(lifecycleFile)
+          ? readJson(lifecycleFile)
+          : {};
+        const lifecycle = isRecord(lifecycleValue) ? lifecycleValue : {};
+        // A bounded local rejection never replaces the last actual SDK owner.
+        assertGuarded();
+        if (!(
+          lifecycle["stage"] === "rejected" &&
+          lifecycle["code"] === "NORMAL_RESTART_UNPROVEN" &&
+          lifecycle["probeNotSubmitted"] === true &&
+          lifecycle["safeToRecover"] === true
+        ))
+          durable(path.join(operationDir, "broker-reclaimed-head.json"), {
+            ownerReference: {
+              path: reclaimedFile,
+              sha256: hash(fs.readFileSync(reclaimedArtifact)),
+            },
+          });
+        assertGuarded();
+        fs.unlinkSync(file);
+        const fd = fs.openSync(operationDir, "r");
+        try {
+          fs.fsyncSync(fd);
+        } finally {
+          fs.closeSync(fd);
+        }
+        return {
+          reclaimed: true,
+          previous: { pid: marker.pid, birth: marker.birth },
+          reconciliationRequired: true,
+        };
+      } finally {
+        try {
+          if (ownerFd !== undefined) fs.closeSync(ownerFd);
+        } finally {
+          fs.unlinkSync(claim);
+        }
+      }
     }
   }
 
