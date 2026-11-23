@@ -460,7 +460,9 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     assert.ok(original);
     const { prepareRequest } = load("./dist/composition/execution-request") as
       typeof import("../src/composition/execution-request");
-    const request = {
+    const request: import("../src/composition/execution-request").AcceptedCommandRequest & {
+      kind: "command"; clientId: string; requestId: string; timeoutMs: number;
+    } = {
       kind: "command" as const, clientId: "metadata-reader", requestId: "metadata-public-list",
       argv: ["doc", "list"], cwd: f.dir, timeoutMs: 45000,
     };
@@ -469,6 +471,7 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     assert.ok(["preparing", "queued", "processing"].includes(admitted.state), JSON.stringify(admitted));
     const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
     assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    assert.ok(typeof completed.stdout === "string", "the public worker must produce actual stdout");
     assert.match(completed.stdout, /DOC name=Owned A id=file-A creationId=doc-A/);
     assert.equal(f.counts().products, 1);
     assert.equal(f.writes(), 0);
