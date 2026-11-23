@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
 import type { QueueRequest } from "@fmcad/core";
+import type { ProtocolMetadata } from "../packages/core/src/domain/protocol-metadata";
 
 const load = createRequire(__filename);
 const { hash } = load(
@@ -18,13 +19,7 @@ export interface ProtocolMetadataPorts {
   recheck(): void;
 }
 export interface CompiledProtocolMetadata {
-  readonly descriptor: Readonly<{
-    version: 1;
-    kind: "protocol-metadata";
-    requestHash: string;
-    rpcHash: string;
-    generation: string;
-  }>;
+  readonly descriptor: ProtocolMetadata;
   reverify(request: QueueRequest): void;
   assertRpc(request: QueueRequest, actual: unknown): void;
 }

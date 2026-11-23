@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { compileProtocolMetadata } from "../src/protocol-metadata-broker";
+import {
+  createProtocolMetadataAuthority,
+  verifiedProtocolMetadata,
+} from "../packages/core/src/domain/protocol-metadata";
 
 function fixture(method = "initialize") {
   const current = {
@@ -163,5 +167,37 @@ test("preparation refuses stale build, missing actor identity and asynchronous o
         recheck: async () => {},
       }),
     { code: "PROTOCOL_METADATA_UNPROVEN" },
+  );
+});
+
+test("private metadata authority cannot be serialized, transferred to another domain or cached", () => {
+  const f = fixture();
+  const prepared = compileProtocolMetadata(f.request, f.ports);
+  assert.ok(prepared);
+  const domain = {};
+  let checks = 0;
+  const authority = createProtocolMetadataAuthority(domain, () => {
+    checks++;
+    prepared.reverify(f.request);
+    return prepared.descriptor;
+  });
+  const first = verifiedProtocolMetadata(authority, domain);
+  assert.deepEqual(first, prepared.descriptor);
+  assert.notEqual(first, prepared.descriptor);
+  assert.ok(Object.isFrozen(first));
+  verifiedProtocolMetadata(authority, domain);
+  assert.equal(checks, 2);
+  assert.throws(() => verifiedProtocolMetadata(authority, {}), {
+    code: "PROTOCOL_METADATA_UNPROVEN",
+  });
+  assert.throws(
+    () =>
+      verifiedProtocolMetadata(JSON.parse(JSON.stringify(authority)), domain),
+    { code: "PROTOCOL_METADATA_UNPROVEN" },
+  );
+  f.revoke();
+  assert.throws(
+    () => verifiedProtocolMetadata(authority, domain),
+    /owner revoked/,
   );
 });
