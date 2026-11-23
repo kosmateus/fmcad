@@ -550,7 +550,11 @@ export interface BrokerModules {
     readJson<T = unknown>(file: string): T;
     processBirth(pid?: number): string;
     priorProcessAlive(instance: P.Instance): boolean | null;
-    reclaim(dir: string, recoverCurrent?: () => void): unknown;
+    reclaim(
+      dir: string,
+      recoverCurrent?: () => void,
+      assertReclaimable?: (owner: unknown) => void,
+    ): unknown;
     buildHash(): string;
     brokerConfigHash(config: P.Config): string;
     probe(client: ProbeClient, options: P.ProbeOptions): Promise<P.Instance>;

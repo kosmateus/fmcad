@@ -46,6 +46,55 @@ export type RuntimeRootOperatorFactory = (
 ) => RuntimeRootOperatorContext;
 export type RuntimeRootPhysicalWiring =
   PhysicalRuntimeRootAuthorization<ApprovedRuntimeRoot>;
+
+/** Reclaim ownership only after native authentication, preserving the complete
+ * current ledger for the next supported startup. A historical migration is not
+ * the current recovery authority for a consumed native root. */
+export async function reclaimRuntimeRootOwner(options: {
+  directory: string;
+  buildHash: string;
+  configHash: string;
+  runtimeRoot: RuntimeRootPhysicalWiring;
+  reclaimOwner(
+    directory: string,
+    recoverCurrent: undefined,
+    assertReclaimable: (owner: unknown) => void,
+  ): unknown;
+}): Promise<unknown> {
+  const root = await options.runtimeRoot.verifyRuntimeRootBeforeRestore({
+    directory: options.directory,
+    buildHash: options.buildHash,
+    configHash: options.configHash,
+  });
+  if (!root || root.record.store !== options.directory) rejected();
+  const files = Object.entries(root.currentFiles).map(([name, bytes]) => {
+    if (path.isAbsolute(name) || name.split(/[\\/]/).some(part => !part || part === "." || part === ".."))
+      rejected();
+    return [name, bytes === null ? null : Buffer.from(bytes)] as const;
+  });
+  if (!files.some(([name]) => name === "queue-state.json")) rejected();
+  const guard = () => {
+    options.runtimeRoot.assertVerifiedRoot(options.directory);
+    for (const [name, bytes] of files) {
+      const file = path.join(options.directory, name);
+      if (bytes === null) {
+        try {
+          fs.lstatSync(file);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
+        rejected();
+      }
+      if (!readBytes(file, 128 * 1024 * 1024, fs, file).equals(bytes))
+        rejected();
+    }
+  };
+  guard();
+  // The primitive rechecks this synchronous guard under recovery.lock and
+  // exact PID/birth ownership fencing, including immediately before unlink.
+  return options.reclaimOwner(options.directory, undefined, guard);
+}
 function rejected(): never {
   throw Object.assign(
     new Error("Native-authenticated runtime root is required"),

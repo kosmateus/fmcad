@@ -6104,7 +6104,31 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 }
 
-function reclaim(dir: string) {
+function reclaim(dir: string, cfg?: P.Config | (() => P.Config)) {
+  if (hasRuntimeRootEvidence(dir)) {
+    if (!cfg)
+      fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Native runtime-root reclaim requires the configured private operator");
+    const wiring = runtimeRequire("./queue-runtime-physical-wiring") as
+      typeof import("../queue-runtime-physical-wiring");
+    let runtimeRoot: import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
+    load("./dist/node-adapters/execution/physical-generation-profile")
+      .physicalBrokerPortsFromEnvironment<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot>(
+        process.env, {
+          runtimeRootFactory(profile) {
+            runtimeRoot = wiring.createRuntimeRootPhysicalWiring(profile);
+            return runtimeRoot;
+          },
+        },
+      );
+    if (!runtimeRoot)
+      fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Native runtime-root reclaim requires authenticated native authority");
+    return wiring.reclaimRuntimeRootOwner({
+      directory: dir, buildHash: buildHash(),
+      configHash: brokerConfigHash(typeof cfg === "function" ? cfg() : cfg),
+      runtimeRoot,
+      reclaimOwner: load("./queue-instance").reclaim,
+    });
+  }
   return reclaimOwner(dir, () => {
     if (fs.existsSync(path.join(dir, "isolated-admission-epoch.json")))
       openIsolatedEpoch(dir);

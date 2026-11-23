@@ -12,6 +12,75 @@ const {
 } = require("../src/queue-runtime-retirement.js");
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
+for (const mode of ["approved", "denied", "no-profile", "changed-under-lock", "alive"]) {
+  test(`public reclaim authenticates native current root without legacy recovery: ${mode}`, (t) => {
+    const f = fixture(t);
+    const rootFile = path.join(f.directory, "test-approved-root.json");
+    fs.writeFileSync(rootFile, JSON.stringify(f.root), { mode: 0o600 });
+    fs.writeFileSync(path.join(f.directory, "isolated-admission-epoch.json"),
+      "invalid historical pointer must not be the current restore selector", { mode: 0o600 });
+    const result = spawnSync(process.execPath, ["-e", `
+const assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path");
+const directory = ${JSON.stringify(f.directory)}, mode = ${JSON.stringify(mode)};
+require("./src/queue-connection.js").queueDirectory = () => directory;
+const root = JSON.parse(fs.readFileSync(${JSON.stringify(rootFile)}, "utf8"));
+for (const key of Object.keys(root.currentFiles))
+  if (root.currentFiles[key]) root.currentFiles[key] = Buffer.from(root.currentFiles[key].data);
+const instance = require("./src/queue-instance.js");
+const lock = { pid: mode === "alive" ? process.pid : 2147483645,
+  birth: mode === "alive" ? instance.processBirth() : "dead:fixture", nonce: "owned-dead-broker" };
+instance.durable(path.join(directory, "broker.lock"), lock);
+const original = fs.readFileSync(path.join(directory, "queue-state.json"));
+let verified = 0, assertions = 0;
+const wiring = {
+  async verifyRuntimeRootBeforeRestore(context) {
+    assert.equal(context.directory, directory);
+    assert.equal(fs.existsSync(path.join(directory, "broker.lock")), true);
+    verified++;
+    if (mode === "denied") throw Object.assign(new Error("native verification denied"), {code:"ROOT_NATIVE_VERIFY_DENIED"});
+    return root;
+  },
+  assertVerifiedRoot(actual) {
+    assert.equal(actual, directory); assert.equal(verified, 1); assertions++;
+    if (mode === "changed-under-lock" && assertions === 2)
+      fs.writeFileSync(path.join(directory, "queue-state.json"), Buffer.concat([original, Buffer.from(" ")]), {mode:0o600});
+  },
+};
+require("./src/queue-runtime-physical-wiring.js").createRuntimeRootPhysicalWiring = () => wiring;
+require("./src/dist/node-adapters/execution/physical-generation-profile.js").physicalBrokerPortsFromEnvironment =
+  (_env, dependencies) => { if (mode !== "no-profile") dependencies.runtimeRootFactory({}); return {}; };
+process.env.FMCAD_PHYSICAL_OPERATOR_PROFILE = "explicit-test-native-verifier-not-live";
+const broker = require("./src/queue-broker.js");
+(async () => {
+  const run = () => broker.reclaim(directory, {backend:"addin", routing:"queue"});
+  if (mode === "approved") {
+    const output = [];
+    const {queueCommand} = require("./src/dist/entrypoints/queue-cli.js");
+    const status = await queueCommand(["reclaim"], {
+      loadConfig: () => ({cfg:{backend:"addin", routing:"queue"}}),
+      stdout:{write(text) {output.push(text);}}, stderr:{write() {assert.fail("unexpected stderr");}},
+    });
+    assert.equal(status, 0);
+    const result = JSON.parse(output.join(""));
+    assert.equal(result.reclaimed, true);
+    assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false);
+    assert.ok(assertions >= 3, "verified files fenced again under recovery.lock");
+    assert.deepEqual(fs.readFileSync(path.join(directory, "queue-state.json")), original);
+  } else {
+    await assert.rejects(async () => run(), {code: mode === "denied"
+      ? "ROOT_NATIVE_VERIFY_DENIED" : mode === "alive" ? "BROKER_ALIVE" : "RUNTIME_ROOT_AUTHORITY_REQUIRED"});
+    assert.deepEqual(instance.readJson(path.join(directory, "broker.lock")), lock);
+    if (mode !== "changed-under-lock")
+      assert.deepEqual(fs.readFileSync(path.join(directory, "queue-state.json")), original);
+  }
+  assert.equal(verified, mode === "no-profile" ? 0 : 1);
+  assert.equal(fs.existsSync(path.join(directory, "recovery.lock")), false);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+`], { cwd: path.resolve(__dirname, ".."), encoding: "utf8", timeout: 15000 });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  });
+}
+
 // The native-root and ownership assertions are explicit test ports. This suite
 // exercises the real byte adapter, snapshot store and staged QueueDomain; it is
 // not evidence that a native grant was issued or that Fusion ran.

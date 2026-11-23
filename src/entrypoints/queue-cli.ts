@@ -876,7 +876,7 @@ export async function queueCommand(
   if (name === "reclaim") {
     const directory = runtime.queueDirectory();
     if (fs.existsSync(path.join(directory, "broker.lock")))
-      write(runtime.brokerComposition().reclaimBroker(directory));
+      write(await runtime.brokerComposition().reclaimBroker(directory, () => deps.loadConfig(opts).cfg));
     else write(runtime.queueAutostart().reclaimStart(directory));
     return 0;
   }
