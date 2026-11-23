@@ -10,7 +10,8 @@ export interface DocumentFile {
 }
 export type DocumentCommand =
   | { kind: "search"; name: string | null; project: string | null }
-  | { kind: "list" | "recent" | "save" | "licensing" | "active" }
+  | { kind: "list"; json?: boolean }
+  | { kind: "recent" | "save" | "licensing" | "active" }
   | { kind: "open"; name: string | null }
   | { kind: "close"; save: boolean; discard: boolean }
   | { kind: "new"; name: string }
@@ -104,6 +105,23 @@ export async function executeDocumentCommand(
         },
         "fusion_mcp_read",
       );
+      if (command.kind === "list" && command.json) {
+        const data = body(out);
+        if (!data)
+          return failure(
+            "ERROR invalid document list JSON response: " + out.text + "\n",
+          );
+        return {
+          code:
+            out.failed ||
+            data["success"] !== true ||
+            !Array.isArray(data["results"])
+              ? 1
+              : 0,
+          stdout: JSON.stringify(data) + "\n",
+          stderr: "",
+        };
+      }
       return success(
         out,
         printedResults(out, command.kind === "list" ? "DOC" : "FILE"),
