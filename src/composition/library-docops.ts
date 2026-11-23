@@ -53,8 +53,10 @@ export function docSearchCmd(client: DocumentClient, args: string[]) {
   }
   return run(client, { kind: "search", name, project });
 }
+/** Shared typed intent for execution and the broker's metadata-read compiler. */
+export const documentListReadCommand = Object.freeze({ kind: "list" as const });
 export const docListCmd = (client: DocumentClient) =>
-  run(client, { kind: "list" });
+  run(client, documentListReadCommand);
 export const docRecentCmd = (client: DocumentClient) =>
   run(client, { kind: "recent" });
 export const docOpenCmd = (client: DocumentClient, args: string[]) =>
