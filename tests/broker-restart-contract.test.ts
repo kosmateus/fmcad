@@ -37,6 +37,43 @@ function snapshot(dir: string): Value {
 }
 
 test(
+  "a rejected runtime configuration leaves no new owner or probe and can reopen after correction",
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    await f.server.kill();
+    const identityFile = path.join(f.dir, "instance.json");
+    const original = fs.readFileSync(identityFile);
+    const rejectedIdentity = {
+      ...object(JSON.parse(original.toString("utf8")) as unknown),
+      configHash: "foreign-runtime-configuration",
+    };
+    const rejectedBytes = JSON.stringify(rejectedIdentity);
+    fs.writeFileSync(identityFile, rejectedBytes);
+    const stateBefore = fs.readFileSync(path.join(f.dir, "queue-state.json"));
+
+    const refused = await f.broker("none", false);
+    const failure = await refused.event("startup-failed");
+    assert.equal(failure["code"], "CONFIG_CHANGED");
+    assert.equal(failure["sends"], 0);
+    assert.equal(failure["active"], 0);
+    assert.equal(failure["maximum"], 0, "not even the startup probe was sent");
+    assert.equal((await refused.exit).code, 1);
+    assert.equal(fs.existsSync(path.join(f.dir, "broker.lock")), false);
+    assert.equal(fs.readFileSync(identityFile, "utf8"), rejectedBytes);
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.dir, "queue-state.json")),
+      stateBefore,
+    );
+
+    fs.writeFileSync(identityFile, original);
+    const corrected = await f.broker();
+    assert.equal((await corrected.call("counts"))["sends"], 0);
+    assert.ok(fs.existsSync(path.join(f.dir, "broker.lock")));
+  },
+);
+
+test(
   "crash after durable admission before ACK preserves the accepted request identity",
   { timeout: 60000 },
   async (t) => {
