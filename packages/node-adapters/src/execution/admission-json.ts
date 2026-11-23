@@ -64,16 +64,23 @@ function decodeJson(
     throw new Error("Ambiguous admission JSON");
   };
   const space = () => {
-    while (/[ \t\r\n]/.test(text[cursor] ?? "") && cursor < text.length)
+    while (cursor < text.length) {
+      const code = text.charCodeAt(cursor);
+      if (code !== 32 && code !== 9 && code !== 13 && code !== 10) break;
       cursor++;
+    }
   };
-  function string(): string {
+  function string(decode: true): string;
+  function string(decode: false): void;
+  function string(decode: boolean): string | void {
     const start = cursor++;
     while (cursor < text.length) {
       const char = text[cursor++];
       if (char === "\\") cursor++;
       else if (char === '"')
-        return JSON.parse(text.slice(start, cursor)) as string;
+        return decode
+          ? (JSON.parse(text.slice(start, cursor)) as string)
+          : undefined;
     }
     return fail();
   }
@@ -91,92 +98,77 @@ function decodeJson(
     }
     return `${negative ? "-" : ""}${digits}e${scale}`;
   }
-  function value(depth: number, path: readonly string[] = []): unknown {
+  const numberToken = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  const currentPath: string[] = [];
+  function value(depth: number): void {
     if (depth > 128) return fail();
     space();
     const char = text[cursor];
-    if (char === '"') return string();
+    if (char === '"') return string(false);
     if (char === "{" || char === "[") {
       const array = char === "[";
       const end = array ? "]" : "}";
       cursor++;
-      const entries: unknown[] = [];
-      const result: Record<string, unknown> = {};
-      const keys = new Set<string>();
+      const keys = array ? undefined : new Set<string>();
+      let index = 0;
       space();
       if (text[cursor] === end) {
         cursor++;
-        return array ? entries : result;
+        return;
       }
       while (true) {
         space();
-        if (array)
-          entries.push(
-            value(
-              depth + 1,
-              numberPolicy !== "protocol"
-                ? [...path, String(entries.length)]
-                : path,
-            ),
-          );
+        let key: string;
+        if (array) key = String(index++);
         else {
           if (text[cursor] !== '"') return fail();
-          const key = string();
-          if (keys.has(key)) return fail();
-          keys.add(key);
+          key = string(true);
+          if (keys!.has(key)) return fail();
+          keys!.add(key);
           space();
           if (text[cursor++] !== ":") return fail();
-          Object.defineProperty(result, key, {
-            value: value(
-              depth + 1,
-              numberPolicy !== "protocol" ? [...path, key] : path,
-            ),
-            enumerable: true,
-            configurable: true,
-            writable: true,
-          });
         }
+        if (numberPolicy !== "protocol") currentPath.push(key);
+        value(depth + 1);
+        if (numberPolicy !== "protocol") currentPath.pop();
         space();
         const separator = text[cursor++];
-        if (separator === end) return array ? entries : result;
+        if (separator === end) return;
         if (separator !== ",") return fail();
       }
     }
-    for (const [literal, decoded] of [
-      ["true", true],
-      ["false", false],
-      ["null", null],
-    ] as const) {
+    for (const literal of ["true", "false", "null"]) {
       if (text.startsWith(literal, cursor)) {
         cursor += literal.length;
-        return decoded;
+        return;
       }
     }
-    const raw = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(
-      text.slice(cursor),
-    )?.[0];
+    numberToken.lastIndex = cursor;
+    const raw = numberToken.exec(text)?.[0];
     if (!raw) return fail();
     cursor += raw.length;
     const opaque =
       numberPolicy === "queue-snapshot"
-        ? opaqueSnapshotPath(path)
+        ? opaqueSnapshotPath(currentPath)
         : numberPolicy === "runtime-record"
-          ? opaqueRecordPath(path)
+          ? opaqueRecordPath(currentPath)
           : false;
     const number = Number(raw);
     if (
       !Number.isFinite(number) ||
       (!opaque &&
         ((Number.isInteger(number) && !Number.isSafeInteger(number)) ||
-          decimal(raw) !== decimal(String(number))))
+          (/[.eE]/.test(raw) && decimal(raw) !== decimal(String(number)))))
     )
       return fail();
-    return number;
   }
-  const result = value(0);
+  // Validate every token, duplicate key, depth and numeric policy before the
+  // native parser materializes values. In particular, decoding must never
+  // silently discard a duplicate or round a protocol number before validation.
+  value(0);
   space();
   if (cursor !== text.length) return fail();
-  return result;
+  return JSON.parse(text) as unknown;
 }
 
 /** Copy data properties only; never invoke getters or serialization hooks. */

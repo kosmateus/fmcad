@@ -1112,6 +1112,61 @@ test("opaque queue numeric policy does not relax protocol, duplicate-key or fini
   }
 });
 
+test("all admission JSON policies retain native values, escaped keys and prototype data safely", () => {
+  const decoders = [
+    decodeAdmissionJson,
+    decodeOpaqueQueueJson,
+    decodeRuntimeRebaselineRecordJson,
+  ];
+  const samples = [
+    "-0",
+    "1.0",
+    "1e3",
+    "0.0001",
+    "0.30000000000000004",
+    "5e-324",
+    '"\\ud800"',
+    '"escaped \\\\ and \\" quote"',
+    '{"__proto__":{"polluted":true},"constructor":{"prototype":{"x":1}}}',
+    '{"\\u0000key":["commas, braces } and \\"keys\\"",true,false,null]}',
+    ' \t\r\n{"empty":[{},[]],"text":"{\\"same\\":1,\\"same\\":2}"} \n',
+  ];
+  for (const decode of decoders)
+    for (const raw of samples) {
+      const value = decode(raw);
+      assert.deepEqual(value, JSON.parse(raw), raw);
+      if (raw === "-0") assert.ok(Object.is(value, -0));
+    }
+  assert.equal(Object.hasOwn(Object.prototype, "polluted"), false);
+});
+
+test("all admission JSON policies enforce depth and grammar before exposing any decoded result", () => {
+  const decoders = [
+    decodeAdmissionJson,
+    decodeOpaqueQueueJson,
+    decodeRuntimeRebaselineRecordJson,
+  ];
+  for (const decode of decoders) {
+    const allowed = "[".repeat(128) + "0" + "]".repeat(128);
+    assert.deepEqual(decode(allowed), JSON.parse(allowed));
+    for (const raw of [
+      "[".repeat(129) + "0" + "]".repeat(129),
+      '[{"nested":{"same":1,"\\u0073ame":2}}]',
+      '{"__proto__":1,"\\u005f_proto__":2}',
+      '{"jobs":{"owned":{"request":{"payload":{"x":1,"x":2}}}}}',
+      "[1,]",
+      '{"x":}',
+      '{"x" 1}',
+      '{"x":"\\q"}',
+      "{",
+      "\u00a0{}",
+      '"x\n"',
+      "",
+    ])
+      assert.throws(() => decode(raw), raw);
+  }
+});
+
 test("runtime record numeric policy is limited to original uncertainty blobs and exact namespaces", () => {
   const data = { measurement: 1e20, tiny: Number.MIN_VALUE };
   const allowed = [
