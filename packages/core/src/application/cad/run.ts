@@ -18,9 +18,16 @@ export interface RunRequest {
 export interface RunSource {
   filename: string;
   source: string;
+  sourceManifest?: RunSourceManifest;
 }
-export interface RunUnit extends RunSource {
+export interface RunSourceManifest {
+  readonly units: readonly RunUnit[];
+  readonly userSource: string;
+}
+export interface RunUnit {
   id: string;
+  filename: string;
+  source: string;
   role: "user" | "runtime" | "wrapper";
   embedded?: boolean;
 }
@@ -115,7 +122,9 @@ export function prepareRun(
     readOnlyOperations,
   } = request;
   const file = source.filename;
-  let code = source.source;
+  const sourceManifest =
+    helperVersion === undefined ? source.sourceManifest : undefined;
+  let code = sourceManifest?.userSource ?? source.source;
   const pythonValue = (value: unknown): string =>
     "pythonLiteral" in port && typeof port.pythonLiteral === "function"
       ? port.pythonLiteral(value)
@@ -168,19 +177,67 @@ export function prepareRun(
     identity.docFileId === undefined &&
     !helperVersion
   )
-    return port.prepare([userUnit], metadata);
-  const units = port.runtime(helperVersion, userUnit);
-  const wrapper = `
-def run(_context: str) -> ${runValueType}:
-    from typing import Callable as _FMCAD_CALLABLE, cast as _FMCAD_CAST
-    import adsk.core
-    app = adsk.core.Application.get()
+    return port.prepare(
+      [...(sourceManifest?.units ?? []), userUnit],
+      metadata,
+    );
+  const manifestIds = new Set(
+    sourceManifest?.units.map((unit) => unit.id) ?? [],
+  );
+  const selectedRuntime = port.runtime(
+    helperVersion,
+    sourceManifest ? { filename: file, source: source.source } : userUnit,
+  );
+  const units =
+    helperVersion === undefined
+      ? selectedRuntime.filter((unit) => !manifestIds.has(unit.id))
+      : selectedRuntime;
+  const hasIdentity =
+    identity.docId !== undefined || identity.docFileId !== undefined;
+  const identityGuard: RunUnit | null =
+    sourceManifest && hasIdentity
+      ? {
+          id: "run-identity-guard",
+          filename: "<fmcad-run-identity-guard>",
+          source: `def __fmcad_run_identity_guard() -> None:
+    import adsk.core as _fmcad_run_core
+    app = _fmcad_run_core.Application.get()
     doc = _document_target(app, ${pythonValue(docName)})
     doc_id, doc_file_id = ${pythonValue(identity.docId ?? null)}, ${pythonValue(identity.docFileId ?? null)}
     _document_assert_identity(doc, doc_id, doc_file_id)
     if ${identity.readOnly ? "False" : "True"}:
         _document_activate_target(app, doc, doc_id, doc_file_id)
-    # Trusted-code precondition, not a sandbox. Do not inherit this wrapper's run.
+
+__fmcad_run_identity_guard()
+del __fmcad_run_identity_guard
+`,
+          role: "wrapper",
+        }
+      : null;
+  const entrypointAlias = sourceManifest
+    ? "__fmcad_user_entrypoint__ = globals().get('run')\n"
+    : "";
+  const wrapperFunction = sourceManifest ? "__fmcad_guarded_run" : "run";
+  const wrapperIdentityGuard = sourceManifest
+    ? ""
+    : `    doc = _document_target(app, ${pythonValue(docName)})
+    doc_id, doc_file_id = ${pythonValue(identity.docId ?? null)}, ${pythonValue(identity.docFileId ?? null)}
+    _document_assert_identity(doc, doc_id, doc_file_id)
+    if ${identity.readOnly ? "False" : "True"}:
+        _document_activate_target(app, doc, doc_id, doc_file_id)
+`;
+  const wrapperSetup = sourceManifest
+    ? ""
+    : `    import adsk.core
+    app = adsk.core.Application.get()
+`;
+  const wrapperBody = sourceManifest
+    ? `    _user_run = globals().get('__fmcad_user_entrypoint__')
+    if _user_run is None:
+        return None
+    _user_run = _FMCAD_CAST(_FMCAD_CALLABLE[[str], ${runValueType}], _user_run)
+    return _user_run(_context)`
+    : `    # Trusted-code precondition, not a sandbox. Do not inherit this wrapper's run.
     namespace: dict[str, object] = {'__name__': '__fmcad_script__', '__file__': ${pythonValue(file)},
                  '__fmcad_native_lifecycle__': globals().get('__fmcad_native_lifecycle__')}
     exec(compile(${pythonLiteral(code)}, ${pythonLiteral(file)}, 'exec', dont_inherit=True), namespace)
@@ -199,12 +256,19 @@ def run(_context: str) -> ${runValueType}:
                 facade.terminal(exc)
                 raise
         _user_run = _FMCAD_CAST(_FMCAD_CALLABLE[[str], ${runValueType}], namespace['run'])
-        return _user_run(_context)
+        return _user_run(_context)`;
+  const wrapper = `
+${entrypointAlias}def ${wrapperFunction}(_context: str) -> ${runValueType}:
+    from typing import Callable as _FMCAD_CALLABLE, cast as _FMCAD_CAST
+${wrapperSetup}${wrapperIdentityGuard}${wrapperBody}
+${sourceManifest ? "\nglobals()['run'] = __fmcad_guarded_run" : ""}
 `;
   return port.prepare(
     [
+      ...(helperVersion ? [] : (sourceManifest?.units ?? [])),
       ...units,
-      { ...userUnit, embedded: true },
+      ...(identityGuard ? [identityGuard] : []),
+      ...(sourceManifest ? [userUnit] : [{ ...userUnit, embedded: true }]),
       {
         id: "wrapper",
         filename: "<fmcad-run-wrapper>",
