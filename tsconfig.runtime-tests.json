@@ -16,6 +16,7 @@
     "tests/document-checkpoint-broker.test.ts",
     "tests/document-continuation-broker.test.ts",
     "tests/protocol-metadata-broker.test.ts",
+    "tests/python-diagnostic-broker.test.ts",
     "tests/broker-source-compiler.test.ts",
     "src/broker-source-compiler-worker.ts",
     "tests/document-checkpoint-producer.test.ts",

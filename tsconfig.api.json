@@ -107,6 +107,7 @@
     "src/broker-source-compiler-worker.ts",
     "src/document-metadata-read-broker.ts",
     "src/protocol-metadata-broker.ts",
+    "src/python-diagnostic-broker.ts",
     "src/document-creation-broker.ts"
   ],
   "references": [
