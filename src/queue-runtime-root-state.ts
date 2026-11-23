@@ -170,6 +170,7 @@ export function openRuntimeRootState(options: {
           "submit",
           "submitDocumentInspection",
           "submitDocumentContinuation",
+          "submitDocumentMetadataRead",
           "refuseDocumentContinuation",
         ].includes(String(key))
       )

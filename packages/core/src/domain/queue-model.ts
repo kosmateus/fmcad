@@ -76,6 +76,7 @@ export interface QueueDetails {
 export interface QueueJob {
   documentInspection?: import("./document-checkpoint").DocumentInspection;
   documentContinuation?: import("./document-continuation").DocumentContinuation;
+  documentMetadataRead?: import("./document-metadata-read").DocumentMetadataRead;
   id: string;
   requestId: string;
   clientId: string;

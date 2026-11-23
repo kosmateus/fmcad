@@ -18,6 +18,10 @@ export type {
   DocumentContinuationAuthority,
 } from "./domain/document-continuation";
 export type {
+  DocumentMetadataRead,
+  DocumentMetadataReadAuthority,
+} from "./domain/document-metadata-read";
+export type {
   AppliedRuntimeRetirement,
   RuntimeRetiredExposure,
   RuntimeRetirementAuthority,
