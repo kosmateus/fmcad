@@ -783,6 +783,10 @@ test("construction and broker probes defer late services; raw calls never resolv
 
 test("a scoped broker read is not a product capability", async (t) => {
   const f = await fixture(t, false);
+  assert.equal(f.executor.hasOtherActivity(), false);
+  const activity = f.gate.beginActivity();
+  assert.equal(f.executor.hasOtherActivity("foreign", activity.id), true);
+  f.gate.endActivity(activity);
   await f.executor.runProbeScope(
     { assertCurrent() {}, start() {} },
     async () => {
@@ -1199,6 +1203,19 @@ test("late native cleanup cannot close a new exact grant's activity for the same
   const firstRun = f.executor.run(first.job, first.grant);
   await until(() => !!f.executor.snapshot()?.nativeActivityId);
   const originalActivityId = required(f.executor.snapshot()?.nativeActivityId);
+  assert.equal(
+    f.executor.hasOtherActivity(first.id, originalActivityId),
+    false,
+  );
+  assert.equal(
+    f.executor.hasOtherActivity("foreign-job", originalActivityId),
+    true,
+  );
+  assert.equal(f.executor.hasOtherActivity(first.id, "foreign-activity"), true);
+  assert.equal(f.executor.hasOtherActivity(), true);
+  const foreignActivity = f.gate.beginActivity();
+  assert.equal(f.executor.hasOtherActivity(first.id, originalActivityId), true);
+  f.gate.endActivity(foreignActivity);
   const before = required(f.executor.snapshot(first.grant));
   f.controls.nativeEnded = true;
   await firstRun;
@@ -1210,6 +1227,8 @@ test("late native cleanup cannot close a new exact grant's activity for the same
   await until(() => !!f.executor.snapshot()?.nativeActivityId);
   const nextActivityId = required(f.executor.snapshot()?.nativeActivityId);
   assert.notEqual(nextActivityId, originalActivityId);
+  assert.equal(f.executor.hasOtherActivity(first.id, originalActivityId), true);
+  assert.equal(f.executor.hasOtherActivity(first.id, nextActivityId), false);
   assert.equal(
     f.executor.endNativeActivity(first.id, originalActivityId),
     false,
@@ -1491,4 +1510,122 @@ test("a lost transport reply quarantines the original submitted turn without rep
   );
   await assert.rejects(f.executor.run(turn.job, turn.grant));
   assert.equal(f.counts().sends, 1);
+});
+
+function checkpointJob(job: P.Job) {
+  job.documentInspection = {
+    version: 1,
+    target: { creationId: "fixture-document" },
+    generation: "fixture-generation",
+    blockersDigest: build,
+    priorCheckpointId: null,
+  };
+}
+
+test("checkpoint scope owns exactly one read send and returns detached frozen original evidence", async (t) => {
+  const f = await fixture(t);
+  const turn = await f.raw();
+  checkpointJob(turn.job);
+  privateDirectory(path.join(f.directory, "jobs", turn.id));
+  let escaped: (() => unknown) | undefined;
+  await f.executor.withCheckpointTurn(turn.job, turn.grant, async (read) => {
+    escaped = read.evidence;
+    const before = read.evidence();
+    assert.equal(before.dispatched, false);
+    let fenced = 0;
+    const send = Object.assign(
+      () => f.executor.post(rpc(turn.job.request.payload)),
+      {
+        fence() {
+          fenced++;
+        },
+      },
+    );
+    const result = await read.send(send);
+    assert.equal(result.status, 200);
+    assert.equal(fenced, 1);
+    const evidence = read.evidence();
+    assert.equal(evidence.dispatched, true);
+    assert.equal(evidence.executionFailed, false);
+    assert.equal(evidence.turnRpcs.length, 1);
+    assert.equal(evidence.turnRpcs[0]?.terminal, true);
+    assert.equal(evidence.turnRpcs[0]?.binding.jobId, turn.id);
+    assert.equal(before.turnRpcs.length, 0);
+    assert.equal(Object.isFrozen(evidence), true);
+    assert.equal(Object.isFrozen(evidence.turnRpcs), true);
+    assert.equal(Object.isFrozen(evidence.turnRpcs[0]?.binding), true);
+    assert.equal("token" in evidence, false);
+    assert.equal("pending" in evidence, false);
+    await assert.rejects(read.send(send), { code: "PREPARED_RPC_CONSUMED" });
+    f.lane.settle(turn.grant, () => {
+      f.state.finish(turn.id, { state: "succeeded" });
+    });
+  });
+  assert.throws(() => required(escaped)(), { code: "INVALID_CAPABILITY" });
+  assert.equal(f.executor.snapshot(turn.grant), null);
+  assert.equal(f.counts().sends, 1);
+  assert.ok(f.events.indexOf("rpc-intent") < f.events.indexOf("send"));
+  await assert.rejects(
+    f.executor.withCheckpointTurn(turn.job, turn.grant, async () => {}),
+    { code: "RECONCILIATION_REQUIRED" },
+  );
+});
+
+test("checkpoint timeout preserves pending original work and exposes only held evidence", async (t) => {
+  const f = await fixture(t);
+  const started = deferred<P.Rpc>(),
+    response = deferred<P.Response>();
+  f.controls.send = (payload) => {
+    started.resolve(payload);
+    return response.promise;
+  };
+  const turn = await f.raw(f.submit({ timeoutMs: 40 }));
+  checkpointJob(turn.job);
+  privateDirectory(path.join(f.directory, "jobs", turn.id));
+  await f.executor.withCheckpointTurn(turn.job, turn.grant, async (read) => {
+    const send = Object.assign(
+      () => f.executor.post(rpc(turn.job.request.payload)),
+      { fence() {} },
+    );
+    await assert.rejects(read.send(send), { code: "RUN_TIMEOUT" });
+    assert.equal(read.evidence().timedOut, true);
+    assert.equal(read.evidence().dispatched, true);
+  });
+  assert.equal(f.state.data.jobs[turn.id]?.state, "needs_reconciliation");
+  assert.equal(f.executor.heldSnapshot()?.pendingCount, 1);
+  const payload = await started.promise;
+  response.resolve({
+    status: 200,
+    raw: JSON.stringify({
+      jsonrpc: "2.0",
+      id: payload.id,
+      result: { tools: [] },
+    }),
+  });
+  await until(() => f.executor.heldSnapshot()?.pendingCount === 0);
+  assert.equal(f.state.data.jobs[turn.id]?.state, "needs_reconciliation");
+  assert.equal(f.counts().sends, 1);
+});
+
+test("checkpoint scope refuses ordinary grants and preserves original pre-send setup rejection", async (t) => {
+  const f = await fixture(t);
+  const turn = await f.raw();
+  await assert.rejects(
+    f.executor.withCheckpointTurn(turn.job, turn.grant, async () => {}),
+    { code: "INVALID_CAPABILITY" },
+  );
+  checkpointJob(turn.job);
+  const cause = new Error("Checkpoint admission failed");
+  await assert.rejects(
+    f.executor.withCheckpointTurn(turn.job, turn.grant, async () => {
+      throw cause;
+    }),
+    (error) => error === cause,
+  );
+  assert.equal(f.counts().sends, 0);
+  assert.equal(f.executor.snapshot()?.workerClosed, true);
+  f.lane.hold(turn.grant, "scheduler original rejection", () =>
+    f.state.block(turn.id, "setup"),
+  );
+  assert.equal(f.executor.heldSnapshot()?.jobId, turn.id);
 });

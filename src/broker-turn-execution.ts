@@ -120,6 +120,7 @@ export interface BrokerTurnServices {
   gate: Pick<QueueGate, "run" | "isAdministrative"> & {
     beginActivity(): ActivityToken;
     endActivity(token: ActivityToken): boolean;
+    hasOtherActivity(token?: ActivityToken): boolean;
   };
   authority: Pick<
     BrokerRuntimeIdentity,
@@ -1457,15 +1458,20 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       () => checkInstance({ ...options, assertCurrent: assert }),
     );
   }
-  function createContext(job: P.Job, grant: ProductGrant): Context {
+  function createContext(
+    job: P.Job,
+    grant: ProductGrant,
+    checkpoint = false,
+  ): Context {
     const context: Context = {
       job,
       grant,
       productTurn: grant.turn,
       runtimePin: authority.capture(),
-      token: job.request.phased
-        ? required(worker.phased.token(job.id))
-        : randomBytes(32).toString("hex"),
+      token:
+        !checkpoint && job.request.phased
+          ? required(worker.phased.token(job.id))
+          : randomBytes(32).toString("hex"),
       pending: new Set(),
       localDispatchErrors: new Set(),
       turnRpcs: [],
@@ -1474,7 +1480,9 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       timedOut: false,
       workerClosed: false,
       executionFailed: false,
-      deadline: Date.now() + (job.sdkRemainingMs ?? job.timeoutMs),
+      deadline:
+        Date.now() +
+        (checkpoint ? job.timeoutMs : (job.sdkRemainingMs ?? job.timeoutMs)),
       contextEpoch: queue.data.contextEpoch || 0,
       running: true,
       postflight: false,
@@ -1485,10 +1493,13 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     });
     context.timeoutPromise.catch(() => {});
     context.budget = new worker.Budget(
-      job.sdkRemainingMs ?? job.timeoutMs,
+      checkpoint ? job.timeoutMs : (job.sdkRemainingMs ?? job.timeoutMs),
       () => {
         context.timedOut = true;
-        if (context.dispatched)
+        if (
+          context.dispatched &&
+          (!checkpoint || lane.currentGrant() === grant)
+        )
           hold(
             context,
             "Execution budget expired; remote operation is not cancelled",
@@ -1503,6 +1514,86 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     );
     contexts.set(grant, context);
     return context;
+  }
+  async function withCheckpointTurn<Result>(
+    job: P.Job,
+    grant: ProductGrant,
+    read: (scope: {
+      send<Value>(send: P.Send<Value>): Promise<Value>;
+      evidence(): {
+        readonly dispatched: boolean;
+        readonly unknown: boolean;
+        readonly timedOut: boolean;
+        readonly executionFailed: boolean;
+        readonly turnRpcs: readonly Readonly<P.RecordEvidence>[];
+      };
+    }) => Promise<Result>,
+  ): Promise<Result> {
+    lane.assertCurrent(grant);
+    if (!job.documentInspection || job.id !== grant.jobId)
+      fail(
+        "INVALID_CAPABILITY",
+        "Checkpoint scope requires its exact inspection turn",
+      );
+    if (startedRuns.has(grant))
+      fail(
+        "PREPARED_RPC_CONSUMED",
+        "This checkpoint grant has already started",
+      );
+    startedRuns.add(grant);
+    const context = createContext(job, grant, true);
+    let open = true,
+      sent = false;
+    const assertOpen = () => {
+      if (!open)
+        fail("INVALID_CAPABILITY", "Checkpoint execution scope has closed");
+      lane.assertCurrent(grant);
+    };
+    try {
+      return await read({
+        async send(send) {
+          assertOpen();
+          if (sent)
+            fail(
+              "PREPARED_RPC_CONSUMED",
+              "Checkpoint send has already started",
+            );
+          sent = true;
+          send.fence();
+          const pending = productScope.run(grant, () => send());
+          context.pending.add(pending);
+          void pending
+            .finally(() => context.pending.delete(pending))
+            .catch(() => {});
+          return Promise.race([pending, required(context.timeoutPromise)]);
+        },
+        evidence() {
+          if (!open)
+            fail("INVALID_CAPABILITY", "Checkpoint execution scope has closed");
+          return freeze(
+            structuredClone({
+              dispatched: context.dispatched,
+              unknown: context.unknown,
+              timedOut: context.timedOut,
+              executionFailed: context.executionFailed,
+              turnRpcs: context.turnRpcs.map((item) => item.record),
+            }),
+          );
+        },
+      });
+    } finally {
+      open = false;
+      context.workerClosed = true;
+      context.running = false;
+      context.budget?.close();
+      if (
+        !context.pending.size &&
+        !context.nativeActivityToken &&
+        lane.currentGrant() !== grant &&
+        heldExecutionContext() !== context
+      )
+        contexts.delete(grant);
+    }
   }
   async function executePreparedProduct(
     job: P.Job,
@@ -2308,6 +2399,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           contexts.delete(grant);
     },
     run,
+    withCheckpointTurn,
     post,
     backend,
     checkInstance,
@@ -2320,6 +2412,19 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       return context?.postflight ? null : snapshot(context);
     },
     heldSnapshot: () => snapshot(heldExecutionContext()),
+    hasOtherActivity(
+      jobId?: string,
+      expectedActivityId?: string | null,
+    ): boolean {
+      const context = currentContext();
+      const token =
+        context &&
+        context.job.id === jobId &&
+        context.nativeActivityToken?.id === expectedActivityId
+          ? context.nativeActivityToken
+          : undefined;
+      return gate.hasOtherActivity(token);
+    },
     workerStatus(message: { jobId?: string; workerToken?: string }) {
       const context = currentContext();
       if (
