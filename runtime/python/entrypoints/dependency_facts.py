@@ -57,9 +57,17 @@ def finite_membership_domains(parsed, user_tree):
     nodes = [node for tree in trees for node in ast.walk(tree)]
     parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
     if any((isinstance(node, ast.Name)
-            and node.id in {'globals', 'locals', 'vars', 'eval', 'exec', '__builtins__'})
+            and node.id in {'globals', 'locals', 'vars', 'eval', 'exec',
+                            '__builtins__', 'getattr', 'hasattr'})
+           or (isinstance(node, ast.Name) and node.id in {'type', 'str'}
+               and not isinstance(node.ctx, ast.Load))
+           or (isinstance(node, ast.arg) and node.arg in {'type', 'str'})
+           or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+               and node.name in {'type', 'str'})
+           or (isinstance(node, ast.alias) and (node.asname or node.name.split('.')[0]) in {'type', 'str'})
            or (isinstance(node, ast.Attribute)
-               and node.attr in {'__globals__', '__dict__', '__getattribute__'})
+               and node.attr in {'__globals__', '__dict__', '__getattribute__',
+                                 '__getattr__', 'getattr', 'hasattr'})
            or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                and node.func.id in {'getattr', 'hasattr'})
            for node in nodes):
@@ -237,10 +245,16 @@ def guarded_operation_choices(node, parents, domains, casts):
     while (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
            and node.func.id in casts and len(node.args) == 2 and not node.keywords):
         node = node.args[1]
+    # Re-reading a subscript/property may produce another value or invoke user
+    # code. Only an unchanged local exact string can carry a dominating proof.
+    if not isinstance(node, ast.Name):
+        raise Unknown()
     scope, statement = parents.get(node), node
     while scope is not None and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
         statement, scope = scope, parents.get(scope)
     if scope is None or statement not in scope.body:
+        raise Unknown()
+    if not isinstance(statement, (ast.Return, ast.Assign, ast.AnnAssign, ast.Expr)):
         raise Unknown()
     dispatch = parents.get(node)
     while dispatch is not None and dispatch is not statement:
@@ -250,7 +264,8 @@ def guarded_operation_choices(node, parents, domains, casts):
         dispatch = parents.get(dispatch)
     if dispatch is None or dispatch is statement:
         raise Unknown()
-    if any(isinstance(part, (ast.NamedExpr, ast.Await, ast.Yield))
+    if any(isinstance(part, (ast.NamedExpr, ast.Await, ast.Yield, ast.YieldFrom,
+                             ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))
            or (isinstance(part, ast.Call) and part is not dispatch
                and not (isinstance(part.func, ast.Name) and part.func.id in casts))
            for part in ast.walk(statement)):
@@ -266,6 +281,37 @@ def guarded_operation_choices(node, parents, domains, casts):
             continue
         name = guard.test.comparators[0].id
         if name not in domains:
+            continue
+        bindings = [part for part in ast.walk(scope)
+                    if isinstance(part, ast.Name) and part.id == node.id
+                    and not isinstance(part.ctx, ast.Load)]
+        if (len(bindings) > 1 or any(
+                not (isinstance(parents.get(binding), (ast.Assign, ast.AnnAssign))
+                     and parents[binding] in scope.body
+                     and parents[binding].end_lineno < guard.lineno)
+                for binding in bindings)):
+            continue
+        if any((isinstance(part, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                and part.name == node.id)
+               or (isinstance(part, ast.MatchMapping) and part.rest == node.id)
+               or (isinstance(part, (ast.Global, ast.Nonlocal)) and node.id in part.names)
+               for part in ast.walk(scope)):
+            continue
+        exact_string = False
+        for check in scope.body[:guard_index]:
+            test = check.test if isinstance(check, ast.If) else None
+            if (isinstance(test, ast.Compare) and len(test.ops) == 1
+                    and isinstance(test.ops[0], ast.IsNot) and not check.orelse
+                    and len(check.body) == 1 and isinstance(check.body[0], ast.Raise)
+                    and isinstance(test.left, ast.Call) and isinstance(test.left.func, ast.Name)
+                    and test.left.func.id == 'type' and not test.left.keywords
+                    and len(test.left.args) == 1 and isinstance(test.left.args[0], ast.Name)
+                    and test.left.args[0].id == node.id
+                    and isinstance(test.comparators[0], ast.Name)
+                    and test.comparators[0].id == 'str'
+                    and all(parents[binding].end_lineno < check.lineno for binding in bindings)):
+                exact_string = True
+        if not exact_string:
             continue
         if any((isinstance(part, ast.arg) and part.arg == name)
                or (isinstance(part, ast.Name) and part.id == name and not isinstance(part.ctx, ast.Load))
@@ -873,6 +919,13 @@ def registry_alias_expansions(unit, tree, context=()):
     nodes = [node for candidate in [tree, *context] for node in ast.walk(candidate)]
     parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
     for node in nodes:
+        if isinstance(node, ast.Name) and node.id in {'getattr', 'hasattr'}:
+            parent = parents.get(node)
+            if not (isinstance(node.ctx, ast.Load) and isinstance(parent, ast.Call)
+                    and parent.func is node):
+                return []
+        if isinstance(node, ast.Attribute) and node.attr in {'getattr', 'hasattr'}:
+            return []
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                 and node.func.id in {'getattr', 'hasattr'}):
             try:
@@ -883,7 +936,9 @@ def registry_alias_expansions(unit, tree, context=()):
                 return []
     if any((isinstance(node, ast.Attribute)
             and node.attr in {'__globals__', '__dict__', '__builtins__',
+                              '__getattribute__', '__getattr__',
                               'globals', 'locals', 'vars', 'eval', 'exec'})
+           or (isinstance(node, ast.Name) and node.id == '__builtins__')
            or (isinstance(node, ast.ImportFrom)
                and any(alias.name == '*' for alias in node.names))
            or (isinstance(node, ast.Constant)

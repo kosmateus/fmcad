@@ -10,14 +10,17 @@ spec.loader.exec_module(module)
 
 
 class ValidatedDispatchDomain(unittest.TestCase):
-    def handler_facts(self, guard, intervening="", suffix=""):
+    def handler_facts(self, guard, intervening="", suffix="", dispatch=None):
         source = (
             "def checked(ctx, data):\n"
             "    spec = data['measurement']\n"
+            "    operation = spec['operation']\n"
+            "    if type(operation) is not str:\n"
+            "        raise ValueError('operation must be an exact string')\n"
             + guard
             + intervening
-            + "    return ctx.call(spec['operation'], spec['data'])\n"
-            "_OPERATIONS = {'measure.' + mode for mode in ('distance', 'angle')}\n"
+            + (dispatch or "    return ctx.call(operation, spec['data'])\n")
+            + "_OPERATIONS = {'measure.' + mode for mode in ('distance', 'angle')}\n"
             + suffix
         )
         result = module.analyse({
@@ -32,28 +35,43 @@ class ValidatedDispatchDomain(unittest.TestCase):
 
     def test_dominating_finite_validation_closes_dynamic_dispatch(self):
         facts = self.handler_facts(
-            "    if spec['operation'] not in _OPERATIONS:\n"
+            "    if operation not in _OPERATIONS:\n"
             "        raise ValueError('unsupported operation')\n")
         self.assertFalse(facts["opaque"])
         self.assertEqual(set(facts["operations"]),
                          {"measure.distance", "measure.angle"})
 
     def test_absent_or_invalidated_validation_stays_opaque(self):
-        guard = ("    if spec['operation'] not in _OPERATIONS:\n"
+        guard = ("    if operation not in _OPERATIONS:\n"
                  "        raise ValueError('unsupported operation')\n")
         for args in [
                 ("",),
-                (guard, "    spec['operation'] = supplied\n"),
+                (guard, "    operation = supplied\n"),
                 (guard, "    change(spec)\n"),
                 (guard, "", "_OPERATIONS.add(supplied)\n"),
                 (guard, "", "escaped = _OPERATIONS\n"),
                 (guard, "", "observer = globals().get('_OPERATIONS')\n"),
+                (guard, "", "read = getattr\n"),
                 ("    if flag:\n"
-                 "        if spec['operation'] not in _OPERATIONS:\n"
+                 "        if operation not in _OPERATIONS:\n"
                  "            raise ValueError('unsupported operation')\n",),
         ]:
             with self.subTest(args=args):
                 self.assertTrue(self.handler_facts(*args)["opaque"])
+
+    def test_dispatch_in_rebinding_loop_cannot_reuse_outer_guard(self):
+        guard = ("    if operation not in _OPERATIONS:\n"
+                 "        raise ValueError('unsupported operation')\n")
+        for dispatch in [
+                "    for operation in (other,):\n"
+                "        return ctx.call(operation, spec['data'])\n",
+                "    return [ctx.call(operation, spec['data']) for operation in (other,)]\n",
+                "    return lambda operation: ctx.call(operation, spec['data'])\n",
+                "    return ctx.call(spec['operation'], spec['data'])\n",
+        ]:
+            with self.subTest(dispatch=dispatch):
+                facts = self.handler_facts(guard, dispatch=dispatch)
+                self.assertTrue(facts["opaque"])
 
 
 if __name__ == "__main__":
