@@ -99,6 +99,55 @@ test('identity covers executed Python and JavaScript and excludes user state', t
   assert.notEqual(runtime.runtimeBuildIdentity(paths), pythonHash);
 });
 
+test('repeated identity checks detect same-size byte changes with restored mtime across every executable root', t => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root, 'dist/processes'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'dist/assets'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'dist/runtime/python'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fmcad"}');
+  const worker = path.join(root, 'dist/processes/queue-worker.js');
+  fs.writeFileSync(worker, '// original');
+  const paths = runtime.resolveRuntimePaths({ anchor: worker, home: root, env: {} });
+  for (const name of ['dist/processes/queue-worker.js', 'dist/assets/input.dat',
+    'dist/runtime/python/module.py', 'bin/launcher.js', 'scripts/console-source-format.py', 'package.json']) {
+    const file = path.join(root, name);
+    fs.writeFileSync(file, 'first bytes');
+    fs.utimesSync(file, new Date(1000), new Date(1000));
+    const before = fs.statSync(file);
+    const original = runtime.runtimeBuildIdentity(paths);
+    assert.equal(runtime.runtimeBuildIdentity(paths), original);
+    fs.writeFileSync(file, 'other bytes');
+    fs.utimesSync(file, before.atime, before.mtime);
+    assert.equal(fs.statSync(file).mtimeMs, before.mtimeMs);
+    assert.notEqual(runtime.runtimeBuildIdentity(paths), original, name);
+    fs.writeFileSync(file, 'first bytes');
+    assert.equal(runtime.runtimeBuildIdentity(paths), original, name);
+  }
+});
+
+test('identity detects added, deleted and renamed modules and denies symlinks even for excluded files', t => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root, 'dist/processes'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fmcad"}');
+  const worker = path.join(root, 'dist/processes/queue-worker.js');
+  fs.writeFileSync(worker, '// worker');
+  const paths = runtime.resolveRuntimePaths({ anchor: worker, home: root, env: {} });
+  const original = runtime.runtimeBuildIdentity(paths);
+  const added = path.join(root, 'dist/processes/added.js');
+  fs.writeFileSync(added, '// module');
+  const withModule = runtime.runtimeBuildIdentity(paths);
+  assert.notEqual(withModule, original);
+  const renamed = added + '.renamed';
+  fs.renameSync(added, renamed);
+  assert.notEqual(runtime.runtimeBuildIdentity(paths), withModule);
+  fs.unlinkSync(renamed);
+  assert.equal(runtime.runtimeBuildIdentity(paths), original);
+  fs.symlinkSync(worker, path.join(root, 'dist/processes/ignored.map'));
+  assert.throws(() => runtime.runtimeBuildIdentity(paths), { code: 'UNPINNED_BUILD' });
+});
+
 const linux = { platform: 'linux', architecture: 'x64', nodeVersion: '24.1.0', osRelease: '6.8.0-generic', distribution: 'ubuntu', distributionVersion: '24.04' };
 test('capabilities distinguish Linux, WSL2 and unsupported hosts without fallback', () => {
   platform.assertPlatformCapability(linux, 'local');
