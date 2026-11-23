@@ -71,7 +71,6 @@ export function featureModeProbeSource(
   const guard = admission
     ? `from typing import cast
 _feature_peers = {p['creationId']: p['name'] for p in cast(list[dict[str, str]], ${py(admission.peers)})}
-_feature_before = [d for d in documents() if d['creationId'] != doc.creationId]
 _feature_expected = cast(list[dict[str, str | bool]], ${py(foreign)})
 _feature_peer_rows = [d for d in _feature_before if d['creationId'] in _feature_peers]
 if (
@@ -81,8 +80,7 @@ if (
 ):
     ${emit(`dict(creationId=doc.creationId, admission=dict(status='inventory-changed', requestId=${JSON.stringify(admission.requestId)}, mutationStarted=False, bodyCalls=0))`)}
     return`
-    : `_feature_before = [d for d in documents() if d['creationId'] != doc.creationId]
-assert _feature_before == ${py(foreign)}, 'Other document state changed'`;
+    : `assert _feature_before == ${py(foreign)}, 'Other document state changed'`;
   const guardedBody = `try:\n${body
     .split("\n")
     .map((line) => "    " + line)
@@ -97,10 +95,12 @@ def documents():
 matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)} and d.name == ${JSON.stringify(identity.name)}]
 assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None, 'Owned active unsaved document guard failed'
 doc = matches[0]
+_feature_before = [d for d in documents() if d['creationId'] != doc.creationId]
+${guard}
 if app.activeDocument != doc:
     assert doc.activate(), 'Owned target could not be activated'
 assert app.activeDocument == doc, 'Owned active unsaved document guard failed'
-${guard}
+assert [d for d in documents() if d['creationId'] != doc.creationId] == _feature_before, 'Other document state changed during feature probe'
 ${guardedBody}`,
     `from typing import TypeAlias
 _FeatureJsonValue: TypeAlias = None | bool | int | float | str | list['_FeatureJsonValue'] | dict[str, '_FeatureJsonValue']`,

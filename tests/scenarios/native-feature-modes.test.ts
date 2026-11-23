@@ -147,6 +147,7 @@ test("feature probe admits receipt-bound peer transitions and rejects unproven c
     foreign: unknown[],
     activeCreationId = identity.creationId,
     ownedIdentity = identity,
+    activationMutation?: { creationId: string; modified: boolean },
   ) =>
     spawnSync(
       "python3",
@@ -164,16 +165,53 @@ rows = json.loads(${JSON.stringify(JSON.stringify(foreign))})
 docs = [types.SimpleNamespace(name=d['name'], creationId=d['creationId'], isSaved=d['saved'], isModified=d['modified'], dataFile=None) for d in rows]
 app = types.SimpleNamespace(documents=[own] + docs, activeDocument=None)
 all_docs = app.documents
+activation_mutation = json.loads(${JSON.stringify(JSON.stringify(activationMutation ?? null))})
+def activate(document):
+    if document.creationId == ${JSON.stringify(identity.creationId)} and activation_mutation is not None:
+        target = next((d for d in all_docs if d.creationId == activation_mutation['creationId']), None)
+        assert target is not None
+        target.isModified = activation_mutation['modified']
+    app.activeDocument = document
+    return True
 for document in all_docs:
-    document.activate = lambda document=document: (setattr(app, 'activeDocument', document) is None)
+    document.activate = lambda document=document: activate(document)
 app.activeDocument = next((d for d in all_docs if d.creationId == ${JSON.stringify(activeCreationId)}), None)
 core.Application = types.SimpleNamespace(get=lambda: app)
 exec(${JSON.stringify(source)})
 run('')
+print('ACTIVE=' + (app.activeDocument.creationId if app.activeDocument else 'None'))
 `,
       ],
       { encoding: "utf8" },
     );
+  const deniedPeerActivation = execute(
+    featureModeProbeSource(identity, [], 'print("BODY_EXECUTED")', {
+      requestId: "denied-probe",
+      peers: [],
+    }),
+    [opened],
+    opened.creationId,
+  );
+  assert.equal(deniedPeerActivation.status, 0, deniedPeerActivation.stderr);
+  assert.doesNotMatch(deniedPeerActivation.stdout, /BODY_EXECUTED/u);
+  assert.match(deniedPeerActivation.stdout, /ACTIVE=new/u);
+  assert.deepEqual(
+    JSON.parse(
+      deniedPeerActivation.stdout
+        .split("\n")
+        .find((line) => line.startsWith("FMCAD_SCENARIO "))!
+        .slice("FMCAD_SCENARIO ".length),
+    ),
+    {
+      creationId: identity.creationId,
+      admission: {
+        status: "inventory-changed",
+        requestId: "denied-probe",
+        mutationStarted: false,
+        bodyCalls: 0,
+      },
+    },
+  );
   const stale = execute(
     featureModeProbeSource(identity, [closed], 'print("BODY_EXECUTED")'),
     [opened],
@@ -232,6 +270,20 @@ run('')
   const peerActivation = execute(nextTurn, [opened], opened.creationId);
   assert.equal(peerActivation.status, 0, peerActivation.stderr);
   assert.match(peerActivation.stdout, /TARGET=own/u);
+  assert.match(peerActivation.stdout, /ACTIVE=own/u);
+  const activationPeerMutation = execute(
+    nextTurn,
+    [opened],
+    opened.creationId,
+    identity,
+    { creationId: opened.creationId, modified: false },
+  );
+  assert.notEqual(activationPeerMutation.status, 0);
+  assert.doesNotMatch(activationPeerMutation.stdout, /BODY_EXECUTED/u);
+  assert.match(
+    activationPeerMutation.stderr,
+    /Other document state changed during feature probe/u,
+  );
   const wrongTarget = execute(nextTurn, [opened], opened.creationId, {
     ...identity,
     creationId: "foreign-target",
@@ -267,7 +319,7 @@ run('')
   );
   const changedPeer = execute(peerAware, [{ ...opened, modified: false }]);
   assert.equal(changedPeer.status, 0, changedPeer.stderr);
-  assert.equal(changedPeer.stdout.trim(), "BODY_EXECUTED");
+  assert.match(changedPeer.stdout, /^BODY_EXECUTED\nACTIVE=own\n?$/u);
   const newlyProvenPeer = execute(
     featureModeProbeSource(identity, [], 'print("BODY_EXECUTED")', admission),
     [opened],
@@ -283,7 +335,10 @@ run('')
     assert.equal(declined.status, 0, declined.stderr);
     assert.doesNotMatch(declined.stdout, /BODY_EXECUTED/u);
     const output = JSON.parse(
-      declined.stdout.trim().slice("FMCAD_SCENARIO ".length),
+      declined.stdout
+        .split("\n")
+        .find((line) => line.startsWith("FMCAD_SCENARIO "))!
+        .slice("FMCAD_SCENARIO ".length),
     );
     assert.deepEqual(output, {
       creationId: identity.creationId,
