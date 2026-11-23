@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type {
   Execution,
@@ -212,11 +213,14 @@ export class QueueScenarioBackend implements ScenarioBackend {
         argv,
         cwd: request.directory,
       });
-      const receipt = queueExecReceipt(
-        submitted.stderr,
-        request.owner,
-        request.requestId,
-      );
+      const receipt = queueExecReceiptWithDiagnostics({
+        result: submitted,
+        directory: this.#scenarioRoot,
+        cliPath,
+        argv,
+        owner: request.owner,
+        requestId: request.requestId,
+      });
       const key = requestKey(request.owner, request.requestId);
       this.#jobIds.set(key, receipt.jobId);
       const original = record(
@@ -545,6 +549,66 @@ export function queueExecReceipt(
     jobId: jobs[0]!["jobId"] as string,
     ...(result ? { state: result["state"] as string } : {}),
   };
+}
+
+/** Persist the exact public CLI output before receipt validation can reject it. */
+export function queueExecReceiptWithDiagnostics(input: {
+  result: QueueExecProcessResult;
+  directory: string;
+  cliPath: string;
+  argv: readonly string[];
+  owner: Pick<Owner, "clientId">;
+  requestId: string;
+}): QueueExecReceipt {
+  let diagnosticPath: string | undefined;
+  try {
+    const directory = path.join(input.directory, "queue-exec-diagnostics");
+    try {
+      fs.mkdirSync(directory, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const stat = fs.lstatSync(directory);
+    if (
+      !stat.isDirectory() ||
+      stat.isSymbolicLink() ||
+      (typeof process.getuid === "function" && stat.uid !== process.getuid()) ||
+      (process.platform !== "win32" && (stat.mode & 0o077) !== 0)
+    )
+      throw new Error("Queue diagnostic directory is not private");
+    const identity = createHash("sha256")
+      .update(JSON.stringify([input.requestId, input.owner.clientId]))
+      .digest("hex");
+    diagnosticPath = path.join(directory, `queue-exec-${identity}.json`);
+    const scriptIdentity = createHash("sha256")
+      .update(JSON.stringify([input.cliPath, input.argv]))
+      .digest("hex");
+    fs.writeFileSync(
+      diagnosticPath,
+      JSON.stringify({
+        requestId: input.requestId,
+        clientId: input.owner.clientId,
+        scriptIdentity,
+        status: input.result.status,
+        stdout: input.result.stdout,
+        stderr: input.result.stderr,
+      }),
+      { flag: "wx", mode: 0o600 },
+    );
+  } catch {
+    diagnosticPath = undefined;
+  }
+  try {
+    return queueExecReceipt(input.result.stderr, input.owner, input.requestId);
+  } catch (error) {
+    if (diagnosticPath) {
+      Object.defineProperty(error, "diagnosticPath", {
+        value: diagnosticPath,
+        enumerable: true,
+      });
+    }
+    throw error;
+  }
 }
 type QueueModule = Omit<ClientModule, "QueueClient"> & {
   QueueClient: new (
