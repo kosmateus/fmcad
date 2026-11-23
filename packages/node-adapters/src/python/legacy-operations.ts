@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import path from "node:path";
 import {
-  pythonValue,
   pythonLiteral,
   preparePythonArtifact,
   type SourceInput,
@@ -150,7 +149,10 @@ export function prepareExportScript(args: readonly string[]) {
       role: index === all.length - 1 ? "wrapper" : "runtime",
       source: unit.source
         .replace('OP = "help"', 'OP = "export"')
-        .replace("ARGS = []", () => "ARGS = " + pythonValue(args)),
+        .replace(
+          "ARGS: list[str] = []",
+          () => "ARGS: list[str] = " + pythonLiteral(args),
+        ),
     }),
   );
   return preparePythonArtifact(units, { request: { op: "export", args } });

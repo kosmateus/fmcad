@@ -154,9 +154,41 @@ function fixture(t: TestContext) {
       report,
     );
   let cleanupCalls = 0;
+  const close = {
+    creationId: own.creationId,
+    closed: true,
+    inventoryFence: {
+      version: 1,
+      before: [{ ...user }, { ...peer }, { ...user, ...own }],
+      after: [{ ...user }, { ...peer }],
+    },
+  };
+  const cleanupRequest = {
+    phase: "cleanup",
+    requestId: owner.clientId + ":1",
+    intent: { kind: "script" as const },
+    result: {
+      requestId: owner.clientId + ":1",
+      state: "succeeded" as const,
+      sdkSettled: true,
+      mayHaveMutated: true,
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+      brokerReceipt: {
+        requestId: owner.clientId + ":1",
+        clientId: owner.clientId,
+        jobId: randomUUID(),
+        state: "succeeded" as const,
+        operationResult: { executionOutcome: "succeeded" },
+      },
+    },
+  };
   session.legacyScript = async () => {};
   session.cleanup = async () => {
     cleanupCalls++;
+    cleanupRequest.result.stdout = marker + JSON.stringify(close);
+    session.report.requests.push(cleanupRequest);
     session.report.cleanup = "complete";
   };
   let observedSource = "";
@@ -167,6 +199,8 @@ function fixture(t: TestContext) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return {
     user,
+    close,
+    cleanupRequest,
     peer,
     after,
     peerReport,
@@ -181,6 +215,14 @@ function fixture(t: TestContext) {
 
 test("legacy final inventory accepts exact proven peers without changing user rows or active identity", async (t) => {
   const f = fixture(t);
+  await f.run();
+  assert.equal(f.cleanupCalls(), 1);
+});
+
+test("legacy cleanup permits peer focus change after the settled close turn", async (t) => {
+  const f = fixture(t);
+  f.after.activeCreationId = f.peer.creationId;
+  f.after.active = f.peer.name;
   await f.run();
   assert.equal(f.cleanupCalls(), 1);
 });
@@ -238,7 +280,7 @@ test("the final legacy cleanup observation passes the complete production checke
   );
 });
 
-test("legacy final inventory requires and accepts the exact peer close after its original observation", async (t) => {
+test("legacy final inventory accepts a peer closed after its original observation", async (t) => {
   const f = fixture(t),
     original = f.peerReport.requests[0]!;
   const requestId = f.peerReport.owner.clientId + ":1";
@@ -270,49 +312,46 @@ test("legacy final inventory requires and accepts the exact peer close after its
 const invalid: { name: string; change(f: ReturnType<typeof fixture>): void }[] =
   [
     {
-      name: "user document modification",
+      name: "same-turn user document modification",
       change(f) {
-        f.after.documents[0]!.modified = true;
+        f.close.inventoryFence.after[0]!.modified = true;
       },
     },
     {
       name: "same-name foreign document",
       change(f) {
-        f.after.documents[0]!.creationId = "foreign-id";
+        f.close.inventoryFence.after[0]!.creationId = "foreign-id";
       },
     },
     {
-      name: "changed user active identity",
+      name: "wrong close target identity",
       change(f) {
-        f.after.activeCreationId = f.peer.creationId;
-        f.after.active = f.peer.name;
+        f.close.creationId = f.peer.creationId;
       },
     },
     {
-      name: "unproven new document",
+      name: "new document during close",
       change(f) {
-        f.after.documents.push({
+        f.close.inventoryFence.after.push({
           ...f.peer,
           creationId: "foreign-id",
-          active: false,
         });
       },
     },
     {
-      name: "observed peer disappearance without close",
+      name: "same-turn peer disappearance",
       change(f) {
-        f.after.documents.pop();
+        f.close.inventoryFence.after.pop();
       },
     },
     {
-      name: "unknown peer receipt",
+      name: "unsettled original close receipt",
       change(f) {
-        f.peerReport.requests[0]!.result.sdkSettled = false;
-        f.write(path.join(f.peerDirectory, "report.json"), f.peerReport);
+        f.cleanupRequest.result.sdkSettled = false;
       },
     },
     {
-      name: "changed held user baseline without settled lifecycle proof",
+      name: "same-turn changed held peer",
       change(f) {
         f.peerReport.cleanup = "deferred";
         Reflect.set(f.peerReport, "cleanupHold", {
@@ -326,22 +365,52 @@ const invalid: { name: string; change(f: ReturnType<typeof fixture>): void }[] =
           };
         index.before.documents.push(f.peer);
         f.write(file, index);
-        f.after.documents[1]!.modified = false;
+        f.close.inventoryFence.after[1]!.modified = false;
       },
     },
     {
-      name: "foreign coordinator receipt",
+      name: "foreign original close receipt",
       change(f) {
-        const file = path.join(
-            f.session.directory,
-            "..",
-            "_coordinator/before.result.json",
-          ),
-          value = JSON.parse(fs.readFileSync(file, "utf8")) as {
-            brokerReceipt: { clientId: string };
-          };
-        value.brokerReceipt.clientId = "foreign-client";
-        f.write(file, value);
+        f.cleanupRequest.result.brokerReceipt.clientId = "foreign-client";
+      },
+    },
+    {
+      name: "wrong original request binding",
+      change(f) {
+        f.cleanupRequest.result.requestId = "foreign-request";
+      },
+    },
+    {
+      name: "target still present at final observation",
+      change(f) {
+        f.after.documents.push({
+          ...f.user,
+          ...f.session.document,
+          active: false,
+        });
+      },
+    },
+    {
+      name: "target still present immediately after close",
+      change(f) {
+        f.close.inventoryFence.after.push({ ...f.user, ...f.session.document });
+      },
+    },
+    {
+      name: "duplicate target before close",
+      change(f) {
+        f.close.inventoryFence.before.push({
+          ...f.user,
+          ...f.session.document,
+        });
+      },
+    },
+    {
+      name: "missing original close result",
+      change(f) {
+        f.session.cleanup = async () => {
+          f.session.report.cleanup = "complete";
+        };
       },
     },
   ];
@@ -350,5 +419,25 @@ for (const fault of invalid)
     const f = fixture(t);
     fault.change(f);
     await assert.rejects(() => f.run());
-    assert.equal(f.cleanupCalls(), 1);
+    assert.equal(
+      f.cleanupCalls(),
+      fault.name === "missing original close result" ? 0 : 1,
+    );
   });
+
+test("legacy final observation allows independent lifecycle and changes after the protected close turn", async (t) => {
+  const f = fixture(t);
+  f.after.documents = [
+    { ...f.user, modified: true, active: false },
+    {
+      ...f.peer,
+      creationId: "new-peer",
+      name: f.session.document.name,
+      active: true,
+    },
+  ];
+  f.after.activeCreationId = "new-peer";
+  f.after.active = f.session.document.name;
+  await f.run();
+  assert.equal(f.cleanupCalls(), 1);
+});

@@ -5,12 +5,8 @@ import type { Scenario } from "./runner";
 import { record, text } from "./contracts";
 import { program, emit } from "./programs";
 import { concurrencyLimit } from "./scheduling";
-import {
-  assertReceiptBoundDocumentInventory,
-  discoverOwnedUnsavedFixtureProofs,
-  originalActiveDocument,
-} from "./fixture-provenance";
-import { marker } from "./programs";
+import { assertFencedClosedDocumentInventory } from "./fixture-provenance";
+import { resultValue } from "./saved-files";
 
 export const nativeLegacyCapability = "native-legacy-cli-effects";
 export function nativeLegacyScenarios(owners = 10): Scenario[] {
@@ -31,6 +27,29 @@ export function nativeLegacyScenarios(owners = 10): Scenario[] {
       } finally {
         await session.cleanup();
         if (session.report.cleanup === "complete") {
+          const cleanup = session.report.requests.findLast(
+              (request) => request.phase === "cleanup",
+            ),
+            close = resultValue(cleanup);
+          assert.ok(
+            close,
+            "Legacy cleanup requires its settled original close receipt",
+          );
+          const receipt = record(cleanup?.result?.brokerReceipt);
+          assert.equal(receipt["requestId"], cleanup?.requestId);
+          assert.equal(receipt["clientId"], session.report.owner.clientId);
+          assert.equal(receipt["state"], "succeeded");
+          text(receipt["jobId"]);
+          assert.equal(close["creationId"], own.creationId);
+          assert.equal(close["closed"], true);
+          const fence = record(close["inventoryFence"]);
+          assert.equal(fence["version"], 1);
+          assertFencedClosedDocumentInventory(
+            fence["before"],
+            fence["after"],
+            own,
+            "Legacy cleanup changed a non-target document during the close SDK turn",
+          );
           const after = await session.observe(
             "observe-legacy-after-cleanup",
             program(`import adsk.core, json
@@ -40,108 +59,11 @@ documents = [dict(name=d.name, creationId=d.creationId, fileId=d.dataFile.id if 
 ${emit(`dict(creationId=${JSON.stringify(own.creationId)}, documents=documents, active=app.activeDocument.name if app.activeDocument else None, activeCreationId=app.activeDocument.creationId if app.activeDocument else None)`)}`),
           );
           assert.ok(Array.isArray(after["documents"]));
-          const coordinator = record(
-            JSON.parse(
-              fs.readFileSync(
-                path.join(session.directory, "..", "index.json"),
-                "utf8",
-              ),
-            ) as unknown,
-          );
-          const before = record(coordinator["before"]);
-          assert.ok(Array.isArray(before["documents"]));
-          assert.equal(coordinator["runId"], session.report.owner.runId);
-          const original = record(
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(
-                    session.directory,
-                    "..",
-                    "_coordinator/before.result.json",
-                  ),
-                  "utf8",
-                ),
-              ) as unknown,
-            ),
-            clientId = `scenario:${session.report.owner.runId}:coordinator`,
-            requestId = clientId + ":before",
-            receipt = record(original["brokerReceipt"]);
-          assert.equal(original["requestId"], requestId);
-          assert.equal(original["state"], "succeeded");
-          assert.equal(original["sdkSettled"], true);
-          assert.equal(receipt["requestId"], requestId);
-          assert.equal(receipt["clientId"], clientId);
-          assert.equal(receipt["state"], "succeeded");
-          text(receipt["jobId"]);
-          const lines = text(original["stdout"])
-            .split(/\r?\n/u)
-            .filter((line) => line.startsWith(marker));
-          assert.equal(lines.length, 1);
-          const observed = record(
-            JSON.parse(lines[0]!.slice(marker.length)) as unknown,
-          );
-          assert.equal(observed["active"], before["active"]);
-          assert.ok(Array.isArray(observed["documents"]));
-          const seen = new Set(
-              observed["documents"].map((row) =>
-                text(record(row)["creationId"]),
-              ),
-            ),
-            relevant = new Set([
-              ...seen,
-              ...after["documents"].map((row) =>
-                text(record(row)["creationId"]),
-              ),
-            ]),
-            proofs = new Map(
-              [
-                ...discoverOwnedUnsavedFixtureProofs(
-                  path.dirname(path.dirname(session.directory)),
-                  session.backend,
-                ),
-              ].filter(
-                ([id, proof]) =>
-                  relevant.has(id) ||
-                  (proof.state === "saved" &&
-                    relevant.has(proof.savedDocument.creationId)),
-              ),
-            );
+          assert.equal(after["creationId"], own.creationId);
           const testDocumentRemainsOpen = after["documents"]
             .map(record)
-            .some((d) => d["name"] === own.name);
+            .some((d) => d["creationId"] === own.creationId);
           assert.equal(testDocumentRemainsOpen, false);
-          assertReceiptBoundDocumentInventory(
-            before["documents"],
-            after["documents"],
-            proofs,
-            "Legacy cleanup changed a protected document or an unproven peer",
-            true,
-            seen,
-          );
-          const settledPeers = new Map(
-              [...proofs]
-                .filter(
-                  ([, proof]) =>
-                    proof.state === "open" ||
-                    proof.state === "closed" ||
-                    (proof.state === "saved" &&
-                      proof.savedState !== "unsettled"),
-                )
-                .map(([id, proof]) => [id, proof.document]),
-            ),
-            active = originalActiveDocument(
-              before["active"],
-              before["documents"],
-              settledPeers,
-            );
-          if (active) {
-            assert.equal(
-              after["activeCreationId"],
-              active.creationId,
-              "Original user active document changed",
-            );
-            assert.equal(after["active"], active.name);
-          }
           const completionPath = path.join(
             session.directory,
             "legacy/completion.json",
@@ -167,7 +89,7 @@ ${emit(`dict(creationId=${JSON.stringify(own.creationId)}, documents=documents, 
                 status: "passed",
               },
               {
-                name: "existing documents preserved and no test remains",
+                name: "non-target documents preserved during close and exact owned document absent",
                 status: "passed",
               },
             );

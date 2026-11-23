@@ -13,6 +13,11 @@ function fixture(
   userActive = false,
   creationReadback = false,
   missingObservedPeer = false,
+  terminalFailure?: {
+    outcome: string;
+    mayHaveMutated?: boolean;
+    foreignClient?: boolean;
+  },
 ) {
   const root = path.resolve(__dirname, "../../.."),
     parent = path.join(root, ".test-artifacts/scenario-unit");
@@ -186,6 +191,17 @@ function fixture(
     executionOutcome: "succeeded",
     operationResult: { executionOutcome: "succeeded" },
   };
+  if (terminalFailure) {
+    terminal.state = "failed";
+    terminal.executionOutcome = terminalFailure.outcome;
+    terminal.operationResult = {
+      executionOutcome: terminalFailure.outcome,
+      ...(terminalFailure.mayHaveMutated === undefined
+        ? {}
+        : { mayHaveMutated: terminalFailure.mayHaveMutated }),
+    };
+    if (terminalFailure.foreignClient) terminal.clientId = "foreign-client";
+  }
   const state = {
     documents: [
       ...snapshot.documents.filter(
@@ -203,7 +219,7 @@ function fixture(
   };
   fs.writeFileSync(
     preload,
-    `const Module=require('node:module'),fs=require('node:fs');const load=Module._load;let snapshots=0;Module._load=function(name,...args){if(name.endsWith('/tests/helpers/live-broker'))return {fixture(){},spawnSync(_command,argv){fs.writeFileSync(${JSON.stringify(called)},JSON.stringify(argv));let stdout='TEST_CLI_BOUNDARY';if(${creationReadback}){if(argv[1]==='call'){if(++snapshots>1)throw new Error('TEST_STOP_AFTER_CREATION');stdout=${JSON.stringify("LIVE_STATE " + JSON.stringify(state))};}else stdout=${JSON.stringify(own.name)};}return {status:0,stdout,stderr:${JSON.stringify("FMCAD_QUEUE_RESULT " + JSON.stringify(terminal))}};}};return load.call(this,name,...args);};`,
+    `const Module=require('node:module'),fs=require('node:fs');const load=Module._load;let snapshots=0;Module._load=function(name,...args){if(name.endsWith('/tests/helpers/live-broker'))return {fixture(){},spawnSync(_command,argv){fs.writeFileSync(${JSON.stringify(called)},JSON.stringify(argv));let stdout='TEST_CLI_BOUNDARY';if(${creationReadback}){if(argv[1]==='call'){if(++snapshots>1)throw new Error('TEST_STOP_AFTER_CREATION');stdout=${JSON.stringify("LIVE_STATE " + JSON.stringify(state))};}else stdout=${JSON.stringify(own.name)};}return {status:${terminalFailure ? 1 : 0},stdout,stderr:${JSON.stringify("FMCAD_QUEUE_RESULT " + JSON.stringify(terminal))}};}};return load.call(this,name,...args);};`,
   );
   t.after(() => fs.rmSync(campaign, { recursive: true, force: true }));
   return {
@@ -256,6 +272,30 @@ function fixture(
       };
     },
   };
+}
+
+for (const failure of [
+  { outcome: "not_started", mayHaveMutated: false, safe: true },
+  { outcome: "not_started", mayHaveMutated: true, safe: false },
+  { outcome: "not_started", safe: false },
+  {
+    outcome: "not_started",
+    mayHaveMutated: false,
+    foreignClient: true,
+    safe: false,
+  },
+  { outcome: "unknown", mayHaveMutated: false, safe: false },
+]) {
+  test(`legacy child classifies original terminal failure ${JSON.stringify(failure)}`, (t) => {
+    const f = fixture(t, false, false, false, failure);
+    const result = f.run();
+    assert.equal(result.status, 1);
+    const completion = JSON.parse(
+      fs.readFileSync(path.join(f.directory, "legacy/completion.json"), "utf8"),
+    );
+    assert.equal(completion.status, "failed");
+    assert.equal(completion.safeForCleanup, failure.safe, result.stderr);
+  });
 }
 
 test("legacy child resolves an exact active peer from its original coordinator receipt, not filtered baseline names", (t) => {
