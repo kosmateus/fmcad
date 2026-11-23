@@ -1775,6 +1775,89 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     ...(options.testCheckPrepared
       ? { testCheckPrepared: options.testCheckPrepared } : {}),
   });
+  const turnExecution = (
+    runtimeRequire("./broker-turn-execution") as
+      typeof import("../broker-turn-execution")
+  ).createBrokerTurnExecution({
+    configuration: {
+      directory: dir,
+      buildHash: codeHash,
+      brokerNonce: marker.nonce,
+      backend: pinned,
+      maxIpcBytes: MAX,
+    },
+    execution: brokerExecution,
+    completion: load("./dist/core/application/execution"),
+    queue: state,
+    lane,
+    gate,
+    authority: runtimeAuthority,
+    prepareOwnedPost: rpcPreparation.prepareOwnedPost,
+    records: executionRecords,
+    files: {
+      readJson, durable, hash, buildHash, sameInstance, idle,
+      workflowNonterminal, workflowOutputNonterminal, processBirth,
+      privateDirectory,
+      responsePath: (directory, job, name, write) =>
+        load("./queue-response-files").responsePath(directory, job, name, write),
+    },
+    protocol: {
+      responseForCaller, decodeBoundPublicPythonResponse, verifyBoundRemoteReceipt,
+      matching, rpcPayload, canonical, commandEntry,
+    },
+    transport: {
+      client,
+      originalPost,
+      observe: instanceProbe,
+      metadataAdmission: metadataAdmission ?? undefined,
+      physicalIsolation,
+      bindPhysicalTurn: options.bindPhysicalTurn,
+      withPhysicalTurn: options.withPhysicalTurn,
+      pinPhysicalTurn,
+      brokerPhysical: { fencePreparedWire, postAddinAdmission },
+      metadata: { isAddinMetadata, addinMetadataSelector, matchMetadataEvidence },
+      decodeAdmissionJson,
+    },
+    guards: {
+      resetSubmissionOpen: assertResetSubmissionOpen,
+      admitEpochRequest,
+      assertPhysicalIsolationAuthority,
+      assertFrozenMetadataObservation,
+    },
+    documents: {
+      ...load("./queue-document"),
+      quarantineTarget,
+      currentCheckpointGeneration,
+      checkpointGeneration,
+      requiresPhysicalStageOwner: (payload) =>
+        load("./composition/stage-dependencies").requiresPhysicalStageOwner(payload),
+      constrainedCadProgram,
+      get continuation() { return continuation; },
+    },
+    worker: {
+      resolveEntrypoint: () =>
+        resolveChildEntrypoint(resolveRuntimePaths({ anchor: runtimeAnchor }), "queue-worker"),
+      get phased() { return phased; },
+      launch: (
+        runtimeRequire("./dist/node-adapters/execution/local-worker-process") as
+          typeof import("../../packages/node-adapters/src/execution/local-worker-process")
+      ).launchLocalWorker,
+      Budget: PauseBudget,
+    },
+    nativeReceipts,
+    recovery: {
+      readFence: readRecoveryFence,
+      get evaluator() { return recoveryEvaluator; },
+    },
+    preparation: { archiveCompletedBrokerTurn, checkBrokerTurnInputs },
+    telemetry: {
+      debugTraceContext, summarizeBrokerRaw, writeRequestTrace,
+      get observer() { return ipcObserver; },
+      changed: diagnostics,
+    },
+  });
+  // The remaining call sites are switched together with removal of the legacy owner.
+  void turnExecution;
   const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
   const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
   const debugRawReceived = new WeakSet<P.PreparedCall>();

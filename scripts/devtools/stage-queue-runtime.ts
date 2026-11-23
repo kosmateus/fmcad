@@ -50,6 +50,7 @@ export const queueRuntimeModules = [
   "queue-runtime-physical-wiring",
   "queue-runtime-authority",
   "broker-rpc-preparation",
+  "broker-turn-execution",
   "queue-client",
   "queue-closed-epoch-proof",
   "queue-isolated-epoch",
