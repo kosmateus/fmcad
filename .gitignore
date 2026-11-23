@@ -306,6 +306,8 @@ src/document-creation-broker.js
 src/document-creation-broker.d.ts
 src/protocol-metadata-broker.js
 src/protocol-metadata-broker.d.ts
+src/python-diagnostic-broker.js
+src/python-diagnostic-broker.d.ts
 src/document-unlock-controller.js
 src/document-unlock-controller.d.ts
 src/document-unlock-diagnostics.js
