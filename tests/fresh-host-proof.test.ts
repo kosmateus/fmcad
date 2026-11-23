@@ -7,6 +7,7 @@ import {
   type FreshHostContext,
   type ControlledHostProofPorts,
   type ControlledHostPreparationContext,
+  prepareControlledBootstrapOriginals,
 } from "../src/fresh-host-proof";
 import {
   bootstrapInstalledFilesDigest,
@@ -352,6 +353,28 @@ test("controlled origin and MAC-authenticated original references yield a held c
   f.loseWindow();
   assert.throws(prepared.recheck, /CONTROLLED_WINDOW_REVOKED/);
   await assert.rejects(f.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+});
+
+test("bootstrap MAC reference port preserves original native paths and private controller fences without copying authority", async () => {
+  const f = controlledFixture();
+  const port = await prepareControlledBootstrapOriginals(
+    f.ports.controller,
+    f.ports.transcript,
+  );
+  const expected = f.context.originalRefs.map((ref) => ({
+    path: ref.nativePath,
+    sha256: ref.sha256,
+  }));
+  assert.deepEqual(port.readCurrentReferences(), expected);
+  port.readCurrentReferences()[0]!.sha256 = "0".repeat(64);
+  assert.deepEqual(
+    port.readCurrentReferences(),
+    expected,
+    "mutating a returned data copy must not change original controller evidence",
+  );
+  f.loseWindow();
+  assert.throws(port.assertCurrent, /CONTROLLED_WINDOW_REVOKED/);
+  assert.throws(port.readCurrentReferences, /CONTROLLED_WINDOW_REVOKED/);
 });
 
 test("private provider uses the actual kernel, original input and a new native reader for each preparation", async () => {
