@@ -203,7 +203,6 @@ export interface BrokerRuntimeIdentityOptions {
   directory: string;
   buildHash: string;
   configHash: string;
-  owner: P.Owner;
   runtimeRoot?: Pick<
     RuntimeRootPhysicalWiring,
     "verifyRuntimeRootBeforeRestore" | "assertVerifiedRoot"
@@ -252,7 +251,7 @@ export interface BrokerRuntimeIdentity {
   assertCurrent(capture: RuntimeAuthorityCapture): void;
   bindQueue(
     port: BrokerRuntimeQueue,
-    claims?: { successorAuthority?: P.Reference },
+    claims: { owner: P.Owner; successorAuthority?: P.Reference },
   ): void;
   identifyStartup(
     probe: BrokerRuntimeStartupProbe,
@@ -275,7 +274,7 @@ export async function openBrokerRuntimeAuthority(
     transitions: Object.freeze({ ...input.transitions }),
   });
   const dir = path.resolve(options.directory);
-  const owner = freeze(structuredClone(options.owner));
+  let owner: Readonly<P.Owner> | undefined;
   const {
     readJson,
     durable,
@@ -378,6 +377,11 @@ export async function openBrokerRuntimeAuthority(
     return queue;
   };
   const assertOwner = () => {
+    if (!owner)
+      reject(
+        "RUNTIME_AUTHORITY_UNBOUND",
+        "The claimed broker owner is not bound",
+      );
     if (
       !same(readJson(path.join(dir, "broker.lock")), owner) ||
       buildHash() !== options.buildHash
@@ -504,8 +508,9 @@ export async function openBrokerRuntimeAuthority(
     bindQueue(
       port: BrokerRuntimeQueue,
       claims: {
+        owner: P.Owner;
         successorAuthority?: P.Reference;
-      } = {},
+      },
     ) {
       if (bindingStarted)
         reject(
@@ -513,6 +518,8 @@ export async function openBrokerRuntimeAuthority(
           "Runtime identity already has its current queue",
         );
       bindingStarted = true;
+      owner = freeze(structuredClone(claims.owner));
+      assertOwner();
       queue = port;
       if (claims.successorAuthority) {
         // claimSuccessorBroker owns process acquisition. Re-read its immutable
@@ -568,7 +575,12 @@ export async function openBrokerRuntimeAuthority(
       observe: () => Promise<P.Instance>,
       backendTransition: BackendCommit | null = null,
     ): Promise<{ hold: string | null; atomicObservationOnly: boolean }> {
-      if (!bound || started)
+      if (!bound)
+        reject(
+          "RUNTIME_AUTHORITY_UNBOUND",
+          "Bind the claimed owner before startup identity",
+        );
+      if (started)
         reject(
           "RUNTIME_STARTUP_ALREADY_STARTED",
           "Startup identity cannot be replayed",

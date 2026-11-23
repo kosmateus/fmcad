@@ -12,6 +12,7 @@ import {
 import type * as P from "../src/queue-broker-ports";
 import type { ApprovedRuntimeRoot } from "../src/queue-runtime-physical-wiring";
 import { QueueDomain } from "../packages/core/src/domain/queue";
+import { claimBrokerLifetime } from "../packages/node-adapters/src/execution/broker-lifetime";
 
 const runtime = process.env["FMCAD_TEST_RUNTIME"] || process.cwd();
 const load = createRequire(path.join(runtime, "src/queue-broker.js"));
@@ -85,7 +86,6 @@ function fixture(t: import("node:test").TestContext) {
   instance.durable(path.join(dir, "broker.lock"), owner);
   const options = {
     directory: dir,
-    owner,
     buildHash: codeHash,
     configHash: instance.brokerConfigHash({ backend: "addin", url: "fixture" }),
     observationScope,
@@ -105,8 +105,82 @@ function fixture(t: import("node:test").TestContext) {
     receiptPath: path.join(dir, "startup-receipt.json"),
     diagnosticPath: path.join(dir, "startup-observation.json"),
   };
-  return { dir, options, identity, probe, state: makeState() };
+  return { dir, owner, options, identity, probe, state: makeState() };
 }
+
+test("selection rejects configuration without claiming; bind pins the later lifetime owner exactly once", async (t) => {
+  const f = fixture(t);
+  const lock = path.join(f.dir, "broker.lock");
+  fs.unlinkSync(lock); // Only this fixture's synthetic marker, before real claim.
+  instance.durable(path.join(f.dir, "instance.json"), {
+    ...f.identity,
+    configHash: "foreign-configuration",
+  });
+  let claims = 0;
+  const selectThenClaim = async () => {
+    const authority = await openBrokerRuntimeAuthority(f.options, readers);
+    claims++;
+    const lifetime = claimBrokerLifetime({
+      dir: f.dir,
+      socket: path.join(f.dir, "unused.sock"),
+      buildHash: codeHash,
+      configHash: f.options.configHash,
+      processBirth: instance.processBirth,
+      disposeClient() {},
+    });
+    return { authority, lifetime };
+  };
+  await assert.rejects(selectThenClaim(), { code: "CONFIG_CHANGED" });
+  assert.equal(claims, 0);
+  assert.equal(fs.existsSync(lock), false);
+  assert.equal(
+    fs.readdirSync(f.dir).some((name) => name.startsWith("broker-lifecycle-")),
+    false,
+  );
+  instance.durable(path.join(f.dir, "instance.json"), f.identity);
+  const selected = await openBrokerRuntimeAuthority(f.options, readers);
+  assert.equal(fs.existsSync(lock), false);
+  assert.throws(() => selected.capture(), {
+    code: "RUNTIME_AUTHORITY_UNBOUND",
+  });
+  await assert.rejects(
+    selected.identifyStartup(f.probe, async () =>
+      assert.fail("No startup work before owner claim and bind"),
+    ),
+    { code: "RUNTIME_AUTHORITY_UNBOUND" },
+  );
+  assert.throws(() => selected.activatePublishedEpoch(), {
+    code: "RUNTIME_STARTUP_UNVERIFIED",
+  });
+  const lifetime = claimBrokerLifetime({
+    dir: f.dir,
+    socket: path.join(f.dir, "unused.sock"),
+    buildHash: codeHash,
+    configHash: f.options.configHash,
+    processBirth: instance.processBirth,
+    disposeClient() {},
+  });
+  try {
+    const supplied = { ...lifetime.owner };
+    selected.bindQueue(port(f.state), { owner: supplied });
+    supplied.nonce = "caller-mutated-after-bind";
+    selected.assertCurrent(selected.capture());
+    assert.throws(
+      () => selected.bindQueue(port(f.state), { owner: supplied }),
+      { code: "RUNTIME_AUTHORITY_BOUND" },
+    );
+    // Keep the actual lifetime's file identity intact while injecting bad content.
+    fs.writeFileSync(lock, JSON.stringify(supplied));
+    assert.throws(() => selected.capture(), {
+      code: "RUNTIME_AUTHORITY_CHANGED",
+    });
+    assert.deepEqual(selected.current().instance, null);
+  } finally {
+    fs.writeFileSync(lock, JSON.stringify(lifetime.owner));
+    lifetime.abortBeforeInitialize();
+  }
+  assert.equal(fs.existsSync(lock), false);
+});
 
 test("legacy startup owns selection, publication and immutable current identity", async (t) => {
   const f = fixture(t);
@@ -115,7 +189,7 @@ test("legacy startup owns selection, publication and immutable current identity"
     authority.selection().identityFile,
     path.join(f.dir, "instance.json"),
   );
-  authority.bindQueue(port(f.state));
+  authority.bindQueue(port(f.state), { owner: f.owner });
   const before = authority.capture();
   let probes = 0;
   assert.deepEqual(
@@ -148,7 +222,7 @@ test("original durable identity is rechecked after the startup await, without ad
   const f = fixture(t);
   instance.durable(path.join(f.dir, "instance.json"), f.identity);
   const authority = await openBrokerRuntimeAuthority(f.options, readers);
-  authority.bindQueue(port(f.state));
+  authority.bindQueue(port(f.state), { owner: f.owner });
   await assert.rejects(
     authority.identifyStartup(f.probe, async () => {
       instance.durable(path.join(f.dir, "instance.json"), {
@@ -188,7 +262,7 @@ test("legacy process and version changes retain the original quiescent restart g
       },
       readers,
     );
-    authority.bindQueue(port(f.state));
+    authority.bindQueue(port(f.state), { owner: f.owner });
     const result = authority.identifyStartup(f.probe, async () => ({
       ...observed,
       documents: mode === "dirty" ? [{ isModified: true }] : [],
@@ -220,12 +294,12 @@ test("startup rechecks owner and original current control state after await", as
   for (const mutate of ["owner", "control"] as const) {
     const f = fixture(t);
     const authority = await openBrokerRuntimeAuthority(f.options, readers);
-    authority.bindQueue(port(f.state));
+    authority.bindQueue(port(f.state), { owner: f.owner });
     await assert.rejects(
       authority.identifyStartup(f.probe, async () => {
         if (mutate === "owner")
           instance.durable(path.join(f.dir, "broker.lock"), {
-            ...f.options.owner,
+            ...f.owner,
             nonce: "foreign",
           });
         else f.state.pause(true, "foreign-pause");
@@ -241,7 +315,7 @@ test("a durable identity changed after binding cannot become the new startup bas
   const f = fixture(t);
   instance.durable(path.join(f.dir, "instance.json"), f.identity);
   const authority = await openBrokerRuntimeAuthority(f.options, readers);
-  authority.bindQueue(port(f.state));
+  authority.bindQueue(port(f.state), { owner: f.owner });
   instance.durable(path.join(f.dir, "instance.json"), {
     ...f.identity,
     instance: { ...observed, birth: "foreign-before-probe" },
@@ -267,7 +341,7 @@ test("configuration rejection and restored unresolved control send no startup pr
   instance.durable(path.join(f.dir, "instance.json"), f.identity);
   f.state.beginControlProbe("original-control");
   const authority = await openBrokerRuntimeAuthority(f.options, readers);
-  authority.bindQueue(port(f.state));
+  authority.bindQueue(port(f.state), { owner: f.owner });
   const result = await authority.identifyStartup(f.probe, async () => {
     assert.fail(
       "An unresolved original control forbids all startup SDK traffic",
@@ -331,7 +405,9 @@ test("authenticated native-root boundary is awaited and never invokes legacy epo
   );
   assert.equal(verified, true);
   assert.equal(authority.selection().approvedRuntimeRoot, approved);
-  authority.bindQueue(port(f.state, null, "runtime-rebaseline"));
+  authority.bindQueue(port(f.state, null, "runtime-rebaseline"), {
+    owner: f.owner,
+  });
   await authority.identifyStartup(f.probe, async () => observed);
   assert.equal(
     authority.current().identityFile,
@@ -378,7 +454,6 @@ function epochFixture(
     ...f.options,
     directory: epoch.dir,
     configHash: instance.brokerConfigHash(epoch.cfg),
-    owner: instance.readJson<P.Owner>(path.join(epoch.dir, "broker.lock")),
   };
   const q: BrokerRuntimeQueue = {
     epoch: () => epoch.state.epoch,
@@ -388,14 +463,20 @@ function epochFixture(
     advanceInstanceEpoch: (id) => epoch.state.advanceInstanceEpoch(id),
     writerStatus: () => epoch.state.writerStatus(),
   };
-  return { ...f, ...epoch, options, q };
+  return {
+    ...f,
+    ...epoch,
+    options,
+    q,
+    owner: instance.readJson<P.Owner>(path.join(epoch.dir, "broker.lock")),
+  };
 }
 
 test("real qualified isolated and normal epoch readers preserve separate no-probe startup policies", async (t) => {
   for (const normal of [false, true]) {
     const f = epochFixture(t, normal);
     const authority = await openBrokerRuntimeAuthority(f.options, readers);
-    authority.bindQueue(f.q);
+    authority.bindQueue(f.q, { owner: f.owner });
     const result = await authority.identifyStartup(f.probe, async () =>
       assert.fail(
         "A pinned qualified epoch must not send another startup probe",
@@ -421,7 +502,7 @@ test("real qualified isolated and normal epoch readers preserve separate no-prob
 test("qualification or lineage tampering is rejected before startup or activation", async (t) => {
   const f = epochFixture(t, false);
   const authority = await openBrokerRuntimeAuthority(f.options, readers);
-  authority.bindQueue(f.q);
+  authority.bindQueue(f.q, { owner: f.owner });
   await authority.identifyStartup(f.probe, async () =>
     assert.fail("Pinned epoch"),
   );
@@ -485,7 +566,7 @@ test("backend startup publishes only the authenticated head and preserves predec
     },
     readers,
   );
-  authority.bindQueue(f.q);
+  authority.bindQueue(f.q, { owner: f.owner });
   const target = {
     ...prepared.identity.instance,
     activeCommand: "SelectCommand",
@@ -518,7 +599,7 @@ test("backend startup publishes only the authenticated head and preserves predec
     },
     readers,
   );
-  reopened.bindQueue(f.q);
+  reopened.bindQueue(f.q, { owner: f.owner });
   await reopened.identifyStartup(f.probe, async () =>
     assert.fail(
       "An exact current backend head must reopen without another probe",
@@ -567,7 +648,7 @@ test("real successor lineage activates only the published qualified identity and
     initialization: { createdAtMs: number; bindingHash: string };
   };
   const successor = create(path.join(f.dir, "successor"), runtime);
-  instance.durable(path.join(successor.dir, "broker.lock"), f.options.owner);
+  instance.durable(path.join(successor.dir, "broker.lock"), f.owner);
   instance.durable(path.join(successor.dir, "active-epoch-succession.json"), {
     version: 1,
     authority: successor.authorityEntry,
@@ -602,6 +683,7 @@ test("real successor lineage activates only the published qualified identity and
   assert.throws(
     () =>
       foreignClaim.bindQueue(q, {
+        owner: f.owner,
         successorAuthority: successor.authorityEntry,
       }),
     { code: "EPOCH_SUCCESSOR_CLAIM_UNPROVEN" },
@@ -609,7 +691,10 @@ test("real successor lineage activates only the published qualified identity and
   assert.throws(() => foreignClaim.capture(), {
     code: "RUNTIME_AUTHORITY_UNBOUND",
   });
-  authority.bindQueue(q, { successorAuthority: successor.authorityEntry });
+  authority.bindQueue(q, {
+    owner: f.owner,
+    successorAuthority: successor.authorityEntry,
+  });
   const result = await authority.identifyStartup(f.probe, async () =>
     assert.fail("Successor metadata startup cannot send another SDK probe"),
   );
