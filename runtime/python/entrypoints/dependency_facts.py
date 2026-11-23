@@ -1576,6 +1576,9 @@ def analyse(request):
         # The ordinary checker owns user syntax diagnostics.
         return dict(unsupported=True)
     parsed = [(unit, ast.parse(unit['source'], filename=unit['filename'])) for unit in request['units']]
+    # Derive this once from the complete, original namespace, before declaration
+    # analysis removes bodies. It gates entry and whole-statement deletion too.
+    registry_private = not unresolved_namespace_observer([*(tree for _, tree in parsed), user_tree])
     casts = resolved_cast_aliases([*(tree for _, tree in parsed), user_tree])
     type_guards = {alias.asname or alias.name for _, tree in parsed for node in tree.body
                    if isinstance(node, ast.ImportFrom) and node.module == 'typing'
@@ -1610,7 +1613,7 @@ def analyse(request):
         wraps.clear()
     operation_domains = finite_membership_domains(parsed, user_tree)
     for unit, tree in parsed:
-        if request.get('specialize', False):
+        if request.get('specialize', False) and registry_private:
             expansions.extend(registry_expansions(
                 unit, tree, functions,
                 [candidate for _, candidate in parsed if candidate is not tree] + [user_tree]))
@@ -1664,9 +1667,10 @@ def analyse(request):
                 statements.append((node, False))
         for node, typing_only in statements:
             statement = ast.Module(body=[node], type_ignores=[])
-            registration = removable_registration(
+            registration = (removable_registration(
                 node, functions, tree,
                 [candidate for _, candidate in parsed if candidate is not tree] + [user_tree])
+                if registry_private else None)
             if (registration is not None and isinstance(node, ast.Expr)
                     and isinstance(node.value.args[0], ast.Dict)):
                 mapping = node.value.args[0]
