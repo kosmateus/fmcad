@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import {
   createFreshHostProofFactory,
+  createControlledHostProofFactory,
   type FreshHostContext,
+  type ControlledHostProofPorts,
 } from "../src/fresh-host-proof";
+import {
+  bootstrapInstalledFilesDigest,
+  type BootstrapEntryIntent,
+} from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+import type { ControlledFusionBootstrapTranscript } from "../src/controlled-fusion-bootstrap";
 import type {
   NativeRuntimeActivationCompletion,
   NativeRuntimeActivationPublication,
@@ -136,6 +144,291 @@ function fixture() {
     duringActivation: (run: () => void) => (duringActivation = run),
   };
 }
+
+function controlledFixture() {
+  const f = fixture();
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
+  const file = (nativePath: string, value: unknown) => {
+    const bytes = encode(value);
+    return {
+      nativePath,
+      bytes,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      identity: `owned:${nativePath}`,
+    };
+  };
+  const fork = "C:\\private\\addin\\AutodeskFusionMCP.py";
+  const profile = file("C:\\private\\profile.json", {
+    loadedScripts: [
+      {
+        name: "AutodeskFusionMCP",
+        path: fork,
+        location: 3,
+        isRemoved: false,
+        isFavorite: false,
+        runOnStartup: false,
+      },
+    ],
+  });
+  const expected: BootstrapEntryIntent = {
+    kind: "fmcad-bootstrap-entry-intent",
+    version: 1,
+    nonce: "a".repeat(32),
+    process: { pid: 2, birth: "fusion-birth" },
+    purpose: "isolated-stdout-v1",
+    engineVersion: 2,
+    installed: {
+      directory: "C:\\private\\addin",
+      source: "b".repeat(40),
+      files: {
+        "AutodeskFusionMCP.py": "c".repeat(64),
+        "addon_runtime.py": "d".repeat(64),
+        "lib/bootstrap_entry.py": "e".repeat(64),
+      },
+    },
+    profile: { path: profile.nativePath, sha256: profile.sha256 },
+    receipts: {
+      directory: "C:\\private\\receipts",
+      entry: "entry.json",
+      returned: "returned.json",
+    },
+  };
+  const intent = file("C:\\private\\intent.json", expected);
+  const reference = (value: { nativePath: string; sha256: string }) => ({
+    path: value.nativePath,
+    sha256: value.sha256,
+  });
+  const base = {
+    kind: "fmcad-bootstrap-entry-receipt",
+    version: 1,
+    nonce: expected.nonce,
+    process: expected.process,
+    purpose: expected.purpose,
+    engineVersion: 2,
+    intent: reference(intent),
+    profile: expected.profile,
+    installed: {
+      directory: expected.installed.directory,
+      source: expected.installed.source,
+      filesDigest: bootstrapInstalledFilesDigest(expected.installed.files),
+    },
+  };
+  const entry = file("C:\\private\\receipts\\entry.json", {
+    ...base,
+    phase: "entry-before-addon-import",
+  });
+  const returned = file("C:\\private\\receipts\\returned.json", {
+    ...base,
+    phase: "run-returned",
+    entry: reference(entry),
+  });
+  const transcript: ControlledFusionBootstrapTranscript = {
+    kind: "controlled-fusion-bootstrap-transcript-v1",
+    authority: "NONE",
+    state: "COMPLETED",
+    nonce: expected.nonce,
+    old: { pid: 1, birth: "old-birth" },
+    process: expected.process,
+    phases: ["fixture"],
+    references: [],
+    error: null,
+  };
+  const transcriptFile = file("C:\\private\\transcript.json", transcript);
+  const files = [intent, profile, entry, returned, transcriptFile];
+  const context = {
+    nonce: expected.nonce,
+    process: expected.process,
+    installedDirectory: expected.installed.directory,
+    installedSource: expected.installed.source,
+    installedBuild: base.installed.filesDigest,
+    nativePathMappings: Object.fromEntries(
+      files.map((file, i) => [file.nativePath, `/original/${i}`]),
+    ),
+    originalRefs: files.map(({ nativePath, sha256, identity }) => ({
+      nativePath,
+      sha256,
+      identity,
+    })),
+  };
+  f.current.descriptor.physicalRuntime.source = context.installedSource;
+  f.current.descriptor.physicalRuntime.build = context.installedBuild;
+  f.ports.reader.pins.source = context.installedSource;
+  f.ports.reader.pins.build = context.installedBuild;
+  let windowHeld = true;
+  const witness = {
+    context,
+    fence() {
+      assert.ok(windowHeld, "CONTROLLED_WINDOW_REVOKED");
+    },
+  };
+  const signed = files.map((file) => ({
+    path: context.nativePathMappings[file.nativePath]!,
+    sha256: file.sha256,
+  }));
+  const verifyConsumed = f.ports.reader.verifyConsumed;
+  f.ports.reader.verifyConsumed = async (publication, completion) => ({
+    ...(await verifyConsumed(publication, completion)),
+    authenticatedIntentReferences: signed,
+  });
+  const compilerPins = {
+    buildHash: f.current.brokerBuild,
+    configHash: f.current.brokerConfig,
+    generation: "compiler-generation-not-native-epoch",
+  };
+  const ports: ControlledHostProofPorts = {
+    ...f.ports,
+    transcript,
+    readCompilerPins: () => ({ ...compilerPins }),
+    controller: {
+      async prepareOriginalWitness(original) {
+        assert.equal(original, transcript);
+        witness.fence();
+        return witness;
+      },
+      assertPreparedWitness(value) {
+        assert.equal(value, witness);
+        witness.fence();
+      },
+      async readOriginalIntent() {
+        return structuredClone(expected);
+      },
+      async readOriginalEvidence() {
+        return { intent, profile, entry, returned };
+      },
+      async readOriginalTranscriptReference() {
+        return transcriptFile;
+      },
+    },
+  };
+  const factory = createControlledHostProofFactory(
+    ports,
+    f.current,
+    f.publication,
+    f.completion,
+  );
+  return {
+    ...f,
+    factory,
+    signed,
+    context,
+    ports,
+    compilerPins,
+    loseWindow: () => (windowHeld = false),
+  };
+}
+
+test("controlled origin and MAC-authenticated original references yield a held compiler port, not a serialized grant", async () => {
+  const f = controlledFixture();
+  const prepared = await f.factory.prepare();
+  assert.deepEqual(prepared.verifyHostBindings(f.compilerPins), {
+    proofHash: prepared.verifyHostBindings(f.compilerPins).proofHash,
+    profileVersion: "isolated-stdout-v1",
+  });
+  assert.match(
+    prepared.verifyHostBindings(f.compilerPins).proofHash,
+    /^[a-f0-9]{64}$/,
+  );
+  assert.equal(f.calls(), 1);
+  await f.factory.prepare();
+  assert.equal(f.calls(), 2, "every new preparation verifies native evidence");
+  f.loseWindow();
+  assert.throws(prepared.recheck, /CONTROLLED_WINDOW_REVOKED/);
+  await assert.rejects(f.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+});
+
+test("missing or mismatched authenticated original references permanently deny the window", async () => {
+  for (const alter of [
+    (f: ReturnType<typeof controlledFixture>) => f.signed.pop(),
+    (f: ReturnType<typeof controlledFixture>) => {
+      f.signed[0]!.sha256 = "f".repeat(64);
+    },
+    (f: ReturnType<typeof controlledFixture>) => {
+      f.signed[0]!.path = "/copied/not-original";
+    },
+  ]) {
+    const f = controlledFixture();
+    alter(f);
+    await assert.rejects(f.factory.prepare(), {
+      code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+    });
+    await assert.rejects(f.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+  }
+});
+
+test("native or compiler context changes during or after preparation revoke the held port", async () => {
+  const f = controlledFixture();
+  f.duringVerify(
+    () => (f.current.descriptor.physicalRuntime.birth = "changed"),
+  );
+  await assert.rejects(f.factory.prepare(), {
+    code: "FRESH_HOST_CONTEXT_CHANGED",
+  });
+  const g = controlledFixture();
+  const prepared = await g.factory.prepare();
+  g.compilerPins.generation = "changed";
+  assert.throws(prepared.recheck, { code: "FRESH_HOST_CONTEXT_CHANGED" });
+  await assert.rejects(g.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+});
+
+test("old readers without authenticated references and native verification errors cannot prepare a controlled port", async () => {
+  const f = controlledFixture();
+  f.ports.reader.verifyConsumed = async () => ({
+    authenticatedCurrentPins: structuredClone(f.ports.reader.pins),
+    finalize() {
+      assert.fail("Unauthenticated references cannot be finalized");
+    },
+    abort() {},
+  });
+  await assert.rejects(f.factory.prepare(), {
+    code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+  });
+  const g = controlledFixture();
+  const error = new Error("NATIVE_MAC_CHANGED");
+  g.failNative(error);
+  await assert.rejects(g.factory.prepare(), (actual) => actual === error);
+  await assert.rejects(g.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+});
+
+test("replacing the controlled origin with a JSON transcript or changing source bindings is refused", async () => {
+  const f = controlledFixture();
+  f.ports.transcript = structuredClone(f.ports.transcript);
+  await assert.rejects(f.factory.prepare(), {
+    code: "FRESH_HOST_CONTEXT_CHANGED",
+  });
+  const g = controlledFixture();
+  g.context.installedBuild = "0".repeat(64);
+  await assert.rejects(g.factory.prepare(), {
+    code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+  });
+});
+
+test("unsupported bootstrap evidence and a mismatched compiler call revoke instead of falling back", async (t) => {
+  const f = controlledFixture();
+  const read = f.ports.controller.readOriginalIntent;
+  t.mock.method(
+    f.ports.controller,
+    "readOriginalIntent",
+    async (original: ControlledFusionBootstrapTranscript) => {
+      const intent = await read(original);
+      intent.profile.sha256 = "0".repeat(64);
+      return intent;
+    },
+  );
+  await assert.rejects(f.factory.prepare(), {
+    code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+  });
+  const g = controlledFixture();
+  const prepared = await g.factory.prepare();
+  assert.throws(
+    () =>
+      prepared.verifyHostBindings({
+        ...g.compilerPins,
+        buildHash: "different-build",
+      }),
+    { code: "FRESH_HOST_CONTEXT_CHANGED" },
+  );
+  assert.throws(prepared.recheck, { code: "FRESH_HOST_REVOKED" });
+});
 
 test("authenticated native evidence remains NOT_AUTHORITY; every use rechecks", async () => {
   const f = fixture();
