@@ -3,11 +3,166 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   preparePythonDiagnostic,
+  createPythonStdoutBroker,
+  type StdoutCompilationPorts,
   type DiagnosticPreparationPorts,
 } from "../src/python-diagnostic-broker";
+import { QueueDomain } from "../packages/core/src/domain/queue";
+import { preparePythonArtifact } from "../packages/node-adapters/src/python/artifact";
+import { pythonArtifactManifest } from "../packages/node-adapters/src/python/context-binding";
 
 const sha = (source: string) =>
   createHash("sha256").update(source).digest("hex");
+const kernelArtifact = (program: string, source: string) =>
+  preparePythonArtifact([
+    { id: "wire", filename: "wire.py", role: "wrapper", source: program },
+    {
+      id: "embedded:0",
+      filename: "original.py",
+      role: "user",
+      source,
+      embedded: true,
+    },
+  ]);
+
+test("compiled stdout binds the original input, private host and exact rewritten program without restoring registry witnesses", async () => {
+  const f = fixture(),
+    program = "# compiler-owned isolated stdout profile";
+  let hostHash = sha("qualified private host");
+  const ports: StdoutCompilationPorts = {
+    recheck: f.ports.recheck,
+    currentPins: f.ports.currentPins,
+    verifyHostBindings: () => ({
+      proofHash: hostHash,
+      profileVersion: "isolated-stdout-v1",
+    }),
+    prepareKernel(source) {
+      return {
+        status: "prepared",
+        sourceSha256: sha(source),
+        programHash: sha(program),
+        script: program,
+        artifact: kernelArtifact(program, source),
+        engineVersion: "python-source-effects-v2",
+        profileVersion: "isolated-stdout-v1",
+      };
+    },
+  };
+  const broker = createPythonStdoutBroker(),
+    prepared = await broker.prepare(f.request, ports);
+  assert.ok(prepared);
+  assert.deepEqual(
+    prepared.origin(),
+    pythonArtifactManifest(kernelArtifact(program, f.source)),
+  );
+  const badArtifactPorts: StdoutCompilationPorts = {
+    ...ports,
+    prepareKernel(source) {
+      return {
+        status: "prepared",
+        sourceSha256: sha(source),
+        programHash: sha(program),
+        script: program,
+        artifact: kernelArtifact(
+          program,
+          source + "\n# different embedded source",
+        ),
+        engineVersion: "python-source-effects-v2",
+        profileVersion: "isolated-stdout-v1",
+      };
+    },
+  };
+  await assert.rejects(broker.prepare(f.request, badArtifactPorts), {
+    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+  });
+  const state = new QueueDomain({
+    now: () => 1000,
+    newId: () => "prepared",
+    hash: sha,
+  });
+  const authority = state.createPythonStdoutAuthority(() => {
+    prepared.reverify(f.request);
+    return prepared.descriptor;
+  });
+  const result = state.submitPythonStdout(f.request, authority);
+  const job = state.data.jobs[String(result["id"])];
+  assert.ok(job);
+  broker.admit(job, prepared);
+  const wire = prepared.rpc();
+  wire["id"] = "fmcad:actual-rpc";
+  prepared.assertWire(f.request, wire, "actual-rpc");
+  prepared.assertProgram(f.request, program);
+  assert.equal(f.request.payload.params.arguments.code, f.source);
+  const copied = prepared.rpc();
+  assert.ok(
+    copied["params"] &&
+      typeof copied["params"] === "object" &&
+      !Array.isArray(copied["params"]),
+  );
+  copied["method"] = "ping";
+  assert.throws(() => prepared.assertWire(f.request, copied, "actual-rpc"), {
+    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+  });
+  assert.throws(() => broker.admit(job, { ...prepared }), {
+    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+  });
+  assert.throws(() => createPythonStdoutBroker().program(job), {
+    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+  });
+  hostHash = sha("different qualified host");
+  assert.throws(() => broker.program(job), {
+    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+  });
+});
+test("stdout preparation refuses stale host after awaited compilation and accepts an unpinned public caller only under broker pins", async () => {
+  const f = fixture(),
+    program = "# compiler profile";
+  let hostHash = sha("first host");
+  const ports: StdoutCompilationPorts = {
+    currentPins: f.ports.currentPins,
+    recheck: f.ports.recheck,
+    verifyHostBindings: () => ({
+      proofHash: hostHash,
+      profileVersion: "isolated-stdout-v1",
+    }),
+    async prepareKernel(source) {
+      hostHash = sha("changed host during await");
+      return {
+        status: "prepared",
+        sourceSha256: sha(source),
+        programHash: sha(program),
+        script: program,
+        artifact: kernelArtifact(program, source),
+        engineVersion: "python-source-effects-v2",
+        profileVersion: "isolated-stdout-v1",
+      };
+    },
+  };
+  await assert.rejects(createPythonStdoutBroker().prepare(f.request, ports), {
+    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+  });
+  const { buildHash, ...publicRequest } = f.request;
+  void buildHash;
+  const prepared = await createPythonStdoutBroker().prepare(publicRequest, {
+    ...ports,
+    prepareKernel(source) {
+      return {
+        status: "prepared",
+        sourceSha256: sha(source),
+        programHash: sha(program),
+        script: program,
+        artifact: kernelArtifact(program, source),
+        engineVersion: "python-source-effects-v2",
+        profileVersion: "isolated-stdout-v1",
+      };
+    },
+  });
+  assert.ok(prepared);
+  assert.throws(
+    () => prepared.reverify({ ...publicRequest, buildHash: "f".repeat(64) }),
+    { code: "PYTHON_DIAGNOSTIC_UNPROVEN" },
+  );
+});
 function fixture() {
   let generation = "original-generation",
     registered = true;

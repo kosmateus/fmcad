@@ -33,6 +33,10 @@ import {
   isProtocolMetadataMethod, type ProtocolMetadata, type ProtocolMetadataAuthority,
 } from "./protocol-metadata";
 import {
+  createPythonStdoutAuthority, verifiedPythonStdout, validPythonStdout,
+  type PythonStdout, type PythonStdoutAuthority,
+} from "./python-stdout";
+import {
   documentTargetKey,
   validDocumentObservation,
   validDocumentCheckpoints,
@@ -70,6 +74,8 @@ type ProtocolMetadataBinding = {
   originalRpcId?: string;
 };
 const protocolMetadata = new WeakMap<QueueDomain, Map<string, ProtocolMetadataBinding>>();
+type StdoutBinding = { marker: PythonStdout; authority: PythonStdoutAuthority; originalRpcId?: string };
+const stdoutPrograms = new WeakMap<QueueDomain, Map<string, StdoutBinding>>();
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
@@ -451,6 +457,11 @@ export class QueueDomain {
            job.request.kind !== "rpc" || !isProtocolMetadataMethod(job.request.payload?.["method"]) ||
            job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation))
         fail("CORRUPT_STATE", "Invalid broker-authored protocol metadata marker");
+      if (job.pythonStdout !== undefined &&
+          (!validPythonStdout(job.pythonStdout) || job.pythonStdout.requestHash !== job.hash ||
+           job.documentInspection || job.documentContinuation || job.documentMetadataRead ||
+           job.documentCreation || job.protocolMetadata))
+        fail("CORRUPT_STATE", "Invalid broker-authored stdout marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id) &&
@@ -636,6 +647,10 @@ export class QueueDomain {
       if (protocolCapabilities)
         for (const id of protocolCapabilities.keys())
           if (!draft.jobs[id] || terminal(draft.jobs[id].state)) protocolCapabilities.delete(id);
+      const stdoutCapabilities = stdoutPrograms.get(this);
+      if (stdoutCapabilities)
+        for (const id of stdoutCapabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state)) stdoutCapabilities.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -803,9 +818,9 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
-      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job)) {
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job)) {
         this._refuseDocumentConflict(d, job, time);
-        job.code = job.protocolMetadata ? "PROTOCOL_METADATA_UNPROVEN" : "CHECKPOINT_CHANGED";
+        job.code = job.pythonStdout ? "PYTHON_STDOUT_UNPROVEN" : job.protocolMetadata ? "PROTOCOL_METADATA_UNPROVEN" : "CHECKPOINT_CHANGED";
         continue;
       }
       const r = job.request;
@@ -984,6 +999,63 @@ export class QueueDomain {
     return copy(binding.marker);
   }
   hasProtocolMetadata(id: string) { return protocolMetadata.get(this)?.has(id) ?? false; }
+  createPythonStdoutAuthority(verify: () => PythonStdout) {
+    return createPythonStdoutAuthority(this, verify);
+  }
+  submitPythonStdout(request: unknown, authority: PythonStdoutAuthority, preparedId?: string) {
+    const binding = { marker: verifiedPythonStdout(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, preparedId, undefined, undefined, false, undefined, undefined, undefined, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) && ["queued", "preparing", "processing"].includes(job.state)) {
+      let entries = stdoutPrograms.get(this);
+      if (!entries) stdoutPrograms.set(this, entries = new Map());
+      entries.set(job.id, binding);
+    }
+    return result;
+  }
+  _pythonStdoutAllowed(d: QueueSnapshot, job: QueueJob, binding?: StdoutBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+    const current = verifiedPythonStdout(binding.authority, this);
+    const request = job.request, rpc = request.payload;
+    const params = rpc && plain(rpc["params"]) ? rpc["params"] : undefined;
+    const args = params && plain(params["arguments"]) ? params["arguments"] : undefined;
+    const identity = { ...request };
+    delete identity.description;
+    return request.kind === "rpc" && rpc?.["method"] === "tools/call" &&
+      params?.["name"] === "execute_python" && args?.["persistent"] === false &&
+      typeof args?.["code"] === "string" &&
+      Object.keys(args).sort().join() === "code,persistent" &&
+      this.hash(args["code"]) === current.sourceHash &&
+      canonical(current) === canonical(binding.marker) &&
+      canonical(job.pythonStdout) === canonical(binding.marker) &&
+      current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+      documentConflicts(d, null, retirements.get(this), canonical).every(documentConflictAllowsInspection);
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["PYTHON_STDOUT_UNPROVEN", "PYTHON_DIAGNOSTIC_UNPROVEN",
+            "HOST_BINDINGS_UNPROVEN", "NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED"].includes(code))
+        return false;
+      throw error;
+    }
+  }
+  assertPythonStdout(id: string, programHash: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id), binding = stdoutPrograms.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const original = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId && binding?.originalRpcId === committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._pythonStdoutAllowed(this.data, job, binding) ||
+        programHash !== binding.marker.programHash || rpcHash !== binding.marker.rpcHash || !original)
+      fail("PYTHON_STDOUT_UNPROVEN", "Stdout must match its one original compiler-bound RPC");
+    return copy(binding.marker);
+  }
+  hasPythonStdout(id: string) { return stdoutPrograms.get(this)?.has(id) ?? false; }
   submitDocumentMetadataRead(request: unknown, authority: DocumentMetadataReadAuthority) {
     const binding = { marker: verifiedDocumentMetadataRead(authority, this), authority };
     const existingIds = new Set(Object.keys(this.data.jobs));
@@ -1048,6 +1120,8 @@ export class QueueDomain {
     return this._submit(request, preparedId, undefined, undefined, true);
   }
   _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
+    if (job.pythonStdout)
+      return this._pythonStdoutAllowed(d, job, stdoutPrograms.get(this)?.get(job.id));
     if (job.protocolMetadata)
       return this._protocolMetadataAllowed(d, job, protocolMetadata.get(this)?.get(job.id));
     if (job.documentCreation) return this._creationAllowed(d, job, creations.get(this)?.get(job.id));
@@ -1126,7 +1200,7 @@ export class QueueDomain {
   _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
     continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority },
     refusedContinuation = false, metadata?: MetadataReadBinding, creation?: CreationBinding,
-    protocol?: ProtocolMetadataBinding) {
+    protocol?: ProtocolMetadataBinding, stdout?: StdoutBinding) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -1248,6 +1322,7 @@ export class QueueDomain {
         ...(metadata ? { documentMetadataRead: copy(metadata.marker) } : {}),
         ...(creation ? { documentCreation: copy(creation.marker) } : {}),
         ...(protocol ? { protocolMetadata: copy(protocol.marker) } : {}),
+        ...(stdout ? { pythonStdout: copy(stdout.marker) } : {}),
       };
       if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash, retirements.get(this)))
         fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
@@ -1261,8 +1336,11 @@ export class QueueDomain {
       if (protocol && ((inspection || continuation || metadata || creation) ||
           !this._protocolMetadataAllowed(d, inspectionCandidate, protocol)))
         fail("PROTOCOL_METADATA_UNPROVEN", "An exclusive current protocol metadata capability is required");
+      if (stdout && ((inspection || continuation || metadata || creation || protocol) ||
+          !this._pythonStdoutAllowed(d, inspectionCandidate, stdout)))
+        fail("PYTHON_STDOUT_UNPROVEN", "An exclusive current compiler and host stdout proof is required");
       if (refusedContinuation ||
-          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata && !creation && !protocol)) {
+          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata && !creation && !protocol && !stdout)) {
         const refused: QueueJob = {
           id: preparedId ?? this.newId(), requestId: r.requestId,
           clientId: r.clientId, kind: r.kind, request: r, hash,
@@ -1348,6 +1426,7 @@ export class QueueDomain {
       if (metadata) job.documentMetadataRead = copy(metadata.marker);
       if (creation) job.documentCreation = copy(creation.marker);
       if (protocol) job.protocolMetadata = copy(protocol.marker);
+      if (stdout) job.pythonStdout = copy(stdout.marker);
       if (continuation) job.documentContinuation = copy(continuation.marker);
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
@@ -1452,7 +1531,7 @@ export class QueueDomain {
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
         (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
-          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job)),
+          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -1472,7 +1551,7 @@ export class QueueDomain {
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
-        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job)) ||
+        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -1726,6 +1805,7 @@ export class QueueDomain {
     const metadata = metadataReads.get(this)?.get(id);
     const creation = creations.get(this)?.get(id);
     const protocol = protocolMetadata.get(this)?.get(id);
+    const stdout = stdoutPrograms.get(this)?.get(id);
     let originalRpcId: string | undefined;
     const result = this._commit((d) => {
       const job = this._active(d, id);
@@ -1738,6 +1818,18 @@ export class QueueDomain {
       };
       const rpcCount = record.rpcCount ?? old.rpcCount + 1;
       const completedCount = record.completedCount ?? old.completedCount;
+      if (job.pythonStdout) {
+        const rpcId = record["rpcId"];
+        if (!stdout || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
+          fail("PYTHON_STDOUT_UNPROVEN", "One original stdout RPC intent is required");
+        if (old.rpcCount === 0 && stdout.originalRpcId === undefined && completedCount === 0 &&
+            (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 && stdout.originalRpcId === rpcId &&
+            job.dispatch?.details?.["rpcId"] === rpcId && completedCount === 1 &&
+            record.rpcState === "terminal" && !physical))
+          fail("PYTHON_STDOUT_UNPROVEN", "The original stdout RPC cannot be replaced or repeated");
+      }
       if (job.protocolMetadata) {
         const rpcId = record["rpcId"];
         if (!protocol || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
@@ -1800,6 +1892,7 @@ export class QueueDomain {
     if (metadata && originalRpcId) metadata.originalRpcId = originalRpcId;
     if (creation && originalRpcId) creation.originalRpcId = originalRpcId;
     if (protocol && originalRpcId) protocol.originalRpcId = originalRpcId;
+    if (stdout && originalRpcId) stdout.originalRpcId = originalRpcId;
     return result;
   }
 
@@ -1849,7 +1942,7 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
-      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job))
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job))
         fail("DOCUMENT_UNLOCK_REQUIRED", "Document fence changed before the system-read boundary");
       this._appendPhysicalDispatch(job, entry);
       return this._public(job);

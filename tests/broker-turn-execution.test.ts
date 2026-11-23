@@ -211,6 +211,7 @@ async function fixture(
       state.assertDocumentMetadataRead(...args),
     assertDocumentCreation: (...args) => state.assertDocumentCreation(...args),
     assertProtocolMetadata: (...args) => state.assertProtocolMetadata(...args),
+    assertPythonStdout: (...args) => state.assertPythonStdout(...args),
   };
   const session = createBrokerSession<P.LaneContext>();
   const lane = helpers.createBrokerLane(session, {
@@ -778,35 +779,125 @@ test("document creation never inherits an existing selected-document or epoch-an
     { creationId: "old-epoch-anchor" },
   ]) {
     const f = await fixture(t);
-    const request: P.Request = { kind: "command", clientId: "creation-client", requestId: randomUUID(),
-      timeoutMs: 2000, cwd: f.directory, backend: "addin", buildHash: build, phased: true, argv: ["doc", "new"] };
-    const marker = { version: 1 as const, requestHash: instance.hash(canonical(request)),
-      generation: "fixture-generation", programHash: instance.hash("pass"), rpcHash: instance.hash("creation-rpc") };
-    const job = f.state.submitDocumentCreation(request, f.state.createDocumentCreationAuthority(() => marker));
+    const request: P.Request = {
+      kind: "command",
+      clientId: "creation-client",
+      requestId: randomUUID(),
+      timeoutMs: 2000,
+      cwd: f.directory,
+      backend: "addin",
+      buildHash: build,
+      phased: true,
+      argv: ["doc", "new"],
+    };
+    const marker = {
+      version: 1 as const,
+      requestHash: instance.hash(canonical(request)),
+      generation: "fixture-generation",
+      programHash: instance.hash("pass"),
+      rpcHash: instance.hash("creation-rpc"),
+    };
+    const job = f.state.submitDocumentCreation(
+      request,
+      f.state.createDocumentCreationAuthority(() => marker),
+    );
     let inheritedSelectors = 0;
-    f.services.documents.documentSelector = () => { inheritedSelectors++; return oldTarget; };
+    f.services.documents.documentSelector = () => {
+      inheritedSelectors++;
+      return oldTarget;
+    };
     let physicalSelector: unknown = "not-dispatched";
     f.services.transport.physicalIsolation = true;
     f.services.transport.bindPhysicalTurn = (turn) => {
       physicalSelector = turn.documentSelector;
       // Observe the allocation boundary and deliberately stop before an SDK
       // intent. This test does not fabricate a product completion receipt.
-      throw Object.assign(new Error("Selector boundary observed"), { code: "TEST_SELECTOR_BOUNDARY", notStarted: true });
+      throw Object.assign(new Error("Selector boundary observed"), {
+        code: "TEST_SELECTOR_BOUNDARY",
+        notStarted: true,
+      });
     };
     const turn = await f.phase(String(job["id"]));
     turn.prepared.inspect((ready) => {
       ready.record.binding["documentScope"] = {
-        producer: "compiled-document-creation-v1", operation: "document.new", requestHash: marker.requestHash,
-        generation: marker.generation, programHash: marker.programHash, rpcHash: marker.rpcHash,
-        buildHash: build, wireSourceHash: ready.record.binding.sourceHash,
+        producer: "compiled-document-creation-v1",
+        operation: "document.new",
+        requestHash: marker.requestHash,
+        generation: marker.generation,
+        programHash: marker.programHash,
+        rpcHash: marker.rpcHash,
+        buildHash: build,
+        wireSourceHash: ready.record.binding.sourceHash,
       };
     });
     await f.executor.run(turn.job, turn.grant);
-    assert.equal((f.rejected[0] as { code?: string } | undefined)?.code, "TEST_SELECTOR_BOUNDARY");
-    assert.equal(inheritedSelectors, 0, "the old selected resource or epoch anchor is not a creation selector");
-    assert.equal(physicalSelector, undefined, "the new document has no existing resource identity at allocation");
+    assert.equal(
+      (f.rejected[0] as { code?: string } | undefined)?.code,
+      "TEST_SELECTOR_BOUNDARY",
+    );
+    assert.equal(
+      inheritedSelectors,
+      0,
+      "the old selected resource or epoch anchor is not a creation selector",
+    );
+    assert.equal(
+      physicalSelector,
+      undefined,
+      "the new document has no existing resource identity at allocation",
+    );
     assert.equal(f.counts().sends, 0);
   }
+});
+
+test("a persisted stdout marker without the exact private compiler scope never reaches dispatch", async (t) => {
+  const f = await fixture(t);
+  const request: P.Request = {
+    kind: "rpc",
+    clientId: "stdout-client",
+    cwd: f.directory,
+    requestId: randomUUID(),
+    timeoutMs: 2000,
+    backend: "addin",
+    buildHash: build,
+    payload: {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      id: "stdout-caller",
+      params: {
+        name: "execute_python",
+        arguments: { code: "pass", persistent: false },
+      },
+    },
+  };
+  const marker = {
+    version: 1,
+    kind: "python-stdout" as const,
+    engineVersion: "python-source-effects-v2" as const,
+    profileVersion: "isolated-stdout-v1" as const,
+    requestHash: instance.hash(canonical(request)),
+    rpcHash: instance.hash("different-rpc"),
+    sourceHash: instance.hash("pass"),
+    programHash: instance.hash("different-program"),
+    hostBindingHash: instance.hash("different-host"),
+    generation: "fixture-generation",
+  } as const;
+  const submitted = f.state.submitPythonStdout(
+    request,
+    f.state.createPythonStdoutAuthority(() => marker),
+  );
+  // A legitimate domain marker alone is insufficient at the final wire boundary.
+  const turn = await f.raw(String(submitted["id"]));
+  await f.executor.run(turn.job, turn.grant);
+  assert.equal(
+    f.state.status(turn.id)?.["code"],
+    "PYTHON_STDOUT_UNPROVEN",
+    JSON.stringify({
+      job: f.state.status(turn.id),
+      counts: f.counts(),
+      events: f.events,
+    }),
+  );
+  assert.equal(f.counts().sends, 0);
 });
 
 test("construction and broker probes defer late services; raw calls never resolve a worker entrypoint", async (t) => {

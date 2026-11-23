@@ -79,6 +79,7 @@ export interface QueueJob {
   documentMetadataRead?: import("./document-metadata-read").DocumentMetadataRead;
   documentCreation?: import("./document-creation").DocumentCreation;
   protocolMetadata?: import("./protocol-metadata").ProtocolMetadata;
+  pythonStdout?: import("./python-stdout").PythonStdout;
   id: string;
   requestId: string;
   clientId: string;

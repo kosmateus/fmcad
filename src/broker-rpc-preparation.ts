@@ -5,6 +5,7 @@ import type { prepareBrokerScript } from "../packages/node-adapters/src/executio
 import type { BrokerModules } from "./queue-broker-modules";
 import type { createPythonRpcAdmission } from "../packages/node-adapters/src/python/admission";
 import type { CompiledDocumentMetadataRead } from "./document-metadata-read-broker";
+import type { PythonStdout } from "../packages/core/src/domain/python-stdout";
 
 export type RpcPreparationJob = Readonly<
   Pick<P.Job, "id"> & Partial<Pick<P.Job, "request">>
@@ -35,6 +36,13 @@ export interface BrokerRpcPreparationPorts {
     | Readonly<{
         job: Readonly<Pick<P.Job, "id">>;
         compiledScope?: Readonly<Record<string, unknown>>;
+        stdoutProgram?: {
+          readonly descriptor: PythonStdout;
+          assertProgram(
+            request: import("@fmcad/core").QueueRequest,
+            source: string,
+          ): void;
+        };
       }>
     | false
     | undefined;
@@ -50,8 +58,14 @@ export interface BrokerRpcPreparationPorts {
     ): void;
   };
   readonly creation?: {
-    program(job: Readonly<P.Job>): Pick<CompiledDocumentMetadataRead, "assertProgram">;
-    assertDocumentCreation(jobId: string, programHash: string, rpcHash: string): void;
+    program(
+      job: Readonly<P.Job>,
+    ): Pick<CompiledDocumentMetadataRead, "assertProgram">;
+    assertDocumentCreation(
+      jobId: string,
+      programHash: string,
+      rpcHash: string,
+    ): void;
   };
   readonly protocol?: {
     assertWire(job: Readonly<P.Job>, outgoing: P.Rpc, rpcId: string): void;
@@ -133,7 +147,10 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
         if (!ports.protocol || payload.method === "tools/call")
           fail("PROTOCOL_METADATA_UNPROVEN", "Protocol witness is unavailable");
         ports.protocol.assertWire(protocolJob, outgoing, rpcId);
-        ports.protocol.assertProtocolMetadata(job.id, protocolJob.protocolMetadata.rpcHash);
+        ports.protocol.assertProtocolMetadata(
+          job.id,
+          protocolJob.protocolMetadata.rpcHash,
+        );
         binding["protocolScope"] = {
           producer: "compiled-protocol-metadata-v1",
           requestHash: protocolJob.hash,
@@ -158,18 +175,65 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
             );
             binding.sourceHash = hash(source);
             const local = ports.localPreparation();
+            if (local && local.job.id === job.id && local.stdoutProgram) {
+              if (!job.request)
+                fail(
+                  "PYTHON_STDOUT_UNPROVEN",
+                  "Missing original stdout request",
+                );
+              const stdout = local.stdoutProgram;
+              stdout.assertProgram(
+                job.request as unknown as import("@fmcad/core").QueueRequest,
+                source,
+              );
+              binding["documentScope"] = {
+                producer: "compiled-python-stdout-v1",
+                requestHash: stdout.descriptor.requestHash,
+                rpcHash: stdout.descriptor.rpcHash,
+                sourceHash: stdout.descriptor.sourceHash,
+                programHash: stdout.descriptor.programHash,
+                hostBindingHash: stdout.descriptor.hostBindingHash,
+                engineVersion: stdout.descriptor.engineVersion,
+                profileVersion: stdout.descriptor.profileVersion,
+                generation: stdout.descriptor.generation,
+                buildHash: ports.buildHash,
+                wireSourceHash: hash(source),
+              };
+            }
             const metadataJob = ports.metadata.job(job.id);
             if (metadataJob?.documentCreation) {
-              if (!ports.creation) fail("DOCUMENT_CREATION_UNPROVEN", "Creation verifier is missing");
-              ports.creation.program(metadataJob).assertProgram(
-                metadataJob.request as unknown as import("@fmcad/core").QueueRequest, source,
+              if (!ports.creation)
+                fail(
+                  "DOCUMENT_CREATION_UNPROVEN",
+                  "Creation verifier is missing",
+                );
+              ports.creation
+                .program(metadataJob)
+                .assertProgram(
+                  metadataJob.request as unknown as import("@fmcad/core").QueueRequest,
+                  source,
+                );
+              const scope =
+                local && local.job.id === job.id
+                  ? local.compiledScope
+                  : undefined;
+              if (
+                !scope ||
+                scope["producer"] !== "compiled-document-creation-v1" ||
+                scope["requestHash"] !== metadataJob.hash ||
+                scope["programHash"] !==
+                  metadataJob.documentCreation.programHash ||
+                scope["rpcHash"] !== metadataJob.documentCreation.rpcHash
+              )
+                fail(
+                  "DOCUMENT_CREATION_UNPROVEN",
+                  "Actual ADDIN program differs from the fixed creation service",
+                );
+              ports.creation.assertDocumentCreation(
+                job.id,
+                metadataJob.documentCreation.programHash,
+                metadataJob.documentCreation.rpcHash,
               );
-              const scope = local && local.job.id === job.id ? local.compiledScope : undefined;
-              if (!scope || scope["producer"] !== "compiled-document-creation-v1" ||
-                  scope["requestHash"] !== metadataJob.hash || scope["programHash"] !== metadataJob.documentCreation.programHash ||
-                  scope["rpcHash"] !== metadataJob.documentCreation.rpcHash)
-                fail("DOCUMENT_CREATION_UNPROVEN", "Actual ADDIN program differs from the fixed creation service");
-              ports.creation.assertDocumentCreation(job.id, metadataJob.documentCreation.programHash, metadataJob.documentCreation.rpcHash);
             }
             if (metadataJob?.documentMetadataRead) {
               ports.metadata
@@ -244,12 +308,17 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
             ),
           };
       }
-      const metadataOnly = [
-        "initialize",
-        "notifications/initialized",
-        "ping",
-        "tools/list",
-      ].includes(payload.method);
+      const metadataOnly =
+        [
+          "initialize",
+          "notifications/initialized",
+          "ping",
+          "tools/list",
+        ].includes(payload.method) ||
+        (() => {
+          const local = ports.localPreparation();
+          return !!(local && local.job.id === job.id && local.stdoutProgram);
+        })();
       let prepared: P.PreparedCall;
       if (rawMetadata) {
         if (!view.metadataAdmission)

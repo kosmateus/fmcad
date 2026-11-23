@@ -37,7 +37,12 @@ export interface ProductFlights {
   postflight: P.Flight;
 }
 export type PreparedProductPlan = { flights: ProductFlights | null } & (
-  | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
+  | {
+      kind: "raw";
+      turn: OwnedTurn;
+      callerPayloadHash: string;
+      compiledPayload?: P.Rpc;
+    }
   | {
       kind: "worker";
       turn: Execution.TurnIdentity;
@@ -114,6 +119,7 @@ export interface BrokerTurnServices {
     | "assertDocumentMetadataRead"
     | "assertDocumentCreation"
     | "assertProtocolMetadata"
+    | "assertPythonStdout"
   > & { status(id: string): P.PublicJob };
   lane: Pick<
     ReturnType<typeof createBrokerLane>,
@@ -491,33 +497,101 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       committedRpcId,
     );
   }
-  function assertCreationPrepared(job: P.Job, prepared: P.PreparedCall, committedRpcId?: string) {
+  function assertCreationPrepared(
+    job: P.Job,
+    prepared: P.PreparedCall,
+    committedRpcId?: string,
+  ) {
     const marker = job.documentCreation;
     if (!marker) return;
     const scope = object(prepared.record.binding["documentScope"]);
-    if (prepared.metadataProof || !prepared.pythonCertificate ||
-        scope["producer"] !== "compiled-document-creation-v1" || scope["operation"] !== "document.new" ||
-        scope["requestHash"] !== job.hash || scope["rpcHash"] !== marker.rpcHash ||
-        scope["programHash"] !== marker.programHash || scope["generation"] !== marker.generation ||
-        scope["buildHash"] !== config.buildHash ||
-        scope["wireSourceHash"] !== prepared.record.binding.sourceHash ||
-        documents.currentCheckpointGeneration() !== marker.generation)
-      fail("DOCUMENT_CREATION_UNPROVEN", "Creation lacks the original compiler and current runtime binding");
+    if (
+      prepared.metadataProof ||
+      !prepared.pythonCertificate ||
+      scope["producer"] !== "compiled-document-creation-v1" ||
+      scope["operation"] !== "document.new" ||
+      scope["requestHash"] !== job.hash ||
+      scope["rpcHash"] !== marker.rpcHash ||
+      scope["programHash"] !== marker.programHash ||
+      scope["generation"] !== marker.generation ||
+      scope["buildHash"] !== config.buildHash ||
+      scope["wireSourceHash"] !== prepared.record.binding.sourceHash ||
+      documents.currentCheckpointGeneration() !== marker.generation
+    )
+      fail(
+        "DOCUMENT_CREATION_UNPROVEN",
+        "Creation lacks the original compiler and current runtime binding",
+      );
     prepared.pythonCertificate.fence(prepared.outgoing);
-    queue.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash, committedRpcId);
+    queue.assertDocumentCreation(
+      job.id,
+      marker.programHash,
+      marker.rpcHash,
+      committedRpcId,
+    );
   }
-  function assertProtocolPrepared(job: P.Job, prepared: P.PreparedCall, committedRpcId?: string) {
+  function assertProtocolPrepared(
+    job: P.Job,
+    prepared: P.PreparedCall,
+    committedRpcId?: string,
+  ) {
     const marker = job.protocolMetadata;
     if (!marker) return;
     const scope = object(prepared.record.binding["protocolScope"]);
-    if (!prepared.metadataOnly || prepared.metadataProof || prepared.pythonCertificate?.kind !== "non-python" ||
-        scope["producer"] !== "compiled-protocol-metadata-v1" ||
-        scope["requestHash"] !== job.hash || scope["rpcHash"] !== marker.rpcHash ||
-        scope["generation"] !== marker.generation || scope["buildHash"] !== config.buildHash ||
-        documents.currentCheckpointGeneration() !== marker.generation)
-      fail("PROTOCOL_METADATA_UNPROVEN", "Protocol RPC lacks original current metadata authority");
+    if (
+      !prepared.metadataOnly ||
+      prepared.metadataProof ||
+      prepared.pythonCertificate?.kind !== "non-python" ||
+      scope["producer"] !== "compiled-protocol-metadata-v1" ||
+      scope["requestHash"] !== job.hash ||
+      scope["rpcHash"] !== marker.rpcHash ||
+      scope["generation"] !== marker.generation ||
+      scope["buildHash"] !== config.buildHash ||
+      documents.currentCheckpointGeneration() !== marker.generation
+    )
+      fail(
+        "PROTOCOL_METADATA_UNPROVEN",
+        "Protocol RPC lacks original current metadata authority",
+      );
     prepared.pythonCertificate.fence(prepared.outgoing);
     queue.assertProtocolMetadata(job.id, marker.rpcHash, committedRpcId);
+  }
+  function assertStdoutPrepared(
+    job: P.Job,
+    prepared: P.PreparedCall,
+    committedRpcId?: string,
+  ) {
+    const marker = job.pythonStdout;
+    if (!marker) return;
+    const scope = object(prepared.record.binding["documentScope"]);
+    if (
+      !prepared.metadataOnly ||
+      prepared.metadataProof ||
+      prepared.pythonCertificate?.kind !== "python" ||
+      scope["producer"] !== "compiled-python-stdout-v1" ||
+      scope["requestHash"] !== job.hash ||
+      scope["rpcHash"] !== marker.rpcHash ||
+      scope["programHash"] !== marker.programHash ||
+      scope["sourceHash"] !== marker.sourceHash ||
+      scope["hostBindingHash"] !== marker.hostBindingHash ||
+      scope["engineVersion"] !== marker.engineVersion ||
+      scope["profileVersion"] !== marker.profileVersion ||
+      scope["generation"] !== marker.generation ||
+      scope["buildHash"] !== config.buildHash ||
+      scope["wireSourceHash"] !== prepared.record.binding.sourceHash ||
+      documents.currentCheckpointGeneration() !== marker.generation
+    )
+      fail(
+        "PYTHON_STDOUT_UNPROVEN",
+        "Stdout lacks its original compiler, host and current wire binding",
+      );
+    prepared.pythonCertificate.fence(prepared.outgoing);
+    queue.assertPythonStdout(
+      job.id,
+      marker.programHash,
+      marker.rpcHash,
+      committedRpcId,
+    );
   }
   function bindPhysical(context: Context, prepared: P.PreparedCall) {
     if (!transport.physicalIsolation) return undefined;
@@ -525,6 +599,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     assertMetadataPrepared(job, prepared);
     assertCreationPrepared(job, prepared);
     assertProtocolPrepared(job, prepared);
+    assertStdoutPrepared(job, prepared);
     const target = documents.quarantineTarget(job.request);
     if (target && !prepared.metadataProof) {
       const compiled = job.documentContinuation
@@ -544,9 +619,13 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           "SDK source lacks the broker-verified pre-wrapper compiler scope",
         );
     }
-    const selector = prepared.metadataProof
-      ? transport.metadata.addinMetadataSelector(prepared.outgoing)
-      : job.documentCreation ? null : (target ?? documents.documentSelector(job));
+    const selector = job.pythonStdout
+      ? { metadataOnly: true as const }
+      : prepared.metadataProof
+        ? transport.metadata.addinMetadataSelector(prepared.outgoing)
+        : job.documentCreation
+          ? null
+          : (target ?? documents.documentSelector(job));
     const request: P.PhysicalTurnRequest = Object.freeze({
       kind: "product",
       brokerNonce: config.brokerNonce,
@@ -569,10 +648,32 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       request,
       currentInstance(),
     );
-    if (job.documentCreation && documents.checkpointGeneration(physical) !== job.documentCreation.generation)
-      fail("DOCUMENT_STATE_CHANGED", "Creation physical turn differs from its compiler-bound generation");
-    if (job.protocolMetadata && documents.checkpointGeneration(physical) !== job.protocolMetadata.generation)
-      fail("DOCUMENT_STATE_CHANGED", "Protocol physical turn differs from its original generation");
+    if (
+      job.documentCreation &&
+      documents.checkpointGeneration(physical) !==
+        job.documentCreation.generation
+    )
+      fail(
+        "DOCUMENT_STATE_CHANGED",
+        "Creation physical turn differs from its compiler-bound generation",
+      );
+    if (
+      job.protocolMetadata &&
+      documents.checkpointGeneration(physical) !==
+        job.protocolMetadata.generation
+    )
+      fail(
+        "DOCUMENT_STATE_CHANGED",
+        "Protocol physical turn differs from its original generation",
+      );
+    if (
+      job.pythonStdout &&
+      documents.checkpointGeneration(physical) !== job.pythonStdout.generation
+    )
+      fail(
+        "DOCUMENT_STATE_CHANGED",
+        "Stdout physical turn differs from its original generation",
+      );
     if (
       job.documentMetadataRead &&
       documents.checkpointGeneration(physical) !==
@@ -949,6 +1050,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
         assertMetadataPrepared(context.job, prepared, prepared.rpcId);
         assertCreationPrepared(context.job, prepared, prepared.rpcId);
         assertProtocolPrepared(context.job, prepared, prepared.rpcId);
+        assertStdoutPrepared(context.job, prepared, prepared.rpcId);
         const started = Date.now();
         debugDispatchStarted.set(prepared, started);
         trace(context, {
@@ -1697,15 +1799,21 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
         try {
           if (plan?.kind !== "raw")
             fail("PREPARED_RPC_UNAVAILABLE", "The prepared raw turn is gone");
-          const rawPayload = protocol.rpcPayload(job.request.payload);
+          const callerPayload = protocol.rpcPayload(job.request.payload);
           if (
-            files.hash(protocol.canonical(rawPayload)) !==
+            files.hash(protocol.canonical(callerPayload)) !==
             plan.callerPayloadHash
           )
             fail(
               "PREPARED_RPC_UNAVAILABLE",
               "Prepared raw input no longer matches",
             );
+          if (!!job.pythonStdout !== !!plan.compiledPayload)
+            fail(
+              "PYTHON_STDOUT_UNPROVEN",
+              "A compiled stdout RPC must retain its private original plan",
+            );
+          const rawPayload = plan.compiledPayload ?? callerPayload;
           const physicalCatalogRead = [
             "resources/list",
             "resources/templates/list",
@@ -2114,7 +2222,13 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
               "PREPARED_RPC_UNAVAILABLE",
               "The original checked RPC is unavailable; it is never reconstructed for replay",
             );
+          if (!!job.pythonStdout !== !!plan.compiledPayload)
+            fail(
+              "PYTHON_STDOUT_UNPROVEN",
+              "A compiled stdout RPC must retain its private original plan",
+            );
           plan.turn.inspect((prepared) => {
+            assertStdoutPrepared(job, prepared);
             (prepared.metadataProof ?? prepared.pythonCertificate).fence(
               prepared.outgoing,
             );
@@ -2199,10 +2313,9 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
             entry?.target ?? "",
           );
         allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
-        selector =
-          job.documentCreation
-            ? undefined
-            : raw && transport.metadata.isAddinMetadata(raw)
+        selector = job.documentCreation
+          ? undefined
+          : raw && transport.metadata.isAddinMetadata(raw)
             ? transport.metadata.addinMetadataSelector(raw)
             : job.request.phased ||
                 job.sequenceMode === "automatic" ||
