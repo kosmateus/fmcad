@@ -152,7 +152,7 @@ export function projectRuntimeRetirement(
 ): QueueSnapshot {
   const coverage = verifiedRuntimeRetirement(authority);
   const existing = current.appliedRuntimeRetirement;
-  if (existing) {
+  if (existing?.rootHead === coverage.marker.rootHead) {
     if (
       !same(existing, coverage.marker, canonical) ||
       !same(current.runtimeRetiredExposures, coverage.exposures, canonical)
@@ -163,6 +163,9 @@ export function projectRuntimeRetirement(
       );
     return copy(current);
   }
+  // A newly authenticated root may freeze a snapshot carrying the preceding
+  // root's marker. It is still a first bootstrap for this root: the exact
+  // frozen bytes and complete coverage below must authorize the transition.
   if (!same(current, coverage.frozen, canonical))
     refused(
       "RUNTIME_RETIREMENT_UNAPPLIED",

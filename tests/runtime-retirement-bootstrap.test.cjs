@@ -132,6 +132,48 @@ function fixture(t) {
   };
 }
 
+test("real QueueState consumes a fresh root over the preceding retirement marker exactly once", (t) => {
+  const f = fixture(t);
+  new QueueState(f.directory, { runtimeRetirement: f.factory().forDirectory(f.directory), now: () => 200 });
+  const prior = JSON.parse(fs.readFileSync(f.file, "utf8"));
+  const bytes = fs.readFileSync(f.file);
+  const archive = path.join(f.directory, "runtime-rebaselines", "successor-owned-root");
+  fs.mkdirSync(archive, { recursive: true, mode: 0o700 });
+  const frozenFile = path.join(archive, "frozen-queue-state.json");
+  fs.writeFileSync(frozenFile, bytes, { mode: 0o600 });
+  const root = {
+    ...f.root,
+    record: {
+      ...f.root.record,
+      request: { requestId: "successor-owned-root" },
+      receipt: { newHead: "successor-native-head", handoffId: "successor-native-handoff" },
+      frozen: { "queue-state.json": { path: frozenFile, sha256: sha(bytes) } },
+    },
+    frozenBaseline: { snapshot: prior, snapshots: { root: prior } },
+    currentFiles: { "queue-state.json": bytes },
+  };
+  const recordFile = path.join(archive, "record.json");
+  fs.writeFileSync(recordFile, JSON.stringify(root.record), { mode: 0o600 });
+  fs.writeFileSync(path.join(f.directory, "runtime-rebaseline-head.json"), JSON.stringify({
+    version: 1, newHead: root.record.receipt.newHead,
+    record: { path: recordFile, sha256: sha(JSON.stringify(root.record)) },
+  }), { mode: 0o600 });
+  const authority = createApprovedRuntimeRetirement({
+    root,
+    assertBrokerOwner() {},
+    assertVerifiedRoot(directory) { assert.equal(directory, f.directory); },
+  }).forDirectory(f.directory);
+  const restored = new QueueState(f.directory, { runtimeRetirement: authority, now: () => 300 });
+  assert.equal(restored.data.appliedRuntimeRetirement.rootHead, root.record.receipt.newHead);
+  assert.deepEqual(restored.data.jobs, prior.jobs, "historical UNKNOWN is not settled or rewritten");
+  assert.equal(restored.data.jobs[f.submitted.id].state, "needs_reconciliation");
+  assert.equal(restored.data.revision, prior.revision + 1);
+  assert.deepEqual(fs.readFileSync(frozenFile), bytes, "the new authenticated frozen input is immutable");
+  const committed = fs.readFileSync(f.file);
+  new QueueState(f.directory, { runtimeRetirement: authority, now: () => 400 });
+  assert.deepEqual(fs.readFileSync(f.file), committed, "same-root restart does not project or replay again");
+});
+
 test("real QueueState atomically projects UNKNOWN before ordinary recovery", (t) => {
   const f = fixture(t);
   const authority = f.factory().forDirectory(f.directory);

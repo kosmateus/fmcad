@@ -125,6 +125,98 @@ function fixture(observerState) {
     retirement.projectRuntimeRetirement(value, cap, core.canonical, hash, 200);
   return { frozen, marker, old, waiting, observer, coverage, authority, project };
 }
+
+function successorFixture() {
+  const previous = fixture();
+  const current = previous.project();
+  const later = new core.QueueDomain({
+    now: () => 250, newId: () => "later-unknown", hash,
+  });
+  const submitted = later.submit({
+    kind: "rpc", clientId: "later-owner", requestId: "later-request", timeoutMs: 1000,
+    payload: { method: "tools/call", params: {
+      name: "execute_python", arguments: { code: "later owned fixture", persistent: false },
+    } },
+  });
+  later.next();
+  later.markDispatch(submitted.id);
+  later.block(submitted.id, "Later outcome remains unknown");
+  const job = structuredClone(later.data.jobs[submitted.id]);
+  job.order = Math.max(...Object.values(current.jobs).map(value => value.order)) + 1;
+  current.jobs[job.id] = job;
+  current.active = later.data.active;
+  current.blocked = structuredClone(later.data.blocked);
+  const frozen = structuredClone(current);
+  const marker = {
+    rootHead: "c".repeat(64), recordDigest: "d".repeat(64), layer: "root",
+    frozenDigest: hash(JSON.stringify(frozen)),
+  };
+  const jobs = {}, exposures = {};
+  for (const original of Object.values(frozen.jobs)) {
+    if (original.state !== "needs_reconciliation") continue;
+    jobs[original.id] = { original, outcome: "unknown" };
+    const key = "root:" + original.id;
+    exposures[key] = {
+      kind: "runtime_retired", key, rootHead: marker.rootHead,
+      recordDigest: marker.recordDigest, layer: marker.layer,
+      entryDigest: hash(core.canonical(original)), target: null,
+      source: { kind: "job", jobId: original.id, requestId: original.requestId,
+        clientId: original.clientId, jobHash: original.hash,
+        catalogDigest: hash(core.canonical(original.physicalDispatches ?? original.dispatch ?? null)) },
+    };
+  }
+  const coverage = { marker, currentSnapshotDigest: marker.frozenDigest, frozen, jobs, exposures };
+  const authority = retirement.createRuntimeRetirementAuthority(() => coverage);
+  const project = (value = current) =>
+    retirement.projectRuntimeRetirement(value, authority, core.canonical, hash, 300);
+  return { previous, current, coverage, authority, project, job };
+}
+
+test("a fresh authenticated root projects the exact previously retired snapshot without settling UNKNOWN", () => {
+  const f = successorFixture();
+  const projected = f.project();
+  assert.deepEqual(projected.appliedRuntimeRetirement, f.coverage.marker);
+  assert.deepEqual(projected.runtimeRetiredExposures, f.coverage.exposures);
+  assert.deepEqual(projected.jobs, f.current.jobs);
+  assert.equal(projected.active, null);
+  assert.equal(projected.blocked, null);
+  assert.deepEqual(f.project(projected), projected, "same-root restore is idempotent");
+  assert.throws(() => f.previous.project(projected), { code: "RUNTIME_RETIREMENT_UNAPPLIED" });
+  const restored = new core.QueueDomain({
+    snapshot: projected, recover: true, runtimeRetirement: f.authority, hash,
+    now: () => 400, newId: () => "never-replayed-successor",
+  });
+  assert.equal(restored.data.jobs[f.job.id].state, "needs_reconciliation");
+  assert.equal(restored.data.jobs[f.previous.old.id].state, "needs_reconciliation");
+});
+
+test("a successor root cannot overwrite a changed frozen snapshot or an unbound digest", () => {
+  const f = successorFixture();
+  const changed = structuredClone(f.current);
+  changed.revision++;
+  assert.throws(() => f.project(changed), { code: "RUNTIME_RETIREMENT_UNAPPLIED" });
+  f.coverage.currentSnapshotDigest = "e".repeat(64);
+  assert.throws(() => f.project(), { code: "RUNTIME_RETIREMENT_UNAPPLIED" });
+});
+
+test("a successor root must cover later UNKNOWN jobs and their original dispatch", () => {
+  const missing = successorFixture();
+  delete missing.coverage.jobs[missing.job.id];
+  assert.throws(() => missing.project(), { code: "RUNTIME_RETIREMENT_CHANGED" });
+  const altered = successorFixture();
+  altered.coverage.exposures["root:" + altered.job.id].source.catalogDigest = "e".repeat(64);
+  assert.throws(() => altered.project(), { code: "RUNTIME_RETIREMENT_CHANGED" });
+});
+
+test("the same root cannot change its marker or retirement exposures", () => {
+  const changedMarker = successorFixture();
+  changedMarker.coverage.marker.rootHead = changedMarker.current.appliedRuntimeRetirement.rootHead;
+  assert.throws(() => changedMarker.project(), { code: "RUNTIME_RETIREMENT_CHANGED" });
+  const changedExposures = successorFixture();
+  const projected = changedExposures.project();
+  projected.runtimeRetiredExposures = {};
+  assert.throws(() => changedExposures.project(projected), { code: "RUNTIME_RETIREMENT_CHANGED" });
+});
 for (const state of ["unknown", "terminal", "queued"]) {
   test(`retirement restores a ${state} scoped observer as historical data without rearming it`, () => {
     const f = fixture(state), projected = f.project();
