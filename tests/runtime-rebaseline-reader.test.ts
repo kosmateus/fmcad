@@ -493,6 +493,30 @@ c.execute("INSERT INTO consumed VALUES (?,?)",("owned-request",sys.stdin.read())
   };
 }
 
+test("reader exposes only MAC-authenticated immutable intent references, without granting bootstrap authority", async (t) => {
+  const f = await fixture(t);
+  const verified = await f.ports.verifyConsumed(f.publication, f.completion);
+  try {
+    const binding = f.terminal["binding"];
+    assert.ok(binding && typeof binding === "object");
+    assert.ok("intentReferences" in binding);
+    assert.deepEqual(
+      verified.authenticatedIntentReferences,
+      binding.intentReferences,
+    );
+    assert.ok(Object.isFrozen(verified.authenticatedIntentReferences));
+    assert.ok(
+      verified.authenticatedIntentReferences?.every((ref) =>
+        Object.isFrozen(ref),
+      ),
+    );
+    verified.finalize();
+    assert.ok(await f.ports.getVerifiedActivation(f.descriptor));
+  } finally {
+    verified.abort();
+  }
+});
+
 test("real core approves a CONSUMED root through SQLite QUERY only, preserves UNKNOWN and returns the exact activation tuple", async (t) => {
   const f = await fixture(t);
   const before = fs.readFileSync(f.database);

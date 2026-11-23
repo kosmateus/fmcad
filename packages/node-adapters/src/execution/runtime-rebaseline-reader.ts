@@ -64,6 +64,10 @@ export interface NativeRuntimeRebaselineReaderPorts {
 export interface NativeRuntimeConsumedVerification {
   readonly authenticatedRootPins?: NativeRuntimeRebaselinePins;
   readonly authenticatedCurrentPins?: NativeRuntimeRebaselinePins;
+  /** Original references covered by the verified native consume MAC. Integrity
+   * only: their bootstrap semantics and current held window require a separate
+   * trusted consumer. Missing on older/injected readers; never infer from JSON. */
+  readonly authenticatedIntentReferences?: readonly NativeRebaselineReference[];
   finalize(): void;
   abort(): void;
 }
@@ -659,7 +663,15 @@ function createPorts(
     resync(snapshot);
     pinnedNative(pinned);
     if (!same(capture(pinned, publication, completion), snapshot)) deny();
-    return { snapshot, activation: authenticated.activation, successor };
+    const intentReferences = fence["intentReferences"];
+    if (!Array.isArray(intentReferences)) deny();
+    const authenticatedIntentReferences = intentReferences.map(reference);
+    return {
+      snapshot,
+      activation: authenticated.activation,
+      successor,
+      authenticatedIntentReferences,
+    };
   }
   return Object.freeze({
     store: pinned.store,
@@ -682,6 +694,11 @@ function createPorts(
       return Object.freeze({
         authenticatedRootPins: structuredClone(result.snapshot.originalPins),
         authenticatedCurrentPins: structuredClone(pinned.pins),
+        authenticatedIntentReferences: Object.freeze(
+          result.authenticatedIntentReferences.map((value) =>
+            Object.freeze({ ...value }),
+          ),
+        ),
         finalize() {
           if (!pending || approvalGeneration !== generation) deny();
           pending = false;
