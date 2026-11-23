@@ -52,6 +52,60 @@ def dictionary_keys(node, bindings, dictionaries):
     raise Unknown()
 
 
+def finite_membership_domains(parsed, user_tree):
+    trees = [tree for _, tree in parsed] + [user_tree]
+    nodes = [node for tree in trees for node in ast.walk(tree)]
+    parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+    if any((isinstance(node, ast.Name)
+            and node.id in {'globals', 'locals', 'vars', 'eval', 'exec', '__builtins__'})
+           or (isinstance(node, ast.Attribute)
+               and node.attr in {'__globals__', '__dict__', '__getattribute__'})
+           or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id in {'getattr', 'hasattr'})
+           for node in nodes):
+        return {}
+    domains = {}
+    for _, tree in parsed:
+        for statement in tree.body:
+            if not (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                    and isinstance(statement.targets[0], ast.Name)):
+                continue
+            target, expression = statement.targets[0], statement.value
+            uses = [node for node in nodes if isinstance(node, ast.Name) and node.id == target.id]
+            if any(node is not target and not (
+                    isinstance(node.ctx, ast.Load) and isinstance(parents.get(node), ast.Compare)
+                    and len(parents[node].ops) == 1
+                    and isinstance(parents[node].ops[0], (ast.In, ast.NotIn))
+                    and parents[node].comparators == [node]) for node in uses):
+                continue
+            if any((isinstance(node, ast.arg) and node.arg == target.id)
+                   or (isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef))
+                       and node.name == target.id)
+                   or (isinstance(node, ast.alias)
+                       and (node.asname or node.name.split('.')[0]) in (target.id, '*'))
+                   or (isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                       and node.name == target.id)
+                   or (isinstance(node, ast.MatchMapping) and node.rest == target.id)
+                   for node in nodes):
+                continue
+            try:
+                if isinstance(expression, (ast.Set, ast.Tuple, ast.List)):
+                    values = constant(expression, {})
+                elif isinstance(expression, ast.SetComp) and len(expression.generators) == 1:
+                    generator = expression.generators[0]
+                    if not isinstance(generator.target, ast.Name) or generator.ifs or generator.is_async:
+                        continue
+                    values = [constant(expression.elt, {generator.target.id: value})
+                              for value in constant(generator.iter, {})]
+                else:
+                    continue
+                if values and all(isinstance(value, str) for value in values):
+                    domains[target.id] = sorted(set(values))
+            except (Unknown, TypeError):
+                continue
+    return domains
+
+
 def registrations(tree, registry_names=('CAD_HANDLERS',), depth=0, functions=None):
     if depth > 8:
         raise Unknown()
@@ -179,11 +233,61 @@ def registrations(tree, registry_names=('CAD_HANDLERS',), depth=0, functions=Non
             for key, value in handlers.items()}}
 
 
-def operation_choices(node, parents):
+def guarded_operation_choices(node, parents, domains, casts):
+    while (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+           and node.func.id in casts and len(node.args) == 2 and not node.keywords):
+        node = node.args[1]
+    scope, statement = parents.get(node), node
+    while scope is not None and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        statement, scope = scope, parents.get(scope)
+    if scope is None or statement not in scope.body:
+        raise Unknown()
+    dispatch = parents.get(node)
+    while dispatch is not None and dispatch is not statement:
+        if (isinstance(dispatch, ast.Call) and isinstance(dispatch.func, ast.Attribute)
+                and dispatch.func.attr == 'call'):
+            break
+        dispatch = parents.get(dispatch)
+    if dispatch is None or dispatch is statement:
+        raise Unknown()
+    if any(isinstance(part, (ast.NamedExpr, ast.Await, ast.Yield))
+           or (isinstance(part, ast.Call) and part is not dispatch
+               and not (isinstance(part.func, ast.Name) and part.func.id in casts))
+           for part in ast.walk(statement)):
+        raise Unknown()
+    index = scope.body.index(statement)
+    for guard_index, guard in enumerate(scope.body[:index]):
+        if not (isinstance(guard, ast.If) and not guard.orelse
+                and len(guard.body) == 1 and isinstance(guard.body[0], ast.Raise)
+                and isinstance(guard.test, ast.Compare) and len(guard.test.ops) == 1
+                and isinstance(guard.test.ops[0], ast.NotIn)
+                and isinstance(guard.test.comparators[0], ast.Name)
+                and ast.dump(guard.test.left, include_attributes=False) == ast.dump(node, include_attributes=False)):
+            continue
+        name = guard.test.comparators[0].id
+        if name not in domains:
+            continue
+        if any((isinstance(part, ast.arg) and part.arg == name)
+               or (isinstance(part, ast.Name) and part.id == name and not isinstance(part.ctx, ast.Load))
+               for part in ast.walk(scope)):
+            continue
+        # Only read-only validation branches may intervene. A call/mutation
+        # invalidates the guard proof, even if its name sounds like validation.
+        intervening = scope.body[guard_index + 1:index]
+        if any(not (isinstance(check, ast.If) and not check.orelse
+                    and all(isinstance(part, ast.Raise) for part in check.body)
+                    and not any(isinstance(part, (ast.Call, ast.NamedExpr, ast.Await, ast.Yield))
+                                for part in ast.walk(check.test))) for check in intervening):
+            continue
+        return domains[name]
+    raise Unknown()
+
+
+def operation_choices(node, parents, domains=None, casts=()):
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
     if isinstance(node, ast.IfExp):
-        return operation_choices(node.body, parents) + operation_choices(node.orelse, parents)
+        return operation_choices(node.body, parents, domains, casts) + operation_choices(node.orelse, parents, domains, casts)
     if isinstance(node, ast.Name):
         parent = parents.get(node)
         while parent is not None and not isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -221,10 +325,12 @@ def operation_choices(node, parents):
             if isinstance(assignment, (ast.Assign, ast.AnnAssign)) and isinstance(assignment.value, ast.Constant):
                 if isinstance(assignment.value.value, str):
                     return [assignment.value.value]
+    if domains:
+        return guarded_operation_choices(node, parents, domains, casts)
     raise Unknown()
 
 
-def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
+def facts(tree, filename, *, user=False, method=None, unit=None, casts=(), operation_domains=None):
     source = ast.unparse(tree)
     table = symtable.symtable(source, filename, 'exec')
     defines = {symbol.get_name() for symbol in table.get_symbols()
@@ -350,7 +456,7 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
                 operation = node.args[0] if node.args else next(
                     (kw.value for kw in node.keywords if kw.arg == 'operation'), None)
                 try:
-                    operations.update(operation_choices(operation, parents))
+                    operations.update(operation_choices(operation, parents, operation_domains, casts))
                 except Unknown:
                     opaque = True
         if (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Call)
@@ -550,7 +656,38 @@ def inert_binding(node, protocols=(), shadowed=()):
     return False
 
 
-def removable_registration(node, functions):
+def prior_function_binding(value, statement, tree, nodes):
+    if not isinstance(value, ast.Name):
+        return False
+    bindings = [node for node in nodes
+                if ((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                     and node.name == value.id)
+                    or (isinstance(node, ast.Name) and node.id == value.id
+                        and not isinstance(node.ctx, ast.Load))
+                    or (isinstance(node, ast.arg) and node.arg == value.id)
+                    or (isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                        and node.name == value.id)
+                    or (isinstance(node, ast.MatchMapping) and node.rest == value.id)
+                    or (isinstance(node, ast.alias)
+                        and (node.asname or node.name.split('.')[0]) == value.id))]
+    return (len(bindings) == 1 and bindings[0] in tree.body
+            and isinstance(bindings[0], ast.FunctionDef)
+            and inert_function(bindings[0])
+            and bindings[0].end_lineno < statement.lineno)
+
+
+def removable_registration(node, functions, tree=None, context=()):
+    if (isinstance(node, ast.Assign) and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Subscript)):
+        target = node.targets[0]
+        if (isinstance(target.value, ast.Name) and target.value.id == 'CAD_HANDLERS'
+                and isinstance(target.slice, ast.Constant)
+                and isinstance(target.slice.value, str)
+                and tree is not None
+                and prior_function_binding(node.value, node, tree,
+                                           [item for candidate in [tree, *context]
+                                            for item in ast.walk(candidate)])):
+            return [target.slice.value]
     value = node.value if isinstance(node, ast.Expr) else None
     if not (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
             and isinstance(value.func.value, ast.Name) and value.func.value.id == 'CAD_HANDLERS'
@@ -614,10 +751,145 @@ def shadowed_names(parsed):
     return names
 
 
+def reflection_attribute_keys(expression, parents, nodes):
+    """A finite literal key domain, never inferred from parameter annotations."""
+    try:
+        value = constant(expression, {})
+        if isinstance(value, str):
+            return {value}
+    except (Unknown, TypeError):
+        pass
+    if isinstance(expression, ast.IfExp):
+        return (reflection_attribute_keys(expression.body, parents, nodes)
+                | reflection_attribute_keys(expression.orelse, parents, nodes))
+    if isinstance(expression, ast.Subscript):
+        mapping = expression.value
+        if isinstance(mapping, ast.Name):
+            if any((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                    and node.name == mapping.id)
+                   or (isinstance(node, ast.alias)
+                       and (node.asname or node.name.split('.')[0]) == mapping.id)
+                   or (isinstance(node, ast.arg) and node.arg == mapping.id)
+                   or (isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                       and node.name == mapping.id)
+                   or (isinstance(node, ast.MatchMapping) and node.rest == mapping.id)
+                   for node in nodes):
+                raise Unknown()
+            stores = [node for node in nodes if isinstance(node, ast.Name)
+                      and node.id == mapping.id and not isinstance(node.ctx, ast.Load)]
+            if len(stores) != 1:
+                raise Unknown()
+            assignment = parents.get(stores[0])
+            if not isinstance(assignment, (ast.Assign, ast.AnnAssign)):
+                raise Unknown()
+            for use in nodes:
+                if not (isinstance(use, ast.Name) and use.id == mapping.id
+                        and isinstance(use.ctx, ast.Load)):
+                    continue
+                access = parents.get(use)
+                subscript = (isinstance(access, ast.Subscript) and access.value is use
+                             and isinstance(access.ctx, ast.Load))
+                membership = (isinstance(access, ast.Compare)
+                              and all(isinstance(op, (ast.In, ast.NotIn)) for op in access.ops)
+                              and use in access.comparators)
+                if not (subscript or membership):
+                    raise Unknown()
+            mapping = assignment.value
+        if isinstance(mapping, ast.Dict):
+            keys = set()
+            for value in mapping.values:
+                keys.update(reflection_attribute_keys(value, parents, nodes))
+            return keys
+    if isinstance(expression, ast.Name):
+        ancestor = parents.get(expression)
+        while ancestor is not None:
+            if isinstance(ancestor, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                break
+            generators = ([ancestor] if isinstance(ancestor, ast.For)
+                          else ancestor.generators if isinstance(
+                              ancestor, (ast.GeneratorExp, ast.ListComp, ast.SetComp, ast.DictComp)) else [])
+            for generator in generators:
+                if expression in ast.walk(generator.iter):
+                    continue
+                targets = list(ast.walk(generator.target))
+                matches = [node for node in targets if isinstance(node, ast.Name)
+                           and node.id == expression.id]
+                if len(matches) != 1:
+                    continue
+                writes = [node for node in ast.walk(ancestor) if isinstance(node, ast.Name)
+                          and node.id == expression.id and not isinstance(node.ctx, ast.Load)]
+                if writes != matches:
+                    raise Unknown()
+                iterable = generator.iter
+                if isinstance(iterable, ast.Name):
+                    scope = parents.get(iterable)
+                    while scope is not None and not isinstance(
+                            scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
+                        scope = parents.get(scope)
+                    if scope is None:
+                        raise Unknown()
+                    scope_nodes = list(ast.walk(scope))
+                    writes = [node for node in scope_nodes if isinstance(node, ast.Name)
+                              and node.id == iterable.id and not isinstance(node.ctx, ast.Load)]
+                    if len(writes) != 1:
+                        raise Unknown()
+                    declaration = parents.get(writes[0])
+                    if not (isinstance(declaration, (ast.Assign, ast.AnnAssign))
+                            and declaration in scope.body
+                            and declaration.end_lineno < iterable.lineno
+                            and isinstance(declaration.value, ast.Tuple)
+                            and all(isinstance(item, ast.Constant) and isinstance(item.value, str)
+                                    for item in declaration.value.elts)
+                            and not any((isinstance(node, ast.arg) and node.arg == iterable.id)
+                                        or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                                            and node.name == iterable.id)
+                                        or (isinstance(node, ast.alias)
+                                            and (node.asname or node.name.split('.')[0]) == iterable.id)
+                                        or (isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                                            and node.name == iterable.id)
+                                        or (isinstance(node, ast.MatchMapping) and node.rest == iterable.id)
+                                        for node in scope_nodes)):
+                        raise Unknown()
+                    iterable = declaration.value
+                values = constant(iterable, {})
+                def project(target, value):
+                    if target is matches[0]:
+                        return [value]
+                    if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (list, tuple)):
+                        if len(target.elts) != len(value):
+                            raise Unknown()
+                        return [item for child, part in zip(target.elts, value)
+                                for item in project(child, part)]
+                    return []
+                keys = {item for value in values for item in project(generator.target, value)}
+                if all(isinstance(item, str) for item in keys):
+                    return keys
+            ancestor = parents.get(ancestor)
+    raise Unknown()
+
+
 def registry_alias_expansions(unit, tree, context=()):
     """Prove a literal mapping is private and consumed only by registry update."""
     nodes = [node for candidate in [tree, *context] for node in ast.walk(candidate)]
     parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+    for node in nodes:
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in {'getattr', 'hasattr'}):
+            try:
+                attributes = reflection_attribute_keys(node.args[1], parents, nodes)
+            except (Unknown, IndexError, TypeError):
+                return []
+            if any(attribute.startswith('__') for attribute in attributes):
+                return []
+    if any((isinstance(node, ast.Attribute)
+            and node.attr in {'__globals__', '__dict__', '__builtins__',
+                              'globals', 'locals', 'vars', 'eval', 'exec'})
+           or (isinstance(node, ast.ImportFrom)
+               and any(alias.name == '*' for alias in node.names))
+           or (isinstance(node, ast.Constant)
+               and node.value in ('__globals__', '__dict__', '__builtins__'))
+           for node in nodes):
+        return []
     lines = unit['source'].encode('utf-8').splitlines(keepends=True)
     starts = [0]
     for line in lines:
@@ -683,20 +955,7 @@ def registry_alias_expansions(unit, tree, context=()):
                 break
             inert_lambda = (isinstance(value, ast.Lambda) and not value.args.defaults
                             and not any(value.args.kw_defaults))
-            bound_function = False
-            if isinstance(value, ast.Name):
-                bindings = [node for node in nodes
-                            if ((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-                                 and node.name == value.id)
-                                or (isinstance(node, ast.Name) and node.id == value.id
-                                    and not isinstance(node.ctx, ast.Load))
-                                or (isinstance(node, ast.arg) and node.arg == value.id)
-                                or (isinstance(node, ast.alias)
-                                    and (node.asname or node.name.split('.')[0]) == value.id))]
-                bound_function = (len(bindings) == 1 and bindings[0] in tree.body
-                                  and isinstance(bindings[0], ast.FunctionDef)
-                                  and inert_function(bindings[0])
-                                  and bindings[0].end_lineno < statement.lineno)
+            bound_function = prior_function_binding(value, statement, tree, nodes)
             if not (bound_function or inert_lambda):
                 break
             entries.append(dict(operation=key.value,
@@ -719,6 +978,8 @@ def registry_expansions(unit, tree, functions, context=()):
     for line in lines:
         starts.append(starts[-1] + len(line))
     for statement in tree.body:
+        if not isinstance(statement, ast.Expr):
+            continue
         if removable_registration(statement, functions) is None:
             continue
         mapping = statement.value.args[0]
@@ -1276,6 +1537,7 @@ def analyse(request):
              for alias in node.names if alias.name == 'wraps'} - rebound - functions.keys()
     if 'setattr' in shadowed:
         wraps.clear()
+    operation_domains = finite_membership_domains(parsed, user_tree)
     for unit, tree in parsed:
         if request.get('specialize', False):
             expansions.extend(registry_expansions(
@@ -1294,7 +1556,8 @@ def analyse(request):
                         else:
                             retained.append(member)
                     node.body = retained or [ast.Pass()]
-        entry = facts(tree, unit['filename'], unit=unit['id'], casts=casts)
+        entry = facts(tree, unit['filename'], unit=unit['id'], casts=casts,
+                      operation_domains=operation_domains)
         class Eager(ast.NodeTransformer):
             def visit(self, node):
                 # Copy only visited nodes; function bodies are never visited.
@@ -1313,7 +1576,8 @@ def analyse(request):
             visit_AsyncFunctionDef = visit_FunctionDef
 
         eager = Eager().visit(tree)
-        entry['eager'] = facts(eager, unit['filename'], unit=unit['id'], casts=casts)
+        entry['eager'] = facts(eager, unit['filename'], unit=unit['id'], casts=casts,
+                               operation_domains=operation_domains)
         entry['opaque'] = entry['eager']['opaque']
         statements = []
         for node in tree.body:
@@ -1329,8 +1593,11 @@ def analyse(request):
                 statements.append((node, False))
         for node, typing_only in statements:
             statement = ast.Module(body=[node], type_ignores=[])
-            registration = removable_registration(node, functions)
-            if registration is not None and isinstance(node.value.args[0], ast.Dict):
+            registration = removable_registration(
+                node, functions, tree,
+                [candidate for _, candidate in parsed if candidate is not tree] + [user_tree])
+            if (registration is not None and isinstance(node, ast.Expr)
+                    and isinstance(node.value.args[0], ast.Dict)):
                 mapping = node.value.args[0]
                 encoded_lines = unit['source'].encode('utf-8').splitlines(keepends=True)
                 def offset(line, column):
@@ -1352,7 +1619,8 @@ def analyse(request):
                 statement.body[0].value = copy.copy(node.value)
                 statement.body[0].value.args = [ast.Dict(keys=[], values=[]), *node.value.args[1:]]
                 registration = None
-            dependency = facts(statement, unit['filename'], unit=unit['id'], casts=casts)
+            dependency = facts(statement, unit['filename'], unit=unit['id'], casts=casts,
+                               operation_domains=operation_domains)
             # Only declarations whose creation has no calls are removable here.
             # Decorators, defaults and class initialization remain real roots;
             # their bodies must never be replaced by checker-only stubs.

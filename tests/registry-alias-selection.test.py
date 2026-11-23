@@ -51,6 +51,11 @@ class RegistryAliasSelection(unittest.TestCase):
                 prefix + "read_namespace = globals\n" + update,
                 prefix.replace("'drop': b", "'drop': missing") + update,
                 "b = 42\n" + prefix + update,
+                "try:\n    raise ValueError()\nexcept ValueError as b:\n    pass\n" + prefix + update,
+                "def read_size(): return len(a.__globals__['handlers'])\n" + prefix + update,
+                "def read_size(): return len(getattr(a, '__globals__')['handlers'])\n" + prefix + update,
+                "def read_size(): return len(getattr(a, '__glo' + 'bals__')['handlers'])\n" + prefix + update,
+                "def read_size(key): return len(getattr(a, key)['handlers'])\n" + prefix + update,
                 "handlers = {'keep': a, 'drop': make_handler()}\n" + update,
                 "handlers = {'keep': a, 'drop': lambda x=effect(): x}\n" + update,
                 "handlers = {'keep': a, 'keep': b}\n" + update,
@@ -76,6 +81,40 @@ class RegistryAliasSelection(unittest.TestCase):
         self.assertEqual(len(module.registry_alias_expansions(
             {"id": "fixture", "source": source}, ast.parse(source),
             [ast.parse("request = globals().get('_FMCAD_REQUEST')")])), 1)
+
+    def test_reflection_key_domain_comes_from_literal_loop_not_annotation(self):
+        source = "for key in ('name', 'value'):\n    getattr(entity, key)\n"
+        tree = ast.parse(source)
+        nodes = list(ast.walk(tree))
+        parents = {child: parent for parent in nodes for child in ast.iter_child_nodes(parent)}
+        expression = next(node.args[1] for node in nodes
+                          if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                          and node.func.id == 'getattr')
+        self.assertEqual(module.reflection_attribute_keys(expression, parents, nodes),
+                         {'name', 'value'})
+        mutated = ast.parse("for key in ('name',):\n    key = supplied\n    getattr(entity, key)\n")
+        nodes = list(ast.walk(mutated))
+        parents = {child: parent for parent in nodes for child in ast.iter_child_nodes(parent)}
+        expression = next(node.args[1] for node in nodes if isinstance(node, ast.Call))
+        with self.assertRaises(module.Unknown):
+            module.reflection_attribute_keys(expression, parents, nodes)
+
+    def test_immutable_local_key_tuple_and_conditional_domains(self):
+        source = ("def snapshot(entity):\n"
+                  "    names = ('name', 'value')\n"
+                  "    return [getattr(entity, key if flag else 'other') for key in names]\n")
+        tree = ast.parse(source)
+        nodes = list(ast.walk(tree))
+        parents = {child: parent for parent in nodes for child in ast.iter_child_nodes(parent)}
+        expression = next(node.args[1] for node in nodes if isinstance(node, ast.Call))
+        self.assertEqual(module.reflection_attribute_keys(expression, parents, nodes),
+                         {'name', 'value', 'other'})
+        tree = ast.parse(source.replace("    return", "    names = supplied\n    return"))
+        nodes = list(ast.walk(tree))
+        parents = {child: parent for parent in nodes for child in ast.iter_child_nodes(parent)}
+        expression = next(node.args[1] for node in nodes if isinstance(node, ast.Call))
+        with self.assertRaises(module.Unknown):
+            module.reflection_attribute_keys(expression, parents, nodes)
 
 
 if __name__ == "__main__":
