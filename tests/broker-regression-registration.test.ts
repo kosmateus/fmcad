@@ -44,6 +44,7 @@ test("CI executes every retained broker regression family and its historical com
     "broker-multiprocess-contract",
     "broker-restart-contract",
     "queue-runtime-identity",
+    "runtime-epoch-load",
     "broker-rpc-preparation",
     "broker-turn-execution",
     "phased-workers-start-close-failures",

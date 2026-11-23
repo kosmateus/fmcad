@@ -40,6 +40,7 @@
     "tests/broker-composition.test.ts",
     "tests/broker-session.test.ts",
     "tests/queue-runtime-authority.test.ts",
+    "tests/runtime-epoch-load.test.ts",
     "tests/queue-runtime-identity.test.ts",
     "tests/broker-rpc-preparation.test.ts",
     "tests/broker-turn-execution.test.ts",

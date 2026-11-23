@@ -138,6 +138,7 @@ export type State = Omit<
   next(options?: { grant?: boolean }): Job | null;
   submit(request: Request, preparedId?: string): PublicJob;
   assertEpoch(normal?: boolean): void;
+  verifyCurrentEpoch(): Epoch | null;
   isHistorical(id: string): boolean;
   findAnyRequest(clientId: string, requestId: string): PublicJob | null;
 };
