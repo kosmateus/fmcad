@@ -1967,6 +1967,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   function acceptedContinuationTarget(request: P.Request) {
     if (request.kind !== "command") return null;
     if (request.payload?.["kind"] === "legacy-command") {
+      const parser = runtimeRequire("./dist/entrypoints/cli/parser") as
+        typeof import("../entrypoints/cli/parser");
+      const registry = runtimeRequire("./commands") as {
+        findCommand(argv: string[]): import("../entrypoints/cli/parser").CommandEntry | undefined;
+      };
+      const { rest } = parser.parseFlags(required(request.argv));
+      const entry = registry.findCommand(rest);
+      // Classify with the same pure parser/registry before the full adapter:
+      // CAD and executable run preparation can synchronously read input files.
+      if (!entry || entry.kind === "cad" ||
+          (entry.kind === "run" &&
+            !parser.parseCommand(entry, rest.slice(entry.key.split(" ").length)).listing))
+        fail("INVALID_COMMAND_PAYLOAD", "Legacy payload does not name a legacy command");
       const { prepareRequest } = runtimeRequire("./dist/composition/execution-request") as
         typeof import("./execution-request");
       const parsed = prepareRequest({

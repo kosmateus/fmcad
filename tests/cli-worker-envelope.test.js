@@ -245,6 +245,38 @@ test(
         },
       );
     }
+    await t.test(
+      "queue exec run listing remains a genuine legacy command",
+      async () => {
+        const requestId = randomUUID();
+        const productsBefore = products;
+        const result = await cli([
+          "queue",
+          "exec",
+          "--config",
+          config,
+          "--client",
+          "listing-envelope-" + randomUUID(),
+          "--request-id",
+          requestId,
+          "--",
+          "run",
+          "--list",
+        ]);
+        assert.equal(result.code, 0, JSON.stringify(result));
+        assert.match(result.stderr, /FMCAD_QUEUE_JOB /);
+        const state = JSON.parse(
+          fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+        );
+        const job = Object.values(state.jobs).find(
+          (job) => job.requestId === requestId,
+        );
+        assert.equal(job.state, "succeeded");
+        assert.equal(job.request.payload.kind, "legacy-command");
+        assert.equal(job.request.payload.listing, true);
+        assert.equal(products, productsBefore);
+      },
+    );
     // Exact coordinator:before program from the original feature10 failure,
     // submitted with the existing live helper's public CLI argv, but fresh IDs.
     const coordinatorSource = `DOC_NAME = None
@@ -403,9 +435,9 @@ def run(context: str) -> None:
             ],
           ],
         ];
-      try {
-        await client.register({ autoStart: false });
-        const dispatchesBefore = physicalRequests;
+        try {
+          await client.register({ autoStart: false });
+          const dispatchesBefore = physicalRequests;
           for (const [label, payload, argv = canonical.argv] of cases) {
             const input = {
               kind: "command",
@@ -429,15 +461,103 @@ def run(context: str) -> None:
             const state = JSON.parse(
               fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
             );
-          assert.deepEqual(Object.keys(state.jobs), jobsBefore, label);
-          assert.equal(products, 3, label + " must not dispatch");
-          assert.equal(physicalRequests, dispatchesBefore,
-            label + " must not send even an extra physical probe");
+            assert.deepEqual(Object.keys(state.jobs), jobsBefore, label);
+            assert.equal(products, 3, label + " must not dispatch");
+            assert.equal(
+              physicalRequests,
+              dispatchesBefore,
+              label + " must not send even an extra physical probe",
+            );
           }
         } finally {
           client.dispose();
         }
       },
     );
+    for (const kind of ["CAD", "run"]) {
+      await t.test(
+        `${kind} advertised as legacy is denied before reading input files`,
+        async () => {
+          const { QueueClient } = load("./queue-client");
+          const { prepareRequest } = load(
+            "./dist/composition/execution-request",
+          );
+          const client = new QueueClient("legacy-file-fence-" + randomUUID(), {
+            cfg,
+          });
+          const inputFile = path.join(
+            home,
+            "private-input-" + randomUUID() + ".json",
+          );
+          const argv =
+            kind === "CAD"
+              ? ["entity", "list", "--doc", "Model", "--file", inputFile]
+              : ["run", path.join(home, "absent.py"), "--args-file", inputFile];
+          const payload = JSON.parse(
+            JSON.stringify(
+              prepareRequest({
+                request: { cwd: home, argv: ["doc", "list"] },
+              }).payload,
+            ),
+          );
+          const jobsBefore = Object.keys(
+            JSON.parse(
+              fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+            ).jobs,
+          );
+          const dispatchesBefore = physicalRequests;
+          const read = fs.readFileSync;
+          const reads = [];
+          try {
+            await client.register({ autoStart: false });
+            // Spy at the actual filesystem adapter boundary in the broker
+            // process. Never open the private/missing input or a blocking FIFO.
+            fs.readFileSync = function (filename, ...args) {
+              if (
+                typeof filename === "string" &&
+                path.resolve(filename) === inputFile
+              ) {
+                reads.push(filename);
+                throw Object.assign(
+                  new Error("Request input read before kind rejection"),
+                  {
+                    code: "TEST_INPUT_READ",
+                  },
+                );
+              }
+              return read.call(this, filename, ...args);
+            };
+            let rejection;
+            try {
+              await client.submit({
+                kind: "command",
+                requestId: randomUUID(),
+                cwd: home,
+                argv,
+                payload,
+                backend: "addin",
+                timeoutMs: 60000,
+              });
+            } catch (error) {
+              rejection = error;
+            }
+            assert.deepEqual(
+              reads,
+              [],
+              "Pure kind classification must precede input preparation",
+            );
+            assert.equal(rejection?.code, "INVALID_COMMAND_PAYLOAD");
+            const state = JSON.parse(
+              read.call(fs, path.join(dir, "queue-state.json"), "utf8"),
+            );
+            assert.deepEqual(Object.keys(state.jobs), jobsBefore);
+            assert.equal(physicalRequests, dispatchesBefore);
+          } finally {
+            fs.readFileSync = read;
+            client.dispose();
+          }
+        },
+      );
+    }
   },
 );
