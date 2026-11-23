@@ -23,6 +23,10 @@ import {
   type DocumentContinuation, type DocumentContinuationAuthority,
 } from "./document-continuation";
 import {
+  createDocumentMetadataReadAuthority, verifiedDocumentMetadataRead, validDocumentMetadataRead,
+  type DocumentMetadataRead, type DocumentMetadataReadAuthority,
+} from "./document-metadata-read";
+import {
   documentTargetKey,
   validDocumentObservation,
   validDocumentCheckpoints,
@@ -46,6 +50,11 @@ export const terminal = (state: string) => TERMINAL.has(state);
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const retirements = new WeakMap<QueueDomain, RuntimeRetirementAuthority>();
 const continuations = new WeakMap<QueueDomain, Map<string, DocumentContinuationAuthority>>();
+type MetadataReadBinding = {
+  marker: DocumentMetadataRead;
+  authority: DocumentMetadataReadAuthority;
+};
+const metadataReads = new WeakMap<QueueDomain, Map<string, MetadataReadBinding>>();
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
@@ -405,6 +414,11 @@ export class QueueDomain {
         fail("CORRUPT_STATE", "Invalid broker-authored document inspection marker");
       if (job.documentContinuation !== undefined && !validContinuationJob(job))
         fail("CORRUPT_STATE", "Invalid broker-authored document continuation marker");
+      if (job.documentMetadataRead !== undefined &&
+          (!validDocumentMetadataRead(job.documentMetadataRead) ||
+           job.documentMetadataRead.requestHash !== job.hash ||
+           job.documentInspection || job.documentContinuation))
+        fail("CORRUPT_STATE", "Invalid broker-authored metadata read marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id) &&
@@ -545,6 +559,11 @@ export class QueueDomain {
         for (const id of capabilities.keys())
           if (!draft.jobs[id] || terminal(draft.jobs[id].state))
             capabilities.delete(id);
+      const reads = metadataReads.get(this);
+      if (reads)
+        for (const id of reads.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state))
+            reads.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -712,7 +731,7 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
-      if ((job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job)) {
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job)) {
         this._refuseDocumentConflict(d, job, time);
         job.code = "CHECKPOINT_CHANGED";
         continue;
@@ -784,6 +803,65 @@ export class QueueDomain {
   createDocumentContinuationAuthority(verify: () => DocumentContinuation) {
     return createDocumentContinuationAuthority(this, verify);
   }
+  createDocumentMetadataReadAuthority(verify: () => DocumentMetadataRead) {
+    return createDocumentMetadataReadAuthority(this, verify);
+  }
+  submitDocumentMetadataRead(request: unknown, authority: DocumentMetadataReadAuthority) {
+    const binding = { marker: verifiedDocumentMetadataRead(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, undefined, undefined, undefined, false, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    // Deduplication must never attach fresh authority to an older request.
+    if (job && !existingIds.has(job.id) &&
+        ["queued", "preparing", "processing"].includes(job.state)) {
+      let bindings = metadataReads.get(this);
+      if (!bindings) metadataReads.set(this, bindings = new Map());
+      bindings.set(job.id, binding);
+    }
+    return result;
+  }
+  _metadataReadAllowed(d: QueueSnapshot, job: QueueJob, binding?: MetadataReadBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+      const current = verifiedDocumentMetadataRead(binding.authority, this);
+      const identity = { ...job.request };
+      delete identity.description;
+      return canonical(current) === canonical(binding.marker) &&
+        canonical(job.documentMetadataRead) === canonical(binding.marker) &&
+        current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+        documentConflicts(d, null, retirements.get(this), canonical)
+          .every(documentConflictAllowsInspection);
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["DOCUMENT_METADATA_READ_UNPROVEN", "NOT_AUTHORIZED",
+            "EPOCH_CLIENT_NOT_GRANTED", "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+            "DOCUMENT_UNLOCK_STALE"].includes(code)) return false;
+      // Storage, owner and runtime-root faults are not ordinary job expiry.
+      throw error;
+    }
+  }
+  /** Bind the actual pre-receipt program and logical RPC. The adapter must also
+   * fence the final wire certificate and original physical-turn binding. */
+  assertDocumentMetadataRead(id: string, programHash: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id);
+    const binding = metadataReads.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const originalIntent = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId && !!committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._metadataReadAllowed(this.data, job, binding) ||
+        binding.marker.programHash !== programHash || binding.marker.rpcHash !== rpcHash ||
+        !originalIntent)
+      fail("DOCUMENT_METADATA_READ_UNPROVEN", "The actual metadata read must match its one compiler-bound RPC");
+    return copy(binding.marker);
+  }
+  hasDocumentMetadataRead(id: string) {
+    return metadataReads.get(this)?.has(id) ?? false;
+  }
 
   /** Persist a server-side checkpoint refusal with the original immutable input.
    * This entrypoint can only deny work; it cannot mint continuation authority. */
@@ -791,6 +869,8 @@ export class QueueDomain {
     return this._submit(request, preparedId, undefined, undefined, true);
   }
   _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
+    const metadata = metadataReads.get(this)?.get(job.id);
+    if (job.documentMetadataRead) return this._metadataReadAllowed(d, job, metadata);
     if (job.documentInspection)
       return documentInspectionAllowed(d, job, this.hash, retirements.get(this));
     if (job.documentContinuation)
@@ -863,7 +943,7 @@ export class QueueDomain {
   // Internal server entrypoint; inspection markers are not decoded from RPC.
   _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
     continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority },
-    refusedContinuation = false) {
+    refusedContinuation = false, metadata?: MetadataReadBinding) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -982,14 +1062,17 @@ export class QueueDomain {
         timeoutMs: r.timeoutMs, sequenceId: null, sequenceState: null,
         ...(inspection ? { documentInspection: inspection } : {}),
         ...(continuation ? { documentContinuation: copy(continuation.marker) } : {}),
+        ...(metadata ? { documentMetadataRead: copy(metadata.marker) } : {}),
       };
       if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash, retirements.get(this)))
         fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
       if (continuation && !documentContinuationAllowed(d, inspectionCandidate, this.hash,
         retirements.get(this), continuation.authority, this))
         fail("DOCUMENT_CONTINUATION_UNPROVEN", "Continuation requires the current accepted state and exact private guard");
+      if (metadata && !this._metadataReadAllowed(d, inspectionCandidate, metadata))
+        fail("DOCUMENT_METADATA_READ_UNPROVEN", "A current private compiler-bound metadata read is required");
       if (refusedContinuation ||
-          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation)) {
+          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata)) {
         const refused: QueueJob = {
           id: preparedId ?? this.newId(), requestId: r.requestId,
           clientId: r.clientId, kind: r.kind, request: r, hash,
@@ -1072,6 +1155,7 @@ export class QueueDomain {
         sequenceState: seq ? "queued" : null,
       };
       if (inspection) job.documentInspection = inspection;
+      if (metadata) job.documentMetadataRead = copy(metadata.marker);
       if (continuation) job.documentContinuation = copy(continuation.marker);
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
@@ -1176,7 +1260,7 @@ export class QueueDomain {
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
         (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
-          (!!(job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job)),
+          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -1196,7 +1280,7 @@ export class QueueDomain {
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
-        (!!(job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job)) ||
+        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -1527,7 +1611,7 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
-      if ((job.documentInspection || job.documentContinuation) && !this._documentJobAllowed(d, job))
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job))
         fail("DOCUMENT_UNLOCK_REQUIRED", "Document fence changed before the system-read boundary");
       this._appendPhysicalDispatch(job, entry);
       return this._public(job);
