@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import {
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  readlinkSync,
+  readSync,
   readdirSync,
+  type BigIntStats,
+  type Dirent,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -152,31 +160,152 @@ export function runtimeBuildIdentity(paths: RuntimePaths): string {
         "scripts/console-source-format.py",
       ];
   const visited = new Set<string>();
-  function visit(file: string): void {
-    if (!existsSync(file) || visited.has(file)) return;
-    visited.add(file);
-    const stat = lstatSync(file);
-    if (stat.isSymbolicLink())
-      throw Object.assign(
-        new Error(`Runtime identity cannot follow symlink: ${file}`),
-        { code: "UNPINNED_BUILD" },
+  const buffer = Buffer.allocUnsafe(512 * 1024);
+  const reject = (file: string): never => {
+    throw Object.assign(
+      new Error(
+        `Runtime identity input is a symlink or changed during reading: ${file}`,
+      ),
+      { code: "UNPINNED_BUILD" },
+    );
+  };
+  const stableFile = (before: BigIntStats, after: BigIntStats) =>
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.mode === after.mode &&
+    before.nlink === after.nlink &&
+    before.size === after.size &&
+    before.mtimeNs === after.mtimeNs &&
+    before.ctimeNs === after.ctimeNs;
+  const excluded = (file: string) =>
+    file.endsWith(".map") ||
+    file.endsWith(".d.ts") ||
+    file.endsWith(".pyc") ||
+    file.endsWith(".pyo");
+  const entries = (file: string) =>
+    readdirSync(file, { withFileTypes: true })
+      .filter((entry) => entry.name !== "__pycache__")
+      .sort((left, right) =>
+        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
       );
-    if (stat.isDirectory()) {
-      for (const entry of readdirSync(file).sort()) {
-        if (entry !== "__pycache__") visit(join(file, entry));
+  const entryKind = (entry: Dirent) =>
+    entry.isDirectory()
+      ? "directory"
+      : entry.isFile()
+        ? "file"
+        : entry.isSymbolicLink()
+          ? "symlink"
+          : "other";
+  function hashFile(file: string, name: string, pinnedParent: boolean): void {
+    let fd: number | undefined;
+    try {
+      const expected = constants.O_NOFOLLOW
+        ? undefined
+        : lstatSync(file, { bigint: true });
+      if (expected && !expected.isFile()) reject(file);
+      fd = openSync(
+        file,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      const before = fstatSync(fd, { bigint: true });
+      if (!before.isFile() || (expected && !stableFile(expected, before)))
+        reject(file);
+      if (
+        process.platform === "linux" &&
+        !pinnedParent &&
+        readlinkSync(`/proc/self/fd/${fd}`) !== resolve(file)
+      )
+        reject(file);
+      hash.update(name + "\0");
+      let remaining = Number(before.size);
+      if (!Number.isSafeInteger(remaining) || remaining < 0) reject(file);
+      while (remaining > 0) {
+        const requested = Math.min(remaining, buffer.length);
+        const read = readSync(fd, buffer, 0, requested, null);
+        if (!read) reject(file);
+        hash.update(buffer.subarray(0, read));
+        remaining -= read;
       }
-    } else if (
-      stat.isFile() &&
-      !file.endsWith(".map") &&
-      !file.endsWith(".d.ts") &&
-      !file.endsWith(".pyc") &&
-      !file.endsWith(".pyo")
-    ) {
-      hash.update(relative(paths.installation, file).split(sep).join("/"));
+      if (!stableFile(before, fstatSync(fd, { bigint: true }))) reject(file);
       hash.update("\0");
-      hash.update(readFileSync(file));
-      hash.update("\0");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") reject(file);
+      throw error;
+    } finally {
+      if (fd !== undefined) closeSync(fd);
     }
+  }
+  function visit(
+    file: string,
+    hint?: Dirent,
+    input = file,
+    name = relative(paths.installation, file).split(sep).join("/"),
+    pinnedParent = false,
+  ): void {
+    if (visited.has(file)) return;
+    if (hint?.isSymbolicLink()) reject(file);
+    // Dirent is only a traversal hint. O_NOFOLLOW + fstat authenticate the
+    // opened regular file; every executable byte is read on every call.
+    if (hint?.isFile() && !excluded(file)) {
+      visited.add(file);
+      hashFile(input, name, pinnedParent);
+      return;
+    }
+    const stat = lstatSync(input, { bigint: true, throwIfNoEntry: false });
+    if (!stat) return;
+    visited.add(file);
+    if (stat.isSymbolicLink()) reject(file);
+    if (stat.isDirectory()) {
+      let fd: number | undefined;
+      try {
+        // A Linux directory fd pins the parent used by every child open. A
+        // racing parent symlink cannot redirect those reads outside this tree.
+        if (process.platform === "linux") {
+          fd = openSync(
+            input,
+            constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+          );
+          if (!stableFile(stat, fstatSync(fd, { bigint: true }))) reject(file);
+        }
+        const directory = fd === undefined ? input : `/proc/self/fd/${fd}`;
+        const original = entries(directory);
+        for (const entry of original)
+          visit(
+            join(file, entry.name),
+            entry,
+            join(directory, entry.name),
+            name ? name + "/" + entry.name : entry.name,
+            fd !== undefined,
+          );
+        const after = lstatSync(input, { bigint: true });
+        if (
+          !after.isDirectory() ||
+          after.dev !== stat.dev ||
+          after.ino !== stat.ino ||
+          after.mode !== stat.mode
+        )
+          reject(file);
+        // All entries were enumerated in this invocation. Re-enumerate only to
+        // resolve a mid-walk directory change; ignored __pycache__ churn must
+        // not change the executable fingerprint.
+        if (!stableFile(stat, after)) {
+          const current = entries(directory);
+          if (
+            current.length !== original.length ||
+            current.some(
+              (entry, index) =>
+                entry.name !== original[index]?.name ||
+                entryKind(entry) !== entryKind(original[index]!),
+            )
+          )
+            reject(file);
+        }
+      } finally {
+        if (fd !== undefined) closeSync(fd);
+      }
+    } else if (stat.isFile()) {
+      if (!excluded(file)) hashFile(input, name, pinnedParent);
+    } else reject(file);
   }
   visit(join(paths.installation, "package.json"));
   for (const directory of directories)

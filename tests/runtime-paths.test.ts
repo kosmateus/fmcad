@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 const load = createRequire(__filename);
 const adapterRoot = path.resolve(__dirname, '../../packages/node-adapters/dist/config-platform');
@@ -147,6 +148,111 @@ test('identity detects added, deleted and renamed modules and denies symlinks ev
   fs.symlinkSync(worker, path.join(root, 'dist/processes/ignored.map'));
   assert.throws(() => runtime.runtimeBuildIdentity(paths), { code: 'UNPINNED_BUILD' });
 });
+
+test('streamed identity preserves the exact sorted path/byte delimiter format and duplicate roots', t => {
+  const root = fixture(t);
+  const files: Array<[string, string]> = [
+    ['package.json', '{"name":"fmcad"}'],
+    ['dist/assets/a.bin', 'asset'],
+    ['dist/processes/queue-worker.js', '// worker'],
+    ['dist/processes/ż.js', '// unicode'],
+    ['dist/runtime/python/module.py', 'print(1)'],
+    ['bin/cli.js', '// cli'],
+    ['scripts/console-source-format.py', '# formatter'],
+  ];
+  const expected = createHash('sha256');
+  for (const [name, bytes] of files) {
+    const file = path.join(root, name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, bytes);
+    expected.update(name); expected.update('\0'); expected.update(bytes); expected.update('\0');
+  }
+  fs.writeFileSync(path.join(root, 'dist/processes/ignored.map'), 'excluded');
+  fs.mkdirSync(path.join(root, 'dist/processes/__pycache__'));
+  fs.writeFileSync(path.join(root, 'dist/processes/__pycache__/ignored.py'), 'excluded');
+  const paths = runtime.resolveRuntimePaths({ anchor: path.join(root, files[2]![0]), home: root, env: {} });
+  const digest = expected.digest('hex');
+  assert.equal(runtime.runtimeBuildIdentity(paths), digest);
+  assert.equal(runtime.runtimeBuildIdentity({ ...paths, runtime: paths.assets }), digest);
+  fs.chmodSync(path.join(root, files[2]![0]), 0o444);
+  assert.equal(runtime.runtimeBuildIdentity(paths), digest);
+});
+
+for (const fault of ['symlink', 'fifo', 'directory-swap', 'during-read'] as const) {
+  test(`identity refuses a bounded ${fault} race at the real filesystem boundary`,
+    { skip: process.platform !== 'linux', timeout: 5000 }, t => {
+      const root = fixture(t);
+      const worker = path.join(root, 'dist/processes/queue-worker.js');
+      fs.mkdirSync(path.dirname(worker), { recursive: true });
+      fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fmcad"}');
+      fs.writeFileSync(worker, '// original');
+      fs.mkdirSync(path.join(root, 'other'));
+      fs.writeFileSync(path.join(root, 'other/queue-worker.js'), '// redirected');
+      const script = `
+        const fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
+        const api = require(process.argv[1]), file = process.argv[2], fault = process.argv[3];
+        const paths = api.resolveRuntimePaths({ anchor: file, home: path.dirname(file), env: {} });
+        let injected = false;
+        if (fault === 'during-read') {
+          const read = fs.readSync;
+          fs.readSync = function(fd, ...args) {
+            const count = read.call(this, fd, ...args);
+            if (!injected && fs.readlinkSync('/proc/self/fd/' + fd) === file) {
+              injected = true; fs.writeFileSync(file, '// mutation');
+            }
+            return count;
+          };
+        } else if (fault === 'directory-swap') {
+          const read = fs.readdirSync;
+          fs.readdirSync = function(directory, ...args) {
+            const entries = read.call(this, directory, ...args);
+            if (!injected && fs.realpathSync(directory) === path.dirname(file)) {
+              injected = true;
+              const original = path.dirname(file);
+              fs.renameSync(original, original + '.prior');
+              fs.symlinkSync(path.join(original, '../../other'), original, 'dir');
+            }
+            return entries;
+          };
+        } else {
+          const open = fs.openSync;
+          fs.openSync = function(name, ...args) {
+            if (!injected && fs.realpathSync(name) === file) {
+              injected = true; fs.renameSync(file, file + '.prior');
+              if (fault === 'symlink') fs.symlinkSync(file + '.prior', file);
+              else {
+                const result = cp.spawnSync('mkfifo', [file]);
+                if (result.status !== 0) throw Error('Could not create owned FIFO fixture');
+              }
+            }
+            return open.call(this, name, ...args);
+          };
+        }
+        try { api.runtimeBuildIdentity(paths); console.log(JSON.stringify({ injected, accepted: true })); }
+        catch (error) { console.log(JSON.stringify({ injected, accepted: false, code: error.code })); }
+      `;
+      const result = spawnSync(process.execPath, ['-e', script,
+        path.join(adapterRoot, 'runtime-paths.js'), worker, fault],
+        { encoding: 'utf8', timeout: 3000 });
+      assert.equal(result.status, 0, result.stderr);
+      const observed = record(JSON.parse(result.stdout));
+      assert.equal(observed["injected"], true);
+      assert.equal(observed["accepted"], false);
+      assert.equal(observed["code"], 'UNPINNED_BUILD');
+    });
+}
+
+test('an unreadable executable input cannot disappear from the fingerprint',
+  { skip: process.platform !== 'linux' || process.getuid?.() === 0 }, t => {
+    const root = fixture(t);
+    const worker = path.join(root, 'dist/processes/queue-worker.js');
+    fs.mkdirSync(path.dirname(worker), { recursive: true });
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fmcad"}');
+    fs.writeFileSync(worker, '// source');
+    const paths = runtime.resolveRuntimePaths({ anchor: worker, home: root, env: {} });
+    fs.chmodSync(worker, 0);
+    assert.throws(() => runtime.runtimeBuildIdentity(paths), { code: 'EACCES' });
+  });
 
 const linux = { platform: 'linux', architecture: 'x64', nodeVersion: '24.1.0', osRelease: '6.8.0-generic', distribution: 'ubuntu', distributionVersion: '24.04' };
 test('capabilities distinguish Linux, WSL2 and unsupported hosts without fallback', () => {
