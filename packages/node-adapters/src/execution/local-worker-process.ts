@@ -20,6 +20,8 @@ export interface LocalWorkerProcess {
     birth: string | null;
     running: boolean;
   }>;
+  /** Intent/output-open failure rejects its original cause after owned FD cleanup.
+   * A resolved child exit is local evidence only, never SDK settlement. */
   readonly completion: Promise<LocalWorkerCompletion>;
 }
 
@@ -60,12 +62,17 @@ export function launchLocalWorker(
     finished = false,
     publicationFailed = false;
   let spawnFailed = false;
+  let outputsOpened = false;
   const descriptors: number[] = [];
   let resolveCompletion!: (value: LocalWorkerCompletion) => void;
-  const completion = new Promise<LocalWorkerCompletion>((resolve) => {
+  let rejectCompletion!: (error: unknown) => void;
+  const completion = new Promise<LocalWorkerCompletion>((resolve, reject) => {
     resolveCompletion = resolve;
+    rejectCompletion = reject;
   });
-  const finish = (exitCode: number) => {
+  // Setup can fail before the caller receives the handle and awaits it.
+  completion.catch(() => {});
+  const cleanup = () => {
     if (finished) return;
     finished = true;
     running = false;
@@ -85,6 +92,10 @@ export function launchLocalWorker(
       }
     }
     descriptors.length = 0;
+  };
+  const finish = (exitCode: number) => {
+    if (finished) return;
+    cleanup();
     resolveCompletion({ exitCode, publicationFailed });
   };
   const terminateOwnProcess = () => {
@@ -113,6 +124,7 @@ export function launchLocalWorker(
           0o600,
         ),
       );
+    outputsOpened = true;
     const config = {
       backend: input.backend.backend || "addin",
       tool: input.backend.tool,
@@ -198,9 +210,14 @@ export function launchLocalWorker(
       spawnFailed = true;
     });
     child.once("close", (code) => finish(spawnFailed ? 1 : (code ?? 1)));
-  } catch {
-    publicationFailed = true;
-    finish(1);
+  } catch (error) {
+    if (!outputsOpened) {
+      cleanup();
+      rejectCompletion(error);
+    } else {
+      publicationFailed = true;
+      finish(1);
+    }
   }
   return handle;
 }

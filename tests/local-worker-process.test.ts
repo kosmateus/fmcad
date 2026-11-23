@@ -63,7 +63,7 @@ if (input.request.payload.wait) setInterval(() => {}, 1000);
   const handles: ReturnType<typeof launchLocalWorker>[] = [];
   t.after(async () => {
     for (const h of handles) h.terminateOwnProcess();
-    await Promise.all(handles.map((h) => h.completion));
+    await Promise.allSettled(handles.map((h) => h.completion));
     fs.rmSync(dir, { recursive: true, force: true });
   });
   return {
@@ -156,10 +156,7 @@ test("a second output open failure closes the first descriptor and preserves evi
   const f = fixture(t);
   fs.writeFileSync(f.output("stderr.txt"), "previous evidence");
   const h = f.launch();
-  assert.deepEqual(await h.completion, {
-    exitCode: 1,
-    publicationFailed: true,
-  });
+  await assert.rejects(h.completion, { code: "EEXIST" });
   assert.equal(h.snapshot().pid, null);
   assert.deepEqual(openDescriptors(f.output("stdout.txt")), []);
   assert.equal(
@@ -181,16 +178,28 @@ test("an immutable request refusal never opens outputs or starts a process", asy
   f.ports.records.createIntent(f.input.intent.id, f.input.intent);
   const bytes = fs.readFileSync(path.join(f.directory, "request.json"));
   const h = f.launch();
-  assert.deepEqual(await h.completion, {
-    exitCode: 1,
-    publicationFailed: true,
-  });
+  await assert.rejects(h.completion, { code: "EEXIST" });
   assert.equal(h.snapshot().pid, null);
   assert.equal(fs.existsSync(f.output("stdout.txt")), false);
   assert.deepEqual(
     fs.readFileSync(path.join(f.directory, "request.json")),
     bytes,
   );
+});
+
+test("intent rejection retains the original cause without an early unhandled rejection", async (t) => {
+  const f = fixture(t);
+  const failure = Object.assign(new Error("owned intent publication failed"), {
+    code: "EIO",
+  });
+  t.mock.method(f.ports.records, "createIntent", () => {
+    throw failure;
+  });
+  const h = f.launch();
+  await setImmediate();
+  await assert.rejects(h.completion, (error) => error === failure);
+  assert.equal(h.snapshot().pid, null);
+  assert.equal(fs.existsSync(f.output("stdout.txt")), false);
 });
 
 test("a start-record failure closes both streams without replacing the start evidence", async (t) => {
@@ -208,22 +217,24 @@ test("a start-record failure closes both streams without replacing the start evi
     assert.deepEqual(openDescriptors(f.output(name)), []);
 });
 
-test("spawn throw and asynchronous spawn error both complete and close descriptors", async (t) => {
+test("sync and async spawn failure resolve locally, unlike intent/output-open failure", async (t) => {
   for (const mode of ["throw", "event"]) {
     const f = fixture(t);
     const original = childProcess.spawn;
+    const failure = new Error("injected spawn failure");
     const mock = t.mock.method(
       childProcess,
       "spawn",
       (...args: Parameters<typeof childProcess.spawn>) => {
-        if (mode === "throw") throw new Error("injected spawn failure");
+        if (mode === "throw") throw failure;
         return original("/no-such-owned-worker-executable", args[1], args[2]);
       },
     );
     const h = f.launch();
     const result = await h.completion;
-    mock.mock.restore();
     assert.equal(result.exitCode, 1);
+    assert.equal(result.publicationFailed, mode === "throw");
+    mock.mock.restore();
     assert.equal(h.snapshot().running, false);
     for (const name of ["stdout.txt", "stderr.txt"])
       assert.deepEqual(openDescriptors(f.output(name)), []);
