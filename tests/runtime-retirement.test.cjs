@@ -126,8 +126,8 @@ function fixture(observerState) {
   return { frozen, marker, old, waiting, observer, coverage, authority, project };
 }
 
-function successorFixture() {
-  const previous = fixture();
+function successorFixture(observerState) {
+  const previous = fixture(observerState);
   const current = previous.project();
   const later = new core.QueueDomain({
     now: () => 250, newId: () => "later-unknown", hash,
@@ -217,6 +217,28 @@ test("the same root cannot change its marker or retirement exposures", () => {
   projected.runtimeRetiredExposures = {};
   assert.throws(() => changedExposures.project(projected), { code: "RUNTIME_RETIREMENT_CHANGED" });
 });
+
+for (const state of ["unknown", "terminal", "queued"]) {
+  test(`a successor root preserves ${state} observer history without operational authorization`, () => {
+    const f = successorFixture(state);
+    const projected = f.project();
+    const restored = new core.QueueDomain({
+      snapshot: projected, recover: true, runtimeRetirement: f.authority, hash,
+      now: () => 400, newId: () => "never-rearmed-observer",
+    });
+    const observer = f.current.jobs[f.previous.observer.id];
+    assert.deepEqual(restored.data.jobs[observer.id], observer);
+    assert.equal(restored.submit(observer.request).id, observer.id, "old request stays historical");
+    restored.pause(false);
+    assert.equal(restored.next(), null, "retired observation cannot acquire another SDK turn");
+    const altered = structuredClone(projected);
+    altered.jobs[observer.id].workflowObservation.reportPath = "/forged-successor-history";
+    assert.throws(() => new core.QueueDomain({
+      snapshot: altered, recover: true, runtimeRetirement: f.authority, hash,
+      now: () => 400, newId: () => "never-replayed-forgery",
+    }));
+  });
+}
 for (const state of ["unknown", "terminal", "queued"]) {
   test(`retirement restores a ${state} scoped observer as historical data without rearming it`, () => {
     const f = fixture(state), projected = f.project();

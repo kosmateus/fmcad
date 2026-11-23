@@ -199,13 +199,12 @@ function documentContinuationAllowed(
   }));
   return canonical(blockers) === canonical(observation.blockers);
 }
-function workflowObservationFor(d: QueueSnapshot, id: string) {
+/** Immutable marker/request bindings, without granting operational eligibility. */
+function workflowObservationBinding(d: QueueSnapshot, id: string) {
   const observer = d.jobs[id];
   const marker = observer?.workflowObservation;
   const target = marker && d.jobs[marker.targetJobId];
-  const current = !!(target && d.blocked?.id === target.id && target.state === "needs_reconciliation");
-  const historical = !!(target && terminal(target.state) && terminal(observer?.state || ""));
-  if (!target || (!current && !historical) || !marker || !validWorkflowObservation(marker) || marker.targetJobId !== target.id ||
+  if (!target || !marker || !validWorkflowObservation(marker) || marker.targetJobId !== target.id ||
       marker.targetRequestId !== target.requestId || marker.targetClientId !== target.clientId ||
       marker.targetJobHash !== target.hash || marker.targetBuildHash !== target.request.buildHash ||
       marker.observerJobHash !== observer.hash || marker.observerBuildHash !== observer.request.buildHash || observer.clientId !== target.clientId ||
@@ -220,6 +219,14 @@ function workflowObservationFor(d: QueueSnapshot, id: string) {
       payload["docId"] !== marker.docId || observer.request.buildHash !== marker.observerBuildHash) return null;
   return marker;
 }
+function workflowObservationFor(d: QueueSnapshot, id: string) {
+  const marker = workflowObservationBinding(d, id);
+  if (!marker) return null;
+  const target = d.jobs[marker.targetJobId]!, observer = d.jobs[id]!;
+  const current = d.blocked?.id === target.id && target.state === "needs_reconciliation";
+  const historical = terminal(target.state) && terminal(observer.state);
+  return current || historical ? marker : null;
+}
 /** Validation of immutable history only. This must never replace the operational
  * workflowObservationFor predicate or authorize another observer dispatch. */
 function retiredWorkflowObservationHistory(
@@ -228,7 +235,7 @@ function retiredWorkflowObservationHistory(
   if (!d.appliedRuntimeRetirement && !d.runtimeRetiredExposures) return false;
   const coverage = verifiedRuntimeRetirement(authority);
   const original = coverage.frozen.jobs[id], observer = d.jobs[id];
-  const marker = original && workflowObservationFor(coverage.frozen, id);
+  const marker = original && workflowObservationBinding(coverage.frozen, id);
   const target = marker && d.jobs[marker.targetJobId];
   if (!original || !observer || !marker || !target ||
       !runtimeRetiredJob(d, target, authority, canonical)) return false;
