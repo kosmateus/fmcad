@@ -1397,6 +1397,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     { job: P.Job; turn: TurnIdentity; compiledScope?: Record<string,unknown> } | false
   >();
   const preparingSignal = new AsyncLocalStorage<AbortSignal>();
+  const preparingStdout = new AsyncLocalStorage<{
+    job: Pick<P.Job, "id">;
+    stdoutProgram: NonNullable<Awaited<ReturnType<
+      typeof import("../python-diagnostic-broker").compilePythonStdout
+    >>>;
+  }>();
   function localCheckOptions() {
     const signal = preparingSignal.getStore();
     return signal ? { signal } : {};
@@ -1779,7 +1785,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     admitEpochRequest,
     verifyPreparedJob,
     isolatedTool,
-    localPreparation: () => preparingJob.getStore(),
+    localPreparation: () => preparingStdout.getStore() ?? preparingJob.getStore(),
     metadata: {
       job: (id) => state.data.jobs[id],
       program: metadataProgram,
@@ -2056,6 +2062,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const documentCreations = creationCompiler.createDocumentCreationBroker();
   const protocolCompiler = runtimeRequire("./protocol-metadata-broker") as typeof import("../protocol-metadata-broker");
   const protocolMetadata = protocolCompiler.createProtocolMetadataBroker();
+  const stdoutCompiler = runtimeRequire("./python-diagnostic-broker") as
+    typeof import("../python-diagnostic-broker");
+  const stdoutPrograms = stdoutCompiler.createPythonStdoutBroker();
   function protocolProgram(job: P.Job) {
     return protocolMetadata.program(job as unknown as import("@fmcad/core").QueueJob);
   }
@@ -5123,19 +5132,46 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
         let rawPlan: LocalPlan | undefined;
         let preparedId: string | undefined;
+        let preparedStdout: NonNullable<Awaited<ReturnType<
+          typeof stdoutCompiler.compilePythonStdout
+        >>> | null = null;
         try {
           if (!existing && request.kind === "rpc") {
-            preparedId = randomUUID();
+            const rawId = randomUUID();
+            preparedId = rawId;
             rawPreparations++;
-            const rawPayload = rpcPayload(request.payload);
-            const callerPayloadHash = hash(canonical(rawPayload));
-            const turn = await turnExecution.prepare(
+            const originalPayload = rpcPayload(request.payload);
+            if (options.prepareControlledStdout &&
+                originalPayload.method === "tools/call" &&
+                object(originalPayload.params)["name"] === "execute_python") {
+              const compilationPorts = await options.prepareControlledStdout(
+                request as unknown as import("@fmcad/core").QueueRequest,
+                { buildHash: codeHash, configHash,
+                  generation: checkpointGenerationAfterOwnerCheck() },
+              );
+              preparedStdout = await stdoutPrograms.prepare(
+                request as unknown as import("@fmcad/core").QueueRequest,
+                compilationPorts,
+              );
+              if (!preparedStdout)
+                fail("PYTHON_STDOUT_UNPROVEN", "Controlled stdout compilation is unavailable");
+            }
+            const rawPayload = preparedStdout
+              ? rpcPayload(preparedStdout.rpc())
+              : originalPayload;
+            const callerPayloadHash = hash(canonical(originalPayload));
+            const prepareTurn = () => turnExecution.prepare(
               rawPayload,
-              { id: preparedId, request },
-              brokerExecution.createTurnIdentity(preparedId),
-              undefined,
+              { id: rawId, request },
+              brokerExecution.createTurnIdentity(rawId),
+              preparedStdout?.origin(),
               isAddinMetadata(rawPayload),
             );
+            const turn = preparedStdout
+              ? await preparingStdout.run({
+                  job: { id: rawId }, stdoutProgram: preparedStdout,
+                }, prepareTurn)
+              : await prepareTurn();
             resetFence();
             const flights = await prepareJobFlights({
               id: preparedId,
@@ -5143,7 +5179,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               kind: "rpc",
               sequenceMode: request.sequence?.mode,
             });
-            rawPlan = { kind: "raw", turn, flights, callerPayloadHash };
+            rawPlan = {
+              kind: "raw", turn, flights, callerPayloadHash,
+              ...(preparedStdout ? { compiledPayload: rawPayload } : {}),
+            };
           }
           // Offline raw preparation can outlive a stop/reset/build transition.
           // Recheck ownership before publishing an accepted job, not just at SDK send.
@@ -5193,7 +5232,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             }
             verifyAcceptance();
           }
-          if (!existing && !target) {
+          if (!existing && !target && !preparedStdout) {
             preparedMetadata = await prepareMetadataRead(
               request, required(clientHashes()[clientId]),
             );
@@ -5235,7 +5274,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                           void kind;
                           return proof;
                         }))
-                      : preparedProtocol
+                       : preparedStdout
+                         ? state.submitPythonStdout(request, state.createPythonStdoutAuthority(() => {
+                             verifyAcceptance();
+                             preparedStdout!.reverify(request as unknown as import("@fmcad/core").QueueRequest);
+                             return preparedStdout!.descriptor;
+                           }), preparedId)
+                       : preparedProtocol
                         ? state.submitProtocolMetadata(request, state.createProtocolMetadataAuthority(() => {
                             verifyAcceptance();
                             preparedProtocol!.reverify(request as unknown as import("@fmcad/core").QueueRequest);
@@ -5253,6 +5298,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }
             }
             const admitted = state.data.jobs[job.id];
+            if (preparedStdout && job.id === preparedId &&
+                admitted?.pythonStdout && state.hasPythonStdout(job.id))
+              stdoutPrograms.admit(
+                admitted as unknown as import("@fmcad/core").QueueJob,
+                preparedStdout,
+              );
             // A concurrent duplicate can finish preparation before the first
             // submit commits. Core dedup returns that original job, never its
             // newly prepared ID: retain its witness and original raw turn.
@@ -6105,6 +6156,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         metadataReads.prune((id) => state.data.jobs[id]);
         documentCreations.prune((id) => state.data.jobs[id]);
         protocolMetadata.prune((id) => state.data.jobs[id]);
+        stdoutPrograms.prune((id) => state.data.jobs[id]);
         // Only outstanding prepared plans, never retained terminal history.
         turnExecution.prunePlans();
         checkpointReads.prune((id) => {

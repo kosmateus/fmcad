@@ -37,7 +37,8 @@ runtimeIdentity.buildHash = (root?: string) => {
  * Only the physical boundary/receipts are synthetic; no Fusion/native SDK runs. */
 async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false,
   metadataFault?: "program" | "wire" | "runtime", historyCount = 0,
-  preparedHook?: (prepared: P.PreparedCall) => void | Promise<void>) {
+  preparedHook?: (prepared: P.PreparedCall) => void | Promise<void>,
+  controlledStdout?: P.Options["prepareControlledStdout"]) {
   changedRuntime = false; changedRuntimeChecks = 0;
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
@@ -211,12 +212,26 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
       const snapshot = JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as {
         active: string; jobs: Record<string, {
           documentContinuation?: { sourceHash: string };
-          documentMetadataRead?: { programHash: string; rpcHash: string };
+           documentMetadataRead?: { programHash: string; rpcHash: string };
+           pythonStdout?: { programHash: string; rpcHash: string; hostBindingHash: string };
         }>;
       };
       const continuation = snapshot.jobs[snapshot.active]?.documentContinuation;
       const metadata = snapshot.jobs[snapshot.active]?.documentMetadataRead;
-      if (metadata) {
+      const stdoutMarker = snapshot.jobs[snapshot.active]?.pythonStdout;
+      if (stdoutMarker) {
+        const folder = path.join(dir, "jobs", snapshot.active);
+        const rpc = fs.readdirSync(folder).filter((name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json")
+          .map((name) => record(JSON.parse(fs.readFileSync(path.join(folder, name), "utf8"))))
+          .find((value) => `fmcad:${record(value["binding"])["rpcId"]}` === payload.id);
+        assert.ok(rpc, "stdout requires its original durable RPC record");
+        const scope = record(record(rpc["binding"])["documentScope"]);
+        assert.equal(scope["producer"], "compiled-python-stdout-v1");
+        assert.equal(scope["programHash"], stdoutMarker.programHash);
+        assert.equal(scope["rpcHash"], stdoutMarker.rpcHash);
+        assert.equal(scope["hostBindingHash"], stdoutMarker.hostBindingHash);
+        stdout = "CONTROLLED_STDOUT_MARKER\n";
+      } else if (metadata) {
         const folder = path.join(dir, "jobs", snapshot.active);
         const rpc = fs.readdirSync(folder).filter((name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json")
           .map((name) => record(JSON.parse(fs.readFileSync(path.join(folder, name), "utf8"))))
@@ -314,6 +329,7 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   });
   try { broker = await serve(cfg, {
     dir, confirmOwnership: true, pollMs: 5, createBackend: () => physical,
+    ...(controlledStdout ? { prepareControlledStdout: controlledStdout } : {}),
     nativePath: (file) => file,
     async testCheckPrepared(prepared) {
       await preparedHook?.(prepared);
@@ -648,6 +664,93 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false);
   });
+test("public raw stdout uses private compilation ports, exact scope and the original retired ledger",
+  { timeout: 120000 }, async (t) => {
+    const { prepareIsolatedStdout } = load("./dist/python/isolated-stdout") as
+      typeof import("../packages/node-adapters/src/python/isolated-stdout");
+    const f = await fixture(t, true, undefined, 0, undefined, async (_request, pins) => ({
+      currentPins: () => ({ ...pins }),
+      recheck() {},
+      prepareKernel: prepareIsolatedStdout,
+      // Physical boundary and host verification are explicit offline fixtures.
+      // Real controller/native composition is tested separately, not inferred here.
+      verifyHostBindings: () => ({
+        proofHash: "a".repeat(64), profileVersion: "isolated-stdout-v1",
+      }),
+    }));
+    const client = await f.client("controlled-stdout");
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const original = Object.values(record(before["jobs"])).map(record)
+      .find((job) => job["requestId"] === "private-foreign-request");
+    assert.ok(original);
+    const input = {
+      kind: "rpc" as const, clientId: "controlled-stdout", requestId: "controlled-stdout-original",
+      cwd: f.dir, timeoutMs: 45000, backend: "addin",
+      buildHash: runtimeIdentity.buildHash(),
+      payload: { jsonrpc: "2.0", id: "stdout-logical", method: "tools/call",
+        params: { name: "execute_python",
+          arguments: { code: "print('CONTROLLED_STDOUT_MARKER')", persistent: false } } },
+    };
+    const admitted = await client.submit(input);
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    const { responsePath } = load("./dist/node-adapters/persistence/owned-results") as
+      typeof import("../packages/node-adapters/src/persistence/owned-results");
+    const response = record(JSON.parse(fs.readFileSync(
+      responsePath(f.dir, { id: admitted.id, request: { cwd: f.dir } }, "rpc-result.json"), "utf8",
+    )));
+    assert.equal(response["status"], 200);
+    const reply = record(JSON.parse(String(response["raw"])));
+    const content = record(reply["result"])["content"];
+    assert.ok(Array.isArray(content));
+    const result = record(JSON.parse(String(record(content[0])["text"])));
+    assert.equal(result["stdout"], "CONTROLLED_STDOUT_MARKER\n",
+      "raw RPC publishes stdout inside the original tool response, not the worker stdout channel");
+    const duplicate = await client.submit(input);
+    assert.equal(duplicate.id, admitted.id);
+    assert.equal(f.counts().products, 1);
+    assert.equal(f.writes(), 0);
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+  });
+
+test("public controlled stdout refuses a revoked host window before admission and never falls back to raw",
+  { timeout: 120000 }, async (t) => {
+    let held = true;
+    const { prepareIsolatedStdout } = load("./dist/python/isolated-stdout") as
+      typeof import("../packages/node-adapters/src/python/isolated-stdout");
+    const f = await fixture(t, true, undefined, 0, async (prepared) => {
+      const scope = prepared.record.binding["documentScope"];
+      if (scope && record(scope)["producer"] === "compiled-python-stdout-v1")
+        held = false;
+    }, async (_request, pins) => ({
+      currentPins: () => ({ ...pins }),
+      recheck() {
+        if (!held) throw Object.assign(new Error("Controlled host window revoked"), {
+          code: "FRESH_HOST_REVOKED", notStarted: true,
+        });
+      },
+      prepareKernel: prepareIsolatedStdout,
+      verifyHostBindings: () => ({
+        proofHash: "a".repeat(64), profileVersion: "isolated-stdout-v1",
+      }),
+    }));
+    const client = await f.client("controlled-stdout-revoked");
+    await assert.rejects(client.submit({
+      kind: "rpc", clientId: "controlled-stdout-revoked", requestId: "revoked-stdout",
+      cwd: f.dir, timeoutMs: 45000, backend: "addin",
+      buildHash: runtimeIdentity.buildHash(),
+      payload: { jsonrpc: "2.0", id: "revoked-logical", method: "tools/call",
+        params: { name: "execute_python",
+          arguments: { code: "print('never-sent')", persistent: false } } },
+    }), { code: "FRESH_HOST_REVOKED" });
+    assert.equal(f.counts().products, 0);
+    assert.equal(f.writes(), 0);
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    assert.equal(Object.values(record(after["jobs"])).map(record)
+      .some((job) => job["requestId"] === "revoked-stdout"), false);
+  });
+
 test("parallel identical public protocol submissions retain the original witness and raw turn",
   { timeout: 120000 }, async (t) => {
     let release!: () => void;

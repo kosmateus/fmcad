@@ -416,6 +416,12 @@ export interface Options {
   createBackend?: (config: Config) => Client;
   /** Trusted bootstrap only; never populated from runtime config or IPC. */
   addinMetadataAdmission?: TrustedAddinMetadataAdmission;
+  /** Private same-process controlled bootstrap only. A serialized profile or
+   * invocation cannot supply a host witness. Absence preserves raw denial. */
+  prepareControlledStdout?: (
+    request: import("@fmcad/core").QueueRequest,
+    pins: import("./protocol-metadata-broker").ProtocolMetadataPins,
+  ) => Promise<import("./python-diagnostic-broker").StdoutCompilationPorts>;
   /** Explicit physical test adapter only. Production always uses its WSL/native mapping. */
   nativePath?: (file: string) => string;
   stateOptions?: Record<string, unknown>;
