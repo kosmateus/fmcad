@@ -10,6 +10,7 @@ import {
 import { QueueDomain } from "../packages/core/src/domain/queue";
 import { preparePythonArtifact } from "../packages/node-adapters/src/python/artifact";
 import { pythonArtifactManifest } from "../packages/node-adapters/src/python/context-binding";
+import { prepareIsolatedStdout } from "../packages/node-adapters/src/python/isolated-stdout";
 
 const sha = (source: string) =>
   createHash("sha256").update(source).digest("hex");
@@ -24,6 +25,39 @@ const kernelArtifact = (program: string, source: string) =>
       embedded: true,
     },
   ]);
+
+test("the broker accepts the actual approved kernel artifact without replacing the original source", async () => {
+  const f = fixture();
+  const source = 'print("original module output")\n';
+  const request = {
+    ...f.request,
+    payload: {
+      ...f.request.payload,
+      params: {
+        name: "execute_python",
+        arguments: { code: source, persistent: false },
+      },
+    },
+  };
+  const kernel = prepareIsolatedStdout(source);
+  assert.equal(kernel.status, "prepared");
+  if (kernel.status !== "prepared") return;
+  const prepared = await createPythonStdoutBroker().prepare(request, {
+    recheck: f.ports.recheck,
+    currentPins: f.ports.currentPins,
+    verifyHostBindings: () => ({
+      proofHash: sha("offline fixture host; not live evidence"),
+      profileVersion: "isolated-stdout-v1",
+    }),
+    prepareKernel: prepareIsolatedStdout,
+  });
+  assert.ok(prepared);
+  prepared.assertProgram(request, kernel.script);
+  assert.equal(prepared.descriptor.sourceHash, sha(source));
+  assert.equal(prepared.descriptor.programHash, kernel.programHash);
+  assert.deepEqual(prepared.origin(), pythonArtifactManifest(kernel.artifact));
+  assert.equal(request.payload.params.arguments.code, source);
+});
 
 test("compiled stdout binds the original input, private host and exact rewritten program without restoring registry witnesses", async () => {
   const f = fixture(),
