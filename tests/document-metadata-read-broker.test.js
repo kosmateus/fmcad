@@ -15,6 +15,7 @@ const { compileDocumentMetadataRead, documentMetadataReadRequestHash } = load(
 );
 const { addinBridgeSource, buildBridgeScript } = load("./addin-bridge");
 const { hash: canonicalHash } = load("./dist/core/application/cad/json");
+const { prepareRequest } = load("./dist/composition/execution-request");
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 // Exact immutable 557-byte accepted payload from terminal live job 4adfd353.
 // No credentials or current queue state; this fixture never submits work.
@@ -53,6 +54,15 @@ function fixture() {
     configHash: "c".repeat(64),
     generation: "private-test-generation",
   };
+  // Registry flags are part of the full authoritative envelope. Historical
+  // accepted bytes remain immutable, while fresh requests use today's entry.
+  request.payload = JSON.parse(
+    JSON.stringify(
+      prepareRequest({
+        request: { ...request, payload: undefined },
+      }).payload,
+    ),
+  );
   const ports = { currentPins: () => current, recheck() {} };
   return {
     request,
@@ -120,6 +130,11 @@ if (process.argv.includes("--compiler-output-child")) {
     assert.ok(Object.isFrozen(plan.program));
     assert.equal("submit" in plan, false);
     assert.equal("grant" in plan, false);
+  });
+  test("historical accepted payload cannot bypass changed authoritative registration", async () => {
+    const f = fixture();
+    f.request.payload = JSON.parse(original);
+    await assert.rejects(f.compile(), unproven);
   });
 
   test("typed compiler does not print or open an SDK session while deriving the read plan", () => {
