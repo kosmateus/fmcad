@@ -23,7 +23,7 @@ const input = {
   inputFiles: inputFiles(argv, project),
   cwd: project,
   timeoutMs: 20000,
-  backend: "mcp",
+  backend: "addin",
 };
 respond(async (message) => {
   if (message.action === "submit")
