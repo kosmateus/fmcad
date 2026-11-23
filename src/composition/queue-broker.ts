@@ -1740,6 +1740,41 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   );
   const { dispatch, clientHashes } = ipcDispatch;
   const currentInstance = () => runtimeAuthority.current().instance as P.Instance;
+  const rpcPreparation = (
+    runtimeRequire("./broker-rpc-preparation") as
+      typeof import("../broker-rpc-preparation")
+  ).createBrokerRpcPreparation({
+    buildHash: codeHash,
+    nativeMcp: cfg.backend === "mcp",
+    nativePaths,
+    view: () => ({
+      epoch: state.epoch,
+      admissionMode: state.admissionMode,
+      contextEpoch: state.data.contextEpoch || 0,
+      approvedRuntimeRoot: !!approvedRuntimeRoot,
+      metadataAdmission: !!metadataAdmission,
+    }),
+    runtimeInstance: currentInstance,
+    jobDirectory: jobDir,
+    admitEpochRequest,
+    verifyPreparedJob,
+    isolatedTool,
+    localPreparation: () => preparingJob.getStore(),
+    metadata: {
+      job: (id) => state.data.jobs[id],
+      program: metadataProgram,
+      assertDocumentMetadataRead: (id, programHash, rpcHash) =>
+        state.assertDocumentMetadataRead(id, programHash, rpcHash),
+    },
+    prepareBrokerScript,
+    prepareReceiptScript,
+    retainPythonOrigin,
+    prepareMetadataWire,
+    pythonAdmission,
+    localCheckOptions,
+    ...(options.testCheckPrepared
+      ? { testCheckPrepared: options.testCheckPrepared } : {}),
+  });
   const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
   const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
   const debugRawReceived = new WeakSet<P.PreparedCall>();
@@ -3354,147 +3389,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     origin?: P.Origin,
     rawMetadata = false,
   ): Promise<P.PreparedCall> {
-    // User jobs need the explicit root grant. Broker-owned startup metadata has
-    // no client request and remains bound by its private administrative scope
-    // and the native physical grant at the dispatch boundary.
-    const epochPolicy = state.epoch || (approvedRuntimeRoot && job.request)
-      ? admitEpochRequest(job.request)
-      : null;
-    const contextEpoch = state.data.contextEpoch || 0;
-    const rpcId = randomUUID();
-    const binding: P.Binding = {
-      jobId: job.id,
-      rpcId,
-      requestHash: hash(JSON.stringify(payload)),
-      buildHash: codeHash,
-    };
-    if (state.epoch && state.admissionMode !== "normal-multidocument")
-      Object.assign(binding, {
-        isolatedEpoch: state.epoch.epochId,
-        qualifiedDocumentHash: hash(JSON.stringify(state.epoch.document)),
-        auditExpectedInstance: state.epoch.currentInstance,
-        auditExpectedDocument: state.epoch.document,
-      });
-    if (epochPolicy?.kind === "saved-first-save")
-      Object.assign(binding, {
-        purpose: epochPolicy.purpose,
-        auditFirstSave: true,
-      });
-    const request: P.Rpc = { jsonrpc: "2.0", method: payload.method };
-    if (own(payload, "id")) request.id = payload.id;
-    const record: P.RecordEvidence = {
-      binding,
-      instance: currentInstance(),
-      request,
-      terminal: false,
-      method: payload.method,
-    };
-    const outgoing = structuredClone(payload);
-    let pythonArtifact;
-    // Different SDK clients may all use id=1/2. A unique wire ID prevents an
-    // old/cross-session HTTP reply from matching another client's invocation.
-    if (own(outgoing, "id")) outgoing.id = "fmcad:" + rpcId;
-    record.wireRequest = {
-      jsonrpc: "2.0",
-      method: outgoing.method,
-      ...(own(outgoing, "id") ? { id: outgoing.id } : {}),
-    };
-    if (payload.method === "tools/call") {
-      isolatedTool(outgoing.params?.name, outgoing.params?.arguments);
-      pythonArtifact = prepareBrokerScript(outgoing, {
-        nativeMcp: cfg.backend === "mcp",
-        bindSource(source, nativePublicPython) {
-          record.receipt = path.join(jobDir(job.id), `remote-${rpcId}.json`);
-          binding.sourceHash = hash(source);
-          const local = preparingJob.getStore();
-          const metadataJob = state.data.jobs[job.id];
-          if (metadataJob?.documentMetadataRead) {
-            metadataProgram(metadataJob).assertProgram(
-              metadataJob.request as unknown as import("@fmcad/core").QueueRequest, source,
-            );
-            const scope = local && local.job.id === job.id ? local.compiledScope : undefined;
-            if (!scope || scope["producer"] !== "compiled-document-metadata-v1" ||
-                scope["requestHash"] !== metadataJob.hash ||
-                scope["programHash"] !== hash(source) ||
-                scope["rpcHash"] !== metadataJob.documentMetadataRead.rpcHash)
-              fail("DOCUMENT_METADATA_READ_UNPROVEN", "Actual ADDIN program differs from the compiled metadata read");
-            state.assertDocumentMetadataRead(job.id, hash(source), metadataJob.documentMetadataRead.rpcHash);
-          }
-          if (local && local.job.id === job.id && local.compiledScope)
-            binding["documentScope"] = {
-              ...local.compiledScope,wireSourceHash:binding.sourceHash,
-            };
-          if (nativePublicPython)
-            binding["publicPythonResultSchema"] = "fmcad-public-python-result-v1";
-        },
-        wrap(executable, official, nativePublicPython) {
-          const prepared = prepareReceiptScript(
-            executable,
-            official,
-            required(record.receipt),
-            binding,
-            {
-              ...nativePaths,
-              ...(nativePublicPython ? { capturePublicPythonResult: true } : {}),
-            },
-          );
-          return origin ? retainPythonOrigin(prepared, origin) : prepared;
-        },
-      });
-      if (pythonArtifact) {
-        record.pythonArtifact = {
-          version: pythonArtifact.version,
-          sha256: pythonArtifact.sha256,
-          artifactHash: pythonArtifact.artifactHash,
-          sourceMap: pythonArtifact.sourceMap,
-          units: pythonArtifact.units.map(({ id, filename, role, sha256 }) => ({
-            id,
-            filename,
-            role,
-            sha256,
-          })),
-        };
-      }
-    }
-    const metadataOnly = [
-      "initialize",
-      "notifications/initialized",
-      "ping",
-      "tools/list",
-    ].includes(payload.method);
-    let prepared: P.PreparedCall;
-    if (rawMetadata) {
-      if (!metadataAdmission)
-        fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned",
-        );
-      const metadataProof = prepareMetadataWire(outgoing);
-      record.dispatchClass = "addin-metadata";
-      prepared = {
-        outgoing: metadataProof.wire,
-        record,
-        rpcId,
-        contextEpoch,
-        metadataOnly,
-        metadataProof,
-      };
-    } else {
-      const pythonCertificate = await pythonAdmission.check(
-        outgoing,
-        pythonArtifact,
-        localCheckOptions(),
-      );
-      if (pythonCertificate.report) record.pythonCheck = pythonCertificate.report;
-      record.dispatchClass = pythonCertificate.kind;
-      prepared = {
-        outgoing, record, rpcId, pythonArtifact, contextEpoch, metadataOnly, pythonCertificate,
-      };
-    }
-    // Test observer may suspend local preparation, never replace checking.
-    if (!prepared.metadataProof) await options.testCheckPrepared?.(prepared);
-    (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing,
-    );
-    verifyPreparedJob(job, prepared.contextEpoch);
-    return prepared;
+    return rpcPreparation.prepareOwnedPost(payload, job, origin, rawMetadata);
   }
 
   function prepareOwnedTurn(

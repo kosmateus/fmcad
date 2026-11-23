@@ -76,6 +76,8 @@ tests/partition-bench-*/
 /src/queue-runtime-physical-wiring.d.ts
 /src/queue-runtime-authority.js
 /src/queue-runtime-authority.d.ts
+/src/broker-rpc-preparation.js
+/src/broker-rpc-preparation.d.ts
 /src/queue-broker-ports.d.ts
 /src/queue-client.js
 /src/queue-client.d.ts
