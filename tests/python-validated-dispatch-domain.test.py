@@ -53,6 +53,8 @@ class ValidatedDispatchDomain(unittest.TestCase):
                 (guard, "", "escaped = _OPERATIONS\n"),
                 (guard, "", "observer = globals().get('_OPERATIONS')\n"),
                 (guard, "", "read = getattr\n"),
+                (guard, "", "from operator import attrgetter as reader\n"
+                 "reader('__glo' + 'bals__')(checked)['_OPERATIONS'].add('drop')\n"),
                 ("    if flag:\n"
                  "        if operation not in _OPERATIONS:\n"
                  "            raise ValueError('unsupported operation')\n",),
@@ -83,6 +85,14 @@ class ValidatedDispatchDomain(unittest.TestCase):
                     guard, imports="from typing import cast\n", parameters=parameters,
                     dispatch="    return ctx.call(cast(str, operation), spec['data'])\n")
                 self.assertEqual(facts["opaque"], opaque)
+
+    def test_relative_import_cannot_claim_typing_cast_semantics(self):
+        guard = ("    if operation not in _OPERATIONS:\n"
+                 "        raise ValueError('unsupported operation')\n")
+        facts = self.handler_facts(
+            guard, imports="from .typing import cast\n",
+            dispatch="    return ctx.call(cast(str, operation), spec['data'])\n")
+        self.assertTrue(facts["opaque"])
 
 
 if __name__ == "__main__":
