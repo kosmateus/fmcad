@@ -436,6 +436,34 @@ test("private metadata admission preserves UNKNOWN and requires the exact one RP
     { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
   assert.deepEqual(domain.data.jobs[f.old.id], f.frozen.jobs[f.old.id]);
 });
+test("a metadata intent cannot replace its original RPC under unchanged counters", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  domain.next();
+  domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId: "original-rpc" });
+  const before = structuredClone(domain.data);
+  for (const rpcId of ["replacement-rpc", "original-rpc"]) {
+    assert.throws(() => domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId }),
+      { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+    assert.deepEqual(domain.data, before);
+  }
+  domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "original-rpc");
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "replacement-rpc"),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+  domain.markDispatch(read.id, {
+    rpcCount: 1, completedCount: 1, rpcId: "original-rpc", rpcState: "terminal",
+  });
+  assert.equal(domain.data.jobs[read.id].dispatch.completedCount, 1);
+});
+test("metadata original RPC identity is not authority from mutable dispatch JSON", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  domain.next();
+  domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId: "original-rpc" });
+  domain.data.jobs[read.id].dispatch.details.rpcId = "replacement-rpc";
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "replacement-rpc"),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+});
 test("metadata authority cannot upgrade an existing refused request", () => {
   const { domain, request, marker, capability } = metadataFixture();
   const old = domain.submit(request);

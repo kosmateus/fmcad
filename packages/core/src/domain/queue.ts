@@ -53,6 +53,7 @@ const continuations = new WeakMap<QueueDomain, Map<string, DocumentContinuationA
 type MetadataReadBinding = {
   marker: DocumentMetadataRead;
   authority: DocumentMetadataReadAuthority;
+  originalRpcId?: string;
 };
 const metadataReads = new WeakMap<QueueDomain, Map<string, MetadataReadBinding>>();
 function fail(code: string, message: string): never {
@@ -849,9 +850,10 @@ export class QueueDomain {
     const binding = metadataReads.get(this)?.get(id);
     const dispatch = job.dispatch;
     const originalIntent = committedRpcId === undefined
-      ? (dispatch?.rpcCount ?? 0) === 0
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
       : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
-        dispatch.details?.["rpcId"] === committedRpcId && !!committedRpcId;
+        dispatch.details?.["rpcId"] === committedRpcId &&
+        binding?.originalRpcId === committedRpcId && !!committedRpcId;
     if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
         !this._metadataReadAllowed(this.data, job, binding) ||
         binding.marker.programHash !== programHash || binding.marker.rpcHash !== rpcHash ||
@@ -1531,7 +1533,9 @@ export class QueueDomain {
     const record = JSON.parse(canonical(details)) as QueueDetails;
     if (!record || Array.isArray(record) || typeof record !== "object")
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
-    return this._commit((d) => {
+    const metadata = metadataReads.get(this)?.get(id);
+    let originalRpcId: string | undefined;
+    const result = this._commit((d) => {
       const job = this._active(d, id);
       if (!this._documentJobAllowed(d, job))
         fail("DOCUMENT_UNLOCK_REQUIRED", "Document conflict changed before dispatch; inspect and explicitly accept the current state");
@@ -1542,6 +1546,19 @@ export class QueueDomain {
       };
       const rpcCount = record.rpcCount ?? old.rpcCount + 1;
       const completedCount = record.completedCount ?? old.completedCount;
+      if (job.documentMetadataRead) {
+        const rpcId = record["rpcId"];
+        if (!metadata || typeof rpcId !== "string" || !identifier(rpcId) ||
+            rpcCount !== 1)
+          fail("DOCUMENT_METADATA_READ_UNPROVEN", "One original metadata RPC intent is required");
+        if (old.rpcCount === 0 && metadata.originalRpcId === undefined &&
+            completedCount === 0 && (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 &&
+            metadata.originalRpcId === rpcId && job.dispatch?.details?.["rpcId"] === rpcId &&
+            completedCount === 1 && record.rpcState === "terminal" && !physical))
+          fail("DOCUMENT_METADATA_READ_UNPROVEN", "The original metadata RPC intent cannot be replaced or repeated");
+      }
       if (
         !integer(rpcCount) ||
         rpcCount < old.rpcCount ||
@@ -1565,6 +1582,9 @@ export class QueueDomain {
       job.state = "sending";
       return this._public(job);
     });
+    // Never publish authority for a transaction whose durable commit failed.
+    if (metadata && originalRpcId) metadata.originalRpcId = originalRpcId;
+    return result;
   }
 
   advanceInstanceEpoch(transitionId: string) {
