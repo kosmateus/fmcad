@@ -137,6 +137,7 @@ jobs:
       - run: npm run test:scenarios:component -- --protocol addin --owners 2 --suite foundation
       - run: mkdir -p /tmp/opencode
       - run: npm run test:contracts
+      - run: npm run test:fresh-host-proof
       - run: node --test dist/tests/autodesk-fusion-only.test.js
       - run: node --test dist/tests/successor-private-provisioning.test.js
       - run: node --test dist/tests/retained-python-result.test.js
