@@ -20,6 +20,8 @@ import {
   pythonArtifactManifest,
 } from "../packages/node-adapters/src/python/context-binding";
 import { verifyPythonArtifact } from "../packages/node-adapters/src/python/artifact";
+import { createPythonStdoutBroker } from "../src/python-diagnostic-broker";
+import { prepareIsolatedStdout } from "../packages/node-adapters/src/python/isolated-stdout";
 import {
   prepare,
   createTurnIdentity,
@@ -217,10 +219,19 @@ test("clones the full caller wire, allocates unique identity, and retains origin
 test("protocol metadata uses the non-Python certificate and binds the actual rewritten RPC", async () => {
   const f = fixture();
   const rpc: P.Rpc = { jsonrpc: "2.0", id: 7, method: "initialize" };
-  const protocolJob = { ...job, kind: "rpc", hash: "protocol-request",
+  const protocolJob = {
+    ...job,
+    kind: "rpc",
+    hash: "protocol-request",
     request: { ...job.request, kind: "rpc", payload: rpc },
-    protocolMetadata: { version: 1, kind: "protocol-metadata", requestHash: "protocol-request",
-      rpcHash: "protocol-rpc", generation: "generation" } } as P.Job;
+    protocolMetadata: {
+      version: 1,
+      kind: "protocol-metadata",
+      requestHash: "protocol-request",
+      rpcHash: "protocol-rpc",
+      generation: "generation",
+    },
+  } as P.Job;
   f.ports.metadata = { ...f.ports.metadata, job: () => protocolJob };
   const checked: string[] = [];
   f.ports.protocol = {
@@ -235,21 +246,34 @@ test("protocol metadata uses the non-Python certificate and binds the actual rew
       assert.equal(rpcHash, "protocol-rpc");
     },
   };
-  const prepared = await createBrokerRpcPreparation(f.ports).prepareOwnedPost(rpc, protocolJob);
+  const prepared = await createBrokerRpcPreparation(f.ports).prepareOwnedPost(
+    rpc,
+    protocolJob,
+  );
   assert.equal(checked.length, 1);
   assert.equal(prepared.metadataOnly, true);
   assert.equal(prepared.metadataProof, undefined);
   assert.ok(prepared.pythonCertificate);
   assert.equal(prepared.pythonCertificate?.kind, "non-python");
   assert.deepEqual(prepared.record.binding["protocolScope"], {
-    producer: "compiled-protocol-metadata-v1", requestHash: protocolJob.hash,
-    rpcHash: "protocol-rpc", generation: "generation", buildHash: f.ports.buildHash,
+    producer: "compiled-protocol-metadata-v1",
+    requestHash: protocolJob.hash,
+    rpcHash: "protocol-rpc",
+    generation: "generation",
+    buildHash: f.ports.buildHash,
   });
   prepared.pythonCertificate.fence(prepared.outgoing);
-  assert.throws(() => prepared.pythonCertificate.fence({ ...prepared.outgoing, method: "tools/call" }));
+  assert.throws(() =>
+    prepared.pythonCertificate.fence({
+      ...prepared.outgoing,
+      method: "tools/call",
+    }),
+  );
   delete f.ports.protocol;
-  await assert.rejects(createBrokerRpcPreparation(f.ports).prepareOwnedPost(rpc, protocolJob),
-    { code: "PROTOCOL_METADATA_UNPROVEN" });
+  await assert.rejects(
+    createBrokerRpcPreparation(f.ports).prepareOwnedPost(rpc, protocolJob),
+    { code: "PROTOCOL_METADATA_UNPROVEN" },
+  );
 });
 
 test("notification ID absence and metadata-only classification remain exact", async () => {
@@ -586,23 +610,49 @@ test("source compiler rejection and tool argument guards cannot be bypassed by a
 
 test("creation program verification precedes receipt wrapping and binds the actual wire separately from its renderer nonce", async () => {
   const source = "actual_ui_guard_nonce = 'one'\nnew_document_service()";
-  const creationJob = { ...job, hash: "creation-request-hash",
-    documentCreation: { programHash: "canonical-program-hash", rpcHash: "creation-rpc-hash" } } as P.Job;
-  const valid = { producer: "compiled-document-creation-v1", requestHash: creationJob.hash,
-    programHash: creationJob.documentCreation!.programHash, rpcHash: creationJob.documentCreation!.rpcHash };
-  for (const fault of [undefined, "producer", "requestHash", "programHash", "rpcHash", "program"] as const) {
-    const f = fixture(), scope = { ...valid };
+  const creationJob = {
+    ...job,
+    hash: "creation-request-hash",
+    documentCreation: {
+      programHash: "canonical-program-hash",
+      rpcHash: "creation-rpc-hash",
+    },
+  } as P.Job;
+  const valid = {
+    producer: "compiled-document-creation-v1",
+    requestHash: creationJob.hash,
+    programHash: creationJob.documentCreation!.programHash,
+    rpcHash: creationJob.documentCreation!.rpcHash,
+  };
+  for (const fault of [
+    undefined,
+    "producer",
+    "requestHash",
+    "programHash",
+    "rpcHash",
+    "program",
+  ] as const) {
+    const f = fixture(),
+      scope = { ...valid };
     if (fault && fault !== "program") scope[fault] = "forged";
     f.ports.localPreparation = () => ({ job, compiledScope: scope });
-    f.ports.metadata = { job: () => creationJob, program: () => assert.fail("not metadata"),
-      assertDocumentMetadataRead: () => assert.fail("not metadata") };
+    f.ports.metadata = {
+      job: () => creationJob,
+      program: () => assert.fail("not metadata"),
+      assertDocumentMetadataRead: () => assert.fail("not metadata"),
+    };
     f.ports.creation = {
-      program: () => ({ assertProgram(current, actual) {
-        f.trace.push("creation-compiler");
-        assert.equal(current, job.request);
-        assert.equal(actual, source);
-        if (fault === "program") throw Object.assign(Error("source changed"), { code: "DOCUMENT_CREATION_UNPROVEN" });
-      } }),
+      program: () => ({
+        assertProgram(current, actual) {
+          f.trace.push("creation-compiler");
+          assert.equal(current, job.request);
+          assert.equal(actual, source);
+          if (fault === "program")
+            throw Object.assign(Error("source changed"), {
+              code: "DOCUMENT_CREATION_UNPROVEN",
+            });
+        },
+      }),
       assertDocumentCreation(id, programHash, rpcHash) {
         f.trace.push("creation-domain");
         assert.equal(id, job.id);
@@ -611,19 +661,37 @@ test("creation program verification precedes receipt wrapping and binds the actu
       },
     };
     if (fault) {
-      await assert.rejects(f.prepare(python(source)), { code: "DOCUMENT_CREATION_UNPROVEN" });
+      await assert.rejects(f.prepare(python(source)), {
+        code: "DOCUMENT_CREATION_UNPROVEN",
+      });
       assert.equal(f.trace.includes("checker"), false);
       assert.equal(f.trace.includes("creation-domain"), false);
     } else {
       const prepared = await f.prepare(python(source));
-      assert.deepEqual(prepared.record.binding["documentScope"], { ...valid, wireSourceHash: digest(source) });
-      assert.ok(f.trace.indexOf("creation-compiler") < f.trace.indexOf("creation-domain"));
-      assert.ok(f.trace.indexOf("creation-domain") < f.trace.indexOf("checker"));
+      assert.deepEqual(prepared.record.binding["documentScope"], {
+        ...valid,
+        wireSourceHash: digest(source),
+      });
+      assert.ok(
+        f.trace.indexOf("creation-compiler") <
+          f.trace.indexOf("creation-domain"),
+      );
+      assert.ok(
+        f.trace.indexOf("creation-domain") < f.trace.indexOf("checker"),
+      );
       assert.ok(prepared.pythonCertificate);
-      assert.throws(() => prepared.pythonCertificate!.fence({
-        ...prepared.outgoing, params: { ...prepared.outgoing.params,
-          arguments: { ...prepared.outgoing.params?.arguments, code: "changed-after-check" } },
-      }));
+      assert.throws(() =>
+        prepared.pythonCertificate!.fence({
+          ...prepared.outgoing,
+          params: {
+            ...prepared.outgoing.params,
+            arguments: {
+              ...prepared.outgoing.params?.arguments,
+              code: "changed-after-check",
+            },
+          },
+        }),
+      );
     }
   }
 });
@@ -662,6 +730,106 @@ test("the canonical prepared-turn instance consumes module output once without a
     code: "PREPARED_RPC_CONSUMED",
   });
   assert.equal(calls, 1);
+});
+
+test("compiled stdout checks the whole logical RPC before wrapping and retains the actual kernel inventory", async () => {
+  const f = fixture();
+  const source = 'print("original stdout")\n';
+  const kernel = prepareIsolatedStdout(source);
+  assert.equal(kernel.status, "prepared");
+  if (kernel.status !== "prepared") return;
+  const payload: P.Rpc = {
+    jsonrpc: "2.0",
+    id: "stdout-caller",
+    method: "tools/call",
+    params: {
+      name: "execute_python",
+      arguments: { code: source, persistent: false },
+    },
+  };
+  const request = {
+    kind: "rpc" as const,
+    clientId: "stdout-client",
+    requestId: "stdout-request",
+    timeoutMs: 4000,
+    ownerToken: "b".repeat(64),
+    backend: "addin",
+    buildHash: digest("stdout-build"),
+    payload,
+  };
+  f.ports.buildHash = request.buildHash;
+  const compiled = await createPythonStdoutBroker().prepare(request, {
+    recheck() {},
+    currentPins: () => ({
+      buildHash: request.buildHash,
+      configHash: digest("stdout-config"),
+      generation: "stdout-generation",
+    }),
+    verifyHostBindings: () => ({
+      profileVersion: "isolated-stdout-v1",
+      proofHash: digest("offline fixture host only"),
+    }),
+    prepareKernel: () => kernel,
+  });
+  assert.ok(compiled);
+  const stdoutJob = { id: "stdout-owned-job", request };
+  f.ports.localPreparation = () => ({
+    job: stdoutJob,
+    stdoutProgram: compiled,
+  });
+  f.ports.pythonAdmission = createPythonRpcAdmission({
+    runtime,
+    checker: createPythonChecker({
+      typingRoot: path.join(runtime, "typing"),
+      definitionsRoot: path.join(runtime, "typing"),
+      pythonPlatform: "Windows",
+    }),
+  });
+  const wire: P.Rpc = {
+    ...payload,
+    params: {
+      name: "execute_python",
+      arguments: { code: kernel.script, persistent: false },
+    },
+  };
+  assert.deepEqual(wire, compiled.rpc());
+  const prepare = (value: P.Rpc) =>
+    createBrokerRpcPreparation(f.ports).prepareOwnedPost(value, stdoutJob, {
+      ...compiled.origin(),
+    });
+  const ready = await prepare(wire);
+  assert.equal(ready.record.pythonCheck?.status, "passed");
+  assert.equal(ready.record.pythonCheck?.provenance.checker, "basedpyright");
+  assert.equal(ready.metadataOnly, true);
+  assert.ok(ready.pythonCertificate);
+  ready.pythonCertificate.fence(ready.outgoing);
+  assert.equal(payload.params?.arguments?.["code"], source);
+  const traceLength = f.trace.length;
+  for (const changed of [
+    { ...wire, extension: "not in the compiled original" },
+    {
+      ...wire,
+      params: {
+        name: "execute_python",
+        arguments: { code: kernel.script, persistent: true },
+      },
+    },
+  ]) {
+    await assert.rejects(prepare(changed), {
+      code: "PYTHON_DIAGNOSTIC_UNPROVEN",
+    });
+  }
+  assert.equal(f.trace.slice(traceLength).includes("observer"), false);
+  f.ports.localPreparation = () => ({
+    job: stdoutJob,
+    stdoutProgram: {
+      ...compiled,
+      async assertWire() {
+        throw new Error("late wire refusal");
+      },
+    },
+  });
+  await assert.rejects(prepare(wire), { code: "PYTHON_STDOUT_UNPROVEN" });
 });
 
 test("the actual offline checker analyzes the generated receipt wire before observation", async () => {

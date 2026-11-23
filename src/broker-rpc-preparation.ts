@@ -42,6 +42,11 @@ export interface BrokerRpcPreparationPorts {
             request: import("@fmcad/core").QueueRequest,
             source: string,
           ): void;
+          assertWire(
+            request: import("@fmcad/core").QueueRequest,
+            wire: unknown,
+            rpcId: string,
+          ): void;
         };
       }>
     | false
@@ -142,6 +147,32 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
       const outgoing = structuredClone(payload);
       let pythonArtifact;
       if (own(outgoing, "id")) outgoing.id = "fmcad:" + rpcId;
+      const stdoutPreparation = ports.localPreparation();
+      if (
+        stdoutPreparation &&
+        stdoutPreparation.job.id === job.id &&
+        stdoutPreparation.stdoutProgram
+      ) {
+        if (!job.request || rawMetadata)
+          fail(
+            "PYTHON_STDOUT_UNPROVEN",
+            "Stdout requires its original compiled logical RPC",
+          );
+        // Check the whole logical envelope before the trusted receipt wrapper
+        // changes its code. The final certificate fences the resulting bytes.
+        const checked: unknown = stdoutPreparation.stdoutProgram.assertWire(
+          job.request as unknown as import("@fmcad/core").QueueRequest,
+          outgoing,
+          rpcId,
+        );
+        if (checked !== undefined) {
+          void Promise.resolve(checked).catch(() => {});
+          fail(
+            "PYTHON_STDOUT_UNPROVEN",
+            "Stdout wire verification must be synchronous",
+          );
+        }
+      }
       const protocolJob = ports.metadata.job(job.id);
       if (protocolJob?.protocolMetadata) {
         if (!ports.protocol || payload.method === "tools/call")
