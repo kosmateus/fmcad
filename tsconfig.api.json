@@ -103,6 +103,8 @@
     "src/document-checkpoint-broker.ts",
     "src/document-checkpoint-receipt.ts",
     "src/document-continuation-broker.ts",
+    "src/broker-source-compiler.ts",
+    "src/broker-source-compiler-worker.ts",
     "src/document-metadata-read-broker.ts"
   ],
   "references": [

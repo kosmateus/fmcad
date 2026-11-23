@@ -294,6 +294,10 @@ src/document-checkpoint-broker.js
 src/document-checkpoint-broker.d.ts
 src/document-checkpoint-receipt.js
 src/document-checkpoint-receipt.d.ts
+src/broker-source-compiler-worker.js
+src/broker-source-compiler-worker.d.ts
+src/broker-source-compiler.js
+src/broker-source-compiler.d.ts
 src/document-continuation-broker.js
 src/document-continuation-broker.d.ts
 src/document-metadata-read-broker.js

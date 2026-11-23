@@ -10,6 +10,8 @@ export const queueRuntimeModules = [
   "document-checkpoint-broker",
   "document-checkpoint-receipt",
   "document-continuation-broker",
+  "broker-source-compiler",
+  "broker-source-compiler-worker",
   "document-metadata-read-broker",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",

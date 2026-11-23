@@ -15,6 +15,7 @@
     "tests/document-unlock-controller.test.ts",
     "tests/document-checkpoint-broker.test.ts",
     "tests/document-continuation-broker.test.ts",
+    "tests/broker-source-compiler.test.ts",
     "tests/document-checkpoint-producer.test.ts",
     "tests/physical-generation-transport.test.ts",
     "tests/physical-generation-grant.test.ts",
