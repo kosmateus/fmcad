@@ -1,6 +1,6 @@
 /** Private composition contracts for the existing shared broker. No port grants
  * SDK ownership: admission and all fences remain in the canonical composition. */
-import type { ChildProcess, spawn } from "node:child_process";
+import type { spawn } from "node:child_process";
 import type { Agent } from "node:http";
 import type { QueueDomain } from "../packages/core/src/domain/queue";
 import type {
@@ -462,7 +462,7 @@ export interface Context {
   localDispatchErrors?: Set<unknown>;
   budget?: Budget;
   timeoutPromise?: Promise<never>;
-  child?: ChildProcess;
+  workerProcess?: import("../packages/node-adapters/src/execution/local-worker-process").LocalWorkerProcess;
   nativeActivityId?: string;
   nativeActivityToken?: ReturnType<QueueGate["beginActivity"]>;
   workflowUnknown?: boolean;

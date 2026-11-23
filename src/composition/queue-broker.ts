@@ -2,7 +2,6 @@
 
 import * as fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID, randomBytes, timingSafeEqual } from "node:crypto";
@@ -3099,7 +3098,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const active = activeContext();
     if (
       active?.job?.id === job.id &&
-      (active.pending?.size || (active.child && !active.workerClosed))
+      (active.pending?.size || (active.workerProcess && !active.workerClosed))
     )
       fail(
         "WORKER_PENDING",
@@ -3931,7 +3930,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }
             : null,
           worker: {
-            pid: context.child?.pid ?? null,
+            pid: context.workerProcess?.snapshot().pid ?? null,
             identity: "worker-identity.json",
             start: "worker-start.json",
             result: "worker-result.json",
@@ -5090,7 +5089,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         (active &&
           (![ids.targetJobId, ids.observationJobId].includes(active.job?.id) ||
             active.pending?.size ||
-            (active.child && !active.workerClosed)))
+            (active.workerProcess && !active.workerClosed)))
       )
         fail(
           "AUDIT_FENCE_CHANGED",
@@ -5539,7 +5538,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         jobId: active.job?.id,
         unknown: !!(active.unknown || active.workflowUnknown),
         pending: !!active.pending.size,
-        childRunning: !!active.child && !active.workerClosed,
+        childRunning: !!active.workerProcess && !active.workerClosed,
       },
       otherActivity: gate.hasOtherActivity(active?.nativeActivityToken),
     });
@@ -5710,7 +5709,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const active = activeContext();
         return !active
           ? "absent"
-          : active.pending.size || (active.child && !active.workerClosed)
+          : active.pending.size || (active.workerProcess && !active.workerClosed)
             ? "pending"
             : "closed";
       },
@@ -6172,7 +6171,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             );
           if (
             active &&
-            (active.pending.size || (active.child && !active.workerClosed))
+            (active.pending.size || (active.workerProcess && !active.workerClosed))
           )
             fail(
               "WORKER_PENDING",
@@ -6951,7 +6950,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       originalContext &&
       (originalContext.job?.id !== targetJob.id ||
         originalContext.pending?.size ||
-        (originalContext.child && !originalContext.workerClosed))
+        (originalContext.workerProcess && !originalContext.workerClosed))
     ) {
       fail(
         "WORKER_PENDING",
@@ -7621,7 +7620,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             grant,
             "Execution budget expired; remote operation is not cancelled",
           );
-        context.child?.kill("SIGKILL");
+        context.workerProcess?.terminateOwnProcess();
         rejectTimeout(
           Object.assign(new Error("Execution budget expired"), {
             code: "RUN_TIMEOUT",
@@ -7735,127 +7734,39 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       }
       context.workerClosed = true;
     } else {
-      const safeCfg = {
-        backend: pinned.backend || "addin",
-        tool: pinned.tool,
-        transport: pinned.transport,
-        timeoutMs: job.timeoutMs,
-        protocolVersion: pinned.protocolVersion,
-        url: "http://queue.invalid",
-        headers: {},
-      };
-      const requestFile = executionRecords.createIntent(job.id, {
-        id: job.id,
-        request: job.request,
-        buildHash: codeHash,
-        properties: clientProperties(),
-        deadline: context.deadline,
+      const { launchLocalWorker } = runtimeRequire(
+        "./dist/node-adapters/execution/local-worker-process",
+      ) as typeof import("../../packages/node-adapters/src/execution/local-worker-process");
+      const worker = launchLocalWorker({
+        intent: {
+          id: job.id, request: job.request, buildHash: codeHash,
+          properties: clientProperties(), deadline: context.deadline,
+        },
+        brokerDirectory: dir,
+        entrypoint: resolveChildEntrypoint(
+          resolveRuntimePaths({ anchor: runtimeAnchor }), "queue-worker",
+        ),
+        capability: { jobId: job.id, token: context.token },
+        backend: {
+          backend: pinned.backend || "addin", tool: pinned.tool,
+          transport: pinned.transport, protocolVersion: pinned.protocolVersion,
+        },
+      }, {
+        records: executionRecords,
+        processBirth,
+        onIdentityPublicationFailure() {
+          if (context.dispatched)
+            hold(grant, "Local worker identity could not be persisted");
+        },
       });
-      const out = fs.openSync(
-        load("./queue-response-files").responsePath(
-          dir,
-          job,
-          "stdout.txt",
-          true,
-        ),
-        "wx",
-        0o600,
-      );
-      const err = fs.openSync(
-        load("./queue-response-files").responsePath(
-          dir,
-          job,
-          "stderr.txt",
-          true,
-        ),
-        "wx",
-        0o600,
-      );
+      context.workerProcess = worker;
       try {
-        // A fixed Node entry point invokes cli.main with fixed dependencies; no shell/argv interpreter.
-        const env: NodeJS.ProcessEnv = {};
-        for (const key of [
-          "PATH",
-          "HOME",
-          "USER",
-          "LOGNAME",
-          "LANG",
-          "LC_ALL",
-          "XDG_CONFIG_HOME",
-          "XDG_STATE_HOME",
-          "XDG_CACHE_HOME",
-          "XDG_DATA_HOME",
-          "FMCAD_CONFIG",
-          "FMCAD_PYTHON",
-          "WSL_DISTRO_NAME",
-          "TMPDIR",
-          "SYSTEMROOT",
-        ]) {
-          if (process.env[key] !== undefined) env[key] = process.env[key];
-        }
-        Object.assign(env, {
-          FMCAD_QUEUE_WORKER_JOB: job.id,
-          FMCAD_QUEUE_WORKER_TOKEN: context.token,
-          FMCAD_QUEUE_DIR: dir,
-          FMCAD_QUEUE_WORKER_CONFIG: JSON.stringify(safeCfg),
-          FMCAD_QUEUE: "worker",
-        });
-        durable(
-          path.join(directory, "worker-start.json"),
-          { jobId: job.id, buildHash: codeHash, at: Date.now() },
-          true,
-        );
-        const child = spawn(
-          process.execPath,
-          [
-            resolveChildEntrypoint(
-              resolveRuntimePaths({ anchor: runtimeAnchor }),
-              "queue-worker",
-            ),
-            requestFile,
-          ],
-          {
-            cwd: job.request.cwd,
-            shell: false,
-            env,
-            stdio: ["ignore", out, err],
-          },
-        );
-        context.child = child;
-        let spawnError;
-        child.once("spawn", () => {
-          try {
-            durable(
-              path.join(directory, "worker-identity.json"),
-              { pid: child.pid, birth: processBirth(child.pid) },
-              true,
-            );
-          } catch (cause) {
-            const error = errorInfo(cause);
-            publicationError = true;
-            if (!["ENOENT", "ESRCH"].includes(error.code ?? "")) {
-              if (context.dispatched)
-                hold(grant, "Local worker identity could not be persisted");
-              child.kill("SIGKILL");
-            }
-          }
-        });
-        code = await new Promise<number>((resolve) => {
-          child.once("error", (error) => {
-            spawnError = error;
-          });
-          child.once("close", (exitCode) => resolve(exitCode ?? 1));
-        });
-        context.workerClosed = true;
-        if (spawnError) code = 1;
-        fs.fsyncSync(out);
-        fs.fsyncSync(err);
-      } catch {
-        code = 1;
-        publicationError = true;
+        const completed = await worker.completion;
+        code = completed.exitCode;
+        publicationError ||= completed.publicationFailed;
       } finally {
-        fs.closeSync(out);
-        fs.closeSync(err);
+        // Local cleanup, including a rejected setup, is not SDK settlement.
+        context.workerClosed = true;
       }
     }
     return load("./dist/core/application/execution").completeSdkTurn({

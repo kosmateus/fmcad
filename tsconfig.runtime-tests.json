@@ -40,6 +40,7 @@
     "tests/broker-composition.test.ts",
     "tests/broker-session.test.ts",
     "tests/queue-runtime-authority.test.ts",
+    "tests/local-worker-process.test.ts",
     "tests/phased-queue.test.ts",
     "tests/queue-client-response-recovery.test.ts",
     "tests/normal-epoch-broker.test.ts",
