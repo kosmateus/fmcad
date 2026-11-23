@@ -139,6 +139,7 @@ jobs:
       - run: npm run test:contracts
       - run: npm run test:fresh-host-proof
       - run: node --test dist/tests/fusion-bootstrap-autoload.test.js
+      - run: node --test dist/tests/bootstrap-entry-evidence.test.js
       - run: node --test dist/tests/autodesk-fusion-only.test.js
       - run: node --test dist/tests/successor-private-provisioning.test.js
       - run: node --test dist/tests/retained-python-result.test.js
