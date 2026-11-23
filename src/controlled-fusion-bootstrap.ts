@@ -35,10 +35,12 @@ const reference = (file: ControlledFile) => ({
 });
 function synchronous(fence: () => void): void {
   const result: unknown = fence();
-  if (result !== undefined)
+  if (result !== undefined) {
+    void Promise.resolve(result).catch(() => {});
     throw new Error(
       "Synchronous controlled fence must not return a Promise or flag",
     );
+  }
 }
 function frozenFile(file: ControlledFile): ControlledFile {
   return Object.freeze({ ...file, bytes: Buffer.from(file.bytes) });
