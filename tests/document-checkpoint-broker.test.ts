@@ -470,7 +470,7 @@ test("actual public IPC routes a fresh accepted continuation through the normal 
     assert.equal(f.productJobs().includes(String(original["id"])), false, "the original UNKNOWN is never replayed");
   });
 
-function metadataInput(directory: string, clientId: string, requestId: string) {
+function metadataInput(directory: string, clientId: string, requestId: string, json = false) {
     const { prepareRequest } = load("./dist/composition/execution-request") as
       typeof import("../src/composition/execution-request");
     const { buildHash } = load("./queue-instance") as { buildHash(): string };
@@ -479,7 +479,7 @@ function metadataInput(directory: string, clientId: string, requestId: string) {
       backend: "addin"; buildHash: string;
     } = {
       kind: "command" as const, clientId, requestId,
-      argv: ["doc", "list"], cwd: directory, timeoutMs: 45000,
+      argv: ["doc", "list", ...(json ? ["--json"] : [])], cwd: directory, timeoutMs: 45000,
       backend: "addin", buildHash: buildHash(), inputFiles: [],
     };
     return { ...request, payload: prepareRequest({ request }).payload };
@@ -517,6 +517,20 @@ test("public metadata cannot authorize a raw quarantine relabeled as runtime ret
     assert.equal(f.writes(), 0);
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+  });
+test("public metadata JSON crosses the normal worker with native output and one bound read",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("metadata-json-reader");
+    const admitted = await client.submit(metadataInput(f.dir, "metadata-json-reader", "metadata-public-json", true));
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    assert.equal(typeof completed.stdout, "string");
+    assert.deepEqual(JSON.parse(completed.stdout!), { success: true, results: [{
+      name: "Owned A", id: "file-A", creationId: "doc-A",
+      isActive: true, isModified: false, isSaved: true,
+    }] });
+    assert.equal(f.counts().products, 1);
+    assert.equal(f.writes(), 0);
   });
 for (const fault of ["program", "wire"] as const)
   test(`public metadata refuses changed ${fault} before a physical product RPC`,
