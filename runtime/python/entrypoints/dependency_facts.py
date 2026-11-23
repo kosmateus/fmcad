@@ -89,6 +89,22 @@ def unresolved_namespace_observer(trees):
     nodes = [node for tree in trees for node in ast.walk(tree)]
     parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
     imports = [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))]
+    # The injected registry is trusted only while its binding remains intact.
+    # A method named "update" on a replacement object has no such contract.
+    if any(
+            (isinstance(node, ast.Name) and node.id == 'CAD_HANDLERS'
+             and not isinstance(node.ctx, ast.Load))
+            or (isinstance(node, ast.arg) and node.arg == 'CAD_HANDLERS')
+            or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and node.name == 'CAD_HANDLERS')
+            or (isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                and node.name == 'CAD_HANDLERS')
+            or (isinstance(node, ast.MatchMapping) and node.rest == 'CAD_HANDLERS')
+            or (isinstance(node, (ast.Import, ast.ImportFrom))
+                and any((alias.asname or alias.name.split('.')[0]) == 'CAD_HANDLERS'
+                        or alias.name == '*' for alias in node.names))
+            for node in nodes):
+        return True
     if external_import_effect(nodes):
         return True
     if any(isinstance(node, (ast.ClassDef, ast.With, ast.AsyncWith))

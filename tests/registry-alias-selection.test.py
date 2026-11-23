@@ -138,6 +138,45 @@ class RegistryAliasSelection(unittest.TestCase):
         exec(source, namespace)
         self.assertEqual(namespace["a"](None, {}), 2)
 
+    def test_registry_consumer_binding_is_checked_across_peer_units(self):
+        source = ("def a(ctx, data): return data\n"
+                  "handlers = {'keep': a}\nCAD_HANDLERS.update(handlers)\n")
+        for peer in [
+                "CAD_HANDLERS = replacement",
+                "def later(CAD_HANDLERS): pass",
+                "def CAD_HANDLERS(): pass",
+                "try: pass\nexcept Exception as CAD_HANDLERS: pass",
+                "match {}:\n case {**CAD_HANDLERS}: pass",
+                "from other import registry as CAD_HANDLERS",
+        ]:
+            with self.subTest(peer=peer):
+                self.assertEqual(module.registry_alias_expansions(
+                    {"id": "core", "source": source}, ast.parse(source),
+                    [ast.parse(peer)]), [])
+    def test_rebound_registry_update_is_not_a_trusted_consumer(self):
+        source = (
+            "def a(ctx, data): return count\n"
+            "def b(ctx, data): return 0\n"
+            "def observe(mapping):\n"
+            "    global count, chosen\n"
+            "    count = len(mapping)\n"
+            "    chosen = mapping['keep']\n"
+            "CAD_HANDLERS = type('Registry', (), {'update': observe})\n"
+            "handlers = {'keep': a, 'drop': b}\n"
+            "CAD_HANDLERS.update(handlers)\n"
+        )
+        namespace = {"CAD_HANDLERS": {}}
+        exec(source, namespace)
+        self.assertEqual(namespace["chosen"](None, {}), 2)
+        report = module.analyse({
+            "source": "def run(context):\n    pass\n",
+            "generated": True, "specialize": True,
+            "units": [{"id": "core", "filename": "<rebound-registry>",
+                       "source": source, "dependencies": []}],
+        })
+        self.assertFalse(report["unsupported"])
+        self.assertEqual(report["facts"]["registryExpansions"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
