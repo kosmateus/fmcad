@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { Worker } from "node:worker_threads";
 import type { QueueRequest } from "@fmcad/core";
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script.js";
 
@@ -74,6 +75,20 @@ function request(): QueueRequest {
     payload,
     argv: cadWorkerPolicyArguments(decodeCadWorkerInvocation(payload)),
   };
+}
+
+function threadCount(): number | null {
+  return process.platform === "linux"
+    ? fs.readdirSync(`/proc/${process.pid}/task`).length
+    : null;
+}
+
+async function waitForThreadCount(expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (threadCount() === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(threadCount(), expected);
 }
 
 test("runtime-test emission includes the source compiler worker entry", () => {
@@ -163,6 +178,109 @@ test("compiler failures cross the worker boundary without worker stacks", async 
       error.message.length > 0 &&
       !error.stack?.includes("broker-source-compiler-worker"),
   );
+  assert.deepEqual(
+    await compiler.cad("param.apply", data(), context(), checkpoint),
+    prepareCadScript("param.apply", data(), context(), undefined, checkpoint),
+  );
+});
+
+test("one persistent worker compiles consecutive jobs responsively", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+  const baselineThreads = threadCount();
+  const secondData = data();
+  const timer = new Promise<"timer">((resolve) =>
+    setTimeout(() => resolve("timer"), 0),
+  );
+  const cad = compiler.cad("param.apply", data(), context(), checkpoint);
+  const continuation = compiler.continuation(request(), checkpoint);
+  const secondCad = compiler.cad(
+    "param.apply",
+    secondData,
+    context(),
+    checkpoint,
+  );
+  const first = await Promise.race([
+    Promise.all([cad, continuation, secondCad]).then(() => "compiled" as const),
+    timer,
+  ]);
+
+  assert.equal(first, "timer");
+  const [actualCad, actualContinuation, actualSecondCad] = await Promise.all([
+    cad,
+    continuation,
+    secondCad,
+  ]);
+  assert.deepEqual(
+    actualCad,
+    prepareCadScript("param.apply", data(), context(), undefined, checkpoint),
+  );
+  assert.deepEqual(
+    actualContinuation,
+    compileDocumentContinuationPrograms(request(), checkpoint),
+  );
+  assert.deepEqual(
+    actualSecondCad,
+    prepareCadScript(
+      "param.apply",
+      secondData,
+      context(),
+      undefined,
+      checkpoint,
+    ),
+  );
+
+  if (baselineThreads !== null) {
+    await waitForThreadCount(baselineThreads + 1);
+    await compiler.close();
+    await waitForThreadCount(baselineThreads);
+  }
+});
+
+test("an exited worker is replaced without failing its queued successor", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+  const baselineThreads = threadCount();
+  const originalPostMessage = Worker.prototype.postMessage;
+  let exitFirstWorker = true;
+  Worker.prototype.postMessage = function (
+    this: Worker,
+    ...args: Parameters<typeof Worker.prototype.postMessage>
+  ): void {
+    const result = originalPostMessage.apply(this, args);
+    if (exitFirstWorker) {
+      exitFirstWorker = false;
+      void this.terminate();
+    }
+    return result;
+  };
+
+  let failedAssertion: Promise<void> | undefined;
+  let successfulTask: Promise<unknown> | undefined;
+  try {
+    const failedTask = compiler.cad(
+      "param.apply",
+      data(),
+      context(),
+      checkpoint,
+    );
+    failedAssertion = assert.rejects(failedTask, {
+      code: "SOURCE_COMPILER_WORKER_EXIT",
+    });
+    successfulTask = compiler.cad("param.apply", data(), context(), checkpoint);
+  } finally {
+    Worker.prototype.postMessage = originalPostMessage;
+  }
+
+  assert.ok(failedAssertion);
+  assert.ok(successfulTask);
+  await failedAssertion;
+  assert.deepEqual(
+    await successfulTask,
+    prepareCadScript("param.apply", data(), context(), undefined, checkpoint),
+  );
+  await compiler.close();
+  if (baselineThreads !== null) await waitForThreadCount(baselineThreads);
 });
 
 test("concurrency is bounded and close drains active work only", async (t) => {
@@ -172,8 +290,8 @@ test("concurrency is bounded and close drains active work only", async (t) => {
   }
   const compiler = createBrokerSourceCompiler({ concurrency: 2 });
   t.after(() => compiler.close());
+  const baseline = threadCount()!;
   const taskDirectory = `/proc/${process.pid}/task`;
-  const baseline = fs.readdirSync(taskDirectory).length;
   const tasks = Array.from({ length: 3 }, () =>
     compiler.cad("param.apply", data(), context(), checkpoint),
   );
@@ -208,7 +326,11 @@ test("concurrency is bounded and close drains active work only", async (t) => {
     if (result.status === "rejected")
       assert.equal(result.reason.code, "SOURCE_COMPILER_CLOSED");
   }
+  await waitForThreadCount(baseline);
   assert.throws(() => createBrokerSourceCompiler({ concurrency: 0 }), {
+    code: "INVALID_SOURCE_COMPILER_CONCURRENCY",
+  });
+  assert.throws(() => createBrokerSourceCompiler({ concurrency: 11 }), {
     code: "INVALID_SOURCE_COMPILER_CONCURRENCY",
   });
   await assert.rejects(compiler.cad("param.apply", data(), context()), {

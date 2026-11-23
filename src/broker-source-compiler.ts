@@ -9,6 +9,7 @@ const runtimeRequire = createRequire(__filename);
 const workerFilename = runtimeRequire.resolve(
   "./broker-source-compiler-worker.js",
 );
+const MAX_CONCURRENCY = 10;
 const DEFAULT_CONCURRENCY = 10;
 
 type CompilerTaskInput =
@@ -39,13 +40,13 @@ type PendingTask = {
   readonly input: CompilerTask;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: Error) => void;
-  readonly finished: Promise<void>;
-  finish(): void;
 };
-type ActiveTask = {
+type WorkerSlot = {
   readonly worker: Worker;
-  readonly task: PendingTask;
-  settling: boolean;
+  readonly exited: Promise<void>;
+  readonly resolveExited: () => void;
+  task: PendingTask | null;
+  retiring: boolean;
 };
 
 function compilerError(
@@ -103,128 +104,181 @@ export function createBrokerSourceCompiler(
   options: { concurrency?: number } = {},
 ) {
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1)
+  if (
+    !Number.isSafeInteger(concurrency) ||
+    concurrency < 1 ||
+    concurrency > MAX_CONCURRENCY
+  )
     throw compilerError(
       "INVALID_SOURCE_COMPILER_CONCURRENCY",
-      "Source compiler concurrency must be a positive integer",
+      "Source compiler concurrency must be an integer from 1 to 10",
     );
 
   const queue: PendingTask[] = [];
-  const active = new Set<ActiveTask>();
+  const workers = new Set<WorkerSlot>();
   let nextId = 0;
   let closed = false;
   let closePromise: Promise<void> | null = null;
 
-  function complete(slot: ActiveTask, outcome: Outcome): void {
-    active.delete(slot);
-    if (outcome.ok) slot.task.resolve(outcome.value);
-    else slot.task.reject(outcome.error);
-    slot.task.finish();
-    pump();
+  function settleTask(slot: WorkerSlot, outcome: Outcome): void {
+    const task = slot.task;
+    if (!task) return;
+    slot.task = null;
+    if (outcome.ok) task.resolve(outcome.value);
+    else task.reject(outcome.error);
   }
 
-  function terminate(slot: ActiveTask, outcome: Outcome): Promise<void> {
-    if (slot.settling) return slot.task.finished;
-    slot.settling = true;
-    void slot.worker.terminate().then(
-      () => complete(slot, outcome),
-      () =>
-        complete(slot, {
-          ok: false,
-          error: compilerError(
-            "SOURCE_COMPILER_TERMINATION",
-            "Unable to stop compiler worker",
-          ),
-        }),
-    );
-    return slot.task.finished;
+  function retire(slot: WorkerSlot): void {
+    if (slot.retiring) return;
+    slot.retiring = true;
+    slot.worker.ref();
+    try {
+      void slot.worker.terminate().catch(() => {
+        // Keep the slot tracked until its exit event confirms termination.
+      });
+    } catch {
+      // Keep the slot tracked until its exit event confirms termination.
+    }
   }
 
-  function start(task: PendingTask): void {
+  function failWorker(slot: WorkerSlot, error: Error): void {
+    if (slot.retiring) return;
+    settleTask(slot, { ok: false, error });
+    retire(slot);
+  }
+
+  function receiveMessage(slot: WorkerSlot, value: unknown): void {
+    if (slot.retiring) return;
+    if (!isResponse(value) || value.id !== slot.task?.input.id) {
+      failWorker(
+        slot,
+        compilerError(
+          "SOURCE_COMPILER_PROTOCOL_ERROR",
+          "Compiler worker returned an invalid response",
+        ),
+      );
+      return;
+    }
+    if (value.ok) settleTask(slot, { ok: true, value: value.result });
+    else settleTask(slot, { ok: false, error: workerError(value) });
+
+    if (closed) retire(slot);
+    else {
+      slot.worker.unref();
+      pump();
+    }
+  }
+
+  function createWorker(): WorkerSlot {
     let worker: Worker;
     try {
       worker = new Worker(workerFilename, {
         name: "fmcad-source-compiler",
       });
     } catch (error) {
-      task.reject(
-        compilerError(
-          "SOURCE_COMPILER_WORKER_START",
-          error instanceof Error
-            ? error.message
-            : "Unable to start compiler worker",
-          error instanceof Error ? error.name : "Error",
-        ),
+      throw compilerError(
+        "SOURCE_COMPILER_WORKER_START",
+        error instanceof Error
+          ? error.message
+          : "Unable to start compiler worker",
+        error instanceof Error ? error.name : "Error",
       );
-      task.finish();
-      return;
     }
-    const slot: ActiveTask = { worker, task, settling: false };
-    active.add(slot);
-    worker.on("message", (value: unknown) => {
-      if (slot.settling) return;
-      if (!isResponse(value) || value.id !== task.input.id) {
-        void terminate(slot, {
-          ok: false,
-          error: compilerError(
-            "SOURCE_COMPILER_PROTOCOL_ERROR",
-            "Compiler worker returned an invalid response",
-          ),
-        });
-        return;
-      }
-      if (!value.ok) {
-        void terminate(slot, { ok: false, error: workerError(value) });
-        return;
-      }
-      void terminate(slot, { ok: true, value: value.result });
+    let resolveExited!: () => void;
+    const exited = new Promise<void>((resolve) => {
+      resolveExited = resolve;
     });
+    const slot: WorkerSlot = {
+      worker,
+      exited,
+      resolveExited,
+      task: null,
+      retiring: false,
+    };
+    workers.add(slot);
+    worker.on("message", (value: unknown) => receiveMessage(slot, value));
     worker.on("messageerror", () => {
-      void terminate(slot, {
-        ok: false,
-        error: compilerError(
+      failWorker(
+        slot,
+        compilerError(
           "SOURCE_COMPILER_PROTOCOL_ERROR",
           "Compiler worker response could not be decoded",
         ),
-      });
+      );
     });
     worker.on("error", (error) => {
-      void terminate(slot, {
-        ok: false,
-        error: compilerError(
+      failWorker(
+        slot,
+        compilerError(
           "SOURCE_COMPILER_WORKER_ERROR",
           error.message || "Compiler worker failed",
           error.name || "Error",
         ),
-      });
+      );
     });
     worker.on("exit", (code) => {
-      if (slot.settling) return;
-      void terminate(slot, {
-        ok: false,
-        error: compilerError(
-          "SOURCE_COMPILER_WORKER_EXIT",
-          `Compiler worker exited before returning a result (code ${code})`,
-        ),
-      });
+      if (slot.task)
+        settleTask(slot, {
+          ok: false,
+          error: compilerError(
+            "SOURCE_COMPILER_WORKER_EXIT",
+            `Compiler worker exited before returning a result (code ${code})`,
+          ),
+        });
+      slot.retiring = true;
+      workers.delete(slot);
+      slot.resolveExited();
+      pump();
     });
-    worker.ref();
-    try {
-      worker.postMessage(task.input);
-    } catch {
-      void terminate(slot, {
-        ok: false,
-        error: compilerError(
-          "SOURCE_COMPILER_INVALID_INPUT",
-          "Compiler task could not be sent to its worker",
-        ),
-      });
-    }
+    worker.unref();
+    return slot;
   }
 
   function pump(): void {
-    while (!closed && queue.length && active.size < concurrency)
-      start(queue.shift()!);
+    while (!closed && queue.length) {
+      let slot = [...workers].find(
+        (worker) => !worker.retiring && worker.task === null,
+      );
+      if (!slot) {
+        if (workers.size >= concurrency) return;
+        const task = queue.shift()!;
+        try {
+          slot = createWorker();
+        } catch (error) {
+          task.reject(
+            error instanceof Error
+              ? error
+              : compilerError(
+                  "SOURCE_COMPILER_WORKER_START",
+                  "Unable to start compiler worker",
+                ),
+          );
+          continue;
+        }
+        dispatch(slot, task);
+        continue;
+      }
+      dispatch(slot, queue.shift()!);
+    }
+  }
+
+  function dispatch(slot: WorkerSlot, task: PendingTask): void {
+    slot.task = task;
+    slot.worker.ref();
+    try {
+      slot.worker.postMessage(task.input);
+    } catch (error) {
+      failWorker(
+        slot,
+        compilerError(
+          "SOURCE_COMPILER_WORKER_SEND",
+          error instanceof Error
+            ? error.message
+            : "Compiler task could not be sent to its worker",
+          error instanceof Error ? error.name : "Error",
+        ),
+      );
+    }
   }
 
   function submit<T>(input: CompilerTaskInput): Promise<T> {
@@ -254,16 +308,10 @@ export function createBrokerSourceCompiler(
       );
     const id = ++nextId;
     return new Promise<T>((resolve, reject) => {
-      let finish!: () => void;
-      const finished = new Promise<void>((done) => {
-        finish = done;
-      });
       queue.push({
         input: { ...cloned, id } as CompilerTask,
         resolve: (value) => resolve(value as T),
         reject,
-        finished,
-        finish,
       });
       pump();
     });
@@ -335,10 +383,11 @@ export function createBrokerSourceCompiler(
       );
       for (const task of queue.splice(0)) {
         task.reject(closedError);
-        task.finish();
       }
+      const closingWorkers = [...workers];
+      for (const slot of closingWorkers) if (slot.task === null) retire(slot);
       closePromise = Promise.all(
-        [...active].map((slot) => slot.task.finished),
+        closingWorkers.map((slot) => slot.exited),
       ).then(() => {});
       return closePromise;
     },
