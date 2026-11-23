@@ -1629,3 +1629,47 @@ test("checkpoint scope refuses ordinary grants and preserves original pre-send s
   );
   assert.equal(f.executor.heldSnapshot()?.jobId, turn.id);
 });
+
+test(
+  "checkpoint deadline rejects the original hold storage error instead of escaping its timer",
+  { timeout: 2000 },
+  async (t) => {
+    const f = await fixture(t);
+    const started = deferred<P.Rpc>(),
+      response = deferred<P.Response>();
+    f.controls.send = (payload) => {
+      started.resolve(payload);
+      return response.promise;
+    };
+    const turn = await f.raw(f.submit({ timeoutMs: 40 }));
+    checkpointJob(turn.job);
+    privateDirectory(path.join(f.directory, "jobs", turn.id));
+    const original = Object.assign(new Error("Checkpoint hold commit failed"), {
+      code: "EIO",
+    });
+    f.services.queue.block = () => {
+      throw original;
+    };
+    await f.executor.withCheckpointTurn(turn.job, turn.grant, async (read) => {
+      const send = Object.assign(
+        () => f.executor.post(rpc(turn.job.request.payload)),
+        { fence() {} },
+      );
+      await assert.rejects(read.send(send), (error) => error === original);
+      assert.equal(read.evidence().timedOut, true);
+      assert.equal(read.evidence().dispatched, true);
+    });
+    assert.equal(f.counts().sends, 1);
+    const payload = await started.promise;
+    response.resolve({
+      status: 200,
+      raw: JSON.stringify({
+        jsonrpc: "2.0",
+        id: payload.id,
+        result: { tools: [] },
+      }),
+    });
+    await until(() => f.executor.snapshot(turn.grant)?.pendingCount === 0);
+    assert.equal(f.counts().sends, 1);
+  },
+);

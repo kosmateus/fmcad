@@ -1496,6 +1496,26 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       checkpoint ? job.timeoutMs : (job.sdkRemainingMs ?? job.timeoutMs),
       () => {
         context.timedOut = true;
+        if (checkpoint) {
+          let cause: unknown = Object.assign(
+            new Error("Checkpoint read timed out"),
+            {
+              code: "RUN_TIMEOUT",
+            },
+          );
+          try {
+            if (context.dispatched && lane.currentGrant() === grant)
+              hold(
+                context,
+                "Checkpoint read execution deadline expired; no replay",
+              );
+          } catch (error) {
+            cause = error;
+          } finally {
+            rejectTimeout(cause);
+          }
+          return;
+        }
         if (
           context.dispatched &&
           (!checkpoint || lane.currentGrant() === grant)
