@@ -8,6 +8,8 @@
     "sourceMap": false
   },
   "include": [
+    "tests/controlled-host-ui.test.ts",
+    "tests/controlled-host-ui.windows.test.ts",
     "tests/fresh-host-proof.test.ts",
     "tests/fusion-bootstrap-autoload.test.ts",
     "tests/bootstrap-entry-evidence.test.ts",
