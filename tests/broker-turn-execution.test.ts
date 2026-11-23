@@ -772,6 +772,43 @@ test("raw product owns intent/accounting/send/retained reply/postflight and rest
   });
 });
 
+test("document creation never inherits an existing selected-document or epoch-anchor selector", async (t) => {
+  for (const oldTarget of [
+    { creationId: "old-selected-document", fileId: "saved-file" },
+    { creationId: "old-epoch-anchor" },
+  ]) {
+    const f = await fixture(t);
+    const request: P.Request = { kind: "command", clientId: "creation-client", requestId: randomUUID(),
+      timeoutMs: 2000, cwd: f.directory, backend: "addin", buildHash: build, phased: true, argv: ["doc", "new"] };
+    const marker = { version: 1 as const, requestHash: instance.hash(canonical(request)),
+      generation: "fixture-generation", programHash: instance.hash("pass"), rpcHash: instance.hash("creation-rpc") };
+    const job = f.state.submitDocumentCreation(request, f.state.createDocumentCreationAuthority(() => marker));
+    let inheritedSelectors = 0;
+    f.services.documents.documentSelector = () => { inheritedSelectors++; return oldTarget; };
+    let physicalSelector: unknown = "not-dispatched";
+    f.services.transport.physicalIsolation = true;
+    f.services.transport.bindPhysicalTurn = (turn) => {
+      physicalSelector = turn.documentSelector;
+      // Observe the allocation boundary and deliberately stop before an SDK
+      // intent. This test does not fabricate a product completion receipt.
+      throw Object.assign(new Error("Selector boundary observed"), { code: "TEST_SELECTOR_BOUNDARY", notStarted: true });
+    };
+    const turn = await f.phase(String(job["id"]));
+    turn.prepared.inspect((ready) => {
+      ready.record.binding["documentScope"] = {
+        producer: "compiled-document-creation-v1", operation: "document.new", requestHash: marker.requestHash,
+        generation: marker.generation, programHash: marker.programHash, rpcHash: marker.rpcHash,
+        buildHash: build, wireSourceHash: ready.record.binding.sourceHash,
+      };
+    });
+    await f.executor.run(turn.job, turn.grant);
+    assert.equal((f.rejected[0] as { code?: string } | undefined)?.code, "TEST_SELECTOR_BOUNDARY");
+    assert.equal(inheritedSelectors, 0, "the old selected resource or epoch anchor is not a creation selector");
+    assert.equal(physicalSelector, undefined, "the new document has no existing resource identity at allocation");
+    assert.equal(f.counts().sends, 0);
+  }
+});
+
 test("construction and broker probes defer late services; raw calls never resolve a worker entrypoint", async (t) => {
   const f = await fixture(t, false);
   await f.executor.checkInstance({ requireIdle: true });

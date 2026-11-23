@@ -151,7 +151,21 @@ export function createDocumentCreationBroker() {
       return program;
     },
     admit(job: QueueJob, program: CompiledDocumentCreation) {
-      if (!prepared.has(program) || !same(job.documentCreation, marker(program))) refuse();
+      if (!prepared.has(program) || !["queued", "preparing", "processing", "running", "sending"].includes(job.state)) refuse();
+      const original = programs.get(job.id);
+      if (original) {
+        // Both submitters can compile before either commits. Core dedup returns
+        // the unchanged first job; a fresh renderer nonce must not replace its
+        // marker/proof or turn an identical submission into a refusal.
+        if (!same(job.documentCreation, marker(original))) refuse();
+        original.reverify(job.request);
+        program.reverify(job.request);
+        program.assertRpc(job.request, original.expectedRpc);
+        program.assertProgram(job.request, original.program.source);
+        prepared.delete(program);
+        return;
+      }
+      if (!same(job.documentCreation, marker(program))) refuse();
       program.reverify(job.request);
       prepared.delete(program);
       if (!programs.has(job.id)) programs.set(job.id, program);

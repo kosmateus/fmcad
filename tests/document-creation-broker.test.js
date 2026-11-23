@@ -112,14 +112,20 @@ test("serialized or reconstructed plans cannot arm or replace an admitted creati
   const program = await broker.prepare(f.request, f.ports);
   const { kind, ...marker } = program.descriptor;
   assert.equal(kind, "document-new");
-  const job = { id: "new-resource-job", request: f.request, documentCreation: marker };
+  const job = { id: "new-resource-job", state: "queued", request: f.request, documentCreation: marker };
   assert.throws(() => broker.admit(job, { ...program }), unproven);
   broker.admit(job, program);
   assert.equal(broker.program(job), program);
   assert.throws(() => broker.admit(job, program), unproven);
-  const second = await broker.prepare(f.request, f.ports);
+  const [second, third] = await Promise.all([
+    broker.prepare(f.request, f.ports), broker.prepare(f.request, f.ports),
+  ]);
   // A duplicate cannot replace the original private proof.
-  broker.admit({ ...job, documentCreation: { ...marker, programHash: second.descriptor.programHash } }, second);
+  const originalJob = structuredClone(job);
+  assert.notEqual(second.descriptor.programHash, program.descriptor.programHash);
+  broker.admit(job, second);
+  broker.admit(job, third);
+  assert.deepEqual(job, originalJob, "deduplication does not rewrite the original marker");
   assert.equal(broker.program(job), program);
   assert.throws(() => broker.program({ ...job, documentCreation: { ...marker, rpcHash: "f".repeat(64) } }), unproven);
   broker.prune(() => ({ state: "succeeded" }));
