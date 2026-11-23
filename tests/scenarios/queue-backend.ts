@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type {
   Execution,
@@ -561,6 +561,10 @@ export function queueExecReceiptWithDiagnostics(input: {
   requestId: string;
 }): QueueExecReceipt {
   let diagnosticPath: string | undefined;
+  let diagnosticWriteError: unknown;
+  let temporaryPath: string | undefined;
+  let descriptor: number | undefined;
+  let temporaryCreated = false;
   try {
     const directory = path.join(input.directory, "queue-exec-diagnostics");
     try {
@@ -579,34 +583,83 @@ export function queueExecReceiptWithDiagnostics(input: {
     const identity = createHash("sha256")
       .update(JSON.stringify([input.requestId, input.owner.clientId]))
       .digest("hex");
-    diagnosticPath = path.join(directory, `queue-exec-${identity}.json`);
+    const finalPath = path.join(directory, `queue-exec-${identity}.json`);
     const scriptIdentity = createHash("sha256")
       .update(JSON.stringify([input.cliPath, input.argv]))
       .digest("hex");
-    fs.writeFileSync(
-      diagnosticPath,
-      JSON.stringify({
-        requestId: input.requestId,
-        clientId: input.owner.clientId,
-        scriptIdentity,
-        status: input.result.status,
-        stdout: input.result.stdout,
-        stderr: input.result.stderr,
-      }),
-      { flag: "wx", mode: 0o600 },
+    const content = JSON.stringify({
+      requestId: input.requestId,
+      clientId: input.owner.clientId,
+      scriptIdentity,
+      status: input.result.status,
+      stdout: input.result.stdout,
+      stderr: input.result.stderr,
+    });
+    temporaryPath = path.join(
+      directory,
+      `.queue-exec-${identity}-${process.pid}-${randomUUID()}.tmp`,
     );
-  } catch {
-    diagnosticPath = undefined;
+    descriptor = fs.openSync(temporaryPath, "wx", 0o600);
+    temporaryCreated = true;
+    fs.writeFileSync(descriptor, content);
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    // A hard link publishes the fully-written inode atomically and fails with
+    // EEXIST rather than replacing an earlier artifact.
+    fs.linkSync(temporaryPath, finalPath);
+    diagnosticPath = finalPath;
+    fs.unlinkSync(temporaryPath);
+    temporaryPath = undefined;
+    temporaryCreated = false;
+    const directoryDescriptor = fs.openSync(directory, fs.constants.O_RDONLY);
+    try {
+      fs.fsyncSync(directoryDescriptor);
+    } finally {
+      fs.closeSync(directoryDescriptor);
+    }
+  } catch (error) {
+    diagnosticWriteError = error;
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        fs.closeSync(descriptor);
+      } catch {
+        // Preserve the primary diagnostic write error.
+      }
+    }
+    if (temporaryCreated && temporaryPath) {
+      try {
+        fs.unlinkSync(temporaryPath);
+        temporaryCreated = false;
+      } catch (error) {
+        if (diagnosticWriteError === undefined) diagnosticWriteError = error;
+      }
+    }
   }
   try {
     return queueExecReceipt(input.result.stderr, input.owner, input.requestId);
   } catch (error) {
-    if (diagnosticPath) {
+    if (diagnosticPath !== undefined)
       Object.defineProperty(error, "diagnosticPath", {
         value: diagnosticPath,
         enumerable: true,
       });
-    }
+    if (diagnosticWriteError !== undefined)
+      Object.defineProperties(error, {
+        diagnosticWriteFailed: { value: true, enumerable: true },
+        diagnosticWriteError: {
+          value: {
+            code:
+              diagnosticWriteError instanceof Error &&
+              "code" in diagnosticWriteError
+                ? diagnosticWriteError.code
+                : undefined,
+            message: String(diagnosticWriteError),
+          },
+          enumerable: true,
+        },
+      });
     throw error;
   }
 }
