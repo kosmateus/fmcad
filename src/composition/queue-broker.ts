@@ -93,7 +93,7 @@ const { decodeAdmissionJson } = runtimeRequire(
 const { createBrokerRecords } = runtimeRequire(
   "./dist/node-adapters/persistence/broker-records",
 ) as typeof import("../../packages/node-adapters/src/persistence/broker-records");
-const { createBrokerCheckpointEvidence, checkpointGeneration, checkpointDisclosableConflicts } = runtimeRequire(
+const { createBrokerCheckpointEvidence, createCheckpointReadWorkflow, createCheckpointViews, checkpointGeneration, checkpointDisclosableConflicts } = runtimeRequire(
   "./document-checkpoint-broker",
 ) as typeof import("../document-checkpoint-broker");
 const { createDocumentUnlockAdmission } = runtimeRequire(
@@ -1413,8 +1413,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ) {
     settleTurn(grant, () => {
       state.finish(grant.jobId, details);
-      continuation.forget(grant.jobId);
-      continuationJobs.delete(grant.jobId);
+      continuation.forget(grant.jobId, grant.turn);
     });
   }
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
@@ -1459,20 +1458,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const localPlans = new Map<string, LocalPlan>();
   type CheckpointActor = import("../document-unlock-admission").UnlockPrincipal;
   type CheckpointTarget = import("../document-unlock-admission").ConfirmedUnlockTarget;
-  type CheckpointState = import("../../packages/node-adapters/src/python/cad-script").ParamCheckpointGuardV1;
-  type CheckpointReadResult = { jobId: string; checkpoint: CheckpointState };
   const checkpointActor = new AsyncLocalStorage<CheckpointActor>();
-  const checkpointViews = new AsyncLocalStorage<{
-    states: Map<string, CheckpointState>; justProduced: Set<string>;
-    finalChecks: Map<string, (() => void)[]>;
-  }>();
+  const checkpointViews = createCheckpointViews();
   const checkpointIdentity = new AsyncLocalStorage<boolean>();
-  const checkpointReads = new Map<string, {
-    actor: CheckpointActor; target: CheckpointTarget;
-    turn: TurnIdentity; send?: P.Send;
-    resolve(value: CheckpointReadResult): void; reject(error: unknown): void;
-  }>();
-  let checkpointGenerationPin: string | undefined;
+  const checkpointReads = createCheckpointReadWorkflow<P.Send>();
   let postPrepared = (
     payload: P.Rpc,
     sessionId: string | undefined,
@@ -1881,10 +1870,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     // creates no physical intent and submits no SDK request.
     const binding = pinPhysicalTurn(required(options.bindPhysicalTurn)(request)!, request, instance);
     const generation = checkpointGeneration(binding);
-    if (checkpointGenerationPin && checkpointGenerationPin !== generation)
-      fail("DOCUMENT_STATE_CHANGED", "Native generation changed");
-    checkpointGenerationPin = generation;
-    return generation;
+    return checkpointReads.pinGeneration(generation);
   }
   const checkpointAdmission = createDocumentUnlockAdmission(() => ({
     state: state as unknown as import("../document-unlock-admission").UnlockAdmissionContext["state"],
@@ -1963,18 +1949,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     verifyObservation: (observation, actor) =>
       checkpointActor.run(actor, () => checkpointEvidence.verify(observation)),
   });
-  const continuationJobs = new Set<string>();
   const metadataCompiler = runtimeRequire("./document-metadata-read-broker") as
     typeof import("../document-metadata-read-broker");
-  const metadataPrograms = new Map<
-    string, import("../document-metadata-read-broker").CompiledDocumentMetadataRead
-  >();
+  const metadataReads = metadataCompiler.createDocumentMetadataReadBroker();
   function metadataProgram(job: P.Job) {
-    const program = metadataPrograms.get(job.id);
-    if (!program || !job.documentMetadataRead)
-      fail("DOCUMENT_METADATA_READ_UNPROVEN", "The original private metadata compiler plan is required");
-    program.reverify(job.request as unknown as import("@fmcad/core").QueueRequest);
-    return program;
+    return metadataReads.program(job as unknown as import("@fmcad/core").QueueJob);
   }
   async function prepareMetadataRead(request: P.Request, clientTokenHash: string) {
     const recheck = () => {
@@ -1985,7 +1964,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         fail("BUILD_CHANGED", "Metadata compiler runtime changed");
       if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
     };
-    return metadataCompiler.compileDocumentMetadataRead(
+    return metadataReads.prepare(
       request as unknown as import("../document-metadata-read-broker").DocumentMetadataReadRequest,
       {
         recheck,
@@ -2127,13 +2106,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const job = required(state.data.jobs[jobId]);
     if (!["queued", "preparing", "processing"].includes(job.state))
       fail(job.code || "DOCUMENT_UNLOCK_REQUIRED", "Checkpoint read was not admitted");
-    const result = new Promise<CheckpointReadResult>((resolve, reject) => {
-      checkpointReads.set(job.id, { actor: { ...actor }, target: confirmed,
-        turn: brokerExecution.createTurnIdentity(job.id), resolve, reject });
-    });
-    result.catch(() => {});
+    const task = checkpointReads.begin(
+      job.id, actor, confirmed, brokerExecution.createTurnIdentity(job.id),
+    );
     try {
-      const task = required(checkpointReads.get(job.id));
       privateDirectory(jobDir(job.id));
       executionRecords.createIntent(job.id, {
         id: job.id, request: job.request, buildHash: codeHash,
@@ -2147,26 +2123,29 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       };
       // Ordinary offline preparation remains outside the sole physical lane.
       // Its prepared turn identity and checker fence are consumed only once.
-      task.send = await preparingJob.run({ job, turn: task.turn, compiledScope }, () =>
+      const send = await preparingJob.run({ job, turn: task.turn, compiledScope }, () =>
         required(client.prepareCallTool).call(client, {
           featureType: "script", object: { script: compiled.script, readOnly: true },
         }, "fusion_mcp_execute", origin),
       );
+      checkpointReads.attachSend(task, send);
       assertCheckpointOwner();
       checkpointAdmission.authorize(actor, "inspect", confirmed).recheck();
       state.readyTurn(job.id);
     } catch (cause) {
-      checkpointReads.get(job.id)?.reject(cause);
-      checkpointReads.delete(job.id);
-      state.finishLocal(job.id, {
-        state: "failed", code: errorInfo(cause).code || "CHECKPOINT_PREPARATION_FAILED",
-        executionOutcome: "not_started", mayHaveMutated: false, userScriptSubmitted: false,
-      });
+      task.reject(cause);
+      if (checkpointReads.isCurrent(task)) {
+        checkpointReads.release(task);
+        state.finishLocal(job.id, {
+          state: "failed", code: errorInfo(cause).code || "CHECKPOINT_PREPARATION_FAILED",
+          executionOutcome: "not_started", mayHaveMutated: false, userScriptSubmitted: false,
+        });
+      }
     }
     // The existing scheduler owns lane.begin, SDK turn and failure isolation.
     // No direct physical send and no whole-application reservation is added.
     lifetime.progress();
-    return result;
+    return task.result;
   }
   const checkpointController = createDocumentUnlockController({
     domain: state as unknown as import("@fmcad/core").QueueDomain,
@@ -2184,24 +2163,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         stateDigest: checkpointStateHash(read.checkpoint), blockers,
         priorCheckpointId: fence.priorCheckpointId, createdAt: Date.now(),
       }, read.jobId);
-      checkpointViews.getStore()?.justProduced.add(observation.id);
+      checkpointViews.produced(observation.id);
       return { id: observation.id, stateDigest: observation.stateDigest,
         createdAt: observation.createdAt, readback: observation.readback };
     },
     async verifyStoredObservation(observation) {
       const verified = await checkpointEvidence.verify(observation, true);
-      required(checkpointViews.getStore()).finalChecks.set(observation.id, [verified.reverify]);
+      checkpointViews.retainChecks(observation.id, [verified.reverify]);
     },
     verifyFinal(observation) {
-      const checks = required(checkpointViews.getStore()).finalChecks.get(observation.id);
-      if (!checks?.length) fail("STORAGE_UNAVAILABLE", "Final checkpoint verification is unavailable");
-      for (const verify of checks) verify();
+      checkpointViews.verifyFinal(observation.id);
     },
     async verifyObservation(observation, target) {
       const original = await checkpointEvidence.verify(observation);
-      const scope = required(checkpointViews.getStore());
       const finalChecks = [original.reverify];
-      if (!scope.justProduced.delete(observation.id)) {
+      if (!checkpointViews.consumeProduced(observation.id)) {
         const actor = required(checkpointActor.getStore());
         const fence = state.documentInspectionFence(observation.target, currentCheckpointGeneration());
         const current = await readCheckpoint(actor, target, fence);
@@ -2222,8 +2198,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const fresh = await checkpointEvidence.verify(confirmation);
         finalChecks.push(fresh.reverify);
       }
-      scope.states.set(observation.id, original.checkpoint);
-      scope.finalChecks.set(observation.id, finalChecks);
+      checkpointViews.retainState(observation.id, original.checkpoint);
+      checkpointViews.retainChecks(observation.id, finalChecks);
     },
     resolution(actor, selector, observation) {
       const target: import("../document-unlock-diagnostics").DocumentUnlockTarget = observation ? {
@@ -2244,7 +2220,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const raw = conflicts.some((entry) => !documentConflictAllowsInspection(entry));
       const runtimeRetired = conflicts.some((entry) =>
         documentConflictFence(entry) === "runtime_retired");
-      const observed = observation && checkpointViews.getStore()?.states.get(observation.id);
+      const observed = observation && checkpointViews.state(observation.id);
       const checkpoints = state.data.documentCheckpoints;
       const accepted = observation && observed &&
         observation.generation === currentCheckpointGeneration() &&
@@ -5947,9 +5923,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           decoded.action === "inspect" ? { action: "inspect", target, requestId: decoded.requestId } :
           { action: "accept", target, requestId: decoded.requestId, observationId: decoded.observationId };
         const actor = { clientId, clientTokenHash: required(clientHashes()[clientId]) };
-        return checkpointActor.run(actor, () => checkpointViews.run({
-          states: new Map(), justProduced: new Set(), finalChecks: new Map(),
-        }, () => checkpointController.handle(request, actor)));
+        return checkpointActor.run(actor, () => checkpointViews.run(
+          () => checkpointController.handle(request, actor)));
       }
       case "probe-saved-destination":
         return savedFixtureControl.probe(message, clientId);
@@ -6526,9 +6501,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             }
             const admitted = state.data.jobs[job.id];
             if (preparedMetadata && admitted?.documentMetadataRead &&
-                state.hasDocumentMetadataRead(job.id) && !metadataPrograms.has(job.id))
-              metadataPrograms.set(job.id, preparedMetadata);
-            if (admitted?.documentContinuation) continuationJobs.add(job.id);
+                state.hasDocumentMetadataRead(job.id))
+              metadataReads.admit(admitted as unknown as import("@fmcad/core").QueueJob, preparedMetadata);
             writeRequestTrace(admitted?.request ?? request, clientId, {
               stage: "request-accepted",
               status: "passed",
@@ -7476,7 +7450,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   async function executeCheckpointRead(job: P.Job, grant: ProductGrant) {
-    const task = checkpointReads.get(job.id);
+    const task = checkpointReads.read(job.id);
     if (!task) {
       // A process restart does not reconstruct/replay a retained private read.
       // Dispatched reads remain UNKNOWN in the existing domain recovery path.
@@ -7498,12 +7472,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // this would leave an active sending job without reconciliation.
       throw cause;
     } finally {
-      checkpointReads.delete(job.id);
+      checkpointReads.release(task);
     }
   }
 
   async function runCheckpointRead(job: P.Job, grant: ProductGrant,
-    task: NonNullable<ReturnType<typeof checkpointReads.get>>) {
+    task: import("../document-checkpoint-broker").CheckpointReadTask<P.Send>) {
     const directory = privateDirectory(jobDir(job.id));
     const context: P.ProductContext = {
       job, productTurn: grant.turn, token: randomBytes(32).toString("hex"),
@@ -7572,7 +7546,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           lane.assertCurrent(grant);
           assertCheckpointOwner();
           checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
-          if (checkpointReads.get(job.id) !== task || record.terminal !== true ||
+          if (!checkpointReads.isCurrent(task) || record.terminal !== true ||
               record.binding.jobId !== job.id ||
               job.documentInspection?.generation !== currentCheckpointGeneration() ||
               !retained.physicalDispatches?.some((entry) =>
@@ -7608,7 +7582,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     } finally {
       context.workerClosed = true;
       context.budget.close();
-      checkpointReads.delete(job.id);
+      checkpointReads.release(task);
       diagnostics();
     }
   }
@@ -8145,18 +8119,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         if (!schedulingOpen()) return;
         void quarantineReleasedTurn();
        if (!canSelect()) state.next({ grant: false });
-        for (const id of continuationJobs) {
-          const job = state.data.jobs[id];
-          if (!job || ["succeeded", "failed", "cancelled", "expired", "needs_reconciliation"].includes(job.state)) {
-            continuation.forget(id);
-            continuationJobs.delete(id);
-          }
-        }
-        for (const id of metadataPrograms.keys()) {
-          const job = state.data.jobs[id];
-          if (!job || ["succeeded", "failed", "cancelled", "expired", "needs_reconciliation"].includes(job.state))
-            metadataPrograms.delete(id);
-        }
+        continuation.prune((id) => state.data.jobs[id]);
+        metadataReads.prune((id) => state.data.jobs[id]);
         // Only outstanding prepared plans, never retained terminal history.
         for (const id of localPlans.keys()) {
           const job = state.data.jobs[id];
@@ -8166,15 +8130,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           )
             localPlans.delete(id);
         }
-        for (const [id, task] of checkpointReads) {
+        checkpointReads.prune((id) => {
           const job = state.data.jobs[id];
-          if (!job || ["failed", "cancelled", "expired"].includes(job.state)) {
-            checkpointReads.delete(id);
-            task.reject(Object.assign(new Error("Checkpoint read was not completed"), {
-              code: job?.code || "DOCUMENT_STATE_CHANGED",
-            }));
-          }
-        }
+          return job && {
+            state: job.state,
+            ...(job.code === undefined ? {} : { code: job.code }),
+          };
+        });
       },
       canSelect,
       select() {
@@ -8187,7 +8149,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       async start(job) {
         const plan = localPlans.get(job.id);
-        const turn = checkpointReads.get(job.id)?.turn ?? (
+        const turn = checkpointReads.read(job.id)?.turn ?? (
           plan?.kind === "raw"
             ? plan.turn.turn
             : (plan?.turn ?? brokerExecution.createTurnIdentity(job.id)));

@@ -419,7 +419,7 @@ respond(async (message) => {
 (async () => {
   if (fs.existsSync(path.join(dir, "broker.lock"))) reclaim(dir);
   broker = await serve(
-    { backend: "mcp", timeoutMs: 20000, queue: { preparationConcurrency: 2 } },
+    { backend: "addin", timeoutMs: 20000, queue: { preparationConcurrency: 2 } },
     {
       dir,
       confirmOwnership: true,
