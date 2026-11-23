@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, "..");
 const load = createRequire(
   path.join(root, "dist/src/document-metadata-read-broker.js"),
 );
-const { compileDocumentMetadataRead, documentMetadataReadRequestHash } = load(
+const { compileDocumentMetadataRead, documentMetadataReadRequestHash, createDocumentMetadataReadBroker } = load(
   "./document-metadata-read-broker",
 );
 const { addinBridgeSource, buildBridgeScript } = load("./addin-bridge");
@@ -85,6 +85,41 @@ if (process.argv.includes("--compiler-output-child")) {
       process.exitCode = 1;
     });
 } else {
+  test("metadata workflow consumes only its own compiler plan and exact cleanup cannot remove its successor", async () => {
+    const f = fixture();
+    const broker = createDocumentMetadataReadBroker();
+    const first = await broker.prepare(f.request, f.ports);
+    assert.ok(first);
+    const job = {
+      id: "metadata-job", request: f.request,
+      documentMetadataRead: {
+        version: 1, requestHash: first.descriptor.requestHash,
+        generation: first.descriptor.generation, rpcHash: first.descriptor.rpcHash,
+        programHash: first.descriptor.programHash,
+      },
+    };
+    assert.throws(() => broker.admit(job, { ...first }), unproven);
+    broker.admit(job, first);
+    assert.equal(broker.program(job), first);
+    assert.throws(() => broker.admit(job, first), unproven);
+    const duplicate = await broker.prepare(f.request, f.ports);
+    broker.admit(job, duplicate);
+    assert.equal(broker.program(job), first, "repeated admission cannot re-arm a retained plan");
+    broker.prune(() => ({ state: "succeeded" }));
+    assert.throws(() => broker.program(job), unproven);
+    const next = await broker.prepare(f.request, f.ports);
+    broker.admit(job, next);
+    broker.forget(job.id, first);
+    assert.equal(broker.program(job), next);
+    assert.throws(() => broker.program({
+      ...job, documentMetadataRead: { ...job.documentMetadataRead, programHash: "0".repeat(64) },
+    }), unproven);
+    f.current.generation = "new-generation";
+    assert.throws(() => broker.program(job), unproven);
+    broker.prune(() => ({ state: "needs_reconciliation" }));
+    assert.throws(() => broker.program(job), unproven);
+  });
+
   test("actual accepted doc-list payload compiles one typed logical read and the real ADDIN pre-receipt program", async () => {
     assert.equal(Buffer.byteLength(original), 557);
     assert.equal(

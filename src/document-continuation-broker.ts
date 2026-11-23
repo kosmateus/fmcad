@@ -448,12 +448,26 @@ export function createDocumentContinuationBroker(
       return structuredClone(entry.programs.guarded);
     },
 
-    forget(jobId: string): void {
+    forget(jobId: string, turn?: TurnIdentity): void {
+      // A late finalizer from an earlier turn cannot revoke its successor.
+      if (turn !== undefined && activeTurn.get(jobId) !== turn) return;
       const entry = jobs.get(jobId);
       if (entry) live.delete(entry);
       jobs.delete(jobId);
       activeTurn.delete(jobId);
       latestAttempt.delete(jobId);
+    },
+    prune(readStatus: (jobId: string) => { state: string } | undefined): void {
+      for (const [id, entry] of jobs) {
+        const status = readStatus(id);
+        if (jobs.get(id) !== entry) continue;
+        if (!status || ["succeeded", "failed", "cancelled", "expired", "needs_reconciliation"].includes(status.state)) {
+          live.delete(entry);
+          jobs.delete(id);
+          activeTurn.delete(id);
+          latestAttempt.delete(id);
+        }
+      }
     },
   });
 }
