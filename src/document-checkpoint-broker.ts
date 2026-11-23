@@ -3,6 +3,9 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createRequire } from "node:module";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { TurnIdentity } from "../packages/core/src/application/broker-execution";
+import type { UnlockPrincipal, ConfirmedUnlockTarget } from "./document-unlock-admission";
 import type { DocumentObservation, QueueJob, QueuePhysicalBinding, PreparedPythonArtifact, QueueDomain } from "@fmcad/core";
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
 import type { CheckpointRpc } from "../packages/node-adapters/src/execution/document-checkpoint-producer";
@@ -28,6 +31,128 @@ const { validRelease, physicalReleaseInput } = load("./dist/core/domain/queue-qu
   typeof import("../packages/core/src/domain/queue-quarantine");
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
+export interface CheckpointReadTask<Send> {
+  readonly actor: UnlockPrincipal;
+  readonly target: ConfirmedUnlockTarget;
+  readonly turn: TurnIdentity;
+  readonly send: Send | undefined;
+  readonly result: Promise<{ jobId: string; checkpoint: ParamCheckpointGuardV1 }>;
+  resolve(value: { jobId: string; checkpoint: ParamCheckpointGuardV1 }): void;
+  reject(error: unknown): void;
+}
+
+/** Local preparation and notification ownership only. This is neither a
+ * physical executor nor evidence that an SDK request has settled. */
+export function createCheckpointReadWorkflow<Send>() {
+  type Entry = { task: CheckpointReadTask<Send>; send?: Send; settled: boolean };
+  const reads = new Map<string, Entry>();
+  const handles = new WeakMap<CheckpointReadTask<Send>, Entry>();
+  let generationPin: string | undefined;
+  function current(task: CheckpointReadTask<Send>): Entry | undefined {
+    const entry = handles.get(task);
+    return entry && reads.get(task.turn.jobId) === entry ? entry : undefined;
+  }
+  return Object.freeze({
+    pinGeneration(generation: string): string {
+      if (!generation || (generationPin !== undefined && generationPin !== generation))
+        throw Object.assign(new Error("Native generation changed"), { code: "DOCUMENT_STATE_CHANGED" });
+      generationPin = generation;
+      return generation;
+    },
+    begin(jobId: string, actor: UnlockPrincipal, target: ConfirmedUnlockTarget, turn: TurnIdentity) {
+      if (turn.jobId !== jobId || reads.has(jobId))
+        throw Object.assign(new Error("Checkpoint read already has an owner"), { code: "CHECKPOINT_READ_UNAVAILABLE" });
+      let resolve!: (value: { jobId: string; checkpoint: ParamCheckpointGuardV1 }) => void;
+      let reject!: (error: unknown) => void;
+      const result = new Promise<{ jobId: string; checkpoint: ParamCheckpointGuardV1 }>((yes, no) => {
+        resolve = yes; reject = no;
+      });
+      void result.catch(() => {});
+      const entry: Entry = {
+        settled: false,
+        task: Object.freeze({
+          actor: Object.freeze({ ...actor }),
+          // Preserve the admission WeakMap capability: never clone this target.
+          target, turn, result,
+          get send() { return entry.send; },
+          resolve(value: { jobId: string; checkpoint: ParamCheckpointGuardV1 }) {
+            if (current(entry.task) !== entry || entry.settled || value.jobId !== jobId) return;
+            entry.settled = true;
+            resolve(value);
+          },
+          reject(error: unknown) {
+            if (current(entry.task) !== entry || entry.settled) return;
+            entry.settled = true;
+            reject(error);
+          },
+        }),
+      };
+      handles.set(entry.task, entry);
+      reads.set(jobId, entry);
+      return entry.task;
+    },
+    attachSend(task: CheckpointReadTask<Send>, send: Send): void {
+      const entry = current(task);
+      if (!entry || entry.settled || entry.send !== undefined)
+        throw Object.assign(new Error("Checkpoint preparation lost its owner"), { code: "CHECKPOINT_READ_UNAVAILABLE" });
+      entry.send = send;
+    },
+    read(jobId: string): CheckpointReadTask<Send> | undefined { return reads.get(jobId)?.task; },
+    isCurrent(task: CheckpointReadTask<Send>): boolean { return current(task) !== undefined; },
+    release(task: CheckpointReadTask<Send>): void {
+      if (current(task)) reads.delete(task.turn.jobId);
+    },
+    prune(readStatus: (jobId: string) => { state: string; code?: string } | undefined): void {
+      for (const [id, entry] of reads) {
+        const status = readStatus(id);
+        if (!status || ["failed", "cancelled", "expired"].includes(status.state)) {
+          entry.task.reject(Object.assign(new Error("Checkpoint read was not completed"), {
+            code: status?.code || "DOCUMENT_STATE_CHANGED",
+          }));
+          // A callback cannot delete a newer admission.
+          if (current(entry.task)) reads.delete(id);
+        }
+      }
+    },
+  });
+}
+
+/** Operation-scoped projections and synchronous final checks never escape as
+ * mutable collections, including across concurrent asynchronous requests. */
+export function createCheckpointViews() {
+  const views = new AsyncLocalStorage<{
+    states: Map<string, ParamCheckpointGuardV1>;
+    produced: Set<string>;
+    checks: Map<string, (() => void)[]>;
+  }>();
+  function scope() {
+    const value = views.getStore();
+    if (!value) reject();
+    return value;
+  }
+  return Object.freeze({
+    run<T>(action: () => T): T {
+      return views.run({ states: new Map(), produced: new Set(), checks: new Map() }, action);
+    },
+    produced(id: string): void { views.getStore()?.produced.add(id); },
+    consumeProduced(id: string): boolean { return scope().produced.delete(id); },
+    retainChecks(id: string, checks: readonly (() => void)[]): void {
+      scope().checks.set(id, [...checks]);
+    },
+    verifyFinal(id: string): void {
+      const checks = scope().checks.get(id);
+      if (!checks?.length) reject();
+      for (const check of checks) check();
+    },
+    retainState(id: string, state: ParamCheckpointGuardV1): void {
+      scope().states.set(id, structuredClone(state));
+    },
+    state(id: string): ParamCheckpointGuardV1 | undefined {
+      const value = views.getStore()?.states.get(id);
+      return value && structuredClone(value);
+    },
+  });
+}
 function reject(): never {
   throw Object.assign(new Error("Verified checkpoint read evidence is unavailable"), {
     code: "STORAGE_UNAVAILABLE",

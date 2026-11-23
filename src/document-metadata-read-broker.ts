@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { QueueRequest } from "@fmcad/core";
+import type { QueueJob, QueueRequest } from "@fmcad/core";
 
 const load = createRequire(__filename);
 const { hash: canonicalHash } = load(
@@ -285,6 +285,60 @@ export async function compileDocumentMetadataRead(
         digest(actualBindSource) !== programHash
       )
         refuse();
+    },
+  });
+}
+
+/** Keeps original compiler capabilities in this broker process. A retained
+ * descriptor after restart is not enough to reconstruct or replay a read. */
+export function createDocumentMetadataReadBroker() {
+  const programs = new Map<string, CompiledDocumentMetadataRead>();
+  const prepared = new WeakSet<CompiledDocumentMetadataRead>();
+  return Object.freeze({
+    async prepare(request: DocumentMetadataReadRequest, ports: DocumentMetadataReadCompilerPorts) {
+      const program = await compileDocumentMetadataRead(request, ports);
+      if (program) prepared.add(program);
+      return program;
+    },
+    /** Call only after durable domain admission and hasDocumentMetadataRead.
+     * Admission never replaces an earlier live plan for a repeated request. */
+    admit(job: QueueJob, program: CompiledDocumentMetadataRead): void {
+      if (!prepared.has(program)) refuse();
+      const descriptor = program.descriptor;
+      if (!job.documentMetadataRead ||
+          !isDeepStrictEqual(job.documentMetadataRead, {
+            version: 1, requestHash: descriptor.requestHash,
+            generation: descriptor.generation, rpcHash: descriptor.rpcHash,
+            programHash: descriptor.programHash,
+          }))
+        refuse();
+      program.reverify(job.request);
+      prepared.delete(program);
+      if (!programs.has(job.id)) programs.set(job.id, program);
+    },
+    program(job: QueueJob): CompiledDocumentMetadataRead {
+      const program = programs.get(job.id);
+      if (!program || !job.documentMetadataRead) refuse();
+      program.reverify(job.request);
+      const proof = program.descriptor;
+      if (!isDeepStrictEqual(job.documentMetadataRead, {
+        version: 1, requestHash: proof.requestHash, generation: proof.generation,
+        rpcHash: proof.rpcHash, programHash: proof.programHash,
+      })) refuse();
+      return program;
+    },
+    /** Exact capability cleanup only; no job-id-only callback may erase a
+     * later program. Terminal sweeping below owns job-id cleanup. */
+    forget(jobId: string, program: CompiledDocumentMetadataRead): void {
+      if (programs.get(jobId) === program) programs.delete(jobId);
+    },
+    prune(readStatus: (jobId: string) => { state: string } | undefined): void {
+      for (const [id, program] of programs) {
+        const status = readStatus(id);
+        if (programs.get(id) !== program) continue;
+        if (!status || ["succeeded", "failed", "cancelled", "expired", "needs_reconciliation"].includes(status.state))
+          programs.delete(id);
+      }
     },
   });
 }

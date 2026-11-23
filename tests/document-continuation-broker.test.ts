@@ -470,6 +470,8 @@ test("only the latest freshly authenticated private job/turn may attest product 
     f.broker.expectedProduct(job, createTurnIdentity(job.id)),
   );
   f.broker.expectedProduct(job, second);
+  f.broker.forget(job.id, first);
+  f.broker.expectedProduct(job, second);
   f.broker.forget(job.id);
   assert.throws(() => f.broker.expectedProduct(job, second));
 });
@@ -587,6 +589,26 @@ test("concurrent preparation cannot re-use a turn identity and a failed verifica
   });
   assert.throws(() => f.broker.expectedProduct(job, failed));
   await assert.rejects(f.broker.prepareWorker(job, f.call(), failed));
+});
+
+test("terminal continuation sweep invalidates pending preparation without granting a late result", async () => {
+  const f = fixture(),
+    job = f.job(await f.broker.submit(request(), f.actor)),
+    turn = createTurnIdentity(job.id);
+  const original = f.ports.verifyObservation;
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  f.ports.verifyObservation = async (observation, actor) => {
+    await waiting;
+    return original(observation, actor);
+  };
+  const preparation = f.broker.prepareWorker(job, f.call(), turn);
+  f.broker.prune(() => ({ state: "cancelled" }));
+  release();
+  await assert.rejects(preparation, { code: "DOCUMENT_CONTINUATION_UNPROVEN" });
+  assert.throws(() => f.broker.expectedProduct(job, turn));
+  assert.equal(f.domain.data.jobs[job.id]?.state, job.state,
+    "local cleanup neither changes durable queue state nor settles an SDK turn");
 });
 
 test("required source verification cannot be replaced by booleans, asynchronous final checks or default authority", async () => {
