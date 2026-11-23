@@ -5144,14 +5144,35 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             if (options.prepareControlledStdout &&
                 originalPayload.method === "tools/call" &&
                 object(originalPayload.params)["name"] === "execute_python") {
+              const principal = required(clientHashes()[clientId]);
+              const currentPins = () => ({
+                buildHash: codeHash, configHash,
+                generation: checkpointGenerationAfterOwnerCheck(),
+              });
               const compilationPorts = await options.prepareControlledStdout(
-                request as unknown as import("@fmcad/core").QueueRequest,
-                { buildHash: codeHash, configHash,
-                  generation: checkpointGenerationAfterOwnerCheck() },
+                structuredClone(request) as unknown as import("@fmcad/core").QueueRequest,
+                currentPins(),
               );
               preparedStdout = await stdoutPrograms.prepare(
                 request as unknown as import("@fmcad/core").QueueRequest,
-                compilationPorts,
+                {
+                  ...compilationPorts,
+                  recheck() {
+                    assertCheckpointOwner();
+                    if (clientHashes()[clientId] !== principal)
+                      fail("NOT_AUTHORIZED", "The stdout principal is no longer registered");
+                    if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
+                    // Preserve the sync fence's result for the compiler's strict
+                    // undefined check: never hide a Promise returned at runtime.
+                    return compilationPorts.recheck();
+                  },
+                  currentPins() {
+                    const actual = currentPins();
+                    if (!same(compilationPorts.currentPins(), actual))
+                      fail("PYTHON_STDOUT_UNPROVEN", "Controlled host pins differ from the broker");
+                    return actual;
+                  },
+                },
               );
               if (!preparedStdout)
                 fail("PYTHON_STDOUT_UNPROVEN", "Controlled stdout compilation is unavailable");

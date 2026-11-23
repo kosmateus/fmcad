@@ -751,6 +751,34 @@ test("public controlled stdout refuses a revoked host window before admission an
       .some((job) => job["requestId"] === "revoked-stdout"), false);
   });
 
+for (const fault of ["pins", "async"] as const)
+test(`public controlled stdout rejects ${fault} in the private bootstrap port before admission`,
+  { timeout: 120000 }, async (t) => {
+    const { prepareIsolatedStdout } = load("./dist/python/isolated-stdout") as
+      typeof import("../packages/node-adapters/src/python/isolated-stdout");
+    const f = await fixture(t, true, undefined, 0, undefined, async (_request, pins) => ({
+      currentPins: () => ({ ...pins, ...(fault === "pins" ? { configHash: "f".repeat(64) } : {}) }),
+      // TypeScript void permits async implementations; the runtime must not.
+      recheck: fault === "async" ? async () => {} : () => {},
+      prepareKernel: prepareIsolatedStdout,
+      verifyHostBindings: () => ({
+        proofHash: "a".repeat(64), profileVersion: "isolated-stdout-v1",
+      }),
+    }));
+    const clientId = `controlled-port-${fault}`;
+    const client = await f.client(clientId);
+    await assert.rejects(client.submit({
+      kind: "rpc", clientId, requestId: `bad-private-port-${fault}`,
+      cwd: f.dir, timeoutMs: 45000, backend: "addin",
+      buildHash: runtimeIdentity.buildHash(),
+      payload: { jsonrpc: "2.0", id: "unproven-port", method: "tools/call",
+        params: { name: "execute_python",
+          arguments: { code: "print('never-sent')", persistent: false } } },
+    }), { code: fault === "pins" ? "PYTHON_STDOUT_UNPROVEN" : "PYTHON_DIAGNOSTIC_UNPROVEN" });
+    assert.equal(f.counts().products, 0);
+    assert.equal(f.writes(), 0);
+  });
+
 test("parallel identical public protocol submissions retain the original witness and raw turn",
   { timeout: 120000 }, async (t) => {
     let release!: () => void;
