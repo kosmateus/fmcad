@@ -232,29 +232,38 @@ export function createApprovedRuntimeRetirement(options: {
       const initialBytes = readBytes(file, MAX_QUEUE_SNAPSHOT_BYTES, fs, file);
       if (!initialBytes.equals(initial))
         refused("Queue changed between native verification and writer claim");
+      // Retain only the last fully validated byte image, never an authority
+      // decision. Every call still reads the complete current file and checks
+      // the root/owner on both sides. Any byte change revalidates the projection.
+      let validatedBytes: Buffer | undefined;
+      let validatedDigest: string | undefined;
       return createQueueRuntimeRetirementAuthority(() => {
         assertRoot();
         const bytes = readBytes(file, MAX_QUEUE_SNAPSHOT_BYTES, fs, file);
-        const snapshot = decodeOpaqueQueueJson(
-          new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-        ) as unknown as QueueSnapshot;
-        if (
-          !bytes.equals(initial) &&
-          (!snapshot.appliedRuntimeRetirement ||
-            !snapshot.runtimeRetiredExposures ||
-            canonical(snapshot.appliedRuntimeRetirement) !==
-              canonical(marker) ||
-            canonical(snapshot.runtimeRetiredExposures) !==
-              canonical(exposures))
-        )
-          refused(
-            "Unclassified queue evolution cannot inherit an old runtime retirement",
-          );
+        if (!validatedBytes || !bytes.equals(validatedBytes)) {
+          const snapshot = decodeOpaqueQueueJson(
+            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          ) as unknown as QueueSnapshot;
+          if (
+            !bytes.equals(initial) &&
+            (!snapshot.appliedRuntimeRetirement ||
+              !snapshot.runtimeRetiredExposures ||
+              canonical(snapshot.appliedRuntimeRetirement) !==
+                canonical(marker) ||
+              canonical(snapshot.runtimeRetiredExposures) !==
+                canonical(exposures))
+          )
+            refused(
+              "Unclassified queue evolution cannot inherit an old runtime retirement",
+            );
+          validatedDigest = sha(bytes);
+          validatedBytes = Buffer.from(bytes);
+        }
         assertRoot();
         return {
           namespace,
           marker,
-          currentSnapshotDigest: sha(bytes),
+          currentSnapshotDigest: validatedDigest!,
           frozen,
           jobs,
           exposures,

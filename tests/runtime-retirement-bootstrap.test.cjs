@@ -84,7 +84,7 @@ const broker = require("./src/queue-broker.js");
 // The native-root and ownership assertions are explicit test ports. This suite
 // exercises the real byte adapter, snapshot store and staged QueueDomain; it is
 // not evidence that a native grant was issued or that Fusion ran.
-function fixture(t) {
+function fixture(t, historyCount = 0) {
   const directory = fs.realpathSync(
     fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-retirement-")),
   );
@@ -107,6 +107,21 @@ function fixture(t) {
   state.block(submitted.id, { code: "OLD_UNKNOWN" });
   state.pause(true);
   const frozen = structuredClone(state.data);
+  const history = new QueueDomain({ now: () => 100, newId: () => "completed", hash: sha });
+  const completed = history.submit({
+    kind: "rpc", clientId: "history-author", requestId: "history-request",
+    timeoutMs: 1000, payload: { method: "tools/call", params: {} },
+  });
+  history.next();
+  history.finish(completed.id, { state: "succeeded" });
+  for (let index = 0; index < historyCount; index++) {
+    const id = `history-${index}`;
+    frozen.jobs[id] = {
+      ...structuredClone(history.data.jobs[completed.id]),
+      id, requestId: `request-${id}`,
+      request: { ...history.data.jobs[completed.id].request, requestId: `request-${id}` },
+    };
+  }
   const bytes = Buffer.from(JSON.stringify(frozen));
   const file = path.join(directory, "queue-state.json");
   fs.writeFileSync(file, bytes, { mode: 0o600 });
@@ -773,6 +788,64 @@ test("new private verification preserves evolved jobs instead of restoring the f
   assert.equal(reopened.data.active, null);
   assert.deepEqual(fs.readFileSync(f.file), evolved);
 });
+
+test("repeated retirement probes revalidate changed bytes even with identical file metadata", (t) => {
+  const f = fixture(t);
+  const authority = f.factory().forDirectory(f.directory);
+  const state = new QueueState(f.directory, { runtimeRetirement: authority, now: () => 200 });
+  const probe = () => state.documentConflicts({ creationId: "doc-A" });
+  assert.equal(probe().length, 1);
+  assert.equal(probe().length, 1);
+  const original = fs.readFileSync(f.file);
+  const stat = fs.statSync(f.file);
+  const changed = Buffer.from(original.toString().replace("native-approved-head", "native-rejected-head"));
+  assert.equal(changed.length, original.length);
+  fs.writeFileSync(f.file, changed);
+  fs.utimesSync(f.file, stat.atime, stat.mtime);
+  assert.throws(probe, { code: "RUNTIME_RETIREMENT_CHANGED" });
+  fs.writeFileSync(f.file, original);
+  assert.equal(probe().length, 1);
+  // A valid marker cannot make invalid JSON inheritable. A failed validation
+  // must not replace the last verified image or poison a subsequent good read.
+  fs.writeFileSync(f.file, Buffer.concat([original, Buffer.from("{}")]));
+  assert.throws(probe);
+  fs.writeFileSync(f.file, original);
+  assert.equal(probe().length, 1);
+  assert.deepEqual(state.data.jobs[f.submitted.id], f.frozen.jobs[f.submitted.id]);
+});
+
+test("warm retirement probes still fence current ownership and root revocation", (t) => {
+  for (const reason of ["owner", "root"]) {
+    const f = fixture(t);
+    const state = new QueueState(f.directory, {
+      runtimeRetirement: f.factory().forDirectory(f.directory), now: () => 200,
+    });
+    assert.equal(state.documentConflicts({ creationId: "doc-A" }).length, 1);
+    const original = fs.readFileSync(f.file);
+    if (reason === "owner") f.loseOwner();
+    else f.invalidateRoot();
+    assert.throws(() => state.documentConflicts({ creationId: "doc-A" }), {
+      code: reason === "owner" ? "OWNER_LOST" : "ROOT_CHANGED",
+    });
+    assert.deepEqual(fs.readFileSync(f.file), original);
+  }
+});
+
+test("retired document probes with 17000 completed jobs stay within the existing heartbeat budget", { timeout: 60000 }, (t) => {
+  const f = fixture(t, 17000);
+  const state = new QueueState(f.directory, {
+    runtimeRetirement: f.factory().forDirectory(f.directory), now: () => 200,
+  });
+  const before = performance.now();
+  for (let index = 0; index < 10; index++)
+    assert.equal(state.documentConflicts({ creationId: "doc-A" }).length, 1);
+  const elapsed = performance.now() - before;
+  t.diagnostic(`10 document probes, 17000 completed jobs + 1 retained UNKNOWN: ${elapsed.toFixed(2)} ms`);
+  assert.ok(elapsed < 30000, "do not extend the production 30-second heartbeat budget");
+  assert.equal(Object.keys(state.data.jobs).length, 17001);
+  assert.deepEqual(state.data.jobs[f.submitted.id], f.frozen.jobs[f.submitted.id]);
+});
+
 test("an approved-root assertion cannot authenticate a different supplied record or frozen snapshot", (t) => {
   for (const changed of ["record", "snapshot"]) {
     const f = fixture(t);
