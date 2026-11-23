@@ -26,7 +26,8 @@ import type {
   ScenarioBackend,
   ScriptRequest,
 } from "./contracts";
-import { record, text } from "./contracts";
+import { cliInspectionArguments, record, text } from "./contracts";
+import { parseDocumentInventory } from "./document-inventory";
 import * as programs from "./programs";
 import {
   captureOriginalView,
@@ -1998,12 +1999,73 @@ export async function runScenarios(
       JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
     );
   };
+  const documentInventory = async (
+    phase: "before" | "after",
+  ): Promise<Record<string, unknown>> => {
+    const owner = {
+        runId,
+        scenarioId: "coordinator",
+        clientId: "scenario:" + runId + ":coordinator",
+      },
+      requestId = owner.clientId + ":" + phase,
+      inspectCli = "doc-list-json" as const,
+      argv = cliInspectionArguments(inspectCli);
+    persist(path.join(coordinator, phase + ".intent.json"), {
+      owner,
+      requestId,
+      phase,
+      kind: "inspect-cli",
+      inspectCli,
+      source: { kind: "public-cli", argv },
+      runtime: {
+        identity: backend.identity,
+        mode: backend.mode,
+        qualification: backend.qualification,
+        protocol: backend.protocol,
+      },
+    });
+    const result = await backend.execute({
+      owner,
+      requestId,
+      directory: coordinator,
+      source: "",
+      inspectCli,
+    });
+    persist(path.join(coordinator, phase + ".result.json"), result);
+    if (
+      result.requestId !== requestId ||
+      !result.sdkSettled ||
+      result.state !== "succeeded"
+    )
+      throw new Error(
+        "Coordinator document inventory did not settle: " +
+          phase +
+          " " +
+          (result.error ?? result.state),
+      );
+    if (backend.qualification === "broker") {
+      assert.equal(
+        result.exitCode,
+        0,
+        "Successful public inventory lacks its original zero exit status",
+      );
+      assert.ok(
+        result.brokerReceipt,
+        "Successful public inventory lacks its original broker receipt",
+      );
+      assert.equal(result.brokerReceipt.requestId, requestId);
+      assert.equal(result.brokerReceipt.clientId, owner.clientId);
+      assert.ok(result.brokerReceipt.jobId);
+      assert.equal(result.brokerReceipt.state, result.state);
+    }
+    return parseDocumentInventory(result.stdout);
+  };
   const hasSupported = scenarios.some((s) =>
     s.requires.every((c) => backend.capabilities.has(c)),
   );
   let before =
     hasSupported && !signal?.aborted
-      ? await observation("before", programs.snapshot())
+      ? await documentInventory("before")
       : undefined;
   const processIdentity = currentProcessIdentity();
   if (before) {
@@ -2150,7 +2212,7 @@ export async function runScenarios(
           (r.status === "not-run" && r.cleanup === "not-created"),
       )
     ) {
-      const after = await observation("after", programs.snapshot()),
+      const after = await documentInventory("after"),
         finalPeerProofs = discoverOwnedUnsavedFixtureProofs(root, backend);
       assertReceiptBoundDocumentInventory(
         before["documents"],

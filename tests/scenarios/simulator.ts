@@ -95,11 +95,17 @@ export class PythonSimulator {
     this.child.stdin.on("error", rejectAll);
   }
   execute(source: string, entrypoint = true): Promise<PythonResult> {
+    return this.#request({ source, entrypoint });
+  }
+  documentList(): Promise<PythonResult> {
+    return this.#request({ operation: "doc-list" });
+  }
+  #request(request: Record<string, unknown>): Promise<PythonResult> {
     if (this.#closed) return Promise.reject(new Error("Simulator is closed"));
     this.executions++;
     return new Promise((resolve, reject) => {
       this.#pending.push({ resolve, reject });
-      this.child.stdin.write(JSON.stringify({ source, entrypoint }) + "\n");
+      this.child.stdin.write(JSON.stringify(request) + "\n");
     });
   }
   async close(): Promise<void> {
@@ -229,8 +235,6 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
     return local;
   }
   async execute(request: ScriptRequest): Promise<Execution> {
-    if (request.inspectCli)
-      throw new Error("Public CLI inspection requires the broker backend");
     const key = request.owner.clientId + "/" + request.requestId;
     if (this.#requests.has(key))
       throw new Error(
@@ -241,6 +245,20 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
       this.#results.set(key, result);
       return result;
     };
+    if (request.inspectCli) {
+      if (request.inspectCli !== "doc-list-json")
+        throw new Error("Public CLI inspection requires the broker backend");
+      const result = await this.model.documentList();
+      return retain({
+        requestId: request.requestId,
+        state: result.success ? "succeeded" : "failed",
+        sdkSettled: true,
+        mayHaveMutated: false,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        ...(result.success ? {} : { error: result.error }),
+      });
+    }
     if (request.command) {
       return retain(
         await componentCommand(
@@ -364,14 +382,23 @@ export async function simulatorEndpoint(model: PythonSimulator): Promise<{
         };
       else if (method === "tools/call") {
         const params = record(rpc["params"]),
-          args = record(params["arguments"]);
-        const addin = params["name"] === "execute_python";
-        if (!addin && params["name"] !== "fusion_mcp_execute")
+          args = record(params["arguments"]),
+          tool = text(params["name"]),
+          addin = tool === "execute_python",
+          documentList = tool === "fusion_mcp_read";
+        if (!addin && tool !== "fusion_mcp_execute" && !documentList)
           throw new Error("Unsupported simulator tool");
-        const code = addin
-          ? text(args["code"])
-          : text(record(args["object"])["script"]);
-        const execution = await model.execute(code, !addin);
+        let execution: PythonResult;
+        if (documentList) {
+          if (args["queryType"] !== "document" || args["operation"] !== "open")
+            throw new Error("Unsupported simulator document read");
+          execution = await model.documentList();
+        } else {
+          const code = addin
+            ? text(args["code"])
+            : text(record(args["object"])["script"]);
+          execution = await model.execute(code, !addin);
+        }
         if (loseNext) {
           loseNext = false;
           response.destroy();

@@ -9,7 +9,7 @@ import type {
   ScenarioBackend,
   ScriptRequest,
 } from "./contracts";
-import { record } from "./contracts";
+import { cliInspectionArguments, record } from "./contracts";
 import { scenarioArtifactRoot } from "./artifact-root";
 import type { ClientModule, Queue } from "../live-recovery-ports";
 
@@ -160,11 +160,10 @@ export class QueueScenarioBackend implements ScenarioBackend {
       request.directory,
       `request-${request.requestId.split(":").at(-1)}.py`,
     );
-    fs.writeFileSync(filename, request.source, { flag: "wx", mode: 0o600 });
+    if (request.inspectCli !== "doc-list-json")
+      fs.writeFileSync(filename, request.source, { flag: "wx", mode: 0o600 });
     const argv = request.inspectCli
-      ? request.inspectCli === "active"
-        ? ["active"]
-        : ["doc", "list"]
+      ? cliInspectionArguments(request.inspectCli)
       : request.command
         ? [
             ...(request.command.spelling ?? [
@@ -415,7 +414,8 @@ export function scenarioQueueJobId(
     )
       return undefined;
     const phase = requestId.slice(prefix.length);
-    if (!/^(before|files-before-\d+)$/u.test(phase)) return undefined;
+    if (!/^(before|after|files-before-\d+|files-after-\d+)$/u.test(phase))
+      return undefined;
     const filename = path.join(
       scenarioRoot,
       owner.runId,

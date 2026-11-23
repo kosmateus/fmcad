@@ -13,7 +13,7 @@ import traceback
 from typing import Callable, cast
 
 
-def execute(source: str, entrypoint: bool) -> dict[str, object]:
+def execute(request: dict[str, object]) -> dict[str, object]:
     stdout, stderr = io.StringIO(), io.StringIO()
     success = True
     error = ""
@@ -21,13 +21,40 @@ def execute(source: str, entrypoint: bool) -> dict[str, object]:
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
             from adsk.core import Application
-            Application.get().data.advance_model()
-            exec(compile(source, "scenario.py", "exec"), namespace, namespace)
-            if entrypoint:
-                run = namespace.get("run")
-                if not callable(run):
-                    raise ValueError("Missing run entrypoint")
-                cast(Callable[[str], None], run)("")
+            app = Application.get()
+            operation = request.get("operation")
+            if operation is not None:
+                if operation != "doc-list":
+                    raise ValueError("Unsupported simulator operation")
+                results: list[dict[str, object]] = []
+                for document in app.documents:
+                    row: dict[str, object] = {
+                        "creationId": document.creationId,
+                        "name": document.name,
+                        "isActive": document is app.activeDocument,
+                        "isSaved": document.isSaved,
+                        "isModified": document.isModified,
+                    }
+                    try:
+                        data_file = document.dataFile
+                    except Exception as exc:
+                        row["dataFileError"] = str(exc)
+                    else:
+                        if data_file is not None:
+                            row["id"] = data_file.id
+                    results.append(row)
+                stdout.write(json.dumps({"success": True, "results": results}))
+            else:
+                app.data.advance_model()
+                source, entrypoint = request.get("source"), request.get("entrypoint")
+                if not isinstance(source, str) or not isinstance(entrypoint, bool):
+                    raise ValueError("Expected source and entrypoint flag")
+                exec(compile(source, "scenario.py", "exec"), namespace, namespace)
+                if entrypoint:
+                    run = namespace.get("run")
+                    if not callable(run):
+                        raise ValueError("Missing run entrypoint")
+                    cast(Callable[[str], None], run)("")
         except Exception:
             success = False
             error = traceback.format_exc()
@@ -40,10 +67,7 @@ def main() -> None:
         if not isinstance(raw, dict):
             raise ValueError("Expected request object")
         request = cast(dict[str, object], raw)
-        source, entrypoint = request.get("source"), request.get("entrypoint")
-        if not isinstance(source, str) or not isinstance(entrypoint, bool):
-            raise ValueError("Expected source and entrypoint flag")
-        print(json.dumps(execute(source, entrypoint)), flush=True)
+        print(json.dumps(execute(request)), flush=True)
 
 
 if __name__ == "__main__":

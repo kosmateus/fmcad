@@ -9,8 +9,17 @@ import {
   queueExecution,
   scenarioQueueJobId,
 } from "./queue-backend";
+import { cliInspectionArguments } from "./contracts";
 const owner = { clientId: "owner" };
 const job = { clientId: "owner", requestId: "original", state: "succeeded" };
+
+test("typed document inventory selects the public JSON CLI command without a script", () => {
+  assert.deepEqual(cliInspectionArguments("doc-list-json"), [
+    "doc",
+    "list",
+    "--json",
+  ]);
+});
 
 test("public queue exec receipts bind the original owner, request and job", () => {
   const stderr = [

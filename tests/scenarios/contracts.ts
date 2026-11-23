@@ -21,7 +21,7 @@ export interface ScriptRequest {
   readonly owner: Owner;
   readonly requestId: string;
   readonly source: string;
-  readonly inspectCli?: "active" | "doc-list";
+  readonly inspectCli?: "active" | "doc-list" | "doc-list-json";
   readonly command?: {
     readonly operation: string;
     readonly data: Record<string, unknown>;
@@ -32,6 +32,18 @@ export interface ScriptRequest {
   readonly helpers?: "cad-v1";
   readonly target?: Document;
   readonly directory: string;
+}
+export function cliInspectionArguments(
+  command: NonNullable<ScriptRequest["inspectCli"]>,
+): string[] {
+  switch (command) {
+    case "active":
+      return ["active"];
+    case "doc-list":
+      return ["doc", "list"];
+    case "doc-list-json":
+      return ["doc", "list", "--json"];
+  }
 }
 export interface Execution {
   readonly requestId: string;

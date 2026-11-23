@@ -30,6 +30,25 @@ export async function fixture(t: TestContext, protocol: Protocol = "mcp") {
     capabilities: simulatorCapabilities,
     fusionPath: (local) => local,
     async execute(request) {
+      if (request.inspectCli) {
+        if (request.inspectCli !== "doc-list-json")
+          throw new Error("Public CLI inspection requires the broker backend");
+        const result = await model.documentList(),
+          execution: Execution = {
+            requestId: request.requestId,
+            state: result.success ? "succeeded" : "failed",
+            sdkSettled: true,
+            mayHaveMutated: false,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            ...(result.success ? {} : { error: result.error }),
+          };
+        retained.set(
+          request.owner.clientId + "/" + request.requestId,
+          execution,
+        );
+        return execution;
+      }
       if (request.command) {
         const result = await componentCommand(
           root,

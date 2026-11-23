@@ -6,7 +6,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fork } from "node:child_process";
 import type { createBrokerTransport } from "../../packages/node-adapters/src/fusion-transport/broker";
-import type { ScenarioBackend, Document } from "./contracts";
+import type { ScenarioBackend, Document, ScriptRequest } from "./contracts";
 import { simulatorEndpoint } from "./simulator";
 import { runScenarios, resumeCleanup, type Scenario } from "./runner";
 import { queueExecution } from "./queue-backend";
@@ -1155,3 +1155,149 @@ print('created')`),
     assert.equal(result.text.trim(), "1");
   });
 }
+
+test("coordinator inventory uses typed public JSON CLI requests and preserves raw evidence", async (t) => {
+  const { directory, model, backend: baseBackend } = await fixture(t),
+    sentinelName = "Użytkownik\n設計 🚀";
+  const created = await model.execute(
+    programs.program(`import adsk.core
+app = adsk.core.Application.get()
+doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+doc.name = ${JSON.stringify(sentinelName)}`),
+  );
+  assert.equal(created.success, true, created.error);
+  const baseline = await remaining(model),
+    requests: ScriptRequest[] = [],
+    backend: ScenarioBackend = {
+      ...baseBackend,
+      async execute(request) {
+        requests.push(request);
+        return baseBackend.execute(request);
+      },
+    };
+  const reports = await runScenarios(
+    backend,
+    [
+      {
+        id: "coordinator-inventory",
+        requires: ["documents"],
+        async run() {},
+      },
+    ],
+    directory,
+    1,
+  );
+  assert.deepEqual(
+    reports.map(({ status, cleanup }) => ({ status, cleanup })),
+    [{ status: "passed", cleanup: "complete" }],
+  );
+  const inventoryRequests = requests.filter(
+    (request) =>
+      request.requestId.endsWith(":before") ||
+      request.requestId.endsWith(":after"),
+  );
+  assert.equal(inventoryRequests.length, 2);
+  for (const [index, phase] of ["before", "after"].entries()) {
+    const request = inventoryRequests[index]!;
+    assert.equal(request.requestId, `${request.owner.clientId}:${phase}`);
+    assert.equal(request.owner.scenarioId, "coordinator");
+    assert.equal(request.inspectCli, "doc-list-json");
+    assert.equal(request.source, "");
+    assert.equal(request.target, undefined);
+  }
+
+  const coordinator = path.join(
+      path.dirname(reports[0]!.directory),
+      "_coordinator",
+    ),
+    index = JSON.parse(
+      fs.readFileSync(
+        path.join(path.dirname(reports[0]!.directory), "index.json"),
+        "utf8",
+      ),
+    ) as { before: unknown },
+    beforeIntent = JSON.parse(
+      fs.readFileSync(path.join(coordinator, "before.intent.json"), "utf8"),
+    ) as Record<string, unknown>,
+    afterIntent = JSON.parse(
+      fs.readFileSync(path.join(coordinator, "after.intent.json"), "utf8"),
+    ) as Record<string, unknown>,
+    beforeResult = JSON.parse(
+      fs.readFileSync(path.join(coordinator, "before.result.json"), "utf8"),
+    ) as { requestId: string; stdout: string },
+    afterResult = JSON.parse(
+      fs.readFileSync(path.join(coordinator, "after.result.json"), "utf8"),
+    ) as { requestId: string; stdout: string };
+  assert.deepEqual(index.before, baseline);
+  assert.deepEqual(beforeIntent["owner"], inventoryRequests[0]!.owner);
+  assert.deepEqual(beforeIntent["source"], {
+    kind: "public-cli",
+    argv: ["doc", "list", "--json"],
+  });
+  assert.deepEqual(beforeIntent["runtime"], {
+    identity: backend.identity,
+    mode: backend.mode,
+    qualification: backend.qualification,
+    protocol: backend.protocol,
+  });
+  assert.deepEqual(afterIntent["owner"], inventoryRequests[1]!.owner);
+  assert.deepEqual(afterIntent["source"], beforeIntent["source"]);
+  assert.deepEqual(afterIntent["runtime"], beforeIntent["runtime"]);
+  assert.equal(beforeResult.requestId, inventoryRequests[0]!.requestId);
+  assert.equal(afterResult.requestId, inventoryRequests[1]!.requestId);
+  assert.doesNotMatch(beforeResult.stdout, /FMCAD_SCENARIO/u);
+  const beforeJson = JSON.parse(beforeResult.stdout) as {
+    success: boolean;
+    results: {
+      creationId: string;
+      name: string;
+      id?: string;
+      isActive: boolean;
+      isSaved: boolean;
+      isModified: boolean;
+    }[];
+  };
+  const baselineDocuments = (
+    baseline as {
+      documents: {
+        creationId: string;
+        name: string;
+        fileId: string | null;
+        saved: boolean;
+        modified: boolean;
+      }[];
+    }
+  ).documents;
+  assert.equal(beforeJson.success, true);
+  assert.deepEqual(
+    beforeJson.results.map((document) => ({
+      creationId: document.creationId,
+      name: document.name,
+      id: document.id ?? null,
+      isActive: document.isActive,
+      isSaved: document.isSaved,
+      isModified: document.isModified,
+    })),
+    baselineDocuments.map((document, documentIndex) => ({
+      creationId: document.creationId,
+      name: document.name,
+      id: document.fileId,
+      isActive: documentIndex === 0,
+      isSaved: document.saved,
+      isModified: document.modified,
+    })),
+  );
+  assert.equal(beforeJson.results[0]?.name, sentinelName);
+  assert.deepEqual(
+    JSON.parse(afterResult.stdout),
+    JSON.parse(beforeResult.stdout),
+  );
+  assert.equal(
+    fs.existsSync(path.join(coordinator, "request-before.py")),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(path.join(coordinator, "request-after.py")),
+    false,
+  );
+});
