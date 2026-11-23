@@ -309,6 +309,7 @@ test("runtime root keeps other layers read-only and fences every submission entr
     "submit",
     "submitDocumentInspection",
     "submitDocumentContinuation",
+    "submitDocumentMetadataRead",
     "refuseDocumentContinuation",
   ])
     assert.throws(() => state[method](request, {}), {

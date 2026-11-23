@@ -99,7 +99,8 @@
     "src/document-unlock-controller.ts",
     "src/document-checkpoint-broker.ts",
     "src/document-checkpoint-receipt.ts",
-    "src/document-continuation-broker.ts"
+    "src/document-continuation-broker.ts",
+    "src/document-metadata-read-broker.ts"
   ],
   "references": [
     {

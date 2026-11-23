@@ -10,7 +10,10 @@ import type { QueueClient } from "../src/queue-client";
 
 const runtime = process.env["FMCAD_TEST_RUNTIME"] || path.resolve(__dirname, "../..");
 const load = createRequire(path.join(runtime, "dist/src/queue-broker.js"));
-const fixtures = createRequire(path.join(runtime, "tests/fixture-loader.cjs"));
+const fixtures = createRequire(path.join(
+  process.env["FMCAD_TEST_FIXTURE_ROOT"] || path.join(runtime, "tests"),
+  "fixture-loader.cjs",
+));
 const { nativeReceipts } = fixtures("./fixtures/native-source-envelope.cjs") as {
   nativeReceipts(source: string, root: string, instance: unknown): { file: string; value: Record<string, unknown> }[];
 };
@@ -123,9 +126,10 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   const { createBrokerTransport } = load("./dist/fusion-transport/broker") as {
     createBrokerTransport(config: unknown, dependencies: unknown): P.Client;
   };
+  const { addinBridgeSource } = load("./addin-bridge") as typeof import("../src/composition/library-addin-bridge");
   const physical = createBrokerTransport(cfg, {
     version: "test", requestTimeout: (server: { timeoutMs: number }) => server.timeoutMs,
-    bridgeSource: () => { throw Error("No bridge in checkpoint fixture"); },
+    bridgeSource: addinBridgeSource,
   });
   physical._post = async (payload) => {
     if (payload.method === "initialize")
@@ -156,10 +160,29 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
       products++;
       productJobs.push((JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as { active: string }).active);
       const snapshot = JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")) as {
-        active: string; jobs: Record<string, { documentContinuation?: { sourceHash: string } }>;
+        active: string; jobs: Record<string, {
+          documentContinuation?: { sourceHash: string };
+          documentMetadataRead?: { programHash: string; rpcHash: string };
+        }>;
       };
       const continuation = snapshot.jobs[snapshot.active]?.documentContinuation;
-      if (continuation) {
+      const metadata = snapshot.jobs[snapshot.active]?.documentMetadataRead;
+      if (metadata) {
+        const folder = path.join(dir, "jobs", snapshot.active);
+        const rpc = fs.readdirSync(folder).filter((name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json")
+          .map((name) => record(JSON.parse(fs.readFileSync(path.join(folder, name), "utf8"))))
+          .find((value) => `fmcad:${record(value["binding"])["rpcId"]}` === payload.id);
+        assert.ok(rpc, "metadata read must have an original durable RPC record");
+        const binding = record(rpc["binding"]), scope = record(binding["documentScope"]);
+        assert.equal(scope["producer"], "compiled-document-metadata-v1");
+        assert.equal(scope["programHash"], metadata.programHash);
+        assert.equal(scope["rpcHash"], metadata.rpcHash);
+        assert.equal(binding["sourceHash"], metadata.programHash);
+        stdout = JSON.stringify({ success: true, results: [{
+          name: "Owned A", id: "file-A", creationId: "doc-A",
+          isActive: true, isModified: false, isSaved: true,
+        }] });
+      } else if (continuation) {
         const compiler = load("./dist/composition/cad") as typeof import("../src/composition/cad");
         const guarded = compiler.prepareCadScript("param.apply",
           { parameters: [{ expression: "20 mm", name: "length" }] },
@@ -426,6 +449,32 @@ test("actual public IPC routes a fresh accepted continuation through the normal 
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false, "the original UNKNOWN is never replayed");
+  });
+
+test("public doc list uses one compiler-bound metadata RPC without accepting or replaying historical work",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("metadata-reader");
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const original = Object.values(record(before["jobs"])).map(record)
+      .find((job) => job["requestId"] === "private-foreign-request");
+    assert.ok(original);
+    const { prepareRequest } = load("./dist/composition/execution-request") as
+      typeof import("../src/composition/execution-request");
+    const request = {
+      kind: "command" as const, clientId: "metadata-reader", requestId: "metadata-public-list",
+      argv: ["doc", "list"], cwd: f.dir, timeoutMs: 45000,
+    };
+    const prepared = prepareRequest({ request });
+    const admitted = await client.submit({ ...request, payload: prepared.payload });
+    assert.ok(["preparing", "queued", "processing"].includes(admitted.state), JSON.stringify(admitted));
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    assert.match(completed.stdout, /DOC name=Owned A id=file-A creationId=doc-A/);
+    assert.equal(f.counts().products, 1);
+    assert.equal(f.writes(), 0);
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+    assert.equal(f.productJobs().includes(String(original["id"])), false);
   });
 
 for (const fault of ["generation", "preparation"] as const) {

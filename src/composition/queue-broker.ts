@@ -1964,6 +1964,37 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       checkpointActor.run(actor, () => checkpointEvidence.verify(observation)),
   });
   const continuationJobs = new Set<string>();
+  const metadataCompiler = runtimeRequire("./document-metadata-read-broker") as
+    typeof import("../document-metadata-read-broker");
+  const metadataPrograms = new Map<
+    string, import("../document-metadata-read-broker").CompiledDocumentMetadataRead
+  >();
+  function metadataProgram(job: P.Job) {
+    const program = metadataPrograms.get(job.id);
+    if (!program || !job.documentMetadataRead)
+      fail("DOCUMENT_METADATA_READ_UNPROVEN", "The original private metadata compiler plan is required");
+    program.reverify(job.request as unknown as import("@fmcad/core").QueueRequest);
+    return program;
+  }
+  async function prepareMetadataRead(request: P.Request, clientTokenHash: string) {
+    const recheck = () => {
+      assertCheckpointOwner();
+      if (clientHashes()[request.clientId] !== clientTokenHash)
+        fail("NOT_AUTHORIZED", "The metadata principal is no longer registered");
+      if (buildHash() !== codeHash)
+        fail("BUILD_CHANGED", "Metadata compiler runtime changed");
+      if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
+    };
+    return metadataCompiler.compileDocumentMetadataRead(
+      request as unknown as import("../document-metadata-read-broker").DocumentMetadataReadRequest,
+      {
+        recheck,
+        currentPins: () => ({
+          buildHash: codeHash, configHash, generation: currentCheckpointGeneration(),
+        }),
+      },
+    );
+  }
   function acceptedContinuationTarget(request: P.Request) {
     if (request.kind !== "command") return null;
     if (request.payload?.["kind"] === "legacy-command") {
@@ -2548,6 +2579,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertPhysicalIsolationAuthority();
       const job = required(state.data.jobs[message.jobId]);
       const turn = brokerExecution.createTurnIdentity(job.id);
+      const metadata = job.documentMetadataRead ? metadataProgram(job) : undefined;
+      if (metadata) {
+        if (message.method !== "callTool" || message.args.length !== 2)
+          fail("DOCUMENT_METADATA_READ_UNPROVEN", "Metadata worker may issue only its one exact logical RPC");
+        metadata.assertRpc(job.request as unknown as import("@fmcad/core").QueueRequest, {
+          method: message.method, tool: message.args[1], arguments: message.args[0],
+        });
+      }
       const guarded = job.documentContinuation
         ? await continuation.prepareWorker(
             job as unknown as import("@fmcad/core").QueueJob,
@@ -2573,7 +2612,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const adapterArgs = compiled
         ? [envelope,"fusion_mcp_execute",compiled.manifest]
         : message.args;
-      const compiledScope = compiled ? {
+      const compiledScope = metadata ? {
+        producer: "compiled-document-metadata-v1", operation: "document.list",
+        requestHash: metadata.descriptor.requestHash,
+        rpcHash: metadata.descriptor.rpcHash, programHash: metadata.descriptor.programHash,
+        generation: metadata.descriptor.generation, buildHash: codeHash,
+      } : compiled ? {
         producer:"compiled-cad-v1", operation:compiled.operation,sourceHash:hash(compiled.script),
         buildHash:codeHash,target:compiled.target,
       } : undefined;
@@ -2805,6 +2849,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ) {
     if (!physicalIsolation) return;
     const job = grant.context.job;
+    assertMetadataPrepared(job, prepared);
     const constrainedTarget = quarantineTarget(job.request);
     if (constrainedTarget && !prepared.metadataProof) {
       const compiled = job.documentContinuation
@@ -2837,6 +2882,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Product SDK dispatch has no original physical binding",
       );
     const physical = pinPhysicalTurn(binding, request, instance);
+    if (job.documentMetadataRead &&
+        checkpointGeneration(physical) !== job.documentMetadataRead.generation)
+      fail("DOCUMENT_STATE_CHANGED", "Metadata physical turn differs from its compiler-bound generation");
     if (job.documentContinuation &&
         checkpointGeneration(physical) !== job.documentContinuation.generation)
       fail("DOCUMENT_STATE_CHANGED",
@@ -2850,6 +2898,27 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     prepared.record["physicalCatalogIndex"] = catalogIndex;
     prepared.record.binding["physicalTurn"] = physical;
     return {request,physical,catalogIndex};
+  }
+  function assertMetadataPrepared(job: P.Job, prepared: P.PreparedCall, committedRpcId?: string) {
+    const marker = job.documentMetadataRead;
+    if (!marker) return;
+    const scope = object(prepared.record.binding["documentScope"]);
+    if (prepared.metadataProof || !("pythonCertificate" in prepared) ||
+        scope["producer"] !== "compiled-document-metadata-v1" ||
+        scope["operation"] !== "document.list" ||
+        scope["requestHash"] !== job.hash ||
+        scope["rpcHash"] !== marker.rpcHash ||
+        scope["programHash"] !== marker.programHash ||
+        scope["generation"] !== marker.generation ||
+        scope["buildHash"] !== codeHash ||
+        prepared.record.binding.sourceHash !== marker.programHash ||
+        scope["wireSourceHash"] !== prepared.record.binding.sourceHash ||
+        currentCheckpointGeneration() !== marker.generation)
+      fail("DOCUMENT_METADATA_READ_UNPROVEN", "Actual metadata program lacks its private compiler and current runtime binding");
+    // sourceHash/wireSourceHash are existing pre-receipt binding fields.
+    // The complete wrapped wire is independently covered by this certificate.
+    prepared.pythonCertificate.fence(prepared.outgoing);
+    state.assertDocumentMetadataRead(job.id, marker.programHash, marker.rpcHash, committedRpcId);
   }
   function registerPhysicalDispatch(
     job: P.Job,
@@ -3691,6 +3760,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           record.receipt = path.join(jobDir(job.id), `remote-${rpcId}.json`);
           binding.sourceHash = hash(source);
           const local = preparingJob.getStore();
+          const metadataJob = state.data.jobs[job.id];
+          if (metadataJob?.documentMetadataRead) {
+            metadataProgram(metadataJob).assertProgram(
+              metadataJob.request as unknown as import("@fmcad/core").QueueRequest, source,
+            );
+            const scope = local && local.job.id === job.id ? local.compiledScope : undefined;
+            if (!scope || scope["producer"] !== "compiled-document-metadata-v1" ||
+                scope["requestHash"] !== metadataJob.hash ||
+                scope["programHash"] !== hash(source) ||
+                scope["rpcHash"] !== metadataJob.documentMetadataRead.rpcHash)
+              fail("DOCUMENT_METADATA_READ_UNPROVEN", "Actual ADDIN program differs from the compiled metadata read");
+            state.assertDocumentMetadataRead(job.id, hash(source), metadataJob.documentMetadataRead.rpcHash);
+          }
           if (local && local.job.id === job.id && local.compiledScope)
             binding["documentScope"] = {
               ...local.compiledScope,wireSourceHash:binding.sourceHash,
@@ -4133,6 +4215,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       send: async (prepared) => {
         assertPhysicalIsolationAuthority();
+        assertMetadataPrepared(context.job, prepared, prepared.rpcId);
         const startedAt = Date.now();
         debugDispatchStarted.set(prepared, startedAt);
         writeRequestTrace(context.job.request, context.job.clientId, {
@@ -6383,6 +6466,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED"].includes(errorInfo(error).code ?? "");
           let preparedContinuation:
             import("../document-continuation-broker").PreparedDocumentContinuationSubmission | undefined;
+          let preparedMetadata:
+            import("../document-metadata-read-broker").CompiledDocumentMetadataRead | null = null;
           if (target) {
             try {
               // The normal worker reads the canonically persisted request.
@@ -6399,6 +6484,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             }
             verifyAcceptance();
           }
+          if (!existing && !target) {
+            preparedMetadata = await prepareMetadataRead(
+              request, required(clientHashes()[clientId]),
+            );
+            verifyAcceptance();
+          }
           const accept = () => {
             verifyAcceptance();
             if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
@@ -6411,12 +6502,32 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               job = (refuseContinuation
                 ? state.refuseDocumentContinuation(request, preparedId)
                 : preparedContinuation
-                  ? preparedContinuation.submit() : state.submit(request, preparedId)) as P.PublicJob;
+                  ? preparedContinuation.submit()
+                  : preparedMetadata
+                    ? state.submitDocumentMetadataRead(request,
+                        state.createDocumentMetadataReadAuthority(() => {
+                          preparedMetadata!.reverify(
+                            request as unknown as import("@fmcad/core").QueueRequest,
+                          );
+                          const proof = preparedMetadata!.descriptor;
+                          return {
+                            version: 1, requestHash: proof.requestHash, generation: proof.generation,
+                            rpcHash: proof.rpcHash, programHash: proof.programHash,
+                          };
+                        }))
+                    : state.submit(request, preparedId)) as P.PublicJob;
             } catch (error) {
+              if (preparedMetadata && errorInfo(error).code === "DOCUMENT_METADATA_READ_UNPROVEN")
+                job = state.refuseDocumentContinuation(request, preparedId) as P.PublicJob;
+              else {
               if (!preparedContinuation || !staleContinuation(error)) throw error;
               job = state.refuseDocumentContinuation(request, preparedId) as P.PublicJob;
+              }
             }
             const admitted = state.data.jobs[job.id];
+            if (preparedMetadata && admitted?.documentMetadataRead &&
+                state.hasDocumentMetadataRead(job.id) && !metadataPrograms.has(job.id))
+              metadataPrograms.set(job.id, preparedMetadata);
             if (admitted?.documentContinuation) continuationJobs.add(job.id);
             writeRequestTrace(admitted?.request ?? request, clientId, {
               stage: "request-accepted",
@@ -8040,6 +8151,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             continuation.forget(id);
             continuationJobs.delete(id);
           }
+        }
+        for (const id of metadataPrograms.keys()) {
+          const job = state.data.jobs[id];
+          if (!job || ["succeeded", "failed", "cancelled", "expired", "needs_reconciliation"].includes(job.state))
+            metadataPrograms.delete(id);
         }
         // Only outstanding prepared plans, never retained terminal history.
         for (const id of localPlans.keys()) {
