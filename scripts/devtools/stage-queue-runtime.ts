@@ -13,6 +13,7 @@ export const queueRuntimeModules = [
   "broker-source-compiler",
   "broker-source-compiler-worker",
   "document-metadata-read-broker",
+  "document-creation-broker",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",
   "queue-audit-facts-capture",

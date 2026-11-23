@@ -15,7 +15,9 @@ import { initialQueueSnapshot } from "./queue-model";
 import { validQuarantine,
   validPhysicalDispatch, quarantineTarget,
 } from "./queue-quarantine";
-import { documentConflicts, documentConflictAllowsInspection } from "./document-conflicts";
+import { documentConflicts, documentConflictAllowsInspection, documentConflictFence } from "./document-conflicts";
+import { createDocumentCreationAuthority, verifiedDocumentCreation, validDocumentCreation,
+  type DocumentCreation, type DocumentCreationAuthority } from "./document-creation";
 import { runtimeRetiredJob, projectRuntimeRetirement, verifiedRuntimeRetirement, type RuntimeRetirementAuthority } from "./runtime-retirement";
 import {
   validDocumentContinuation, verifiedDocumentContinuation,
@@ -56,6 +58,8 @@ type MetadataReadBinding = {
   originalRpcId?: string;
 };
 const metadataReads = new WeakMap<QueueDomain, Map<string, MetadataReadBinding>>();
+type CreationBinding = { marker: DocumentCreation; authority: DocumentCreationAuthority; originalRpcId?: string };
+const creations = new WeakMap<QueueDomain, Map<string, CreationBinding>>();
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
@@ -425,8 +429,12 @@ export class QueueDomain {
       if (job.documentMetadataRead !== undefined &&
           (!validDocumentMetadataRead(job.documentMetadataRead) ||
            job.documentMetadataRead.requestHash !== job.hash ||
-           job.documentInspection || job.documentContinuation))
+            job.documentInspection || job.documentContinuation || job.documentCreation))
         fail("CORRUPT_STATE", "Invalid broker-authored metadata read marker");
+      if (job.documentCreation !== undefined &&
+          (!validDocumentCreation(job.documentCreation) || job.documentCreation.requestHash !== job.hash ||
+           job.documentInspection || job.documentContinuation || job.documentMetadataRead))
+        fail("CORRUPT_STATE", "Invalid broker-authored creation marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id) &&
@@ -603,7 +611,11 @@ export class QueueDomain {
       if (reads)
         for (const id of reads.keys())
           if (!draft.jobs[id] || terminal(draft.jobs[id].state))
-            reads.delete(id);
+             reads.delete(id);
+      const creationCapabilities = creations.get(this);
+      if (creationCapabilities)
+        for (const id of creationCapabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state)) creationCapabilities.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -771,7 +783,7 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
-      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job)) {
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job)) {
         this._refuseDocumentConflict(d, job, time);
         job.code = "CHECKPOINT_CHANGED";
         continue;
@@ -846,6 +858,58 @@ export class QueueDomain {
   createDocumentMetadataReadAuthority(verify: () => DocumentMetadataRead) {
     return createDocumentMetadataReadAuthority(this, verify);
   }
+  createDocumentCreationAuthority(verify: () => DocumentCreation) {
+    return createDocumentCreationAuthority(this, verify);
+  }
+  submitDocumentCreation(request: unknown, authority: DocumentCreationAuthority) {
+    const binding = { marker: verifiedDocumentCreation(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, undefined, undefined, undefined, false, undefined, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) && ["queued", "preparing", "processing"].includes(job.state)) {
+      let entries = creations.get(this);
+      if (!entries) creations.set(this, entries = new Map());
+      entries.set(job.id, binding);
+    }
+    return result;
+  }
+  _creationAllowed(d: QueueSnapshot, job: QueueJob, binding?: CreationBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+      const current = verifiedDocumentCreation(binding.authority, this);
+      const identity = { ...job.request };
+      delete identity.description;
+      // A known retired executor cannot touch the newly allocated document.
+      // A current per-turn quarantine (even a target-scoped one) is not retired.
+      return canonical(current) === canonical(binding.marker) &&
+        canonical(job.documentCreation) === canonical(binding.marker) &&
+        current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+        documentConflicts(d, null, retirements.get(this), canonical)
+          .every((conflict) => documentConflictFence(conflict) === "runtime_retired");
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["DOCUMENT_CREATION_UNPROVEN", "NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED",
+            "DOCUMENT_UNLOCK_NOT_AUTHENTICATED", "DOCUMENT_UNLOCK_STALE"].includes(code)) return false;
+      throw error; // Real storage, owner and runtime-root faults stay faults.
+    }
+  }
+  assertDocumentCreation(id: string, programHash: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id);
+    const binding = creations.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const intent = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId && binding?.originalRpcId === committedRpcId && !!committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._creationAllowed(this.data, job, binding) ||
+        binding.marker.programHash !== programHash || binding.marker.rpcHash !== rpcHash || !intent)
+      fail("DOCUMENT_CREATION_UNPROVEN", "Creation must match its one original compiler-bound RPC");
+    return copy(binding.marker);
+  }
+  hasDocumentCreation(id: string) { return creations.get(this)?.has(id) ?? false; }
   submitDocumentMetadataRead(request: unknown, authority: DocumentMetadataReadAuthority) {
     const binding = { marker: verifiedDocumentMetadataRead(authority, this), authority };
     const existingIds = new Set(Object.keys(this.data.jobs));
@@ -910,6 +974,7 @@ export class QueueDomain {
     return this._submit(request, preparedId, undefined, undefined, true);
   }
   _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
+    if (job.documentCreation) return this._creationAllowed(d, job, creations.get(this)?.get(job.id));
     const metadata = metadataReads.get(this)?.get(job.id);
     if (job.documentMetadataRead) return this._metadataReadAllowed(d, job, metadata);
     if (job.documentInspection)
@@ -984,7 +1049,7 @@ export class QueueDomain {
   // Internal server entrypoint; inspection markers are not decoded from RPC.
   _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
     continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority },
-    refusedContinuation = false, metadata?: MetadataReadBinding) {
+    refusedContinuation = false, metadata?: MetadataReadBinding, creation?: CreationBinding) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -1104,6 +1169,7 @@ export class QueueDomain {
         ...(inspection ? { documentInspection: inspection } : {}),
         ...(continuation ? { documentContinuation: copy(continuation.marker) } : {}),
         ...(metadata ? { documentMetadataRead: copy(metadata.marker) } : {}),
+        ...(creation ? { documentCreation: copy(creation.marker) } : {}),
       };
       if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash, retirements.get(this)))
         fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
@@ -1112,8 +1178,10 @@ export class QueueDomain {
         fail("DOCUMENT_CONTINUATION_UNPROVEN", "Continuation requires the current accepted state and exact private guard");
       if (metadata && !this._metadataReadAllowed(d, inspectionCandidate, metadata))
         fail("DOCUMENT_METADATA_READ_UNPROVEN", "A current private compiler-bound metadata read is required");
+      if (creation && !this._creationAllowed(d, inspectionCandidate, creation))
+        fail("DOCUMENT_CREATION_UNPROVEN", "Unfenced work cannot permit new document creation");
       if (refusedContinuation ||
-          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata)) {
+          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata && !creation)) {
         const refused: QueueJob = {
           id: preparedId ?? this.newId(), requestId: r.requestId,
           clientId: r.clientId, kind: r.kind, request: r, hash,
@@ -1197,6 +1265,7 @@ export class QueueDomain {
       };
       if (inspection) job.documentInspection = inspection;
       if (metadata) job.documentMetadataRead = copy(metadata.marker);
+      if (creation) job.documentCreation = copy(creation.marker);
       if (continuation) job.documentContinuation = copy(continuation.marker);
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
@@ -1301,7 +1370,7 @@ export class QueueDomain {
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
         (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
-          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job)),
+          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -1321,7 +1390,7 @@ export class QueueDomain {
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
-        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job)) ||
+        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -1573,6 +1642,7 @@ export class QueueDomain {
     if (!record || Array.isArray(record) || typeof record !== "object")
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
     const metadata = metadataReads.get(this)?.get(id);
+    const creation = creations.get(this)?.get(id);
     let originalRpcId: string | undefined;
     const result = this._commit((d) => {
       const job = this._active(d, id);
@@ -1585,6 +1655,17 @@ export class QueueDomain {
       };
       const rpcCount = record.rpcCount ?? old.rpcCount + 1;
       const completedCount = record.completedCount ?? old.completedCount;
+      if (job.documentCreation) {
+        const rpcId = record["rpcId"];
+        if (!creation || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
+          fail("DOCUMENT_CREATION_UNPROVEN", "One original creation RPC intent is required");
+        if (old.rpcCount === 0 && creation.originalRpcId === undefined && completedCount === 0 &&
+            (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 && creation.originalRpcId === rpcId &&
+            job.dispatch?.details?.["rpcId"] === rpcId && completedCount === 1 && record.rpcState === "terminal" && !physical))
+          fail("DOCUMENT_CREATION_UNPROVEN", "The creation RPC cannot be replaced or repeated");
+      }
       if (job.documentMetadataRead) {
         const rpcId = record["rpcId"];
         if (!metadata || typeof rpcId !== "string" || !identifier(rpcId) ||
@@ -1623,6 +1704,7 @@ export class QueueDomain {
     });
     // Never publish authority for a transaction whose durable commit failed.
     if (metadata && originalRpcId) metadata.originalRpcId = originalRpcId;
+    if (creation && originalRpcId) creation.originalRpcId = originalRpcId;
     return result;
   }
 
@@ -1672,7 +1754,7 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
-      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead) && !this._documentJobAllowed(d, job))
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job))
         fail("DOCUMENT_UNLOCK_REQUIRED", "Document fence changed before the system-read boundary");
       this._appendPhysicalDispatch(job, entry);
       return this._public(job);

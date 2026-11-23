@@ -13,6 +13,7 @@ export * from "./ports";
 export * from "./catalog";
 export * from "./domain/queue-model";
 export * from "./domain/document-checkpoint";
+export type { DocumentCreation, DocumentCreationAuthority } from "./domain/document-creation";
 export type {
   DocumentContinuation,
   DocumentContinuationAuthority,

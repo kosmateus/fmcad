@@ -49,6 +49,10 @@ export interface BrokerRpcPreparationPorts {
       rpcHash: string,
     ): void;
   };
+  readonly creation?: {
+    program(job: Readonly<P.Job>): Pick<CompiledDocumentMetadataRead, "assertProgram">;
+    assertDocumentCreation(jobId: string, programHash: string, rpcHash: string): void;
+  };
   readonly prepareBrokerScript: typeof prepareBrokerScript;
   readonly prepareReceiptScript: ReceiptPreparation;
   retainPythonOrigin(
@@ -137,6 +141,18 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
             binding.sourceHash = hash(source);
             const local = ports.localPreparation();
             const metadataJob = ports.metadata.job(job.id);
+            if (metadataJob?.documentCreation) {
+              if (!ports.creation) fail("DOCUMENT_CREATION_UNPROVEN", "Creation verifier is missing");
+              ports.creation.program(metadataJob).assertProgram(
+                metadataJob.request as unknown as import("@fmcad/core").QueueRequest, source,
+              );
+              const scope = local && local.job.id === job.id ? local.compiledScope : undefined;
+              if (!scope || scope["producer"] !== "compiled-document-creation-v1" ||
+                  scope["requestHash"] !== metadataJob.hash || scope["programHash"] !== metadataJob.documentCreation.programHash ||
+                  scope["rpcHash"] !== metadataJob.documentCreation.rpcHash)
+                fail("DOCUMENT_CREATION_UNPROVEN", "Actual ADDIN program differs from the fixed creation service");
+              ports.creation.assertDocumentCreation(job.id, metadataJob.documentCreation.programHash, metadataJob.documentCreation.rpcHash);
+            }
             if (metadataJob?.documentMetadataRead) {
               ports.metadata
                 .program(metadataJob)

@@ -611,6 +611,83 @@ function metadataFixture() {
   const capability = domain.createDocumentMetadataReadAuthority(() => marker);
   return { f, domain, request, marker, capability };
 }
+function creationFixture() {
+  const { f, domain } = metadataFixture();
+  const request = {
+    kind: "command", requestId: "new-unsaved-document", clientId: "creation-owner",
+    argv: ["doc", "new", "--name", "New independent resource"], cwd: "/owned-fixture", timeoutMs: 1000,
+  };
+  const marker = { version: 1, requestHash: hash(core.canonical(request)),
+    generation: "current-generation", programHash: "a".repeat(64), rpcHash: "b".repeat(64) };
+  const capability = domain.createDocumentCreationAuthority(() => marker);
+  return { f, domain, request, marker, capability };
+}
+test("new document capability permits one original RPC without settling runtime-retired UNKNOWN", () => {
+  const { f, domain, request, marker, capability } = creationFixture();
+  const before = structuredClone(domain.data.jobs[f.old.id]);
+  const exposure = structuredClone(domain.data.runtimeRetiredExposures);
+  const job = domain.submitDocumentCreation(request, capability);
+  assert.equal(job.state, "queued");
+  assert.equal(domain.next().id, job.id);
+  domain.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash);
+  for (const [program, rpc] of [["c".repeat(64), marker.rpcHash], [marker.programHash, "c".repeat(64)]])
+    assert.throws(() => domain.assertDocumentCreation(job.id, program, rpc), { code: "DOCUMENT_CREATION_UNPROVEN" });
+  domain.markDispatch(job.id, { rpcCount: 1, completedCount: 0, rpcId: "original-creation" });
+  domain.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash, "original-creation");
+  assert.throws(() => domain.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash), { code: "DOCUMENT_CREATION_UNPROVEN" });
+  assert.throws(() => domain.markDispatch(job.id, { rpcCount: 1, completedCount: 0, rpcId: "replacement" }),
+    { code: "DOCUMENT_CREATION_UNPROVEN" });
+  assert.throws(() => domain.markDispatch(job.id, { rpcCount: 2, completedCount: 1, rpcId: "extra" }),
+    { code: "DOCUMENT_CREATION_UNPROVEN" });
+  assert.deepEqual(domain.data.jobs[f.old.id], before);
+  assert.deepEqual(domain.data.runtimeRetiredExposures, exposure);
+});
+test("a creation marker, foreign capability, or duplicate old refusal cannot mint authority", () => {
+  const { domain, request, marker, capability } = creationFixture();
+  for (const authority of [{}, JSON.parse(JSON.stringify(capability)),
+    new core.QueueDomain({ hash, now: () => 200, newId: () => "foreign" }).createDocumentCreationAuthority(() => marker)])
+    assert.throws(() => domain.submitDocumentCreation(request, authority), { code: "DOCUMENT_CREATION_UNPROVEN" });
+  const refused = domain.submit(request);
+  assert.equal(refused.state, "failed");
+  assert.equal(domain.submitDocumentCreation(request, capability).id, refused.id);
+  assert.equal(domain.hasDocumentCreation(refused.id), false);
+  assert.equal(domain.data.jobs[refused.id].documentCreation, undefined);
+});
+test("fresh raw UNKNOWN blocks creation even when historical UNKNOWN is authentically retired", () => {
+  const { domain, request, marker } = creationFixture();
+  const raw = domain.submitDocumentMetadataRead({ ...request, requestId: "new-current-turn" },
+    domain.createDocumentMetadataReadAuthority(() => ({ ...marker,
+      requestHash: hash(core.canonical({ ...request, requestId: "new-current-turn" })) })));
+  domain.next();
+  domain.markDispatch(raw.id, { rpcCount: 1, completedCount: 0, rpcId: "new-uncertain" });
+  domain.block(raw.id, "new unresolved SDK outcome");
+  assert.throws(() => domain.submitDocumentCreation(request, domain.createDocumentCreationAuthority(() => marker)),
+    { code: "DOCUMENT_CREATION_UNPROVEN" });
+});
+test("restored serialized creation markers never recover private creation authority", () => {
+  const { domain, request, marker, capability, f } = creationFixture();
+  const job = domain.submitDocumentCreation(request, capability);
+  const restored = new core.QueueDomain({ snapshot: structuredClone(domain.data), runtimeRetirement: f.authority, hash,
+    now: () => 200, newId: () => "restored" });
+  assert.equal(restored.hasDocumentCreation(job.id), false);
+  assert.throws(() => restored.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash), { code: "DOCUMENT_CREATION_UNPROVEN" });
+});
+test("creation proof changes deny scheduling while real owner/root faults remain faults", () => {
+  for (const fault of ["request", "marker", "verifier", "root"]) {
+    const { domain, request, marker, capability, f } = creationFixture();
+    const job = domain.submitDocumentCreation(request, capability);
+    if (fault === "request") domain.data.jobs[job.id].request.cwd = "/changed";
+    if (fault === "marker") domain.data.jobs[job.id].documentCreation.rpcHash = "f".repeat(64);
+    if (fault === "verifier") marker.rpcHash = "e".repeat(64);
+    if (fault === "root") {
+      f.coverage.marker.recordDigest = "f".repeat(64);
+      assert.throws(() => domain.next(), { code: "RUNTIME_RETIREMENT_CHANGED" });
+    } else {
+      assert.equal(domain.next(), null);
+      assert.equal(domain.data.jobs[job.id].state, "failed");
+    }
+  }
+});
 test("private metadata admission preserves UNKNOWN and requires the exact one RPC", () => {
   const { f, domain, request, marker, capability } = metadataFixture();
   const read = domain.submitDocumentMetadataRead(request, capability);

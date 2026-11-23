@@ -112,6 +112,7 @@ export interface BrokerTurnServices {
     | "markDispatch"
     | "recordPhysicalDispatch"
     | "assertDocumentMetadataRead"
+    | "assertDocumentCreation"
   > & { status(id: string): P.PublicJob };
   lane: Pick<
     ReturnType<typeof createBrokerLane>,
@@ -489,10 +490,26 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       committedRpcId,
     );
   }
+  function assertCreationPrepared(job: P.Job, prepared: P.PreparedCall, committedRpcId?: string) {
+    const marker = job.documentCreation;
+    if (!marker) return;
+    const scope = object(prepared.record.binding["documentScope"]);
+    if (prepared.metadataProof || !prepared.pythonCertificate ||
+        scope["producer"] !== "compiled-document-creation-v1" || scope["operation"] !== "document.new" ||
+        scope["requestHash"] !== job.hash || scope["rpcHash"] !== marker.rpcHash ||
+        scope["programHash"] !== marker.programHash || scope["generation"] !== marker.generation ||
+        scope["buildHash"] !== config.buildHash ||
+        scope["wireSourceHash"] !== prepared.record.binding.sourceHash ||
+        documents.currentCheckpointGeneration() !== marker.generation)
+      fail("DOCUMENT_CREATION_UNPROVEN", "Creation lacks the original compiler and current runtime binding");
+    prepared.pythonCertificate.fence(prepared.outgoing);
+    queue.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash, committedRpcId);
+  }
   function bindPhysical(context: Context, prepared: P.PreparedCall) {
     if (!transport.physicalIsolation) return undefined;
     const { job, grant } = context;
     assertMetadataPrepared(job, prepared);
+    assertCreationPrepared(job, prepared);
     const target = documents.quarantineTarget(job.request);
     if (target && !prepared.metadataProof) {
       const compiled = job.documentContinuation
@@ -537,6 +554,8 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       request,
       currentInstance(),
     );
+    if (job.documentCreation && documents.checkpointGeneration(physical) !== job.documentCreation.generation)
+      fail("DOCUMENT_STATE_CHANGED", "Creation physical turn differs from its compiler-bound generation");
     if (
       job.documentMetadataRead &&
       documents.checkpointGeneration(physical) !==
@@ -911,6 +930,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       async send(prepared): Promise<P.Response> {
         guards.assertPhysicalIsolationAuthority();
         assertMetadataPrepared(context.job, prepared, prepared.rpcId);
+        assertCreationPrepared(context.job, prepared, prepared.rpcId);
         const started = Date.now();
         debugDispatchStarted.set(prepared, started);
         trace(context, {

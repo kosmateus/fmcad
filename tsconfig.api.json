@@ -105,7 +105,8 @@
     "src/document-continuation-broker.ts",
     "src/broker-source-compiler.ts",
     "src/broker-source-compiler-worker.ts",
-    "src/document-metadata-read-broker.ts"
+    "src/document-metadata-read-broker.ts",
+    "src/document-creation-broker.ts"
   ],
   "references": [
     {
