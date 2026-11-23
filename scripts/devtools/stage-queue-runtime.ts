@@ -48,6 +48,7 @@ export const queueRuntimeModules = [
   "queue-backend-transition",
   "queue-runtime-rebaseline",
   "queue-runtime-physical-wiring",
+  "queue-runtime-authority",
   "queue-client",
   "queue-closed-epoch-proof",
   "queue-isolated-epoch",

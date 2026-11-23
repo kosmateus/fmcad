@@ -33,7 +33,6 @@ import type {
   TurnIdentity,
 } from "../../packages/core/src/application/broker-execution";
 import {
-  resolveBackendHead,
   prepareBackendTransition,
 } from "../queue-backend-transition";
 // Source and packaged launchers share the public facade's installation anchor.
@@ -517,9 +516,6 @@ function hasRuntimeRootEvidence(directory: string): boolean {
 export async function serve(cfg: P.Config, options: P.Options = {}) {
   let runtimeRootWiring:
     import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
-  let verifyRuntimeRootBeforeRestore:
-    ((context: import("../queue-runtime-physical-wiring").RuntimeRootVerificationContext) =>
-      Promise<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot | undefined>) | undefined;
   if (process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined) {
     if ([
       options.bindPhysicalTurn,
@@ -550,7 +546,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
     if (!physical)
       fail("PHYSICAL_CAPABILITY_REQUIRED", "Private physical capabilities are unavailable");
-    verifyRuntimeRootBeforeRestore = physical.verifyRuntimeRootBeforeRestore;
     options = {
       ...options,
       preparePhysicalGeneration: physical.preparePhysicalGeneration,
@@ -673,38 +668,45 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const configHash = brokerConfigHash(pinned);
   // A consumed native root has its own authority. Verify it before touching any
   // legacy selector or restoring jobs; marker presence alone is never approval.
-  const approvedRuntimeRoot = await verifyRuntimeRootBeforeRestore?.({
-    directory: dir, buildHash: codeHash, configHash,
+  const runtimeAuthority = await (
+    runtimeRequire("./queue-runtime-authority") as
+      typeof import("../queue-runtime-authority")
+  ).openBrokerRuntimeAuthority({
+    directory: dir,
+    buildHash: codeHash,
+    configHash,
+    ...(runtimeRootWiring ? { runtimeRoot: runtimeRootWiring } : {}),
+    transitions: {
+      ...(options.backendTransition !== undefined
+        ? { backend: options.backendTransition } : {}),
+      ...(options.atomicMigrationNonce !== undefined
+        ? { atomicMigrationNonce: options.atomicMigrationNonce } : {}),
+      ...(options.epochRuntimeUpgradeNonce !== undefined
+        ? { epochRuntimeUpgradeNonce: options.epochRuntimeUpgradeNonce } : {}),
+      ...(options.deadEpochSuccessorNonce !== undefined
+        ? { deadEpochSuccessorNonce: options.deadEpochSuccessorNonce } : {}),
+    },
+    ...(options.confirmVersionTransition !== undefined
+      ? { confirmVersionTransition: options.confirmVersionTransition } : {}),
+    ...(options.createBackend ? { testBackendFactory: options.createBackend } : {}),
+    observationScope: observationScopeConfig,
+  }, {
+    instance: load("./queue-instance"),
+    backend: runtimeRequire("./queue-backend-transition") as
+      typeof import("../queue-backend-transition"),
+    epochs: { openIsolatedEpoch },
+    lineage: runtimeRequire("./queue-epoch-lineage") as
+      typeof import("../queue-epoch-lineage"),
+    normalAdmission: load("./dist/node-adapters/broker-ipc/normal-admission"),
+    normalRestart: runtimeRequire("./dist/node-adapters/broker-ipc/normal-restart") as
+      typeof import("../../packages/node-adapters/src/broker-ipc/normal-restart"),
+    atomicObservation: { isAtomicObservationCandidate },
+    hasRuntimeRootEvidence,
   });
-  if (!approvedRuntimeRoot && hasRuntimeRootEvidence(dir))
-    fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Use the private native-authenticated runtime-root startup");
-  if (approvedRuntimeRoot &&
-    [options.backendTransition, options.atomicMigrationNonce,
-      options.epochRuntimeUpgradeNonce, options.deadEpochSuccessorNonce].some(
-      (value) => value !== undefined,
-    ))
-    fail("PHYSICAL_CAPABILITY_CONFLICT", "Native runtime-root startup cannot also claim a legacy transition");
-  const backendScope = approvedRuntimeRoot
-    ? { current: undefined, retired: undefined }
-    : resolveBackendHead(dir, () => openIsolatedEpoch(dir, { recover: false }));
+  const { approvedRuntimeRoot, backendScope } = runtimeAuthority.selection();
   const effectiveBackend = backendScope.current;
-  let identityFile =
-    approvedRuntimeRoot ? path.join(dir, "runtime-rebaseline-current-instance.json")
-      : backendScope.retired?.identityFile || path.join(dir, "instance.json");
-  let oldIdentity = fs.existsSync(identityFile)
-    ? readJson<P.Identity>(identityFile)
-    : null;
-  // A known local configuration rejection must not reserve Fusion or leave a
-  // dead marker that prevents the correctly configured backend from starting.
-  if (
-    !options.backendTransition &&
-    (effectiveBackend?.identity || oldIdentity)?.configHash !== configHash &&
-    oldIdentity
-  )
-    fail(
-      "CONFIG_CHANGED",
-      "Pinned backend configuration differs from the durable broker identity",
-    );
+  const identityFile = () => runtimeAuthority.current().identityFile;
+  const oldIdentity = runtimeAuthority.previousIdentity();
   const restartPort = runtimeRequire(
     "./dist/node-adapters/broker-ipc/normal-restart",
   ) as typeof import("../../packages/node-adapters/src/broker-ipc/normal-restart");
@@ -821,55 +823,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       runtimeUpgradeProof(preflightState, preflightIdentityFile),
     );
   }
-  function assertBackendHeadOwner(
-    current: P.State,
-    permittedBuildHash = codeHash,
-  ) {
-    if (approvedRuntimeRoot) {
-      if (!runtimeRootWiring || current.admissionMode !== "runtime-rebaseline")
-        fail("RUNTIME_ROOT_AUTHORITY_REQUIRED", "Native runtime-root state is required");
-      runtimeRootWiring.assertVerifiedRoot(dir);
-      return;
-    }
-    const currentScope = resolveBackendHead(dir, () => current);
-    if (
-      !same(currentScope.current?.head, effectiveBackend?.head) ||
-      !same(currentScope.retired, backendScope.retired)
-    )
-      fail(
-        "BACKEND_TRANSITION_CHANGED",
-        "Physical backend head changed before startup",
-      );
-    if (
-      effectiveBackend &&
-      (!current.epoch ||
-        current.epoch.epochId !== effectiveBackend.head.epochId ||
-        current.epoch.ownerClientId !== effectiveBackend.head.ownerClientId ||
-        current.epoch.ownerTokenHash !== effectiveBackend.head.ownerTokenHash)
-    )
-      fail(
-        "BACKEND_TRANSITION_CHANGED",
-        "Backend transition no longer belongs to the exact active epoch owner",
-      );
-    if (
-      effectiveBackend &&
-      !options.backendTransition &&
-      effectiveBackend.identity.buildHash !== permittedBuildHash
-    )
-      fail(
-        "BUILD_CHANGED",
-        "Restore the exact physical backend transition runtime before reopening",
-      );
-  }
-  if (effectiveBackend)
-    // Only the following authenticated claim can grant the successor runtime.
-    // An untrusted nonce gets no physical client or executable capability here.
-    assertBackendHeadOwner(
-      openIsolatedEpoch(dir, { recover: false }),
-      options.deadEpochSuccessorNonce
-        ? effectiveBackend.identity.buildHash
-        : codeHash,
-    );
   if (!approvedRuntimeRoot)
   (runtimeRequire("./dist/composition/queue-frozen-metadata-admission",
     ) as
@@ -1083,36 +1036,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
   }
   phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
-  if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
-  if (successorRuntime?.effectiveIdentity) {
-    const expectedIdentity =
-      effectiveBackend?.identity || readJson<P.Identity>(identityFile);
-    if (
-      successorRuntime.effectiveIdentity.buildHash !==
-        expectedIdentity.buildHash ||
-      successorRuntime.effectiveIdentity.configHash !==
-        expectedIdentity.configHash ||
-      !sameInstance(
-        successorRuntime.effectiveIdentity.instance,
-        expectedIdentity.instance,
-      )
-    )
-      fail(
-        "BACKEND_TRANSITION_CHANGED",
-        "Successor claim differs from the verified predecessor identity",
-      );
-  }
-  assertBackendHeadOwner(
-    state,
-    successorRuntime?.effectiveIdentity?.buildHash ?? codeHash,
-  );
-  if (effectiveBackend) {
-    identityFile = effectiveBackend.identityFile;
-  }
+  runtimeAuthority.bindQueue({
+    epoch: () => state.epoch ?? null,
+    admissionMode: () => state.admissionMode,
+    current: () => state.data,
+    assertEpoch: (normal) => state.assertEpoch(normal),
+    writerStatus: () => state.writerStatus(),
+    advanceInstanceEpoch: (transitionId) => state.advanceInstanceEpoch(transitionId),
+  }, {
+    owner: marker,
+    ...(successorRuntime?.authorityEntry
+      ? { successorAuthority: successorRuntime.authorityEntry } : {}),
+  });
   // Metadata-only preflight happens before constructing a physical client. A
   // foreign owner, altered config or unfinished current job sends zero SDK work.
   const deadPredecessor = options.backendTransition
-    ? deadPredecessorProof(state, identityFile)
+    ? deadPredecessorProof(state, identityFile())
     : undefined;
   const backendTransition = options.backendTransition
     ? prepareBackendTransition(
@@ -1121,7 +1060,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         pinned,
         options.backendTransition,
         deadPredecessor,
-        runtimeUpgradeProof(state, identityFile),
+        runtimeUpgradeProof(state, identityFile()),
       )
     : null;
   if (options.startPaused === true)
@@ -1773,7 +1712,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     fs.existsSync(clientsFile) ? readJson(clientsFile) : {},
     {
       persistClients: (hashes) => durable(clientsFile, hashes),
-      processUnavailable: () => epochProcessUnavailable,
+      processUnavailable: () => runtimeAuthority.current().processUnavailable,
       hasSuccessor: (): boolean => !!successorControl,
       ownsSuccessorCreation: (requestId): boolean => !!successorControl?.ownsCreation(requestId),
       assertMigrationAdmission,
@@ -1800,20 +1739,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
   );
   const { dispatch, clientHashes } = ipcDispatch;
-  let instance: P.Instance;
+  const currentInstance = () => runtimeAuthority.current().instance as P.Instance;
   const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
   const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
   const debugRawReceived = new WeakSet<P.PreparedCall>();
   const debugResultPublished = new Set<string>();
   const atomicObservationScope = new AsyncLocalStorage<P.ObservationScope>();
   const atomicRecoveryAuditScope = new AsyncLocalStorage<P.ScriptScope>();
-  let atomicObservationOnly = false;
-  let epochProcessUnavailable = false;
   let recovery: P.Recovery | null = null,
     lastRecoveryCheck = 0;
-  const normalRestartPort = load(
-    "./dist/node-adapters/broker-ipc/normal-restart",
-  ) as typeof import("../../packages/node-adapters/src/broker-ipc/normal-restart");
   await lifetime.initialize(
     {
       recovery: !!state.summary().blocked,
@@ -1867,7 +1801,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     };
     // Binding validates the actual current private grant. This deliberately
     // creates no physical intent and submits no SDK request.
-    const binding = pinPhysicalTurn(required(options.bindPhysicalTurn)(request)!, request, instance);
+    const binding = pinPhysicalTurn(required(options.bindPhysicalTurn)(request)!, request, currentInstance());
     const generation = checkpointGeneration(binding);
     return checkpointReads.pinGeneration(generation);
   }
@@ -2261,273 +2195,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     receipt: startupReceipt,
     diagnosticPath,
   }: BrokerStartup) {
-    let normalRestart: ReturnType<
-      typeof normalRestartPort.inspectSettledNormalRestart
-    >;
-    let normalRestartReference: P.Reference | undefined;
-    oldIdentity = fs.existsSync(identityFile)
-      ? readJson<P.Identity>(identityFile)
-      : null;
-    if (
-      !backendTransition &&
-      oldIdentity &&
-      oldIdentity.configHash !== configHash
-    )
-      fail(
-        "CONFIG_CHANGED",
-        "Pinned backend configuration differs from the durable broker identity",
-      );
-    if (
-      state.epoch &&
-      state.admissionMode === "normal-multidocument" &&
-      oldIdentity &&
-      !successorRuntime &&
-      !backendTransition &&
-      !effectiveBackend
-    ) {
-      try {
-        normalRestart = normalRestartPort.inspectSettledNormalRestart(
-          dir,
-          state.epoch,
-          oldIdentity,
-          state.data,
-          { priorProcessAlive },
-        );
-      } catch (cause) {
-        const error = errorInfo(cause);
-        error.probeNotSubmitted = true;
-        throw error;
-      }
-    }
-    if (
-      !backendTransition &&
-      (successorRuntime ||
-        load(
-          "./dist/node-adapters/broker-ipc/normal-admission",
-        ).epochStartupPinned(
-          state,
-          oldIdentity?.buildHash,
-          codeHash,
-          !!normalRestart,
-        ))
-    ) {
-      // Reopening a broker never adopts another active document or replays the
-      // creation operation. The immutable epoch remains tied to its live process.
-      const epoch = required(state.epoch);
-      const closedEpoch = fs.existsSync(path.join(epoch.root, "closed.json"));
-      const normalAdmission = state.admissionMode === "normal-multidocument";
-      if (!closedEpoch || normalAdmission) {
-        try {
-          state.assertEpoch(normalAdmission);
-        } catch (cause) {
-          const error = errorInfo(cause);
-          if (error.code !== "INSTANCE_CHANGED") throw error;
-          // As with restored unknown work, keep receipts reachable without
-          // probing, adopting another process or renewing modeling authority.
-          epochProcessUnavailable = true;
-        }
-      }
-      const expectedBuild =
-        successorRuntime?.effectiveIdentity?.buildHash ||
-        successorRuntime?.authority.previousBuildHash ||
-        codeHash;
-      if (
-        !oldIdentity ||
-        oldIdentity.buildHash !== expectedBuild ||
-        !sameInstance(
-          oldIdentity.instance,
-          normalAdmission
-            ? effectiveBackend?.identity.instance ||
-                (normalRestartPort.normalRestartInstance(
-                  dir,
-                  epoch,
-                  oldIdentity,
-                  state.data,
-                ) as P.Instance)
-            : epoch.currentInstance,
-        )
-      )
-        fail(
-          "BUILD_CHANGED",
-          "An isolated epoch requires its exact qualified runtime and current process identity",
-        );
-      if (successorRuntime) epochProcessUnavailable = true;
-      instance = oldIdentity.instance;
-      setHold(
-        epochProcessUnavailable
-          ? "Qualified isolated scratch process is unavailable; metadata only, no SDK or replacement authority"
-          : normalAdmission
-            ? null
-            : closedEpoch
-              ? "Qualified isolated scratch is closed; historical unknown work remains quarantined"
-              : fs.existsSync(
-                    path.join(
-                      epochControlDirectory(dir, epoch),
-                      "isolated-scratch-close",
-                      "intent.json",
-                    ),
-                  )
-                ? "Isolated scratch cleanup remains pending or uncertain"
-                : null,
-      );
-    } else if (state.summary().blocked || state.data.controlBlocked) {
-      // No Fusion traffic at all until receipt evidence proves the old dispatch ended.
-      instance = oldIdentity?.instance as P.Instance;
-      if (oldIdentity && oldIdentity.buildHash !== codeHash) {
-        const target =
-          state.data.blocked && state.data.jobs[state.data.blocked.id];
-        if (
-          !target ||
-          !isAtomicObservationCandidate(
-            target,
-            oldIdentity.buildHash,
-            observationScopeConfig,
-          )
-        )
-          fail(
-            "BUILD_CHANGED",
-            "Restore the original executable build before reconciling the unfinished job",
-          );
-        if (!instance)
-          fail(
-            "INSTANCE_UNAVAILABLE",
-            "Original Fusion instance identity is unavailable",
-          );
-        // A build transition never replays original work. It only starts a held
-        // broker that accepts one exact typed atomic_status observer.
-        atomicObservationOnly = true;
-      }
-      setHold(
-        atomicObservationOnly
-          ? "Read-only atomic holder observation only; all other admission remains blocked"
-          : "Restored unfinished job; matching remote terminal receipts are required before any probe",
-      );
-    } else {
-      // A completed busy observation is not an unfinished RPC. Keep the control
-      // plane available; modeling workflows still require idle in preflight.
-      instance = await gate.administrative(() =>
+    const result = await runtimeAuthority.identifyStartup({
+      binding: startupBinding,
+      receiptPath: startupReceipt,
+      diagnosticPath,
+    }, () => gate.administrative(() =>
         instanceProbe({
           receiptPath: startupReceipt,
           binding: startupBinding,
           requireIdle: false,
           diagnosticPath,
         }),
-      );
-      if (
-        !backendTransition &&
-        oldIdentity &&
-        !sameInstance(instance, oldIdentity.instance)
-      ) {
-        const previousAlive = priorProcessAlive(oldIdentity.instance);
-        const versionChanged =
-          oldIdentity.instance.version !== instance.version;
-        const summary = state.summary();
-        const queueQuiescent =
-          !state.data.paused &&
-          !summary.active &&
-          !summary.blocked &&
-          !summary.lease &&
-          !state.data.controlBlocked &&
-          Object.values(state.data.jobs).every((job) =>
-            ["succeeded", "failed", "cancelled", "expired"].includes(job.state),
-          );
-        if (
-          typeof oldIdentity.buildHash !== "string" ||
-          previousAlive !== false ||
-          !idle(instance) ||
-          !Array.isArray(instance.documents) ||
-          instance.documents.some(
-            (document) => document?.isModified !== false,
-          ) ||
-          (versionChanged &&
-            (options.confirmVersionTransition !== true || !queueQuiescent))
-        ) {
-          fail(
-            "INSTANCE_CHANGED",
-            versionChanged
-              ? "Fusion version changed; explicit confirmation, a dead old process, an unpaused quiescent queue, an idle UI and clean documents are required"
-              : "Fusion identity changed; automatic recovery requires the old process gone, an idle UI and unmodified documents",
-          );
-        }
-        const transitionId = hash(
-          JSON.stringify({
-            configHash,
-            buildHash: codeHash,
-            previous: oldIdentity.instance,
-            current: instance,
-          }),
-        );
-        if (normalRestart)
-          normalRestartReference = normalRestartPort.commitSettledNormalRestart(
-            normalRestart,
-            state.data,
-            instance,
-            startupBinding,
-            startupReceipt,
-            { priorProcessAlive },
-          );
-        const queueTransition = state.advanceInstanceEpoch(transitionId);
-        durable(path.join(dir, `instance-transition-${transitionId}.json`), {
-          source: versionChanged
-            ? "explicit-quiescent-version-transition"
-            : "automatic-quiescent-restart-recovery",
-          transitionId,
-          at: new Date().toISOString(),
-          configHash,
-          previousBuildHash: oldIdentity.buildHash,
-          buildHash: codeHash,
-          previous: oldIdentity.instance,
-          current: instance,
-          queueTransition,
-        });
-      }
-      if (backendTransition) {
-        const observationFiles = [diagnosticPath];
-        const receipt = fs.existsSync(startupReceipt)
-          ? readJson<Record<string, unknown>>(startupReceipt)
-          : null;
-        const exactReceipt =
-          !!receipt &&
-          receipt["terminal"] === true &&
-          receipt["outcome"] === "succeeded" &&
-          sameInstance(receipt["instance"] as P.Instance, instance) &&
-          !Object.entries(startupBinding).some(
-            ([key, value]) => !same(receipt[key], value),
-          );
-        if (!options.createBackend && !exactReceipt)
-          fail(
-            "BACKEND_TRANSITION_UNPROVEN",
-            "Exact target startup receipt is required; ownership is retained without replay",
-          );
-        if (exactReceipt) observationFiles.push(startupReceipt);
-        identityFile = backendTransition.commit(
-          instance,
-          codeHash,
-          observationFiles,
-        );
-      } else if (effectiveBackend) {
-        // A reopen must not rewrite the immutable transition or predecessor.
-        if (
-          oldIdentity?.buildHash !== codeHash ||
-          !sameInstance(oldIdentity.instance, instance)
-        )
-          fail(
-            "BUILD_CHANGED",
-            "Restore the exact physical backend transition runtime before reopening",
-          );
-      } else
-        durable(identityFile, {
-          configHash,
-          buildHash: codeHash,
-          instance,
-          ...(normalRestartReference || oldIdentity?.normalRestart
-            ? {
-                normalRestart:
-                  normalRestartReference || oldIdentity?.normalRestart,
-              }
-            : {}),
-        });
-    }
+      ), backendTransition);
+    setHold(result.hold);
   }
 
   function clientProperties() {
@@ -2856,7 +2536,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "PHYSICAL_BINDING_MISSING",
         "Product SDK dispatch has no original physical binding",
       );
-    const physical = pinPhysicalTurn(binding, request, instance);
+    const physical = pinPhysicalTurn(binding, request, currentInstance());
     if (job.documentMetadataRead &&
         checkpointGeneration(physical) !== job.documentMetadataRead.generation)
       fail("DOCUMENT_STATE_CHANGED", "Metadata physical turn differs from its compiler-bound generation");
@@ -2994,7 +2674,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (probeOptions?.prepared && probeOptions.onObservation)
       await probeOptions.onObservation(actual);
     probeOptions.assertCurrent?.();
-    if (!sameInstance(actual, instance))
+    if (!sameInstance(actual, currentInstance()))
       fail("INSTANCE_CHANGED", "Fusion PID/birth/build identity changed");
     if (probeOptions?.requireIdle !== false && !idle(actual))
       throw Object.assign(new Error("An interactive Fusion command is open"), {
@@ -3066,7 +2746,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       job.state !== "needs_reconciliation" ||
       job.request.buildHash !== originalBuildHash ||
       !originalInstance ||
-      !sameInstance(instance, originalInstance)
+      !sameInstance(currentInstance(), originalInstance)
     ) {
       fail(
         "RECEIPT_MISMATCH",
@@ -3243,7 +2923,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     };
     const record = {
       binding,
-      instance,
+      instance: currentInstance(),
       receipt: path.join(dir, "control-" + rpcId + ".receipt.json"),
     };
     durable(file, record);
@@ -3354,7 +3034,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Scoped atomic status has no verified original runtime ABI proof",
       );
     assertResetSubmissionOpen(dir);
-    const currentIdentity = readJson<P.Identity>(identityFile);
+    const currentIdentity = readJson<P.Identity>(identityFile());
     if (
       currentIdentity.configHash !== configHash ||
       currentIdentity.buildHash !== scope.instanceBuildHash ||
@@ -3381,7 +3061,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       expectedOwner: marker,
       buildHash: buildHash(),
       expectedBuildHash: codeHash,
-      instance,
+      instance: currentInstance(),
       expectedInstance: scope.expectedInstance,
       instanceAlive: originalFusionProcessAlive(scope.expectedInstance),
       resuming: gate.resuming,
@@ -3442,7 +3122,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           targetJobId: scope.targetJob.id,
           codeHash,
           identity: scope.prepared.identity,
-          instance,
+          instance: currentInstance(),
           receipt,
           originArtifact: scope.prepared.artifact,
           atomicRuntimeAbi: scope.prepared.atomicRuntimeAbi,
@@ -3535,7 +3215,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             atomicRuntimeAbi: scope.prepared.atomicRuntimeAbi.proof,
             atomicRuntimeAbiHash: scope.prepared.atomicRuntimeAbi.hash,
             observerBuildHash: codeHash,
-            instance,
+            instance: currentInstance(),
             owner: marker,
             initialGate: scope.initialState,
             binding: prepared.record.binding,
@@ -3594,7 +3274,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           atomicRuntimeAbiHash: scope.prepared.atomicRuntimeAbi.hash,
           originalBuildHash: required(scope.targetJob.request.buildHash),
           observerBuildHash: codeHash,
-          observerInstance: instance,
+          observerInstance: currentInstance(),
           rpcId: prepared.rpcId,
           readOnlyOperation: "atomic_status",
           binding: prepared.record.binding,
@@ -3704,7 +3384,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (own(payload, "id")) request.id = payload.id;
     const record: P.RecordEvidence = {
       binding,
-      instance,
+      instance: currentInstance(),
       request,
       terminal: false,
       method: payload.method,
@@ -4068,7 +3748,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           if (state.epoch || approvedRuntimeRoot) admitEpochRequest(context.job.request);
           if (
             prepared.record.binding.jobId !== context.job.id ||
-            !sameInstance(prepared.record.instance, instance)
+            !sameInstance(prepared.record.instance, currentInstance())
           )
             fail(
               "RECONCILIATION_REQUIRED",
@@ -4192,9 +3872,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           rpcId: prepared.rpcId,
           buildHash: prepared.record.binding.buildHash,
           sourceHash: prepared.record.binding.sourceHash,
-          sdkPid: instance.pid,
-          sdkBirth: instance.birth,
-          sdkVersion: instance.version,
+          sdkPid: currentInstance().pid,
+          sdkBirth: currentInstance().birth,
+          sdkVersion: currentInstance().version,
           stdoutObservation: "not_observed",
         });
         try {
@@ -4240,9 +3920,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId: prepared.rpcId,
             buildHash: prepared.record.binding.buildHash,
             sourceHash: prepared.record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             durationMs: Date.now() - startedAt,
             stdoutObservation: "not_observed",
           });
@@ -4255,9 +3935,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId: prepared.rpcId,
             buildHash: prepared.record.binding.buildHash,
             sourceHash: prepared.record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             durationMs: Date.now() - startedAt,
             stdoutObservation: "not_observed",
           });
@@ -4313,9 +3993,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId,
             buildHash: record.binding.buildHash,
             sourceHash: record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             artifactRef: `received-response-${rpcId}.json`,
             httpStatus: response.status,
             ...(debugDispatchStarted.has(prepared)
@@ -4342,9 +4022,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               rpcId,
               buildHash: record.binding.buildHash,
               sourceHash: record.binding.sourceHash,
-              sdkPid: instance.pid,
-              sdkBirth: instance.birth,
-              sdkVersion: instance.version,
+              sdkPid: currentInstance().pid,
+              sdkBirth: currentInstance().birth,
+              sdkVersion: currentInstance().version,
               code:
                 error && typeof error === "object" && "code" in error
                   ? String(error.code)
@@ -4364,9 +4044,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId,
             buildHash: record.binding.buildHash,
             sourceHash: record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             ...(rawSummary ? rawSummary : {}),
             ...(rawSummary
               ? { stdoutObservation: rawSummary.stdoutObservation }
@@ -4389,9 +4069,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId,
             buildHash: record.binding.buildHash,
             sourceHash: record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             code:
               error && typeof error === "object" && "code" in error
                 ? String(error.code)
@@ -4407,9 +4087,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           rpcId,
           buildHash: record.binding.buildHash,
           sourceHash: record.binding.sourceHash,
-          sdkPid: instance.pid,
-          sdkBirth: instance.birth,
-          sdkVersion: instance.version,
+          sdkPid: currentInstance().pid,
+          sdkBirth: currentInstance().birth,
+          sdkVersion: currentInstance().version,
           stdoutObservation: "not_observed",
         });
         const callerResponse = prepared.metadataProof
@@ -4496,9 +4176,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId: prepared.rpcId,
             buildHash: prepared.record.binding.buildHash,
             sourceHash: prepared.record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             stdoutObservation: "not_observed",
           });
         hold(
@@ -4521,9 +4201,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rpcId: prepared.rpcId,
             buildHash: prepared.record.binding.buildHash,
             sourceHash: prepared.record.binding.sourceHash,
-            sdkPid: instance.pid,
-            sdkBirth: instance.birth,
-            sdkVersion: instance.version,
+            sdkPid: currentInstance().pid,
+            sdkBirth: currentInstance().birth,
+            sdkVersion: currentInstance().version,
             stdoutObservation: "not_observed",
           });
         retainDispatchFailure(context, error, failure);
@@ -4863,7 +4543,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ): AuditSnapshot {
     return structuredClone({
       owner: readJson<P.Owner>(lock),
-      identity: readJson<P.Identity>(identityFile),
+      identity: readJson<P.Identity>(identityFile()),
       paused: state.data.paused,
       generation: state.data.controlGeneration || 0,
       contextEpoch: state.data.contextEpoch || 0,
@@ -5073,7 +4753,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           value.before,
         ) ||
         !same(value.before.owner, marker) ||
-        !sameInstance(value.before.identity.instance, instance) ||
+        !sameInstance(value.before.identity.instance, currentInstance()) ||
         !recoveryAuditProcesses(
           value.before.identity.instance,
           value.instance,
@@ -5147,7 +4827,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   function epochSnapshot() {
     return {
       owner: readJson(lock),
-      identity: readJson(identityFile),
+      identity: readJson(identityFile()),
       epochId: state.epoch?.epochId,
       stateHash: hash(JSON.stringify(state.data)),
     };
@@ -5254,16 +4934,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     additionalPrerequisite: () => factsCapture.approvedPrerequisite(),
     epochSnapshot,
     epochFence: fenceEpochLifecycle,
-    activate(epoch, identity) {
-      if (
-        identityFile === path.join(epoch.root, "instance.json") &&
-        sameInstance(instance, epoch.currentInstance)
-      )
-        return;
-      identityFile = path.join(epoch.root, "instance.json");
-      instance = identity.instance;
-      atomicObservationOnly = false;
-      epochProcessUnavailable = false;
+    activate() {
+      runtimeAuthority.activatePublishedEpoch();
       setHold(null);
       diagnostics();
     },
@@ -5302,7 +4974,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   });
   const successorAuthority =
     successorRuntime?.authorityEntry ||
-    (!epochProcessUnavailable &&
+    (!runtimeAuthority.current().processUnavailable &&
     state.epoch?.succession &&
     priorProcessAlive(state.epoch.currentInstance) === true
       ? state.epoch.succession
@@ -5340,11 +5012,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "The qualified successor owner, released startup guards and exclusive physical turn must remain unchanged",
           );
       },
-      activate(epoch, identity) {
-        identityFile = path.join(epoch.root, "instance.json");
-        instance = identity.instance;
-        atomicObservationOnly = false;
-        epochProcessUnavailable = false;
+      activate() {
+        runtimeAuthority.activatePublishedEpoch();
         setHold(null);
         diagnostics();
       },
@@ -5363,7 +5032,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ? "owner-bound-new-document-only"
             : "unavailable",
       };
-    const admission = epochProcessUnavailable
+    const admission = runtimeAuthority.current().processUnavailable
       ? "blocked-process-unavailable"
       : state.admissionMode === "normal-multidocument"
         ? "normal-multidocument"
@@ -5493,7 +5162,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         persistedFacts(),
       );
       if (decision === "already-settled") return priorAcceptance;
-      const currentIdentity = readJson<P.Identity>(identityFile);
+      const currentIdentity = readJson<P.Identity>(identityFile());
       atomicAcceptance.requirePersistedAtomicInstance(
         priorAcceptance, currentIdentity, target.request.buildHash,
         () => originalFusionProcessAlive(currentIdentity.instance),
@@ -5542,9 +5211,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       otherActivity: gate.hasOtherActivity(active?.nativeActivityToken),
     });
-    const identity = readJson<P.Identity>(identityFile);
+    const identity = readJson<P.Identity>(identityFile());
     atomicAcceptance.requireFreshAtomicInstance(
-      identity, instance, target.request.buildHash,
+      identity, currentInstance(), target.request.buildHash,
       () => originalFusionProcessAlive(identity.instance),
     );
 
@@ -5638,8 +5307,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (
       !job ||
       lifetime.closed ||
-      epochProcessUnavailable ||
-      !instance ||
+      runtimeAuthority.current().processUnavailable ||
+      !currentInstance() ||
       !state.writerStatus().ready ||
       (active && active.job.id !== id)
     )
@@ -5657,11 +5326,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         !same(readJson<P.Owner>(lock), marker)
       )
         return null;
-      const identity = readJson<P.Identity>(identityFile);
+      const identity = readJson<P.Identity>(identityFile());
       if (
         identity.configHash !== configHash ||
         identity.buildHash !== codeHash ||
-        !sameInstance(identity.instance, instance)
+        !sameInstance(identity.instance, currentInstance())
       )
         return null;
       return {
@@ -5726,7 +5395,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const hold = lane.captureRecovery();
     if (owned(id, clientId).state !== "needs_reconciliation")
       fail("NOT_BLOCKED", "Job does not require reconciliation");
-    if (!instance)
+    if (!currentInstance())
       fail(
         "INSTANCE_UNAVAILABLE",
         "Original pinned instance record unavailable; no probe sent",
@@ -5741,7 +5410,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertHold: hold.assertCurrent,
       observe: (previous, grant) =>
         observeBrokerRecovery(
-          { id, directory, instance, buildHash: codeHash },
+          { id, directory, instance: currentInstance(), buildHash: codeHash },
           previous,
           grant,
           {
@@ -5843,7 +5512,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
       if (!(
         successorRuntime &&
-        epochProcessUnavailable &&
+        runtimeAuthority.current().processUnavailable &&
         guard.kind === "dead-epoch-successor" &&
         guard.nonce === options.deadEpochSuccessorNonce &&
         guard.audit === successorRuntime.audit
@@ -6102,10 +5771,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           request.kind === "command" &&
           invocation?.kind === "cad" &&
           invocation.operation === "batch.reconcile";
-        if (isReconcile || atomicObservationOnly) {
+        if (isReconcile || runtimeAuthority.isAtomicObservationOnly()) {
           if (!isReconcile || !blockedJob) {
             fail(
-              atomicObservationOnly
+              runtimeAuthority.isAtomicObservationOnly()
                 ? "ATOMIC_OBSERVATION_ONLY"
                 : "RECOVERY_BLOCKED",
               "Only the owner-scoped atomic batch.reconcile observation is admitted while this workflow blocks the queue",
@@ -6205,10 +5874,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "INVALID_WORKFLOW_SCOPE",
               "Typed batch.reconcile does not point to the original blocked atomic report",
             );
-          const identity = readJson<P.Identity>(identityFile);
+          const identity = readJson<P.Identity>(identityFile());
           if (
             blockedJob.request.buildHash !== identity.buildHash ||
-            !sameInstance(instance, identity.instance)
+            !sameInstance(currentInstance(), identity.instance)
           ) {
             fail(
               "BUILD_CHANGED",
@@ -6562,11 +6231,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           stateCounts,
           ...(state.epoch &&
           (successorRuntime?.authority.sourceCommit ||
-            readJson<P.Identity>(identityFile).sourceCommit)
+            readJson<P.Identity>(identityFile()).sourceCommit)
             ? {
                 sourceCommit:
                   successorRuntime?.authority.sourceCommit ||
-                  readJson<P.Identity>(identityFile).sourceCommit,
+                  readJson<P.Identity>(identityFile()).sourceCommit,
               }
             : {}),
           ...(successorControl
@@ -6596,7 +6265,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               !!currentAuditScope?.epochPrerequisite ||
               !!state.epoch ||
               !!factsCapture.approvedPrerequisite(),
-            savedFirstSaveLifecycle: !!state.epoch && !epochProcessUnavailable,
+            savedFirstSaveLifecycle: !!state.epoch && !runtimeAuthority.current().processUnavailable,
           },
           isolatedScratchScope: isolatedScratchScope(),
           ...(currentAuditScope
@@ -6865,11 +6534,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Scoped observation job is not pinned to the current add-in observer build/owner",
       );
     }
-    const currentIdentity = readJson<P.Identity>(identityFile);
+    const currentIdentity = readJson<P.Identity>(identityFile());
     if (
       targetJob.request.buildHash !== marker.targetBuildHash ||
       currentIdentity.buildHash !== marker.targetBuildHash ||
-      !sameInstance(instance, currentIdentity.instance)
+      !sameInstance(currentInstance(), currentIdentity.instance)
     ) {
       fail(
         "BUILD_CHANGED",
@@ -7321,14 +6990,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             version: 2,
             jobId: job.id,
             buildHash: codeHash,
-            instance,
+            instance: currentInstance(),
             at: Date.now(),
             binding,
             receipt,
           }),
       );
       },
-      sameObservedInstance: (error) => sameInstance(error.observation, instance),
+      sameObservedInstance: (error) => sameInstance(error.observation, currentInstance()),
       refusePreflight(refusal, error) {
       const outcome = {
         state: "failed",
@@ -7847,7 +7516,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 version: 2,
                 jobId: job.id,
                 buildHash: codeHash,
-                instance,
+                instance: currentInstance(),
                 at: Date.now(),
                 binding: postBinding,
                 receipt: postReceipt,
@@ -7979,7 +7648,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const blockedJob = state.data.jobs[id];
     if (
       busy() ||
-      atomicObservationOnly ||
+      runtimeAuthority.isAtomicObservationOnly() ||
       options.autoReconcile !== true ||
       Date.now() - lastRecoveryCheck < 1000 ||
       (blockedJob &&
@@ -8008,7 +7677,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
 
-  const schedulingOpen = () => !lifetime.stopping && !epochProcessUnavailable;
+  const schedulingOpen = () => !lifetime.stopping && !runtimeAuthority.current().processUnavailable;
   const canSelect = () =>
     schedulingOpen() &&
     !busy() &&

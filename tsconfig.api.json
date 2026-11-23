@@ -15,6 +15,7 @@
     "src/queue-runtime-rebaseline.ts",
     "src/queue-runtime-rebaseline-writer.ts",
     "src/queue-runtime-physical-wiring.ts",
+    "src/queue-runtime-authority.ts",
     "src/queue-broker-ports.ts",
     "src/queue-broker-modules.ts",
     "src/queue-client.ts",
