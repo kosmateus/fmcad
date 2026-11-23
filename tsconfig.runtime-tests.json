@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "tests/controlled-lifecycle-lease.test.ts",
     "tests/controlled-host-ui.test.ts",
     "tests/controlled-host-ui.windows.test.ts",
     "tests/fresh-host-proof.test.ts",
