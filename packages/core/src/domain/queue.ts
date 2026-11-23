@@ -526,6 +526,38 @@ export class QueueDomain {
     }
   }
 
+  writerStatus(): Readonly<{ ready: boolean; writing: boolean; faulted: boolean }> {
+    return Object.freeze({
+      ready: !this._writing && !this._fault,
+      writing: this._writing,
+      faulted: !!this._fault,
+    });
+  }
+
+  beginControlProbe(rpcId: string): void {
+    if (typeof rpcId !== "string" || !rpcId.trim())
+      fail("INVALID_REQUEST", "A control probe requires its original RPC id");
+    this._commit((draft) => {
+      if (draft.controlBlocked)
+        fail("RECONCILIATION_REQUIRED", "An earlier control probe is unresolved");
+      draft.controlBlocked = { rpcId };
+      return null;
+    });
+  }
+
+  settleControlProbe(rpcId: string): boolean {
+    const matches = (value: unknown): boolean =>
+      !!value && typeof value === "object" &&
+      "rpcId" in value && value.rpcId === rpcId;
+    if (!matches(this.data.controlBlocked))
+      return false;
+    return this._commit((draft) => {
+      if (!matches(draft.controlBlocked)) return false;
+      delete draft.controlBlocked;
+      return true;
+    });
+  }
+
   _time() {
     const value = this.now();
     if (!integer(value))

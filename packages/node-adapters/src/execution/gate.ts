@@ -8,12 +8,23 @@ interface GateState {
   pause(paused: boolean, requestId: string): unknown;
 }
 
+declare const activityToken: unique symbol;
+export interface GateActivityToken {
+  readonly id: string;
+  readonly [activityToken]: true;
+}
+
+declare const adminToken: unique symbol;
+export interface GateAdminToken {
+  readonly [adminToken]: true;
+}
+
 export class QueueGate {
-  readonly active = new Map<string, number>();
-  readonly waiters = new Set<() => void>();
-  readonly scope = new AsyncLocalStorage<{ administrative: boolean }>();
-  resuming = false;
-  adminTransition: string | null = null;
+  #active = new Map<GateActivityToken, number>();
+  #waiters = new Set<() => void>();
+  #scope = new AsyncLocalStorage<{ administrative: boolean }>();
+  #resuming = false;
+  #admin: { token: GateAdminToken; name: string } | null = null;
   buildHash?: string;
   controlCapabilities?: Record<string, boolean>;
   changed?: () => void;
@@ -22,6 +33,69 @@ export class QueueGate {
     readonly state: GateState,
     readonly instanceId: string,
   ) {}
+
+  get active(): ReadonlyMap<string, number> {
+    return new Map([...this.#active].map(([token, at]) => [token.id, at]));
+  }
+
+  get activeCount(): number {
+    return this.#active.size;
+  }
+
+  get activeIds(): readonly string[] {
+    return Object.freeze([...this.#active.keys()].map((token) => token.id));
+  }
+
+  get waitingCount(): number {
+    return this.#waiters.size;
+  }
+
+  get isAdministrative(): boolean {
+    return this.#scope.getStore()?.administrative === true;
+  }
+
+  get resuming(): boolean {
+    return this.#resuming;
+  }
+
+  get adminTransition(): string | null {
+    return this.#admin?.name ?? null;
+  }
+
+  beginActivity(): GateActivityToken {
+    const token = Object.freeze({ id: randomUUID() }) as GateActivityToken;
+    this.#active.set(token, Date.now());
+    return token;
+  }
+
+  endActivity(token: GateActivityToken): boolean {
+    if (!this.#active.delete(token)) return false;
+    return true;
+  }
+
+  hasActivity(token: GateActivityToken): boolean {
+    return this.#active.has(token);
+  }
+
+  hasOtherActivity(token?: GateActivityToken): boolean {
+    return this.#active.size > (token && this.#active.has(token) ? 1 : 0);
+  }
+
+  beginAdminTransition(name: string): GateAdminToken {
+    if (!name || this.#admin || this.#resuming)
+      throw Object.assign(new Error("An administrative transition is pending"), {
+        code: "BROKER_BUSY",
+      });
+    const token = Object.freeze({}) as GateAdminToken;
+    this.#admin = { token, name };
+    return token;
+  }
+
+  endAdminTransition(token: GateAdminToken): boolean {
+    if (this.#admin?.token !== token) return false;
+    this.#admin = null;
+    return true;
+  }
 
   snapshot() {
     const d = this.state.data;
@@ -35,13 +109,13 @@ export class QueueGate {
       generation: d.controlGeneration || 0,
       contextEpoch: d.contextEpoch || 0,
       gateClosed: d.paused,
-      activeOperations: this.active.size,
-      activeIds: [...this.active.keys()],
+      activeOperations: this.activeCount,
+      activeIds: [...this.activeIds],
       unresolved: !!(d.blocked || d.controlBlocked || d.localUnknown),
       pauseStartedAt: d.pauseStartedAt || null,
       phase: d.localUnknown
         ? "RECOVERY_BLOCKED"
-        : gatePhase(d, this.active.size, this.resuming),
+        : gatePhase(d, this.activeCount, this.resuming),
       scope: "instance; all managed projects; external clients are not blocked",
     };
   }
@@ -50,11 +124,11 @@ export class QueueGate {
     send: () => Promise<Result>,
     { onWait = () => {} }: { onWait?: (waiting: boolean) => void } = {},
   ): Promise<Result> {
-    if (!this.scope.getStore()?.administrative) {
+    if (!this.isAdministrative) {
       while (this.state.data.paused) {
         onWait(true);
         try {
-          await new Promise<void>((resolve) => this.waiters.add(resolve));
+          await new Promise<void>((resolve) => this.#waiters.add(resolve));
         } finally {
           onWait(false);
         }
@@ -66,19 +140,18 @@ export class QueueGate {
       }
     }
     // Grant and send share a synchronous JS turn. No remote cancellation/replay.
-    const id = randomUUID();
-    this.active.set(id, Date.now());
+    const token = this.beginActivity();
     this.changed?.();
     try {
       return await send();
     } finally {
-      this.active.delete(id);
+      this.endActivity(token);
       this.changed?.();
     }
   }
 
   administrative<Result>(check: () => Result): Result {
-    return this.scope.run({ administrative: true }, check);
+    return this.#scope.run({ administrative: true }, check);
   }
 
   async control(
@@ -107,24 +180,24 @@ export class QueueGate {
       this.state.data,
       { ...intent, paused, requestId },
       this.instanceId,
-      this.active.size,
+      this.activeCount,
       this.resuming,
     );
     if (old) return { ...this.snapshot(), requestId, ...old };
     if (!paused && this.state.data.paused) {
-      this.resuming = true;
+      this.#resuming = true;
       this.changed?.();
       try {
         await this.administrative(check);
       } finally {
-        this.resuming = false;
+        this.#resuming = false;
         this.changed?.();
       }
     }
     this.state.pause(paused, requestId);
     if (!paused) {
-      const waiters = [...this.waiters];
-      this.waiters.clear();
+      const waiters = [...this.#waiters];
+      this.#waiters.clear();
       for (const resolve of waiters) resolve();
     }
     return { ...this.snapshot(), requestId };
