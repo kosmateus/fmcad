@@ -329,6 +329,15 @@ export function createDocumentContinuationBroker(
       refuse();
     const observation = structuredClone(selected);
     const verified = await ports.verifyObservation(observation, actor);
+    // Verification may yield to another acceptance. Refuse an already stale
+    // checkpoint before waiting for compilation; final full checks still run
+    // synchronously at submission and again at each physical boundary.
+    const afterVerification = domain.documentInspectionFence(target, currentGeneration);
+    if (
+      afterVerification.priorCheckpointId !== acceptance.id ||
+      afterVerification.blockersDigest !== fence.blockersDigest
+    )
+      refuse();
     const programs = structuredClone(await (ports.compilePrograms ?? compileDocumentContinuationPrograms)(
       request,
       verified?.checkpoint,
