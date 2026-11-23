@@ -7,8 +7,12 @@ import os from "node:os";
 import path from "node:path";
 import {
   controlledHostUiAuditPaths,
+  createControlledHostUi,
   readControlledHostUiCapture,
 } from "../packages/node-adapters/src/execution/controlled-host-ui";
+import { createControlledFusionLaunchAdapter } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
+import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+import { setImmediate } from "node:timers/promises";
 
 const processIdentity = { pid: 321, birth: "123456789" };
 // Complete 1x1 RGBA PNG; decoding tests are NOT Windows UI execution.
@@ -119,6 +123,102 @@ test("durable start action paths are bound to original intent, not a new audit d
   assert.deepEqual(a.slice(-2), b.slice(-2));
   assert.equal(a.at(-1), `${intent}.ui-start-attempt.json.dispatch`);
   assert.equal(a.length, new Set(a).size);
+});
+test("a rejected asynchronous lease fence fails closed without an unhandled rejection or native action", async () => {
+  const hash = "a".repeat(64);
+  const installedDirectory = "C:\\owned-source";
+  const files = Object.fromEntries(
+    ["AutodeskFusionMCP.py", "addon_runtime.py", "lib/bootstrap_entry.py"].map(
+      (name) => [name, hash],
+    ),
+  );
+  const paths = {
+    profile: "C:\\private\\profile.json",
+    profileBackup: "C:\\private\\profile-before.json",
+    intent: "C:\\private\\intent.json",
+    receiptDirectory: "C:\\private\\receipts",
+    entry: "C:\\private\\receipts\\entry.json",
+    returned: "C:\\private\\receipts\\returned.json",
+    launchJournal: "C:\\private\\launch.json",
+    launchAttempt: "C:\\private\\launch-attempt.json",
+    sourceClosure: "C:\\private\\closure.json",
+    transcript: "C:\\private\\transcript.json",
+    provision: "C:\\private\\provision.json",
+  };
+  // The real adapter constructor performs no native action. Deliberately absent
+  // mapped files prove the rejected lease is refused before any executable read.
+  const native = createControlledFusionLaunchAdapter({
+    nativePython: "C:\\tools\\python.exe",
+    mappedNativePython: "/never-launched/python.exe",
+    nativePythonSha256: hash,
+    sourceDirectory: installedDirectory,
+    mappedSourceDirectory: "/never-launched/source",
+    installedDirectory,
+    mappedInstalledDirectory: "/never-launched/source",
+    installedSource: "a".repeat(40),
+    installedBuild: bootstrapInstalledFilesDigest(files),
+    installedFiles: files,
+    executable: "C:\\tools\\vendor.exe",
+    mappedExecutable: "/never-launched/vendor.exe",
+    executableSha256: hash,
+    arguments: [],
+    workingDirectory: "C:\\private",
+    paths,
+    originalPaths: [],
+    mappedOriginalPaths: Object.fromEntries(
+      Object.values(paths).map((name, index) => [
+        name,
+        `/never-launched/${index}`,
+      ]),
+    ),
+    receiptTimeoutMs: 1,
+    normalCloseTimeoutMs: 1,
+    mainWindowClass: "Owned",
+  });
+  const selector = {
+    id: "open",
+    name: "Open manager",
+    class: "Button",
+    type: "ControlType.Button",
+  };
+  const ui = createControlledHostUi(
+    {
+      powershell: "C:\\tools\\powershell.exe",
+      mappedPowershell: "/never-launched/powershell.exe",
+      powershellSha256: hash,
+      powershellConfigSha256: hash,
+      executable: "C:\\tools\\vendor.exe",
+      executableSha256: hash,
+      mainClass: "Owned",
+      openManager: selector,
+      installedEntry: {
+        ...selector,
+        id: "entry",
+        name: `${installedDirectory}\\AutodeskFusionMCP.py`,
+      },
+      start: { ...selector, id: "start", name: "Start" },
+      auditDirectory: "C:\\private\\ui",
+      mappedAuditDirectory: "/never-launched/ui",
+    },
+    native,
+    {
+      fence: () =>
+        Promise.reject(new Error("Rejected async lease must be consumed")),
+      assertCurrent: async () => {
+        throw new Error("Async lease must not be queried");
+      },
+    },
+  );
+  const input = {
+    process: processIdentity,
+    entry: `${installedDirectory}\\AutodeskFusionMCP.py`,
+  };
+  await assert.rejects(
+    ui.prepareExactHost(input),
+    /Synchronous held lease fence/,
+  );
+  await setImmediate();
+  await assert.rejects(ui.prepareExactHost(input), /retry|replay/);
 });
 test("normal staged adapter imports and decodes without workspace packages", () => {
   const root = path.resolve(__dirname, "../..");

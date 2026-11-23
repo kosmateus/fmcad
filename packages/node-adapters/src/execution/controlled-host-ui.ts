@@ -212,8 +212,11 @@ const ref = (file: ControlledFile) => ({
   identity: file.identity,
 });
 function sync(fence: () => void) {
-  if ((fence() as unknown) !== undefined)
+  const result: unknown = fence();
+  if (result !== undefined) {
+    void Promise.resolve(result).catch(() => {});
     throw new Error("Synchronous held lease fence required");
+  }
 }
 function mappedBytes(file: string, expected?: string): Buffer {
   const before = fs.lstatSync(file, { bigint: true });
