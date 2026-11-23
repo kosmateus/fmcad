@@ -113,6 +113,7 @@ export interface BrokerTurnServices {
     | "recordPhysicalDispatch"
     | "assertDocumentMetadataRead"
     | "assertDocumentCreation"
+    | "assertProtocolMetadata"
   > & { status(id: string): P.PublicJob };
   lane: Pick<
     ReturnType<typeof createBrokerLane>,
@@ -505,11 +506,25 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     prepared.pythonCertificate.fence(prepared.outgoing);
     queue.assertDocumentCreation(job.id, marker.programHash, marker.rpcHash, committedRpcId);
   }
+  function assertProtocolPrepared(job: P.Job, prepared: P.PreparedCall, committedRpcId?: string) {
+    const marker = job.protocolMetadata;
+    if (!marker) return;
+    const scope = object(prepared.record.binding["protocolScope"]);
+    if (!prepared.metadataOnly || prepared.metadataProof || prepared.pythonCertificate?.kind !== "non-python" ||
+        scope["producer"] !== "compiled-protocol-metadata-v1" ||
+        scope["requestHash"] !== job.hash || scope["rpcHash"] !== marker.rpcHash ||
+        scope["generation"] !== marker.generation || scope["buildHash"] !== config.buildHash ||
+        documents.currentCheckpointGeneration() !== marker.generation)
+      fail("PROTOCOL_METADATA_UNPROVEN", "Protocol RPC lacks original current metadata authority");
+    prepared.pythonCertificate.fence(prepared.outgoing);
+    queue.assertProtocolMetadata(job.id, marker.rpcHash, committedRpcId);
+  }
   function bindPhysical(context: Context, prepared: P.PreparedCall) {
     if (!transport.physicalIsolation) return undefined;
     const { job, grant } = context;
     assertMetadataPrepared(job, prepared);
     assertCreationPrepared(job, prepared);
+    assertProtocolPrepared(job, prepared);
     const target = documents.quarantineTarget(job.request);
     if (target && !prepared.metadataProof) {
       const compiled = job.documentContinuation
@@ -556,6 +571,8 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     );
     if (job.documentCreation && documents.checkpointGeneration(physical) !== job.documentCreation.generation)
       fail("DOCUMENT_STATE_CHANGED", "Creation physical turn differs from its compiler-bound generation");
+    if (job.protocolMetadata && documents.checkpointGeneration(physical) !== job.protocolMetadata.generation)
+      fail("DOCUMENT_STATE_CHANGED", "Protocol physical turn differs from its original generation");
     if (
       job.documentMetadataRead &&
       documents.checkpointGeneration(physical) !==
@@ -931,6 +948,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
         guards.assertPhysicalIsolationAuthority();
         assertMetadataPrepared(context.job, prepared, prepared.rpcId);
         assertCreationPrepared(context.job, prepared, prepared.rpcId);
+        assertProtocolPrepared(context.job, prepared, prepared.rpcId);
         const started = Date.now();
         debugDispatchStarted.set(prepared, started);
         trace(context, {
