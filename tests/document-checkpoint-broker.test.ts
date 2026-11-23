@@ -503,6 +503,21 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false);
   });
+test("public metadata cannot authorize a raw quarantine relabeled as runtime retirement",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, "raw-forged"), client = await f.client("metadata-unproven");
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const original = Object.values(record(before["jobs"])).map(record)
+      .find((job) => job["requestId"] === "private-foreign-request");
+    assert.ok(original);
+    const refused = await client.submit(metadataInput(f.dir, "metadata-unproven", "metadata-unproven-list"));
+    assert.equal(refused.state, "failed", JSON.stringify(refused));
+    assert.equal(record(record(refused)["operationResult"])["code"], "UNKNOWN_SCOPE_UNPROVEN");
+    assert.equal(f.counts().products, 0);
+    assert.equal(f.writes(), 0);
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+  });
 for (const fault of ["program", "wire"] as const)
   test(`public metadata refuses changed ${fault} before a physical product RPC`,
     { timeout: 120000 }, async (t) => {
