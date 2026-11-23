@@ -86,7 +86,7 @@ function same(
   return canonical(value) === canonical(other);
 }
 
-export function verifiedRuntimeRetirement(
+function currentRuntimeRetirement(
   authority: RuntimeRetirementAuthority | undefined,
 ): VerifiedRuntimeRetirement {
   const verify = authority && authorities.get(authority);
@@ -95,7 +95,17 @@ export function verifiedRuntimeRetirement(
       "RUNTIME_RETIREMENT_AUTHORITY_REQUIRED",
       "Verify the consumed native runtime root before restoring retired work",
     );
-  const coverage = copy(verify());
+  return verify();
+}
+
+type RetirementScope = Omit<VerifiedRuntimeRetirement, "frozen"> & {
+  frozenQuarantined: QueueSnapshot["quarantined"];
+};
+
+function validateRetirementScopes(
+  coverage: Pick<VerifiedRuntimeRetirement, "exposures" | "marker">,
+  originals: Readonly<Record<string, QueueJob>>,
+): void {
   for (const exposure of Object.values(coverage.exposures)) {
     if (exposure.source.kind !== "job") {
       if (exposure.target !== null)
@@ -115,7 +125,7 @@ export function verifiedRuntimeRetirement(
         );
       continue;
     }
-    const original = coverage.frozen.jobs[exposure.source.jobId];
+    const original = originals[exposure.source.jobId];
     if (!original)
       refused(
         "RUNTIME_RETIREMENT_CHANGED",
@@ -136,7 +146,35 @@ export function verifiedRuntimeRetirement(
         "Runtime retirement cannot narrow an original UNKNOWN scope",
       );
   }
+}
+
+export function verifiedRuntimeRetirement(
+  authority: RuntimeRetirementAuthority | undefined,
+): VerifiedRuntimeRetirement {
+  const coverage = copy(currentRuntimeRetirement(authority));
+  validateRetirementScopes(coverage, coverage.frozen.jobs);
   return coverage;
+}
+
+/** Operational conflicts need the retired originals, not a copy of every
+ * completed historical job. This is not a cached capability: the trusted live
+ * verifier still runs on every call, and all returned data is isolated. Full
+ * bootstrap/history validation continues through verifiedRuntimeRetirement. */
+export function verifiedRuntimeRetirementScope(
+  authority: RuntimeRetirementAuthority | undefined,
+): RetirementScope {
+  const { frozen, ...current } = currentRuntimeRetirement(authority);
+  const scope = copy({ ...current, frozenQuarantined: frozen.quarantined });
+  const originals: Record<string, QueueJob> = {};
+  for (const exposure of Object.values(scope.exposures)) {
+    if (exposure.source.kind !== "job" ||
+        exposure.layer !== scope.marker.layer) continue;
+    const id = exposure.source.jobId;
+    const original = frozen.jobs[id];
+    if (original) originals[id] = copy(original);
+  }
+  validateRetirementScopes(scope, originals);
+  return scope;
 }
 
 /** Pure first-bootstrap projection. The caller commits this result with its
@@ -324,7 +362,7 @@ export function runtimeRetiredJob(
 ): boolean {
   if (!current.appliedRuntimeRetirement && !current.runtimeRetiredExposures)
     return false;
-  const coverage = verifiedRuntimeRetirement(authority);
+  const coverage = verifiedRuntimeRetirementScope(authority);
   if (
     !same(current.appliedRuntimeRetirement, coverage.marker, canonical) ||
     !same(current.runtimeRetiredExposures, coverage.exposures, canonical)

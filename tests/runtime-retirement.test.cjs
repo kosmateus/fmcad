@@ -126,6 +126,44 @@ function fixture(observerState) {
   return { frozen, marker, old, waiting, observer, coverage, authority, project };
 }
 
+test("operational conflict checks isolate returned data and still validate live retirement scopes", () => {
+  const f = fixture();
+  const projected = f.project();
+  let allowed = true;
+  const authority = retirement.createRuntimeRetirementAuthority(() => {
+    if (!allowed) throw Object.assign(new Error("current owner lost"), { code: "OWNER_LOST" });
+    return f.coverage;
+  });
+  const probe = () => policy.documentConflicts(projected, null, authority, core.canonical);
+  const first = probe();
+  assert.equal(first.length, 1);
+  first[0].retirement.source.jobHash = "caller-mutation";
+  assert.equal(probe()[0].retirement.source.jobHash, f.frozen.jobs[f.old.id].hash);
+  const exposure = Object.values(f.coverage.exposures)[0];
+  exposure.target = { creationId: "forged-narrow-scope" };
+  assert.throws(probe, { code: "RUNTIME_RETIREMENT_CHANGED" });
+  exposure.target = null;
+  assert.equal(probe().length, 1);
+  allowed = false;
+  assert.throws(probe, { code: "OWNER_LOST" });
+  assert.equal(f.frozen.jobs[f.old.id].state, "needs_reconciliation");
+});
+
+test("full retirement verification still returns isolated complete frozen history", () => {
+  const f = fixture();
+  f.frozen.jobs["unrelated-completed"] = {
+    ...structuredClone(f.frozen.jobs[f.waiting.id]),
+    id: "unrelated-completed", state: "succeeded",
+  };
+  const first = retirement.verifiedRuntimeRetirement(f.authority);
+  assert.deepEqual(first.frozen, f.frozen);
+  first.frozen.jobs["unrelated-completed"].state = "failed";
+  first.jobs[f.old.id].original.requestId = "caller-mutation";
+  const second = retirement.verifiedRuntimeRetirement(f.authority);
+  assert.equal(second.frozen.jobs["unrelated-completed"].state, "succeeded");
+  assert.equal(second.jobs[f.old.id].original.requestId, "original-uncertain");
+});
+
 function successorFixture(observerState) {
   const previous = fixture(observerState);
   const current = previous.project();

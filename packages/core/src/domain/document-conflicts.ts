@@ -5,7 +5,7 @@ import type {
 } from "./queue-model";
 import { quarantineTargetConflicts } from "./queue-quarantine";
 import {
-  verifiedRuntimeRetirement,
+  verifiedRuntimeRetirementScope,
   runtimeRetiredJob,
   type RuntimeRetirementAuthority,
   type RuntimeRetiredExposure,
@@ -48,7 +48,7 @@ export function documentConflicts(
   const released = quarantineTargetConflicts(snapshot, target);
   if (!snapshot.appliedRuntimeRetirement && !snapshot.runtimeRetiredExposures)
     return released;
-  const verified = verifiedRuntimeRetirement(authority);
+  const verified = verifiedRuntimeRetirementScope(authority);
   if (
     canonical(snapshot.appliedRuntimeRetirement) !==
       canonical(verified.marker) ||
@@ -66,7 +66,7 @@ export function documentConflicts(
   // retirement, report that provenance instead of treating its raw scope as an
   // unfenced new exposure. A later/mutated quarantine cannot inherit it.
   const result: DocumentConflict[] = released.filter((record) => {
-    const original = verified.frozen.quarantined?.[record.jobId];
+    const original = verified.frozenQuarantined?.[record.jobId];
     const job = snapshot.jobs[record.jobId];
     if (
       !original ||

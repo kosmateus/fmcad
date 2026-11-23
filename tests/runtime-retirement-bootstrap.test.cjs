@@ -846,6 +846,22 @@ test("retired document probes with 17000 completed jobs stay within the existing
   assert.deepEqual(state.data.jobs[f.submitted.id], f.frozen.jobs[f.submitted.id]);
 });
 
+test("a sustained retirement conflict-check burst does not starve the existing heartbeat", { timeout: 60000 }, (t) => {
+  const f = fixture(t, 17000);
+  const state = new QueueState(f.directory, {
+    runtimeRetirement: f.factory().forDirectory(f.directory), now: () => 200,
+  });
+  const before = performance.now();
+  for (let index = 0; index < 1000; index++)
+    assert.equal(state.documentConflicts({ creationId: "doc-A" }).length, 1);
+  const elapsed = performance.now() - before;
+  t.diagnostic(`1000 document probes, 17000 completed jobs + 1 retained UNKNOWN: ${elapsed.toFixed(2)} ms`);
+  assert.ok(elapsed < 30000, "the synchronous burst must not starve the production 30-second heartbeat");
+  assert.deepEqual(state.data.jobs[f.submitted.id], f.frozen.jobs[f.submitted.id]);
+  f.loseOwner();
+  assert.throws(() => state.documentConflicts({ creationId: "doc-A" }), { code: "OWNER_LOST" });
+});
+
 test("an approved-root assertion cannot authenticate a different supplied record or frozen snapshot", (t) => {
   for (const changed of ["record", "snapshot"]) {
     const f = fixture(t);
