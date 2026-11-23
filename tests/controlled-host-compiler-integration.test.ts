@@ -2,14 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import path, { resolve } from "node:path";
 import {
   prepareControlledBootstrapOriginals,
   type ControlledHostPreparationContext,
 } from "../src/fresh-host-proof";
 import {
+  createBrokerRpcPreparation,
+  type BrokerRpcPreparationPorts,
+} from "../src/broker-rpc-preparation";
+import {
   compilePythonStdout,
   pythonStdoutInputDigests,
+  type CompiledPythonStdout,
   type DiagnosticRequest,
 } from "../src/python-diagnostic-broker";
 import {
@@ -17,7 +22,15 @@ import {
   type ControlledStdoutProviderPorts,
 } from "../src/controlled-stdout-provider";
 import type { ProtocolMetadataPins } from "../src/protocol-metadata-broker";
+import type * as P from "../src/queue-broker-ports";
+import type { BrokerModules } from "../src/queue-broker-modules";
+import { prepareMetadataWire } from "../src/queue-broker-modules";
 import { controlledFusionBootstrapFixture } from "./controlled-fusion-bootstrap-fixture";
+import * as platform from "../packages/node-adapters/src/config-platform";
+import { createQueueInstance } from "../packages/node-adapters/src/execution/queue-instance";
+import { prepareBrokerScript } from "../packages/node-adapters/src/execution/broker-preparation";
+import { fencePreparedWire } from "../packages/node-adapters/src/execution/broker-physical";
+import { createPythonRpcAdmission } from "../packages/node-adapters/src/python/admission";
 import { createPythonChecker } from "../packages/node-adapters/src/python/checker";
 import type {
   NativeRuntimeActivationCompletion,
@@ -28,15 +41,29 @@ import type {
 import type { NativeRuntimeRebaselineReaderPorts } from "../packages/node-adapters/src/execution/runtime-rebaseline-reader";
 import type { PhysicalGenerationDescriptor } from "../packages/node-adapters/src/execution/physical-generation";
 import { prepareIsolatedStdout } from "../packages/node-adapters/src/python/isolated-stdout";
-import { pythonArtifactManifest } from "../packages/node-adapters/src/python/context-binding";
+import {
+  pythonArtifactManifest,
+  retainPythonOrigin,
+} from "../packages/node-adapters/src/python/context-binding";
 
 const source = 'print("marker")\n';
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
+const queueAnchor = resolve("src/queue-broker.js");
+const runtime = platform.resolveRuntimePaths({ anchor: queueAnchor }).runtime;
+const prepareReceiptScript: BrokerModules["./queue-instance"]["prepareReceiptScript"] =
+  createQueueInstance(queueAnchor, platform).prepareReceiptScript;
 
 function record(value: unknown): Record<string, unknown> {
   assert.ok(value && typeof value === "object" && !Array.isArray(value));
   return value as Record<string, unknown>;
+}
+
+function brokerRpc(value: unknown): P.Rpc {
+  const rpc = record(value);
+  assert.equal(typeof rpc["jsonrpc"], "string");
+  assert.equal(typeof rpc["method"], "string");
+  return rpc as unknown as P.Rpc;
 }
 
 function rpcCode(value: unknown): string {
@@ -313,6 +340,72 @@ async function controlledIntegrationFixture(
   };
 }
 
+function normalPythonAdmission() {
+  return createPythonRpcAdmission({
+    runtime,
+    checker: createPythonChecker({
+      typingRoot: path.join(runtime, "typing"),
+      definitionsRoot: path.join(runtime, "typing"),
+      pythonPlatform: "Windows",
+    }),
+  });
+}
+
+function brokerRpcPreparationPorts(
+  job: { readonly id: string; readonly request: DiagnosticRequest },
+  stdoutProgram: CompiledPythonStdout,
+  pythonAdmission: ReturnType<typeof createPythonRpcAdmission>,
+): BrokerRpcPreparationPorts {
+  const contextEpoch = 7;
+  const instance: P.Instance = {
+    pid: 41,
+    birth: `controlled-host-${job.id}`,
+    version: "offline-runtime",
+  };
+  return {
+    buildHash: job.request.buildHash ?? "offline-broker-build",
+    nativeMcp: false,
+    nativePaths: { mapPath: (file) => file },
+    view: () => ({
+      epoch: null,
+      admissionMode: "normal-multidocument",
+      contextEpoch,
+      approvedRuntimeRoot: false,
+      metadataAdmission: false,
+    }),
+    runtimeInstance: () => instance,
+    jobDirectory: (jobId) =>
+      path.join("/tmp/opencode/controlled-host-rpc-preparation", jobId),
+    admitEpochRequest: () => null,
+    verifyPreparedJob(actualJob, actualEpoch) {
+      assert.equal(actualJob.id, job.id);
+      assert.equal(actualEpoch, contextEpoch);
+    },
+    isolatedTool(name, args) {
+      assert.equal(name, "execute_python");
+      assert.equal(args?.persistent, false);
+      assert.equal(args?.code, rpcCode(stdoutProgram.rpc()));
+    },
+    localPreparation: () => ({ job, stdoutProgram }),
+    metadata: {
+      job: () => undefined,
+      program: () => assert.fail("unexpected document metadata program"),
+      assertDocumentMetadataRead: () =>
+        assert.fail("unexpected document metadata assertion"),
+    },
+    prepareBrokerScript,
+    prepareReceiptScript,
+    retainPythonOrigin: (artifact, origin) =>
+      retainPythonOrigin(
+        artifact,
+        origin as unknown as Parameters<typeof retainPythonOrigin>[1],
+      ),
+    prepareMetadataWire,
+    pythonAdmission,
+    localCheckOptions: () => ({}),
+  };
+}
+
 test("offline native boundary plus same-process controlled origin compiles exact stdout artifact through the normal checker", async () => {
   const fixture = await controlledIntegrationFixture();
   assert.strictEqual(
@@ -414,7 +507,7 @@ test("offline native boundary plus same-process controlled origin compiles exact
   });
 });
 
-test("separate original RPC and native receipt paths keep exact final-wire certificates isolated", async () => {
+test("two same-source controlled RPCs get independent real receipt wrappers and certificates before physical send", async () => {
   const requestA = diagnosticRequest(
     "controlled-host-request-a",
     "controlled-host-logical-rpc-a",
@@ -439,6 +532,7 @@ test("separate original RPC and native receipt paths keep exact final-wire certi
     digestA.originalLogicalRpcDigest,
     digestB.originalLogicalRpcDigest,
   );
+  // These are the native host-proof receipts, not final broker RPC receipts.
   assert.notEqual(
     first.completion.nativeReceipt.reference.path,
     second.completion.nativeReceipt.reference.path,
@@ -494,29 +588,133 @@ test("separate original RPC and native receipt paths keep exact final-wire certi
   assert.notEqual(compiledA.descriptor.rpcHash, compiledB.descriptor.rpcHash);
   assert.equal(second.readerFixtures.length, 1);
 
-  const wireA: Record<string, unknown> = {
-    ...record(compiledA.rpc()),
-    id: "fmcad:outgoing-a",
-  };
-  const wireB: Record<string, unknown> = {
-    ...record(compiledB.rpc()),
-    id: "fmcad:outgoing-b",
-  };
-  compiledA.assertWire(requestA, wireA, "outgoing-a");
-  compiledB.assertWire(requestB, wireB, "outgoing-b");
-  assert.throws(() => compiledA.assertWire(requestA, wireA, "outgoing-b"), {
-    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
-  });
-  assert.throws(() => compiledA.assertWire(requestB, wireB, "outgoing-b"), {
-    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
-  });
+  const admission = normalPythonAdmission();
+  const jobA = { id: "stdout-owned-job-a", request: { ...requestA } };
+  const jobB = { id: "stdout-owned-job-b", request: { ...requestB } };
+  const preparedA = await createBrokerRpcPreparation(
+    brokerRpcPreparationPorts(jobA, compiledA, admission),
+  ).prepareOwnedPost(brokerRpc(compiledA.rpc()), jobA, compiledA.origin());
+  const preparedB = await createBrokerRpcPreparation(
+    brokerRpcPreparationPorts(jobB, compiledB, admission),
+  ).prepareOwnedPost(brokerRpc(compiledB.rpc()), jobB, compiledB.origin());
+  assert.ok(preparedA.pythonCertificate);
+  assert.ok(preparedB.pythonCertificate);
+  assert.equal(preparedA.pythonCertificate.kind, "python");
+  assert.equal(preparedB.pythonCertificate.kind, "python");
+  assert.equal(preparedA.pythonCertificate.report?.status, "passed");
+  assert.equal(preparedB.pythonCertificate.report?.status, "passed");
+  assert.equal(
+    preparedA.pythonCertificate.report?.provenance.checker,
+    "basedpyright",
+  );
+  assert.equal(
+    preparedB.pythonCertificate.report?.provenance.checker,
+    "basedpyright",
+  );
 
-  const wrongCode = structuredClone(wireA);
-  record(record(wrongCode["params"])["arguments"])["code"] =
-    'print("not marker")\n';
-  assert.throws(() => compiledA.assertWire(requestA, wrongCode, "outgoing-a"), {
-    code: "PYTHON_DIAGNOSTIC_UNPROVEN",
-  });
+  const receiptPathA = preparedA.record.receipt;
+  const receiptPathB = preparedB.record.receipt;
+  assert.ok(receiptPathA);
+  assert.ok(receiptPathB);
+  assert.notEqual(receiptPathA, receiptPathB);
+  assert.ok(rpcCode(preparedA.outgoing).includes(receiptPathA));
+  assert.ok(rpcCode(preparedB.outgoing).includes(receiptPathB));
+  assert.notEqual(preparedA.rpcId, preparedB.rpcId);
+  assert.equal(preparedA.outgoing.id, `fmcad:${preparedA.rpcId}`);
+  assert.equal(preparedB.outgoing.id, `fmcad:${preparedB.rpcId}`);
+  assert.notEqual(rpcCode(preparedA.outgoing), rpcCode(preparedB.outgoing));
+  assert.equal(
+    preparedA.record.pythonCheck?.provenance.wireHash,
+    preparedA.pythonArtifact?.sha256,
+  );
+  assert.equal(
+    preparedB.record.pythonCheck?.provenance.wireHash,
+    preparedB.pythonArtifact?.sha256,
+  );
+  assert.doesNotThrow(() =>
+    preparedA.pythonCertificate.fence(preparedA.outgoing),
+  );
+  assert.doesNotThrow(() =>
+    preparedB.pythonCertificate.fence(preparedB.outgoing),
+  );
+  fencePreparedWire(preparedA);
+  fencePreparedWire(preparedB);
+
+  const pathBWithTransportIdA = structuredClone(preparedA.outgoing);
+  record(record(pathBWithTransportIdA["params"])["arguments"])["code"] =
+    rpcCode(preparedB.outgoing);
+  assert.equal(pathBWithTransportIdA["id"], preparedA.outgoing.id);
+  assert.ok(rpcCode(pathBWithTransportIdA).includes(receiptPathB));
+
+  const pathAWithTransportIdB = structuredClone(preparedB.outgoing);
+  record(record(pathAWithTransportIdB["params"])["arguments"])["code"] =
+    rpcCode(preparedA.outgoing);
+  assert.equal(pathAWithTransportIdB["id"], preparedB.outgoing.id);
+  assert.ok(rpcCode(pathAWithTransportIdB).includes(receiptPathA));
+
+  const changedCodeA = structuredClone(preparedA.outgoing);
+  record(record(changedCodeA["params"])["arguments"])["code"] +=
+    "\n# modified after receipt preparation";
+  const changedCodeB = structuredClone(preparedB.outgoing);
+  record(record(changedCodeB["params"])["arguments"])["code"] +=
+    "\n# modified after receipt preparation";
+
+  const changedTransportIdA = structuredClone(preparedA.outgoing);
+  changedTransportIdA.id = preparedB.outgoing.id;
+  const changedTransportIdB = structuredClone(preparedB.outgoing);
+  changedTransportIdB.id = preparedA.outgoing.id;
+
+  const substitutions = [
+    {
+      name: "foreign receipt path/code",
+      prepared: preparedA,
+      wire: pathBWithTransportIdA,
+    },
+    {
+      name: "foreign receipt path/code",
+      prepared: preparedB,
+      wire: pathAWithTransportIdB,
+    },
+    { name: "changed wrapped code", prepared: preparedA, wire: changedCodeA },
+    { name: "changed wrapped code", prepared: preparedB, wire: changedCodeB },
+    {
+      name: "foreign transport RPC id",
+      prepared: preparedA,
+      wire: changedTransportIdA,
+    },
+    {
+      name: "foreign transport RPC id",
+      prepared: preparedB,
+      wire: changedTransportIdB,
+    },
+  ];
+  let physicalSendCalls = 0;
+  // This is an in-process boundary counter only; no SDK or transport is created.
+  const physicalSendSentinel = () => {
+    physicalSendCalls++;
+  };
+  const fenceBeforePhysicalSend = (prepared: P.PreparedCall, wire: P.Rpc) => {
+    assert.ok(prepared.pythonCertificate);
+    fencePreparedWire({
+      outgoing: wire,
+      pythonCertificate: prepared.pythonCertificate,
+      pythonArtifact: prepared.pythonArtifact,
+    });
+    physicalSendSentinel();
+  };
+  for (const substitution of substitutions) {
+    assert.throws(
+      () => substitution.prepared.pythonCertificate!.fence(substitution.wire),
+      { code: "PYTHON_ADMISSION_CHANGED" },
+      substitution.name,
+    );
+    assert.throws(
+      () => fenceBeforePhysicalSend(substitution.prepared, substitution.wire),
+      { code: "PYTHON_ADMISSION_CHANGED" },
+      substitution.name,
+    );
+    assert.equal(physicalSendCalls, 0, substitution.name);
+  }
 });
 
 test("JSON transcript copies and foreign real controllers cannot provide the controlled origin", async () => {
