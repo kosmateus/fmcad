@@ -24,7 +24,7 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 /** Actual compiled broker, IPC, client preparation, checker and persistence.
  * Only the physical boundary/receipts are synthetic; no Fusion/native SDK runs. */
 async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false,
-  metadataFault?: "program" | "wire") {
+  metadataFault?: "program" | "wire", historyCount = 0) {
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
   const previousData = process.env["XDG_DATA_HOME"];
@@ -106,6 +106,22 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
       const file = path.join(dir, "queue-state.json");
       const snapshot = JSON.parse(fs.readFileSync(file, "utf8"));
       snapshot.quarantined[jobId].fenceKind = "runtime_retired";
+      fs.writeFileSync(file, JSON.stringify(snapshot), { mode: 0o600 });
+    }
+    if (historyCount) {
+      const file = path.join(dir, "queue-state.json");
+      const snapshot = JSON.parse(fs.readFileSync(file, "utf8"));
+      const historical = { ...snapshot.jobs[jobId], state: "succeeded",
+        finishedAt: Date.now(), description: "Historical metadata fixture ".repeat(60) };
+      delete historical.physicalDispatches;
+      delete historical.physicalDispatchCount;
+      delete historical.dispatch;
+      for (let i = 0; i < historyCount; i++) {
+        const id = `completed-history-${i}`;
+        snapshot.jobs[id] = { ...historical, id, requestId: id, order: i + 100,
+          request: { ...historical.request, requestId: id } };
+      }
+      snapshot.order = Math.max(snapshot.order ?? 0, historyCount + 100);
       fs.writeFileSync(file, JSON.stringify(snapshot), { mode: 0o600 });
     }
   }
@@ -517,6 +533,42 @@ test("public metadata cannot authorize a raw quarantine relabeled as runtime ret
     assert.equal(f.writes(), 0);
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+  });
+test("parallel public metadata JSON reads retain each original compiler-bound RPC",
+  { timeout: 180000 }, async (t) => {
+    const f = await fixture(t, true);
+    const clients = await Promise.all(Array.from({ length: 10 }, (_, i) =>
+      f.client(`parallel-metadata-${i}`)));
+    const completed = await Promise.all(clients.map(async (client, i) => {
+      const admitted = await client.submit(metadataInput(f.dir,
+        `parallel-metadata-${i}`, `parallel-metadata-request-${i}`, true));
+      return client.wait(admitted.id, { signal: AbortSignal.timeout(120000) });
+    }));
+    for (const result of completed) {
+      assert.equal(result.job.state, "succeeded", JSON.stringify(result));
+      assert.deepEqual(JSON.parse(result.stdout!), { success: true, results: [{
+        name: "Owned A", id: "file-A", creationId: "doc-A",
+        isActive: true, isModified: false, isSaved: true,
+      }] });
+    }
+    assert.equal(f.counts().products, 10);
+    assert.equal(f.writes(), 0);
+  });
+test("parallel public metadata reads survive a retained large completed history",
+  { timeout: 240000 }, async (t) => {
+    const f = await fixture(t, true, undefined, 17000);
+    const clients = await Promise.all(Array.from({ length: 10 }, (_, i) =>
+      f.client(`history-metadata-${i}`)));
+    const completed = await Promise.all(clients.map(async (client, i) => {
+      const input = metadataInput(f.dir, `history-metadata-${i}`, `history-read-${i}`, true);
+      input.timeoutMs = 180000;
+      const admitted = await client.submit(input);
+      return client.wait(admitted.id, { signal: AbortSignal.timeout(180000) });
+    }));
+    for (const result of completed)
+      assert.equal(result.job.state, "succeeded", JSON.stringify(result));
+    assert.equal(f.counts().products, 10);
+    assert.equal(f.writes(), 0);
   });
 test("public metadata JSON crosses the normal worker with native output and one bound read",
   { timeout: 120000 }, async (t) => {

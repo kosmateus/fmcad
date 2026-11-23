@@ -19,6 +19,18 @@ export async function listenBrokerIpc(
 ) {
   const sockets = new Set<net.Socket>();
   const awaitingReply = new Set<net.Socket>();
+  const ready: Array<() => void> = [];
+  let dispatchScheduled = false;
+  function scheduleDispatch() {
+    if (dispatchScheduled || !ready.length) return;
+    dispatchScheduled = true;
+    setImmediate(() => {
+      dispatchScheduled = false;
+      const start = ready.shift();
+      start?.();
+      scheduleDispatch();
+    });
+  }
   let closing = false;
   const server = net.createServer((socket) => {
     if (closing) {
@@ -92,7 +104,7 @@ export async function listenBrokerIpc(
         return;
       }
       awaitingReply.add(socket);
-      Promise.resolve()
+      const start = () => { void Promise.resolve()
         .then(() => handle(message))
         .then(
           (result) => respond({ ok: true, result }, message),
@@ -115,7 +127,17 @@ export async function listenBrokerIpc(
             ),
         )
         // A failed encoding/write cannot keep an accepted socket open forever.
-        .catch(() => socket.destroy());
+        .catch(() => socket.destroy()); };
+      // Liveness frames must reach normal capability authorization before a
+      // queued burst of expensive admissions exhausts the worker's deadline.
+      // Snapshot fences are admission work, not ordinary heartbeats.
+      const frame = message as Record<string, unknown> | null;
+      if (frame && frame["action"] === "worker-status" &&
+          frame["snapshotFence"] !== true) start();
+      else {
+        ready.push(start);
+        scheduleDispatch();
+      }
     });
   });
 

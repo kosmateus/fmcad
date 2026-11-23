@@ -343,7 +343,7 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
     runId: "native-fixture",
     requestHash: "b".repeat(64),
     sessionNonce: "c".repeat(32),
-    backend: "mcp",
+    backend: "addin",
     resolvedIdentity: { creationId: "native-document" },
   };
   function receipt(
@@ -594,7 +594,7 @@ const Module=require('node:module');const load=Module._load;Module._load=functio
   fakeAdmissionCheck = brokerOptions.checkPrepared ?? (async () => {});
   const broker = await serve(
     {
-      backend: "mcp",
+      backend: "addin",
       timeoutMs: 5000,
       queue: {
         preparationConcurrency: brokerOptions.preparationConcurrency ?? 2,
@@ -639,7 +639,7 @@ const Module=require('node:module');const load=Module._load;Module._load=functio
         inputFiles: inputFiles(argv, dir),
         cwd: dir,
         timeoutMs: 5000,
-        backend: "mcp",
+        backend: "addin",
         ...options,
       },
     }) as Promise<SubmittedJob>;

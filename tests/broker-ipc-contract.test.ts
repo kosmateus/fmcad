@@ -163,6 +163,59 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+test("accepted worker heartbeat stays responsive during a burst of synchronous admissions",
+  { timeout: 20000 }, async (t) => {
+    const dir = fs.mkdtempSync("/tmp/opencode/ipc-admission-heartbeat-");
+    let finish!: (value: unknown) => void;
+    let admitted = 0;
+    const backend = new Promise((resolve) => { finish = resolve; });
+    const ipc = await listenBrokerIpc(queueSocket(dir), async (message) => {
+      const input = record(message);
+      if (input["action"] === "backend") return backend;
+      if (input["action"] === "worker-status") return { remainingMs: 10000 };
+      assert.equal(input["action"], "bulk-admission");
+      // Model bounded synchronous snapshot/fsync work. The client deadline
+      // runs in another process, just as it does for actual local workers.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      if (++admitted === 20) finish({ value: "complete" });
+      return { accepted: true };
+    });
+    t.after(async () => {
+      finish({ value: "cleanup" });
+      await ipc.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const connection = path.resolve(__dirname, "../src/queue-connection.js");
+    const child = `
+      const net = require("node:net");
+      const { acceptedWorkerRequest, queueSocket } = require(${JSON.stringify(connection)});
+      const dir = process.argv[1];
+      function submit() { return new Promise((resolve, reject) => {
+        const s = net.createConnection(queueSocket(dir));
+        s.on("error", reject); s.on("data", () => {}); s.once("end", resolve);
+        s.once("connect", () => s.end(JSON.stringify({action:"bulk-admission"})+"\\n"));
+      }); }
+      (async () => {
+        const pending = acceptedWorkerRequest(dir, {
+          action:"backend", jobId:"owned-job", workerToken:"owned-token",
+          method:"callTool", args:[],
+        }, {pollMs:20, heartbeatTimeoutMs:400});
+        const result = pending.then(
+          () => ({state:"succeeded"}),
+          e => ({state:"failed",code:e.code}));
+        await new Promise(resolve => setTimeout(resolve,20));
+        await Promise.all(Array.from({length:20},submit));
+        const outcome=await result;
+        console.log(JSON.stringify(outcome));
+        process.exitCode=outcome.state==="succeeded"?0:1;
+      })().catch(e=>{console.error(e);process.exitCode=1;});
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ["-e", child, dir],
+      { timeout: 10000 });
+    assert.deepEqual(JSON.parse(stdout.trim()), { state: "succeeded" });
+    assert.equal(admitted, 20);
+  });
+
 function parseReplies(text: string): WireReply[] {
   assert.ok(text.endsWith("\n"), "broker reply is newline terminated");
   const lines = text.slice(0, -1).split("\n");
