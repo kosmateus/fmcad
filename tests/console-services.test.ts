@@ -1,4 +1,5 @@
 import type { AdminOptions } from "../src/queue-console-admin";
+type GateAdminToken = ReturnType<AdminOptions["gate"]["beginAdminTransition"]>;
 import type {
   ServiceOptions,
   ServiceConfiguration,
@@ -71,12 +72,30 @@ function adminFixture() {
     _commit(fn: (data: FixtureData) => null) {
       return fn(this.data);
     },
+    settleControlProbe(rpcId: string) {
+      if (this.data.controlBlocked?.rpcId !== rpcId) return false;
+      delete this.data.controlBlocked;
+      return true;
+    },
   };
+  let adminToken: GateAdminToken | undefined;
   const gate = {
     instanceId: "old",
     active: new Map(),
     resuming: false,
     adminTransition: null as string | null,
+    beginAdminTransition(name: string) {
+      assert.equal(adminToken, undefined);
+      adminToken = Object.freeze({}) as GateAdminToken;
+      this.adminTransition = name;
+      return adminToken;
+    },
+    endAdminTransition(token: GateAdminToken) {
+      if (token !== adminToken) return false;
+      adminToken = undefined;
+      this.adminTransition = null;
+      return true;
+    },
     administrative: <T>(fn: () => Promise<T>) => fn(),
   };
   const instance = {

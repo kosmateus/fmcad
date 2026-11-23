@@ -1481,7 +1481,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const grant = physicalGrant.getStore();
       const owned =
         localPreparation ??
-        (!gate.scope.getStore()?.administrative &&
+        (!gate.isAdministrative &&
           grant && { job: grant.context.job, turn: grant.turn });
       const job = owned ? owned.job : undefined;
       const classification =
@@ -2916,14 +2916,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     else state.recordPhysicalDispatch(job.id,entry);
   }
   function nativeActivity(context: P.Context) {
-    if (context.nativeActivityId) return;
-    context.nativeActivityId = randomUUID();
-    gate.active.set(context.nativeActivityId, Date.now());
+    if (context.nativeActivityToken) return;
+    const token = gate.beginActivity();
+    context.nativeActivityToken = token;
+    context.nativeActivityId = token.id;
     diagnostics();
   }
   function endNativeActivity(context: P.Context | null) {
-    if (!context?.nativeActivityId) return;
-    gate.active.delete(context.nativeActivityId);
+    if (!context?.nativeActivityToken) return;
+    gate.endActivity(context.nativeActivityToken);
+    delete context.nativeActivityToken;
     delete context.nativeActivityId;
     diagnostics();
   }
@@ -3229,10 +3231,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (state.data.controlBlocked) {
       const prior = readJson<P.ProbeRecord>(file);
       remoteReceipt(prior, false);
-      state._commit((d) => {
-        delete d.controlBlocked;
-        return null;
-      });
+      if (!state.settleControlProbe(prior.binding.rpcId))
+        fail("RECONCILIATION_REQUIRED", "The original administrative probe is no longer current");
       setHold(null);
     }
     const rpcId = randomUUID();
@@ -3248,10 +3248,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       receipt: path.join(dir, "control-" + rpcId + ".receipt.json"),
     };
     durable(file, record);
-    state._commit((d) => {
-      d.controlBlocked = { rpcId };
-      return null;
-    });
+    state.beginControlProbe(rpcId);
     const resetProbe = resetAuthorization
       ? { ...resetAuthorization, probeRpcId: rpcId }
       : null;
@@ -3266,19 +3263,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ? await resetResumeScope.run(resetProbe, observe)
         : await observe();
       remoteReceipt(record, false);
-      state._commit((d) => {
-        delete d.controlBlocked;
-        return null;
-      });
+      if (!state.settleControlProbe(rpcId))
+        fail("RECONCILIATION_REQUIRED", "Administrative probe ownership changed");
       return observation;
     } catch (cause) {
       const error = errorInfo(cause);
       try {
         remoteReceipt(record, false);
-        state._commit((d) => {
-          delete d.controlBlocked;
-          return null;
-        });
+        state.settleControlProbe(rpcId);
       } catch {
         /* Remain recovery-blocked. */
       }
@@ -3966,7 +3958,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (atomicObservation)
       return scopedAtomicObservationPost(payload, sessionId, atomicObservation);
     const grant = physicalGrant.getStore();
-    const administrative = gate.scope.getStore()?.administrative === true;
+    const administrative = gate.isAdministrative;
     if (administrative || !grant) {
       if (
         ready?.kind === "owned" ||
@@ -4808,6 +4800,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   let recoveryAuditBusy = false;
+  let recoveryAuditTransition: ReturnType<typeof gate.beginAdminTransition> | undefined;
   function recoveryAuditProcesses(original: P.Instance, observed: P.Instance) {
     if (!currentAuditScope)
       return (
@@ -5107,14 +5100,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     begin() {
       if (busy() || gate.adminTransition)
         fail("BROKER_BUSY", "Another operation owns the broker");
+      recoveryAuditTransition = gate.beginAdminTransition("atomic-recovery-audit");
       recoveryAuditBusy = true;
       lane.setAdministrative(true);
-      gate.adminTransition = "atomic-recovery-audit";
     },
     end() {
+      const transition = recoveryAuditTransition;
+      if (!transition || !gate.endAdminTransition(transition)) return;
+      recoveryAuditTransition = undefined;
       recoveryAuditBusy = false;
       lane.setAdministrative(false);
-      gate.adminTransition = null;
       diagnostics();
     },
     admit: (send) => gate.administrative(() => gate.run(send)),
@@ -5546,8 +5541,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         pending: !!active.pending.size,
         childRunning: !!active.child && !active.workerClosed,
       },
-      otherActivity: [...gate.active.keys()].some((key) => key !== active?.nativeActivityId,
-      ),
+      otherActivity: gate.hasOtherActivity(active?.nativeActivityToken),
     });
     const identity = readJson<P.Identity>(identityFile);
     atomicAcceptance.requireFreshAtomicInstance(
@@ -5647,8 +5641,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       lifetime.closed ||
       epochProcessUnavailable ||
       !instance ||
-      state._writing ||
-      state._fault ||
+      !state.writerStatus().ready ||
       (active && active.job.id !== id)
     )
       return null;
@@ -5816,7 +5809,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   function workerSnapshotHash(): string {
-    if (state._writing || state._fault)
+    if (!state.writerStatus().ready)
       fail(
         "STORAGE_UNAVAILABLE",
         "Queue snapshot has unresolved durability evidence",
@@ -8212,12 +8205,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         state.data.localUnknown ||
         state.data.controlBlocked ||
         context?.unknown ||
-        state._fault
+        state.writerStatus().faulted
       )
         return "blocked";
       // Stop does not supply resume authority. A closed gate can leave an
       // existing turn unable to settle until the owner explicitly resumes.
-      if (state.data.paused && (lane.snapshot().active || gate.waiters.size))
+      if (state.data.paused && (lane.snapshot().active || gate.waitingCount))
         return "paused-work";
       if (gate.resuming || gate.active.size) return "physical";
       if (busy() || context || rawPreparations || summary.active)

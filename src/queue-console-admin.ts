@@ -1,11 +1,12 @@
 import path from "node:path";
+import type { GateAdminToken } from "../packages/node-adapters/dist/execution/gate";
 export interface Instance {
   pid: number;
   birth: string;
   version: string;
 }
 interface AdminData {
-  controlGeneration?: number;
+  controlGeneration?: number | undefined;
   controlBlocked?: unknown;
   localUnknown?: unknown;
   jobs?: Record<string, { state: string }>;
@@ -15,13 +16,15 @@ export interface AdminOptions {
     data: AdminData;
     summary(): { active?: unknown; blocked?: unknown; lease?: unknown };
     pause(value: boolean, requestId: string): unknown;
-    _commit(fn: (data: AdminData) => null): unknown;
+    settleControlProbe(rpcId: string): boolean;
   };
   gate: {
     instanceId: string;
-    adminTransition: string | null;
-    resuming: boolean;
+    readonly adminTransition: string | null;
+    readonly resuming: boolean;
     active: { size: number };
+    beginAdminTransition(name: string): GateAdminToken;
+    endAdminTransition(token: GateAdminToken): boolean;
     administrative<T>(check: () => Promise<T>): Promise<T>;
   };
   dir: string;
@@ -101,8 +104,8 @@ export function createAdmin({
       throw error;
     }
   };
-  function unlock() {
-    gate.adminTransition = null;
+  function unlock(transition: GateAdminToken) {
+    if (!gate.endAdminTransition(transition)) return;
     setBusy(false);
     diagnostics();
   }
@@ -215,11 +218,12 @@ export function createAdmin({
         "QUEUE_BUSY",
         "Idle-only lifecycle changes cannot abandon queued or unfinished local work",
       );
-    setBusy(true);
-    gate.adminTransition =
-      message["action"] === "console-inspect" ? "inspect" : "restart";
+    const transition = gate.beginAdminTransition(
+      message["action"] === "console-inspect" ? "inspect" : "restart",
+    );
     let deferred = false;
     try {
+      setBusy(true);
       // Publish before any physical probe. An interrupted intent is never replayed.
       durable(file, { ...binding, status: "prepared" }, true);
       if (message["action"] !== "console-inspect") {
@@ -263,7 +267,7 @@ export function createAdmin({
           } catch {
             /* Missing durable release proof remains an explicit unknown outcome. */
           } finally {
-            unlock();
+            unlock(transition);
           }
         });
         return result;
@@ -271,6 +275,10 @@ export function createAdmin({
       let observation: Instance | undefined;
       let reconciled = false;
       if (state.data.controlBlocked) {
+        const blocked = state.data.controlBlocked;
+        if (!object(blocked) || !identifier(blocked["rpcId"]))
+          fail("RECEIPT_MISMATCH", "Original administrative RPC identity is unavailable");
+        const originalRpcId = blocked["rpcId"];
         // This callback validates the ORIGINAL record/receipt and never sends SDK traffic.
         state.pause(true, c.requestId);
         const receipt = await observeControlCompletion();
@@ -283,10 +291,8 @@ export function createAdmin({
             "RECEIPT_MISMATCH",
             "Original administrative terminal receipt is unavailable",
           );
-        state._commit((d) => {
-          delete d.controlBlocked;
-          return null;
-        });
+        if (!state.settleControlProbe(originalRpcId))
+          fail("RECONCILIATION_REQUIRED", "Original administrative RPC ownership changed");
         if (receipt.outcome === "failed")
           fail(
             "INSPECTION_FAILED",
@@ -342,7 +348,7 @@ export function createAdmin({
       }
       throw error;
     } finally {
-      if (!deferred) unlock();
+      if (!deferred) unlock(transition);
     }
   }
   return { accepts, handle };

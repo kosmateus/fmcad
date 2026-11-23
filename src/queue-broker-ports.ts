@@ -464,6 +464,7 @@ export interface Context {
   timeoutPromise?: Promise<never>;
   child?: ChildProcess;
   nativeActivityId?: string;
+  nativeActivityToken?: ReturnType<QueueGate["beginActivity"]>;
   workflowUnknown?: boolean;
   waitingForPause?: boolean;
   rpcBudget?: Budget | undefined;
