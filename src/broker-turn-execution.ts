@@ -531,7 +531,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     }
     const selector = prepared.metadataProof
       ? transport.metadata.addinMetadataSelector(prepared.outgoing)
-      : (target ?? documents.documentSelector(job));
+      : job.documentCreation ? null : (target ?? documents.documentSelector(job));
     const request: P.PhysicalTurnRequest = Object.freeze({
       kind: "product",
       brokerNonce: config.brokerNonce,
@@ -2182,7 +2182,9 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           );
         allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
         selector =
-          raw && transport.metadata.isAddinMetadata(raw)
+          job.documentCreation
+            ? undefined
+            : raw && transport.metadata.isAddinMetadata(raw)
             ? transport.metadata.addinMetadataSelector(raw)
             : job.request.phased ||
                 job.sequenceMode === "automatic" ||

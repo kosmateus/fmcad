@@ -794,6 +794,48 @@ test("public doc new rejects a changed physical generation before creating a doc
     assert.equal(f.counts().products, 0);
     assert.equal(f.writes(), 0);
   });
+test("parallel identical public doc new submissions retain one original job, marker and physical dispatch",
+  { timeout: 120000 }, async (t) => {
+    const creation = load("./document-creation-broker") as typeof import("../src/document-creation-broker");
+    const factory = creation.createDocumentCreationBroker;
+    let release!: () => void;
+    const bothPrepared = new Promise<void>((resolve) => { release = resolve; });
+    let preparations = 0;
+    creation.createDocumentCreationBroker = () => {
+      const broker = factory();
+      return {
+        ...broker,
+        async prepare(...args) {
+          const program = await broker.prepare(...args);
+          if (args[0].requestId === "same-original-new") {
+            preparations++;
+            if (preparations === 2) release();
+            await bothPrepared;
+          }
+          return program;
+        },
+      };
+    };
+    t.after(() => { creation.createDocumentCreationBroker = factory; });
+    const f = await fixture(t), client = await f.client("creation-concurrent");
+    const input = creationInput(f.dir, "creation-concurrent", "same-original-new");
+    const [first, second] = await Promise.all([client.submit(input), client.submit(input)]);
+    assert.equal(preparations, 2, "both independent renderer nonces exist before either domain commit");
+    assert.equal(first.id, second.id);
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const marker = record(record(before["jobs"])[first.id])["documentCreation"];
+    const completed = await client.wait(first.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    const duplicate = await client.submit(input);
+    assert.equal(duplicate.id, first.id);
+    assert.equal(duplicate.state, "succeeded", "terminal original work is never rearmed");
+    await assert.rejects(client.submit({ ...input, argv: ["doc", "new", "--name", "Another immutable input"],
+      payload: undefined }), { code: "REQUEST_CONFLICT" });
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    assert.deepEqual(record(record(after["jobs"])[first.id])["documentCreation"], marker);
+    assert.equal(f.counts().products, 1);
+    assert.equal(f.writes(), 1);
+  });
 
 for (const fault of ["generation", "preparation"] as const) {
   test(`accepted continuation refuses ${fault} mismatch before a physical write`,
