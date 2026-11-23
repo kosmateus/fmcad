@@ -460,11 +460,14 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     assert.ok(original);
     const { prepareRequest } = load("./dist/composition/execution-request") as
       typeof import("../src/composition/execution-request");
+    const { buildHash } = load("./queue-instance") as { buildHash(): string };
     const request: import("../src/composition/execution-request").AcceptedCommandRequest & {
       kind: "command"; clientId: string; requestId: string; timeoutMs: number;
+      backend: "addin"; buildHash: string;
     } = {
       kind: "command" as const, clientId: "metadata-reader", requestId: "metadata-public-list",
       argv: ["doc", "list"], cwd: f.dir, timeoutMs: 45000,
+      backend: "addin", buildHash: buildHash(), inputFiles: [],
     };
     const prepared = prepareRequest({ request });
     const admitted = await client.submit({ ...request, payload: prepared.payload });
