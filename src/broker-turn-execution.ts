@@ -19,7 +19,6 @@ import type {
 import type { QueueDetails } from "../packages/core/src/domain/queue-model";
 import type { BrokerRecords } from "../packages/node-adapters/src/persistence/broker-records";
 import type { QueueGate } from "../packages/node-adapters/src/execution/gate";
-import type { PauseBudget } from "../packages/node-adapters/src/execution/pause-budget";
 import type * as Physical from "../packages/node-adapters/src/execution/broker-physical";
 import type * as Preparation from "../packages/node-adapters/src/execution/broker-preparation";
 import type * as Worker from "../packages/node-adapters/src/execution/local-worker-process";
@@ -105,7 +104,6 @@ export interface BrokerTurnServices {
     P.State,
     | "data"
     | "epoch"
-    | "status"
     | "lookup"
     | "summary"
     | "finish"
@@ -114,7 +112,7 @@ export interface BrokerTurnServices {
     | "markDispatch"
     | "recordPhysicalDispatch"
     | "assertDocumentMetadataRead"
-  >;
+  > & { status(id: string): P.PublicJob };
   lane: Pick<
     ReturnType<typeof createBrokerLane>,
     "assertCurrent" | "currentGrant" | "hasHold" | "hold" | "settle"
@@ -219,7 +217,7 @@ export interface BrokerTurnServices {
     resolveEntrypoint(): string;
     phased: Pick<Phased, "token" | "pending" | "reject" | "resolve">;
     launch: typeof Worker.launchLocalWorker;
-    Budget: typeof PauseBudget;
+    Budget: BrokerModules["./pause-budget"]["PauseBudget"];
   };
   nativeReceipts: BrokerModules["./queue-native-receipt"];
   recovery: {
@@ -1426,6 +1424,14 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     writeIntent: () => void,
   ) {
     let sent = false;
+    lane.assertCurrent(grant);
+    // Keep the existing SDK-complete/local-build-change path distinguishable
+    // from a changed remote/owner identity. No probe has been submitted here.
+    if (files.buildHash() !== config.buildHash)
+      throw Object.assign(
+        new Error("Pinned executable build changed before the instance probe was submitted"),
+        { code: "BUILD_CHANGED", probeNotSubmitted: true },
+      );
     const runtimePin = authority.capture();
     const assert = () => {
       lane.assertCurrent(grant);
