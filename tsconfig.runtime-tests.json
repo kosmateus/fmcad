@@ -12,6 +12,7 @@
     "tests/controlled-host-ui.test.ts",
     "tests/controlled-host-ui.windows.test.ts",
     "tests/fresh-host-proof.test.ts",
+    "tests/controlled-host-compiler-integration.test.ts",
     "tests/fusion-bootstrap-autoload.test.ts",
     "tests/bootstrap-entry-evidence.test.ts",
     "tests/controlled-fusion-bootstrap.test.ts",

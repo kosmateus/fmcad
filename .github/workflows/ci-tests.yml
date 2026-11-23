@@ -144,6 +144,7 @@ jobs:
       - run: node --test dist/tests/controlled-host-ui.test.js dist/tests/controlled-host-ui.windows.test.js
       - run: node --test dist/tests/controlled-lifecycle-lease.test.js
       - run: node --test dist/tests/controlled-native-handoff.test.js dist/tests/controlled-native-handoff.windows.test.js
+      - run: node --test dist/tests/controlled-host-compiler-integration.test.js
       - run: node --test dist/tests/autodesk-fusion-only.test.js
       - run: node --test dist/tests/successor-private-provisioning.test.js
       - run: node --test dist/tests/retained-python-result.test.js
