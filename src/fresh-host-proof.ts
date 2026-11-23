@@ -12,6 +12,7 @@ import type {
   NativeRuntimeActivationCompletion,
   NativeRuntimeActivationPublication,
   NativeRuntimeRebaselinePins,
+  NativeRuntimeBootstrapOriginals,
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import type { NativeRuntimeRebaselineReaderPorts } from "../packages/node-adapters/src/execution/runtime-rebaseline-reader";
 
@@ -168,6 +169,30 @@ export function createFreshHostProofFactory(
 }
 
 type ControlledBootstrap = ReturnType<typeof createControlledFusionBootstrap>;
+/** Preserve native original paths and the controller's private live origin for
+ * the existing native MAC producer. This port is integrity evidence only;
+ * signing these references does not qualify a host or authorize dispatch. */
+export async function prepareControlledBootstrapOriginals(
+  controller: Pick<
+    ControlledBootstrap,
+    "prepareOriginalWitness" | "assertPreparedWitness"
+  >,
+  transcript: ControlledFusionBootstrapTranscript,
+): Promise<NativeRuntimeBootstrapOriginals> {
+  const witness = await controller.prepareOriginalWitness(transcript);
+  const assertCurrent = () => controller.assertPreparedWitness(witness);
+  assertCurrent();
+  const references = witness.context.originalRefs.map((ref) =>
+    Object.freeze({ path: ref.nativePath, sha256: ref.sha256 }),
+  );
+  return Object.freeze({
+    assertCurrent,
+    readCurrentReferences() {
+      assertCurrent();
+      return references.map((ref) => ({ ...ref }));
+    },
+  });
+}
 /** Original logical input, before kernel compilation or receipt wrapping.
  * Compiled program/RPC and final native wire belong to later certificates;
  * none of these fields claims to be a final wire digest. */

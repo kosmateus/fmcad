@@ -123,6 +123,14 @@ export interface NativeRebaselineOriginalEvidence {
   sourceArchive: NativeRebaselineReference;
 }
 
+/** Private controlled-bootstrap origin, not serialized invocation evidence.
+ * The original controller's prepared witness must fence the native files.
+ * References added here are authenticated data, never a dispatch grant. */
+export interface NativeRuntimeBootstrapOriginals {
+  assertCurrent(): void;
+  readCurrentReferences(): readonly NativeRebaselineReference[];
+}
+
 export interface NativeRuntimeRebaselineOptions {
   store: string;
   operatorId: string;
@@ -133,6 +141,7 @@ export interface NativeRuntimeRebaselineOptions {
   >;
   runtimeVersion: string;
   originalEvidence: NativeRebaselineOriginalEvidence;
+  bootstrapOriginals?: NativeRuntimeBootstrapOriginals;
   evidenceDirectory: string;
   writer: NativeRebaselineWriter;
   publicationAuthority: {
@@ -413,8 +422,69 @@ function privateObject(reference: NativeRebaselineReference) {
 /** Archival facts are checked for cross-binding here; current process/store,
  * package bytes and persistent provision fence must still be independently
  * observed by the native verifier before they can become an attestation. */
-function originalFacts(options: NativeRuntimeRebaselineOptions) {
+function bootstrapReferences(
+  port: NativeRuntimeBootstrapOriginals | undefined,
+) {
+  if (port === undefined) return [];
+  if (
+    !port ||
+    typeof port.assertCurrent !== "function" ||
+    typeof port.readCurrentReferences !== "function"
+  )
+    refuse();
+  const held: unknown = port.assertCurrent();
+  if (held !== undefined) {
+    void Promise.resolve(held).catch(() => {});
+    refuse();
+  }
+  const input: unknown = port.readCurrentReferences();
+  if (!Array.isArray(input) || !input.length) {
+    void Promise.resolve(input).catch(() => {});
+    refuse();
+  }
+  const refs = input.map((value: unknown) => {
+    const ref = object(value);
+    if (
+      Object.keys(ref).sort().join() !== "path,sha256" ||
+      typeof ref["path"] !== "string" ||
+      !(
+        /^[A-Za-z]:[\\/]/.test(ref["path"]) ||
+        (path.posix.isAbsolute(ref["path"]) && !ref["path"].startsWith("//"))
+      ) ||
+      ref["path"].includes("\0") ||
+      typeof ref["sha256"] !== "string" ||
+      !/^[a-f0-9]{64}$/.test(ref["sha256"])
+    )
+      refuse();
+    return { path: ref["path"], sha256: ref["sha256"] };
+  });
+  const identities = refs.map((ref) =>
+    /^[A-Za-z]:[\\/]/.test(ref.path)
+      ? path.win32.normalize(ref.path).toLowerCase()
+      : path.posix.normalize(ref.path),
+  );
+  if (new Set(identities).size !== refs.length) refuse();
+  const after: unknown = port.assertCurrent();
+  if (after !== undefined) {
+    void Promise.resolve(after).catch(() => {});
+    refuse();
+  }
+  return refs;
+}
+
+function originalFacts(
+  options: NativeRuntimeRebaselineOptions,
+  expectedBootstrap?: readonly NativeRebaselineReference[],
+) {
   const evidence = options.originalEvidence;
+  if (
+    Object.keys(evidence).sort().join() !==
+    "coldProcess,committedHandoff,completedHandoff,preservedRows,retiredProcess,sourceArchive"
+  )
+    refuse();
+  const bootstrap = bootstrapReferences(options.bootstrapOriginals);
+  if (expectedBootstrap && !isDeepStrictEqual(bootstrap, expectedBootstrap))
+    refuse("RUNTIME_BARRIER_CHANGED");
   const retired = privateObject(evidence.retiredProcess);
   const cold = privateObject(evidence.coldProcess);
   const completed = privateObject(evidence.completedHandoff);
@@ -455,7 +525,14 @@ function originalFacts(options: NativeRuntimeRebaselineOptions) {
     },
     processImage: cold["exe"],
     committed,
+    bootstrapReferences: bootstrap,
     references: Object.values(evidence).map((ref) => ({ ...ref })),
+    // Native paths are authenticated inside the existing fence/MAC, not
+    // misrepresented as POSIX files for the core publication fsync machinery.
+    intentReferences: [
+      ...Object.values(evidence).map((ref) => ({ ...ref })),
+      ...bootstrap,
+    ],
   };
 }
 
@@ -826,10 +903,11 @@ export function authenticateRuntimeConsumedReceipt(
 function nativeRuntimeRebaselineAuthorityPorts(
   options: NativeRuntimeRebaselineOptions,
 ): NativeRuntimeRebaselineAuthorityPorts {
-  const { writer } = options;
+  const { writer, bootstrapOriginals, ...data } = options;
   const pinned = {
-    ...structuredClone({ ...options, writer: undefined }),
+    ...structuredClone(data),
     writer,
+    ...(bootstrapOriginals === undefined ? {} : { bootstrapOriginals }),
   };
   const native = pinned.native;
   if (
@@ -857,6 +935,23 @@ function nativeRuntimeRebaselineAuthorityPorts(
   const key = privateBytes(pinned.publicationAuthority.keyReference);
   if (key.length !== 32 || !pinned.publicationAuthority.keyId) refuse();
   const facts = originalFacts(pinned);
+  const assertBootstrapCurrent = () => {
+    if (
+      !isDeepStrictEqual(
+        bootstrapReferences(pinned.bootstrapOriginals),
+        facts.bootstrapReferences,
+      )
+    )
+      refuse("RUNTIME_BARRIER_CHANGED");
+  };
+  const checkedNativeFence = async (
+    ...args: Parameters<typeof nativeFence>
+  ) => {
+    assertBootstrapCurrent();
+    const result = await nativeFence(...args);
+    assertBootstrapCurrent();
+    return result;
+  };
   let lastApproved:
     | {
         request: NativeRuntimeRebaselineRequest;
@@ -874,6 +969,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
       if (!approved) return undefined;
       descriptor = structuredClone(descriptor);
       const assertApprovedCurrent = () => {
+        assertBootstrapCurrent();
         if (lastApproved !== approved) refuse("RUNTIME_BARRIER_CHANGED");
         privateDirectory(pinned.store);
         const info = fs.statSync(pinned.store);
@@ -899,12 +995,12 @@ function nativeRuntimeRebaselineAuthorityPorts(
           refuse();
       };
       assertApprovedCurrent();
-      originalFacts(pinned);
+      originalFacts(pinned, facts.bootstrapReferences);
       privateBytes(approved.publication.record);
       for (const reference of approved.completion.evidence)
         privateBytes(reference);
       const raw = privateBytes(approved.completion.nativeReceipt.reference);
-      const terminal = await nativeFence(
+      const terminal = await checkedNativeFence(
         pinned,
         facts.retiredProcess,
         "query",
@@ -953,8 +1049,10 @@ function nativeRuntimeRebaselineAuthorityPorts(
         !["publish-or-resume", "verify-completed"].includes(invokeMode)
       )
         refuse();
+      assertBootstrapCurrent();
       return writer.withExclusiveWriter(async (writerLease) => {
         writerLease.assertHeld();
+        assertBootstrapCurrent();
         if (!writerLease.generation) refuse();
         const markerFile = path.join(
           pinned.store,
@@ -988,7 +1086,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
         }
         // The marker survives every uncertain native outcome. There is no
         // finally-clear, timeout-clear, parent-death clear or force-clear.
-        let observed = await nativeFence(
+        let observed = await checkedNativeFence(
           pinned,
           facts.retiredProcess,
           "query",
@@ -1003,16 +1101,21 @@ function nativeRuntimeRebaselineAuthorityPorts(
           })
         ) {
           if (invokeMode === "verify-completed") refuse();
-          observed = await nativeFence(pinned, facts.retiredProcess, "begin", {
-            ...intent,
-            store: {
-              path: pinned.store,
-              device: fs.statSync(pinned.store).dev,
-              inode: fs.statSync(pinned.store).ino,
+          observed = await checkedNativeFence(
+            pinned,
+            facts.retiredProcess,
+            "begin",
+            {
+              ...intent,
+              store: {
+                path: pinned.store,
+                device: fs.statSync(pinned.store).dev,
+                inode: fs.statSync(pinned.store).ino,
+              },
+              writerGeneration: writerLease.generation,
+              intentReferences: facts.intentReferences,
             },
-            writerGeneration: writerLease.generation,
-            intentReferences: facts.references,
-          });
+          );
         }
         const fenceBinding = object(observed["binding"]);
         let phase = observed["state"] as "pending" | "consumed";
@@ -1043,7 +1146,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
           fenceBinding["endpointURL"] !== pinned.pins.endpoint ||
           !isDeepStrictEqual(
             fenceBinding["intentReferences"],
-            facts.references,
+            facts.intentReferences,
           ) ||
           typeof fenceBinding["initiatorOperatorId"] !== "string" ||
           !fenceBinding["initiatorOperatorId"] ||
@@ -1083,6 +1186,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
         const assertHeld = () => {
           if (!active) refuse();
           writerLease.assertHeld();
+          assertBootstrapCurrent();
           // Presence alone is not native authority. It prevents a fresh Linux
           // writer from changing local metadata after this parent dies.
           if (!settled && invokeMode === "publish-or-resume") {
@@ -1093,8 +1197,8 @@ function nativeRuntimeRebaselineAuthorityPorts(
         const verify = async () => {
           if (settled || phase !== "pending") refuse();
           assertHeld();
-          originalFacts(pinned);
-          const current = await nativeFence(
+          originalFacts(pinned, facts.bootstrapReferences);
+          const current = await checkedNativeFence(
             pinned,
             facts.retiredProcess,
             "query",
@@ -1119,7 +1223,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
           publication: NativeRuntimeActivationPublication,
         ) => {
           assertHeld();
-          const terminal = await nativeFence(
+          const terminal = await checkedNativeFence(
             pinned,
             facts.retiredProcess,
             "query",
@@ -1206,15 +1310,20 @@ function nativeRuntimeRebaselineAuthorityPorts(
                     }),
                   )
                   .digest("hex");
-                await nativeFence(pinned, facts.retiredProcess, "consume", {
-                  requestId: intent.requestId,
-                  fenceNonce: fenceBinding["fenceNonce"],
-                  publicationJson,
-                  attestation: {
-                    keyId: pinned.publicationAuthority.keyId,
-                    mac,
+                await checkedNativeFence(
+                  pinned,
+                  facts.retiredProcess,
+                  "consume",
+                  {
+                    requestId: intent.requestId,
+                    fenceNonce: fenceBinding["fenceNonce"],
+                    publicationJson,
+                    attestation: {
+                      keyId: pinned.publicationAuthority.keyId,
+                      mac,
+                    },
                   },
-                });
+                );
                 completion = await queryCompletion(publication);
               }
               if (!completion) refuse();
@@ -1245,7 +1354,7 @@ function nativeRuntimeRebaselineAuthorityPorts(
               )
                 refuse();
               privateBytes(publication.record);
-              const terminal = await nativeFence(
+              const terminal = await checkedNativeFence(
                 pinned,
                 facts.retiredProcess,
                 "query",
