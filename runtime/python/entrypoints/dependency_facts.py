@@ -1043,6 +1043,8 @@ def registry_alias_expansions(unit, tree, context=()):
 
 def registry_expansions(unit, tree, functions, context=()):
     """Finite comprehension values are inert closures; never evaluate user code."""
+    if unresolved_namespace_observer([tree, *context]):
+        return []
     rows = registry_alias_expansions(unit, tree, context)
     lines = unit['source'].encode('utf-8').splitlines(keepends=True)
     starts = [0]
