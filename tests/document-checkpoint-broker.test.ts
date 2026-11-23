@@ -23,7 +23,8 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 
 /** Actual compiled broker, IPC, client preparation, checker and persistence.
  * Only the physical boundary/receipts are synthetic; no Fusion/native SDK runs. */
-async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false) {
+async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false,
+  metadataFault?: "program" | "wire") {
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
   const previousData = process.env["XDG_DATA_HOME"];
@@ -131,6 +132,14 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
     version: "test", requestTimeout: (server: { timeoutMs: number }) => server.timeoutMs,
     bridgeSource: addinBridgeSource,
   });
+  if (metadataFault === "program") {
+    const prepare = physical.prepareCallTool;
+    assert.ok(prepare);
+    physical.prepareCallTool = (...args) => prepare.apply(physical,
+      args[1] === "fusion_mcp_read"
+        ? [{ featureType: "script", object: { script: "changed_program = True", readOnly: false } }, "fusion_mcp_execute"]
+        : args);
+  }
   physical._post = async (payload) => {
     if (payload.method === "initialize")
       return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload.id,
@@ -178,7 +187,7 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
         assert.equal(scope["programHash"], metadata.programHash);
         assert.equal(scope["rpcHash"], metadata.rpcHash);
         assert.equal(binding["sourceHash"], metadata.programHash);
-        stdout = JSON.stringify({ success: true, results: [{
+        stdout = "FMCAD_BRIDGE_RESULT " + JSON.stringify({ success: true, results: [{
           name: "Owned A", id: "file-A", creationId: "doc-A",
           isActive: true, isModified: false, isSaved: true,
         }] });
@@ -241,6 +250,16 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   try { broker = await serve(cfg, {
     dir, confirmOwnership: true, pollMs: 5, createBackend: () => physical,
     nativePath: (file) => file,
+    testCheckPrepared(prepared) {
+      const scope = prepared.record.binding["documentScope"];
+      if (metadataFault !== "wire" ||
+          !scope || typeof scope !== "object" || Array.isArray(scope) ||
+          record(scope)["producer"] !== "compiled-document-metadata-v1")
+        return;
+      const args = prepared.outgoing.params?.arguments;
+      assert.ok(args && typeof args["code"] === "string");
+      args["code"] += "\n# changed after certification in owned offline fixture\n";
+    },
     bindPhysicalTurn(request) {
       if (revoked) throw Object.assign(new Error("native grant revoked"), { code: "PHYSICAL_GENERATION_REJECTED" });
       return {
@@ -451,13 +470,7 @@ test("actual public IPC routes a fresh accepted continuation through the normal 
     assert.equal(f.productJobs().includes(String(original["id"])), false, "the original UNKNOWN is never replayed");
   });
 
-test("public doc list uses one compiler-bound metadata RPC without accepting or replaying historical work",
-  { timeout: 120000 }, async (t) => {
-    const f = await fixture(t, true), client = await f.client("metadata-reader");
-    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
-    const original = Object.values(record(before["jobs"])).map(record)
-      .find((job) => job["requestId"] === "private-foreign-request");
-    assert.ok(original);
+function metadataInput(directory: string, clientId: string, requestId: string) {
     const { prepareRequest } = load("./dist/composition/execution-request") as
       typeof import("../src/composition/execution-request");
     const { buildHash } = load("./queue-instance") as { buildHash(): string };
@@ -465,12 +478,20 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
       kind: "command"; clientId: string; requestId: string; timeoutMs: number;
       backend: "addin"; buildHash: string;
     } = {
-      kind: "command" as const, clientId: "metadata-reader", requestId: "metadata-public-list",
-      argv: ["doc", "list"], cwd: f.dir, timeoutMs: 45000,
+      kind: "command" as const, clientId, requestId,
+      argv: ["doc", "list"], cwd: directory, timeoutMs: 45000,
       backend: "addin", buildHash: buildHash(), inputFiles: [],
     };
-    const prepared = prepareRequest({ request });
-    const admitted = await client.submit({ ...request, payload: prepared.payload });
+    return { ...request, payload: prepareRequest({ request }).payload };
+}
+test("public doc list uses one compiler-bound metadata RPC without accepting or replaying historical work",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("metadata-reader");
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const original = Object.values(record(before["jobs"])).map(record)
+      .find((job) => job["requestId"] === "private-foreign-request");
+    assert.ok(original);
+    const admitted = await client.submit(metadataInput(f.dir, "metadata-reader", "metadata-public-list"));
     assert.ok(["preparing", "queued", "processing"].includes(admitted.state), JSON.stringify(admitted));
     const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
     assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
@@ -481,6 +502,42 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false);
+  });
+for (const fault of ["program", "wire"] as const)
+  test(`public metadata refuses changed ${fault} before a physical product RPC`,
+    { timeout: 120000 }, async (t) => {
+      const f = await fixture(t, true, fault), client = await f.client("metadata-fault");
+      const admitted = await client.submit(metadataInput(f.dir, "metadata-fault", `metadata-${fault}`));
+      const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+      assert.equal(completed.job.state, "failed", JSON.stringify(completed));
+      const outcome = record(record(completed.job)["operationResult"]);
+      assert.equal(outcome["code"],
+        fault === "program" ? "DOCUMENT_METADATA_READ_UNPROVEN" : "PYTHON_ADMISSION_CHANGED");
+      assert.equal(outcome["executionOutcome"], "not_started");
+      assert.equal(f.counts().products, 0);
+      assert.equal(f.writes(), 0);
+    });
+test("public metadata rejects a forged command entry and never authorizes a global write",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("metadata-forged");
+    const input = metadataInput(f.dir, "metadata-forged", "metadata-forged-entry");
+    const forged = structuredClone(input.payload);
+    record(record(forged)["entry"])["target"] = "docCloseCmd";
+    await assert.rejects(client.submit({ ...input, payload: forged }),
+      { code: "INVALID_COMMAND_PAYLOAD", message: "Legacy worker payload differs from its canonical command" });
+    const commands = load("./dist/core/application/cad/worker-command") as
+      typeof import("../packages/core/src/application/cad/worker-command");
+    const payload = { version: 1, kind: "cad", operation: "param.apply", doc: "Owned A",
+      data: { parameters: [{ name: "length", expression: "20 mm" }] } };
+    const write = {
+      ...input, requestId: "metadata-not-a-global-write", payload, readOnly: true,
+      argv: commands.cadWorkerPolicyArguments(commands.decodeCadWorkerInvocation(payload)),
+    };
+    const refused = await client.submit(write);
+    assert.equal(refused.state, "failed");
+    assert.equal(record(record(refused)["operationResult"])["code"], "UNKNOWN_SCOPE_UNPROVEN");
+    assert.equal(f.counts().products, 0);
+    assert.equal(f.writes(), 0);
   });
 
 for (const fault of ["generation", "preparation"] as const) {
