@@ -310,6 +310,8 @@ src/python-diagnostic-broker.js
 src/python-diagnostic-broker.d.ts
 src/fresh-host-proof.js
 src/fresh-host-proof.d.ts
+src/controlled-fusion-bootstrap.js
+src/controlled-fusion-bootstrap.d.ts
 src/document-unlock-controller.js
 src/document-unlock-controller.d.ts
 src/document-unlock-diagnostics.js

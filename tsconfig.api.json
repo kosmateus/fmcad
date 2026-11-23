@@ -109,6 +109,7 @@
     "src/protocol-metadata-broker.ts",
     "src/python-diagnostic-broker.ts",
     "src/fresh-host-proof.ts",
+    "src/controlled-fusion-bootstrap.ts",
     "src/document-creation-broker.ts"
   ],
   "references": [
