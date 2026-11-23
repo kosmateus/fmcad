@@ -247,6 +247,28 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
         stdout = "FMCAD_RESULT " + JSON.stringify({
           success: true, operation: "param.apply", result: { parameters: checkpoint().parameters }, created: [],
         });
+      } else if (script!.includes("app.documents.add(")) {
+        const creationSnapshot = record(JSON.parse(fs.readFileSync(path.join(dir, "queue-state.json"), "utf8")));
+        const creationId = String(creationSnapshot["active"]);
+        const creationJob = record(record(creationSnapshot["jobs"])[creationId]);
+        const marker = record(creationJob["documentCreation"]);
+        assert.equal(creationJob["documentMetadataRead"], undefined, "creation is not a readonly metadata grant");
+        const folder = path.join(dir, "jobs", creationId);
+        const rpc = fs.readdirSync(folder).filter((name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json")
+          .map((name) => record(JSON.parse(fs.readFileSync(path.join(folder, name), "utf8"))))
+          .find((value) => `fmcad:${record(value["binding"])["rpcId"]}` === payload.id);
+        assert.ok(rpc, "creation requires the original durable RPC record");
+        const binding = record(rpc["binding"]), scope = record(binding["documentScope"]);
+        assert.equal(scope["producer"], "compiled-document-creation-v1");
+        assert.equal(scope["operation"], "document.new");
+        assert.equal(scope["programHash"], marker["programHash"]);
+        assert.equal(scope["rpcHash"], marker["rpcHash"]);
+        assert.equal(scope["wireSourceHash"], binding["sourceHash"]);
+        writes++;
+        stdout = "CREATED_DOC name=New bounded document\n" + JSON.stringify({
+          schema: "fmcad-created-document-v1", creationId: "fresh-created-doc",
+          name: "New bounded document", fileId: null, isSaved: false, isModified: false,
+        });
       } else {
         assert.ok(script!.includes("result = _cad_param_checkpoint(ctx)"),
           "owned unlock read must execute the actual private compiler callback");
@@ -721,6 +743,54 @@ test("public metadata rejects a forged command entry and never authorizes a glob
     const refused = await client.submit(write);
     assert.equal(refused.state, "failed");
     assert.equal(record(record(refused)["operationResult"])["code"], "UNKNOWN_SCOPE_UNPROVEN");
+    assert.equal(f.counts().products, 0);
+    assert.equal(f.writes(), 0);
+});
+
+function creationInput(directory: string, clientId: string, requestId: string) {
+  const { prepareRequest } = load("./dist/composition/execution-request") as typeof import("../src/composition/execution-request");
+  const { buildHash } = load("./queue-instance") as { buildHash(): string };
+  const request: import("../src/composition/execution-request").AcceptedCommandRequest & {
+    kind: "command"; clientId: string; requestId: string; timeoutMs: number; backend: "addin"; buildHash: string;
+  } = {
+    kind: "command" as const, clientId, requestId, cwd: directory, timeoutMs: 45000,
+    argv: ["doc", "new", "--name", "New bounded document"],
+    backend: "addin" as const, buildHash: buildHash(), inputFiles: [],
+  };
+  return { ...request, payload: prepareRequest({ request }).payload };
+}
+test("public doc new crosses the actual worker and final wire as one creation service, not metadata",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t), client = await f.client("creation-owner");
+    const admitted = await client.submit(creationInput(f.dir, "creation-owner", "bounded-new"));
+    assert.ok(["queued", "preparing", "processing"].includes(admitted.state), JSON.stringify(admitted));
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    assert.match(completed.stdout!, /CREATED_DOC name=New bounded document/);
+    assert.match(completed.stdout!, /"creationId":"fresh-created-doc"/);
+    assert.equal(f.counts().products, 1);
+    assert.equal(f.writes(), 1, "one new resource write, not a read-only operation");
+  });
+test("public doc new refuses current raw UNKNOWN without touching or replaying its original resource",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t, "raw-forged"), client = await f.client("creation-refused");
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const refused = await client.submit(creationInput(f.dir, "creation-refused", "blocked-new"));
+    assert.equal(refused.state, "failed");
+    assert.equal(record(record(refused)["operationResult"])["code"], "UNKNOWN_SCOPE_UNPROVEN");
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    for (const [id, job] of Object.entries(record(before["jobs"]))) assert.deepEqual(record(after["jobs"])[id], job);
+    assert.equal(f.counts().products, 0);
+    assert.equal(f.writes(), 0);
+  });
+test("public doc new rejects a changed physical generation before creating a document",
+  { timeout: 120000 }, async (t) => {
+    const f = await fixture(t), client = await f.client("creation-generation");
+    f.changeProductGeneration();
+    const admitted = await client.submit(creationInput(f.dir, "creation-generation", "wrong-generation-new"));
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "failed", JSON.stringify(completed));
+    assert.equal(record(record(completed.job)["operationResult"])["code"], "DOCUMENT_STATE_CHANGED");
     assert.equal(f.counts().products, 0);
     assert.equal(f.writes(), 0);
   });

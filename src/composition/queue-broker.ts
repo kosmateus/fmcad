@@ -1786,6 +1786,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertDocumentMetadataRead: (id, programHash, rpcHash) =>
         state.assertDocumentMetadataRead(id, programHash, rpcHash),
     },
+    creation: {
+      program: creationProgram,
+      assertDocumentCreation: (id, programHash, rpcHash) => state.assertDocumentCreation(id, programHash, rpcHash),
+    },
     prepareBrokerScript,
     prepareReceiptScript,
     retainPythonOrigin,
@@ -2040,6 +2044,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const metadataCompiler = runtimeRequire("./document-metadata-read-broker") as
     typeof import("../document-metadata-read-broker");
   const metadataReads = metadataCompiler.createDocumentMetadataReadBroker();
+  const creationCompiler = runtimeRequire("./document-creation-broker") as typeof import("../document-creation-broker");
+  const documentCreations = creationCompiler.createDocumentCreationBroker();
+  function creationProgram(job: P.Job) {
+    return documentCreations.program(job as unknown as import("@fmcad/core").QueueJob);
+  }
+  async function prepareDocumentCreation(request: P.Request, clientTokenHash: string) {
+    return documentCreations.prepare(request as unknown as import("@fmcad/core").QueueRequest, {
+      recheck() {
+        assertCheckpointOwner();
+        if (clientHashes()[request.clientId] !== clientTokenHash)
+          fail("NOT_AUTHORIZED", "The creation principal is no longer registered");
+        if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
+      },
+      currentPins: () => ({ buildHash: codeHash, configHash, generation: checkpointGenerationAfterOwnerCheck() }),
+    });
+  }
   function metadataProgram(job: P.Job) {
     return metadataReads.program(job as unknown as import("@fmcad/core").QueueJob);
   }
@@ -2398,6 +2418,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const job = required(state.data.jobs[message.jobId]);
       const turn = brokerExecution.createTurnIdentity(job.id);
       const metadata = job.documentMetadataRead ? metadataProgram(job) : undefined;
+      const creation = job.documentCreation ? creationProgram(job) : undefined;
+      if (creation) {
+        if (message.method !== "callTool" || message.args.length !== 2)
+          fail("DOCUMENT_CREATION_UNPROVEN", "Creation worker may issue only its one exact logical RPC");
+        creation.assertRpc(job.request as unknown as import("@fmcad/core").QueueRequest, {
+          method: message.method, tool: message.args[1], arguments: message.args[0],
+        });
+      }
       if (metadata) {
         if (message.method !== "callTool" || message.args.length !== 2)
           fail("DOCUMENT_METADATA_READ_UNPROVEN", "Metadata worker may issue only its one exact logical RPC");
@@ -2430,7 +2458,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const adapterArgs = compiled
         ? [envelope,"fusion_mcp_execute",compiled.manifest]
         : message.args;
-      const compiledScope = metadata ? {
+      const compiledScope = creation ? {
+        producer: "compiled-document-creation-v1", operation: "document.new",
+        requestHash: creation.descriptor.requestHash, rpcHash: creation.descriptor.rpcHash,
+        programHash: creation.descriptor.programHash, generation: creation.descriptor.generation, buildHash: codeHash,
+      } : metadata ? {
         producer: "compiled-document-metadata-v1", operation: "document.list",
         requestHash: metadata.descriptor.requestHash,
         rpcHash: metadata.descriptor.rpcHash, programHash: metadata.descriptor.programHash,
@@ -5119,6 +5151,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             import("../document-continuation-broker").PreparedDocumentContinuationSubmission | undefined;
           let preparedMetadata:
             import("../document-metadata-read-broker").CompiledDocumentMetadataRead | null = null;
+          let preparedCreation: import("../document-creation-broker").CompiledDocumentCreation | null = null;
           if (target) {
             try {
               // The normal worker reads the canonically persisted request.
@@ -5139,6 +5172,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             preparedMetadata = await prepareMetadataRead(
               request, required(clientHashes()[clientId]),
             );
+            if (!preparedMetadata) preparedCreation = await prepareDocumentCreation(request, required(clientHashes()[clientId]));
             verifyAcceptance();
           }
           const accept = () => {
@@ -5166,9 +5200,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                             rpcHash: proof.rpcHash, programHash: proof.programHash,
                           };
                         })))
-                    : state.submit(request, preparedId)) as P.PublicJob;
+                    : preparedCreation
+                      ? state.submitDocumentCreation(request, state.createDocumentCreationAuthority(() => {
+                          verifyAcceptance();
+                          preparedCreation!.reverify(request as unknown as import("@fmcad/core").QueueRequest);
+                          const { kind, ...proof } = preparedCreation!.descriptor;
+                          void kind;
+                          return proof;
+                        }))
+                      : state.submit(request, preparedId)) as P.PublicJob;
             } catch (error) {
-              if (preparedMetadata && errorInfo(error).code === "DOCUMENT_METADATA_READ_UNPROVEN")
+              if (preparedCreation && errorInfo(error).code === "DOCUMENT_CREATION_UNPROVEN")
+                job = state.refuseDocumentContinuation(request, preparedId) as P.PublicJob;
+              else if (preparedMetadata && errorInfo(error).code === "DOCUMENT_METADATA_READ_UNPROVEN")
                 job = state.refuseDocumentContinuation(request, preparedId) as P.PublicJob;
               else {
               if (!preparedContinuation || !staleContinuation(error)) throw error;
@@ -5176,6 +5220,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }
             }
             const admitted = state.data.jobs[job.id];
+            if (preparedCreation && admitted?.documentCreation && state.hasDocumentCreation(job.id))
+              documentCreations.admit(admitted as unknown as import("@fmcad/core").QueueJob, preparedCreation);
             if (preparedMetadata && admitted?.documentMetadataRead &&
                 state.hasDocumentMetadataRead(job.id))
               metadataReads.admit(admitted as unknown as import("@fmcad/core").QueueJob, preparedMetadata);
@@ -6006,6 +6052,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
        if (!canSelect()) state.next({ grant: false });
         continuation.prune((id) => state.data.jobs[id]);
         metadataReads.prune((id) => state.data.jobs[id]);
+        documentCreations.prune((id) => state.data.jobs[id]);
         // Only outstanding prepared plans, never retained terminal history.
         turnExecution.prunePlans();
         checkpointReads.prune((id) => {

@@ -546,6 +546,50 @@ test("source compiler rejection and tool argument guards cannot be bypassed by a
   assert.equal(g.trace.includes("checker"), false);
 });
 
+test("creation program verification precedes receipt wrapping and binds the actual wire separately from its renderer nonce", async () => {
+  const source = "actual_ui_guard_nonce = 'one'\nnew_document_service()";
+  const creationJob = { ...job, hash: "creation-request-hash",
+    documentCreation: { programHash: "canonical-program-hash", rpcHash: "creation-rpc-hash" } } as P.Job;
+  const valid = { producer: "compiled-document-creation-v1", requestHash: creationJob.hash,
+    programHash: creationJob.documentCreation!.programHash, rpcHash: creationJob.documentCreation!.rpcHash };
+  for (const fault of [undefined, "producer", "requestHash", "programHash", "rpcHash", "program"] as const) {
+    const f = fixture(), scope = { ...valid };
+    if (fault && fault !== "program") scope[fault] = "forged";
+    f.ports.localPreparation = () => ({ job, compiledScope: scope });
+    f.ports.metadata = { job: () => creationJob, program: () => assert.fail("not metadata"),
+      assertDocumentMetadataRead: () => assert.fail("not metadata") };
+    f.ports.creation = {
+      program: () => ({ assertProgram(current, actual) {
+        f.trace.push("creation-compiler");
+        assert.equal(current, job.request);
+        assert.equal(actual, source);
+        if (fault === "program") throw Object.assign(Error("source changed"), { code: "DOCUMENT_CREATION_UNPROVEN" });
+      } }),
+      assertDocumentCreation(id, programHash, rpcHash) {
+        f.trace.push("creation-domain");
+        assert.equal(id, job.id);
+        assert.equal(programHash, valid.programHash);
+        assert.equal(rpcHash, valid.rpcHash);
+      },
+    };
+    if (fault) {
+      await assert.rejects(f.prepare(python(source)), { code: "DOCUMENT_CREATION_UNPROVEN" });
+      assert.equal(f.trace.includes("checker"), false);
+      assert.equal(f.trace.includes("creation-domain"), false);
+    } else {
+      const prepared = await f.prepare(python(source));
+      assert.deepEqual(prepared.record.binding["documentScope"], { ...valid, wireSourceHash: digest(source) });
+      assert.ok(f.trace.indexOf("creation-compiler") < f.trace.indexOf("creation-domain"));
+      assert.ok(f.trace.indexOf("creation-domain") < f.trace.indexOf("checker"));
+      assert.ok(prepared.pythonCertificate);
+      assert.throws(() => prepared.pythonCertificate!.fence({
+        ...prepared.outgoing, params: { ...prepared.outgoing.params,
+          arguments: { ...prepared.outgoing.params?.arguments, code: "changed-after-check" } },
+      }));
+    }
+  }
+});
+
 test("the canonical prepared-turn instance consumes module output once without another executor", async () => {
   const f = fixture(),
     turn = createTurnIdentity(job.id);

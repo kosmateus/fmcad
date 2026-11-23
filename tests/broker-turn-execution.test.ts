@@ -209,6 +209,7 @@ async function fixture(
       state.recordPhysicalDispatch(id, physical),
     assertDocumentMetadataRead: (...args) =>
       state.assertDocumentMetadataRead(...args),
+    assertDocumentCreation: (...args) => state.assertDocumentCreation(...args),
   };
   const session = createBrokerSession<P.LaneContext>();
   const lane = helpers.createBrokerLane(session, {

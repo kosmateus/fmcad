@@ -100,7 +100,7 @@ test("docops composition preserves every retained export, command parse, exact d
   );
   assert.deepEqual(
     Object.keys(host(current).exports).sort(),
-    Object.keys(host(source).exports).sort(),
+    [...Object.keys(host(source).exports), "documentListReadCommand"].sort(),
   );
   for (const failure of [false, true])
     for (const [name, ...args] of cases) {
