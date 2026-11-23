@@ -614,7 +614,6 @@ export interface ObservationScope {
   resultPath: string;
   toolStarted: boolean;
   proof: AtomicProof | null;
-  originalContext: Context | null;
   observerContext?: Context;
   rpcId?: string;
   rpcJournal?: string;

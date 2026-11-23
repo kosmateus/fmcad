@@ -42,6 +42,7 @@
     "tests/queue-runtime-authority.test.ts",
     "tests/queue-runtime-identity.test.ts",
     "tests/broker-rpc-preparation.test.ts",
+    "tests/broker-turn-execution.test.ts",
     "tests/local-worker-process.test.ts",
     "tests/phased-queue.test.ts",
     "tests/queue-client-response-recovery.test.ts",

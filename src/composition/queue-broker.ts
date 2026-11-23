@@ -25,11 +25,9 @@ import type {
   AuditSnapshot,
 } from "../queue-broker-modules";
 import type { BrokerControlFence } from "../../packages/core/src/application/broker-control";
-import type { DispatchFailure } from "../../packages/core/src/application/execution";
 import type { BrokerStartup } from "../../packages/node-adapters/src/execution/broker-lifetime";
 import type { RecoveryFence } from "../../packages/core/src/application/broker-recovery";
 import type {
-  PreparedTurn,
   TurnIdentity,
 } from "../../packages/core/src/application/broker-execution";
 import {
@@ -127,7 +125,7 @@ const { QueueGate } = load("./queue-gate");
 const { PauseBudget } = load("./pause-budget");
 const nativeReceipts = load("./queue-native-receipt");
 const { queueDirectory, queueSocket } = load("./queue-connection");
-const { documentSelector, compareDocumentState } = load("./queue-document");
+const { documentSelector } = load("./queue-document");
 const {
   resolveRuntimePaths,
   resolveChildEntrypoint,
@@ -1339,12 +1337,43 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     wakeup: () => scheduler.wakeup(),
   });
   const {
-    activeWorker: activeContext,
+    activeWorker: scopedContext,
     busy,
     heldReason,
     setControlHold: setHold,
     settle: settleTurn,
   } = lane;
+  function scopedView(context: P.Context | null):
+    import("../broker-turn-execution").TurnExecutionSnapshot | null {
+    if (!context) return null;
+    return Object.freeze({
+      jobId: context.job.id,
+      job: Object.freeze({
+        id: context.job.id, clientId: context.job.clientId,
+        requestId: context.job.requestId, kind: context.job.kind,
+      }),
+      running: !!lane.currentGrant()?.context.executing,
+      postflight: false,
+      pendingCount: context.pending.size,
+      dispatched: context.dispatched,
+      unknown: context.unknown,
+      timedOut: context.timedOut,
+      workerClosed: context.workerClosed,
+      hasWorkerProcess: !!context.workerProcess,
+      executionFailed: context.executionFailed,
+      workflowUnknown: !!context.workflowUnknown,
+      waitingForPause: !!context.waitingForPause,
+      nativeActivityId: context.nativeActivityId ?? null,
+      deadline: context.deadline,
+      rpcDeadline: context.rpcDeadline ?? null,
+    });
+  }
+  function activeContext() {
+    return turnExecution.activeSnapshot() ?? scopedView(scopedContext());
+  }
+  function heldExecution() {
+    return turnExecution.heldSnapshot() ?? scopedView(lane.heldWorker());
+  }
   function finishTurn(
     grant: ProductGrant,
     details: Parameters<typeof state.finish>[1],
@@ -1354,21 +1383,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       continuation.forget(grant.jobId, grant.turn);
     });
   }
-  const physicalGrant = new AsyncLocalStorage<ProductGrant>();
-  const probeSendScope = new AsyncLocalStorage<{
-    assertCurrent(): void;
-    start(): void;
-    dispatchBoundary?: P.Send["dispatchBoundary"];
-  }>();
   function sendProbe<T>(send: () => T, boundary?: P.Send["dispatchBoundary"]) {
-    const scope = probeSendScope.getStore();
-    if (!scope) return send();
-    if (boundary === "broker-post") {
-      scope.assertCurrent();
-      return probeSendScope.run({ ...scope, dispatchBoundary: boundary }, send);
-    }
-    scope.start();
-    return send();
+    return turnExecution.sendProbe(send, boundary);
   }
   const preparingJob = new AsyncLocalStorage<
     { job: P.Job; turn: TurnIdentity; compiledScope?: Record<string,unknown> } | false
@@ -1378,22 +1394,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const signal = preparingSignal.getStore();
     return signal ? { signal } : {};
   }
-  type Flights = { preflight: P.Flight; postflight: P.Flight };
-  type OwnedTurn = PreparedTurn<P.PreparedCall>;
+  type OwnedTurn = import("../broker-turn-execution").OwnedTurn;
   type PostPreparation =
     | { kind: "owned"; turn: OwnedTurn; metadataObservation?: P.Instance | undefined;
       }
     | { kind: "unowned"; checked: P.PreparedPost };
-  type LocalPlan = { flights: Flights | null } & (
-    | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
-    | {
-        kind: "worker";
-        turn: TurnIdentity;
-        message: P.WorkerMessage;
-        send: P.Send;
-      }
-  );
-  const localPlans = new Map<string, LocalPlan>();
+  type LocalPlan = import("../broker-turn-execution").PreparedProductPlan;
   type CheckpointActor = import("../document-unlock-admission").UnlockPrincipal;
   type CheckpointTarget = import("../document-unlock-admission").ConfirmedUnlockTarget;
   const checkpointActor = new AsyncLocalStorage<CheckpointActor>();
@@ -1416,14 +1422,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const outgoing = structuredClone(payload);
       const contextEpoch = state.data.contextEpoch || 0;
       const localPreparation = preparingJob.getStore();
-      const grant = physicalGrant.getStore();
-      const owned =
-        localPreparation ??
-        (!gate.isAdministrative &&
-          grant && { job: grant.context.job, turn: grant.turn });
-      const job = owned ? owned.job : undefined;
+      const owned = localPreparation;
+      const product = !owned && localPreparation !== false &&
+        turnExecution.hasProductScope();
       const classification =
-        origin && !job ? classifyPythonRpc(outgoing) : null;
+        origin && !owned && !product ? classifyPythonRpc(outgoing) : null;
       const unownedArtifact =
         classification?.kind === "python"
           ? retainPythonOrigin(
@@ -1434,10 +1437,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const ready: PostPreparation = owned
         ? {
             kind: "owned",
-            turn: await prepareOwnedTurn(outgoing, owned.job, owned.turn, origin,
+            turn: await turnExecution.prepare(outgoing, owned.job, owned.turn, origin,
             ),
           }
-        : {
+        : product
+          ? { kind: "owned", turn: await turnExecution.prepareCurrent(outgoing, origin) }
+          : {
             kind: "unowned",
             checked: {
               outgoing,
@@ -1449,6 +1454,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               contextEpoch,
             },
           };
+      const job = owned ? owned.job :
+        ready.kind === "owned" ? state.lookup(ready.turn.turn.jobId) : undefined;
       const fence = (prepared: P.PreparedPost | P.PreparedCall) => {
         resetFence();
         if (buildHash() !== codeHash)
@@ -1527,7 +1534,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // after a pause. Product operations retain their own epoch fence below;
       // an observation is never permission to execute a stale product request.
       certificate.fence(outgoing);
-      const probe = probeSendScope.getStore();
+      const probe = turnExecution.probeScope();
       if (probe) {
         if (
           probe.dispatchBoundary === "broker-post" &&
@@ -1618,7 +1625,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           () =>
             withRequest({ timeoutMs: server.timeoutMs }, () => {
               if (
-                probeSendScope.getStore() &&
+                turnExecution.probeScope() &&
                 send.dispatchBoundary !== "broker-post"
               )
                 send.fence();
@@ -1694,7 +1701,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 binding,
                 requireIdle: false,
                 documentSelector: selector,
-                assertCurrent: () => probeSendScope.getStore()?.assertCurrent(),
+                assertCurrent: () => turnExecution.probeScope()?.assertCurrent(),
                 ...nativePaths,
                 diagnosticPath,
               },
@@ -1856,11 +1863,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       changed: diagnostics,
     },
   });
-  // The remaining call sites are switched together with removal of the legacy owner.
-  void turnExecution;
-  const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
-  const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
-  const debugRawReceived = new WeakSet<P.PreparedCall>();
   const debugResultPublished = new Set<string>();
   const atomicObservationScope = new AsyncLocalStorage<P.ObservationScope>();
   const atomicRecoveryAuditScope = new AsyncLocalStorage<P.ScriptScope>();
@@ -2418,7 +2420,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "WORKER_CLOSED",
             "Local worker closed during final artifact preparation",
           );
-        localPlans.set(job.id, { kind: "worker", turn, message, send, flights,
+        turnExecution.retainPlan(job.id, { kind: "worker", turn, message, send, flights,
         });
         return;
       }
@@ -2457,7 +2459,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (signal.aborted || phased.pending(job.id)?.message !== message)
         fail("WORKER_CLOSED", "Local worker closed during preparation");
       const fence = () => certificate.fence(payload);
-      localPlans.set(job.id, {
+      turnExecution.retainPlan(job.id, {
         kind: "worker",
         turn,
         message,
@@ -2637,49 +2639,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (dispatch) state.markDispatch(job.id,dispatch,entry);
     else state.recordPhysicalDispatch(job.id,entry);
   }
-  function endNativeActivity(context: P.Context | null) {
-    if (!context?.nativeActivityToken) return;
-    gate.endActivity(context.nativeActivityToken);
-    delete context.nativeActivityToken;
-    delete context.nativeActivityId;
-    diagnostics();
+  function endNativeActivity(context: {
+    job: { id: string }; nativeActivityId?: string | null;
+  } | null) {
+    if (context?.nativeActivityId)
+      turnExecution.endNativeActivity(context.job.id, context.nativeActivityId);
   }
   gate.changed = diagnostics;
   async function checkInstance(probeOptions: P.ProbeOptions) {
-    probeOptions.assertCurrent?.();
-    const active = activeContext();
-    if (buildHash() !== codeHash)
-      throw Object.assign(
-        new Error(
-          "Pinned executable build changed before the instance probe was submitted",
-        ),
-        {
-          code: "BUILD_CHANGED",
-          probeNotSubmitted: true,
-        },
-      );
-    const actual = probeOptions?.prepared
-      ? await probeOptions.prepared.send()
-      : await instanceProbe({
-          diagnosticPath: active
-            ? path.join(jobDir(active.job.id), "instance-probe-result.json")
-            : undefined,
-          ...probeOptions,
-          requireIdle: false,
-        });
-    probeOptions.assertCurrent?.();
-    if (probeOptions?.prepared && probeOptions.onObservation)
-      await probeOptions.onObservation(actual);
-    probeOptions.assertCurrent?.();
-    if (!sameInstance(actual, currentInstance()))
-      fail("INSTANCE_CHANGED", "Fusion PID/birth/build identity changed");
-    if (probeOptions?.requireIdle !== false && !idle(actual))
-      throw Object.assign(new Error("An interactive Fusion command is open"), {
-        code: "FUSION_BUSY",
-        probeCompleted: true,
-        observation: actual,
-      });
-    return actual;
+    return turnExecution.checkInstance(probeOptions);
   }
   function remoteReceipt(
     record: { receipt?: string; binding: P.Binding; instance: P.Instance },
@@ -2753,7 +2721,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const active = activeContext();
     if (
       active?.job?.id === job.id &&
-      (active.pending?.size || (active.workerProcess && !active.workerClosed))
+      (active.pendingCount || (active.hasWorkerProcess && !active.workerClosed))
     )
       fail(
         "WORKER_PENDING",
@@ -3323,18 +3291,42 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     });
   }
 
-  async function prepareOwnedPost(
-    payload: P.Rpc,
-    job: Pick<P.Job, "id"> & Partial<Pick<P.Job, "request">>,
-    origin?: P.Origin,
-    rawMetadata = false,
-  ): Promise<P.PreparedCall> {
-    return rpcPreparation.prepareOwnedPost(payload, job, origin, rawMetadata);
-  }
-
 
 
   // All adapter calls eventually cross this one physical dispatch boundary.
+  function physicalPost(
+    payload: P.Rpc,
+    sessionId?: string,
+    requestOptions?: unknown,
+    ready?: PostPreparation,
+  ) {
+    const audit = atomicRecoveryAuditScope.getStore();
+    if (audit) return audit.post(payload, sessionId);
+    const observation = atomicObservationScope.getStore();
+    if (observation)
+      return scopedAtomicObservationPost(payload, sessionId, observation);
+    if (!turnExecution.hasProductScope()) {
+      if (ready?.kind === "owned" ||
+          (!gate.isAdministrative && turnExecution.activeSnapshot()))
+        fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
+      return unownedPost(payload, sessionId, requestOptions, ready?.checked);
+    }
+    if (ready?.kind === "unowned")
+      fail("PREPARED_RPC_UNAVAILABLE", "Owned RPC lost its original prepared record");
+    return turnExecution.post(payload, sessionId, requestOptions, ready);
+  }
+  function backend(message: P.WorkerMessage, prepared?: P.Send) {
+    return turnExecution.backend(message, prepared);
+  }
+  async function execute(job: P.Job, grant: ProductGrant) {
+    if (job.documentInspection) return executeCheckpointRead(job, grant);
+    if (job.workflowObservation) {
+      if (job.kind !== "command" || job.request.phased)
+        fail("PREPARED_RPC_UNAVAILABLE", "Scoped observation cannot own a raw or phased product plan");
+      return executeAtomicObservation(job, grant);
+    }
+    return turnExecution.run(job, grant);
+  }
   postPrepared = physicalPost;
   client._post = (payload, sessionId, requestOptions) => {
     return physicalPost(payload, sessionId, requestOptions);
@@ -3733,8 +3725,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ) ||
         (active &&
           (![ids.targetJobId, ids.observationJobId].includes(active.job?.id) ||
-            active.pending?.size ||
-            (active.workerProcess && !active.workerClosed)))
+            active.pendingCount ||
+            (active.hasWorkerProcess && !active.workerClosed)))
       )
         fail(
           "AUDIT_FENCE_CHANGED",
@@ -4171,10 +4163,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       active: active && {
         jobId: active.job?.id,
         unknown: !!(active.unknown || active.workflowUnknown),
-        pending: !!active.pending.size,
-        childRunning: !!active.workerProcess && !active.workerClosed,
+        pending: !!active.pendingCount,
+        childRunning: active.hasWorkerProcess && !active.workerClosed,
       },
-      otherActivity: gate.hasOtherActivity(active?.nativeActivityToken),
+      otherActivity: turnExecution.hasOtherActivity(active?.job.id, active?.nativeActivityId),
     });
     const identity = readJson<P.Identity>(identityFile());
     atomicAcceptance.requireFreshAtomicInstance(
@@ -4343,7 +4335,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const active = activeContext();
         return !active
           ? "absent"
-          : active.pending.size || (active.workerProcess && !active.workerClosed)
+          : active.pendingCount || (active.hasWorkerProcess && !active.workerClosed)
             ? "pending"
             : "closed";
       },
@@ -4382,7 +4374,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             read: readJson,
             write: durable,
             send: (probe, fence) =>
-              probeSendScope.run(fence, () => checkInstance(probe)),
+              turnExecution.runProbeScope(fence, () => checkInstance(probe)),
           },
         ),
       settleUndispatched(outcome, assertCurrent) {
@@ -4490,7 +4482,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   function dispatchWorkerStatus(message: P.Message) {
-      const active = activeContext();
+      const owned = turnExecution.workerStatus(message);
+      if (owned) {
+        ipcObserver.accept(message);
+        const snapshotHash =
+          message.snapshotFence === true ? workerSnapshotHash() : undefined;
+        return {
+          ...owned,
+          ...(snapshotHash === undefined ? {} : { snapshotHash }),
+          control: gate.snapshot(),
+        };
+      }
+      const active = scopedContext();
       if (
         !active ||
         message.jobId !== active.job.id ||
@@ -4805,7 +4808,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             );
           if (
             active &&
-            (active.pending.size || (active.workerProcess && !active.workerClosed))
+            (active.pendingCount || (active.hasWorkerProcess && !active.workerClosed))
           )
             fail(
               "WORKER_PENDING",
@@ -5023,7 +5026,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rawPreparations++;
             const rawPayload = rpcPayload(request.payload);
             const callerPayloadHash = hash(canonical(rawPayload));
-            const turn = await prepareOwnedTurn(
+            const turn = await turnExecution.prepare(
               rawPayload,
               { id: preparedId, request },
               brokerExecution.createTurnIdentity(preparedId),
@@ -5143,7 +5146,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               state.armWorkflowObservation(job.id, workflowObservation);
             }
             if (rawPlan && job.id === preparedId)
-              localPlans.set(job.id, rawPlan);
+              turnExecution.retainPlan(job.id, rawPlan);
             if (request.phased && job.state === "preparing")
               phased.start(required(state.data.jobs[job.id]));
             return job;
@@ -5579,12 +5582,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
     }
 
-    const originalContext = lane.heldWorker();
+    const originalContext = heldExecution();
     if (
       originalContext &&
       (originalContext.job?.id !== targetJob.id ||
-        originalContext.pending?.size ||
-        (originalContext.workerProcess && !originalContext.workerClosed))
+        originalContext.pendingCount ||
+        (originalContext.hasWorkerProcess && !originalContext.workerClosed))
     ) {
       fail(
         "WORKER_PENDING",
@@ -5633,7 +5636,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       resultPath: path.join(observerDirectory, "atomic-observation-proof.json"),
       toolStarted: false,
       proof: null,
-      originalContext,
     };
     atomicObservationFence(scope, false);
     if (fs.existsSync(scope.startPath) || fs.existsSync(scope.resultPath))
@@ -5819,25 +5821,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   async function runCheckpointRead(job: P.Job, grant: ProductGrant,
     task: import("../document-checkpoint-broker").CheckpointReadTask<P.Send>) {
     const directory = privateDirectory(jobDir(job.id));
-    const context: P.ProductContext = {
-      job, productTurn: grant.turn, token: randomBytes(32).toString("hex"),
-      pending: new Set(), dispatched: false, unknown: false, timedOut: false,
-      workerClosed: false, executionFailed: false, deadline: Date.now() + job.timeoutMs,
-      contextEpoch: state.data.contextEpoch || 0, turnRpcs: [], localDispatchErrors: new Set(),
-    };
-    let rejectTimeout!: (error: unknown) => void;
-    const timeout = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
-    timeout.catch(() => {});
-    context.budget = new PauseBudget(job.timeoutMs, () => {
-      context.timedOut = true;
-      let cause: unknown = Object.assign(new Error("Checkpoint read timed out"), { code: "RUN_TIMEOUT" });
-      try {
-        if (context.dispatched && lane.currentGrant() === grant)
-          hold(grant, "Checkpoint read execution deadline expired; no replay");
-      } catch (error) { cause = error; }
-      finally { rejectTimeout(cause); }
-    });
-    grant.context.worker = context;
+    return turnExecution.withCheckpointTurn(job, grant, async (read) => {
     let settled = false;
     try {
       assertCheckpointOwner();
@@ -5846,11 +5830,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         fail("DOCUMENT_STATE_CHANGED", "Checkpoint generation changed before its turn");
       const send = required(task.send);
       checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
-      send.fence();
-      const pending = physicalGrant.run(grant, () => send());
-      context.pending.add(pending);
-      void pending.finally(() => context.pending.delete(pending)).catch(() => {});
-      const result = await Promise.race([pending, timeout]);
+      const result = await read.send(send);
       lane.assertCurrent(grant);
       const retained = state.data.jobs[job.id];
       for (const entry of retained?.physicalDispatches ?? []) {
@@ -5861,18 +5841,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               hash(physicalReleaseInput(entry.physical, "dispatch-finally")))
           fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint SDK turn is not irreversibly released");
       }
+      const evidence = read.evidence();
       if (!retained?.physicalDispatches?.length ||
-          !context.turnRpcs.length || context.turnRpcs.some((item) => !item.record.terminal))
+          !evidence.turnRpcs.length || evidence.turnRpcs.some((record) => !record.terminal))
         fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint terminal RPC is unavailable");
       settled = true;
       checkpointAdmission.authorize(task.actor, "inspect", task.target).recheck();
-      if (!isToolResult(result) || result.failed || context.executionFailed)
+      if (!isToolResult(result) || result.failed || evidence.executionFailed)
         fail("DOCUMENT_STATE_CHANGED", "Checkpoint read did not return a successful result");
       const parsed = parseNativeResult(result.text);
       if (parsed["success"] !== true || parsed["operation"] !== "param.inspect")
         fail("DOCUMENT_STATE_CHANGED", "Checkpoint result operation changed");
       const checkpoint = checkpointEvidence.decode(parsed["result"], job.documentInspection!.target);
-      const readRecords = context.turnRpcs.map((item) => item.record).filter((record) =>
+      const readRecords = evidence.turnRpcs.filter((record) =>
         (record.binding["documentScope"] as { operation?: string } | undefined)?.operation === "param.inspect");
       if (readRecords.length !== 1)
         fail("STORAGE_UNAVAILABLE", "Fresh checkpoint requires one original read receipt");
@@ -5909,10 +5890,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     } catch (cause) {
       task.reject(cause);
       if (lane.currentGrant() === grant) {
-        if ((!context.dispatched && !context.unknown) || settled) {
+        const evidence = read.evidence();
+        if ((!evidence.dispatched && !evidence.unknown) || settled) {
           const details = {
             state: "failed", code: errorInfo(cause).code || "CHECKPOINT_READ_FAILED",
-            ...(context.dispatched ? { sdkSettled: true } : { executionOutcome: "not_started" }),
+            ...(evidence.dispatched ? { sdkSettled: true } : { executionOutcome: "not_started" }),
             userScriptSubmitted: false, mayHaveMutated: false,
           };
           durable(path.join(directory, "outcome.json"), details);
@@ -5920,11 +5902,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         } else hold(grant, "Checkpoint read outcome is unknown; original request is not replayed");
       }
     } finally {
-      context.workerClosed = true;
-      context.budget.close();
       checkpointReads.release(task);
       diagnostics();
     }
+    });
   }
 
 
@@ -5979,14 +5960,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         continuation.prune((id) => state.data.jobs[id]);
         metadataReads.prune((id) => state.data.jobs[id]);
         // Only outstanding prepared plans, never retained terminal history.
-        for (const id of localPlans.keys()) {
-          const job = state.data.jobs[id];
-          if (
-            !job ||
-            ["succeeded", "failed", "cancelled", "expired"].includes(job.state)
-          )
-            localPlans.delete(id);
-        }
+        turnExecution.prunePlans();
         checkpointReads.prune((id) => {
           const job = state.data.jobs[id];
           return job && {
@@ -6005,11 +5979,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return job;
       },
       async start(job) {
-        const plan = localPlans.get(job.id);
         const turn = checkpointReads.read(job.id)?.turn ?? (
-          plan?.kind === "raw"
-            ? plan.turn.turn
-            : (plan?.turn ?? brokerExecution.createTurnIdentity(job.id)));
+          turnExecution.preparedTurn(job.id) ?? brokerExecution.createTurnIdentity(job.id));
         const grant = lane.begin(job, turn, !!job.workflowObservation);
         try {
           await execute(job, grant);
