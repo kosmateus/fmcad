@@ -9,6 +9,7 @@
   },
   "include": [
     "tests/fresh-host-proof.test.ts",
+    "tests/fusion-bootstrap-autoload.test.ts",
     "tests/library-native-root.test.ts",
     "tests/document-unlock-admission.test.ts",
     "tests/document-unlock-public.test.ts",
