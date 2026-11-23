@@ -84,6 +84,27 @@ def resolved_cast_aliases(trees):
     return casts
 
 
+def annotation_cast_aliases(trees):
+    """May-aliases retain checker dependencies, never authorize rewrites.
+
+    A rebinding can invalidate a must-alias proof without making earlier cast
+    annotations disappear. Union names across scopes, as for symbol references.
+    """
+    nodes = [node for tree in trees for node in ast.walk(tree)]
+    names = {alias.asname or alias.name for node in nodes
+             if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == 'typing'
+             for alias in node.names if alias.name == 'cast'}
+    changed = True
+    while changed:
+        previous = len(names)
+        for node in nodes:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Name) and node.value.id in names:
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                names.update(target.id for target in targets if isinstance(target, ast.Name))
+        changed = len(names) != previous
+    return names
+
+
 def unresolved_namespace_observer(trees):
     """No model for an external callable means no privacy proof, not purity."""
     nodes = [node for tree in trees for node in ast.walk(tree)]
@@ -523,7 +544,7 @@ def operation_choices(node, parents, domains=None, casts=()):
     raise Unknown()
 
 
-def facts(tree, filename, *, user=False, method=None, unit=None, casts=(), operation_domains=None):
+def facts(tree, filename, *, user=False, method=None, unit=None, casts=(), annotation_casts=(), operation_domains=None):
     source = ast.unparse(tree)
     table = symtable.symtable(source, filename, 'exec')
     defines = {symbol.get_name() for symbol in table.get_symbols()
@@ -553,13 +574,14 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=(), opera
             opaque = True
     nodes, parents = tree_index(tree)
     annotations = set()
+    type_casts = set(casts) | set(annotation_casts)
     for node in nodes:
         for field in ('annotation', 'returns'):
             annotation = getattr(node, field, None)
             if annotation is not None:
                 annotations.update(ast.walk(annotation))
         if (isinstance(node, ast.Call) and node.args and isinstance(node.func, ast.Name)
-                and node.func.id in casts):
+                and node.func.id in type_casts):
             annotations.update(ast.walk(node.args[0]))
     for node in nodes:
         # Forward annotations and cast/type-alias arguments also need providers
@@ -1580,6 +1602,7 @@ def analyse(request):
     # analysis removes bodies. It gates entry and whole-statement deletion too.
     registry_private = not unresolved_namespace_observer([*(tree for _, tree in parsed), user_tree])
     casts = resolved_cast_aliases([*(tree for _, tree in parsed), user_tree])
+    annotation_casts = annotation_cast_aliases([*(tree for _, tree in parsed), user_tree])
     type_guards = {alias.asname or alias.name for _, tree in parsed for node in tree.body
                    if isinstance(node, ast.ImportFrom) and node.module == 'typing'
                    for alias in node.names if alias.name == 'TYPE_CHECKING'}
@@ -1624,13 +1647,15 @@ def analyse(request):
                     for member in node.body:
                         if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             facade[member.name] = facts(ast.Module(body=[member], type_ignores=[]),
-                                                       unit['filename'], method=member.name, unit='helpers', casts=casts)
+                                                       unit['filename'], method=member.name, unit='helpers', casts=casts,
+                                                       annotation_casts=annotation_casts)
                             spans[member.name] = [min([member.lineno] + [d.lineno for d in member.decorator_list]),
                                                   member.end_lineno]
                         else:
                             retained.append(member)
                     node.body = retained or [ast.Pass()]
         entry = facts(tree, unit['filename'], unit=unit['id'], casts=casts,
+                      annotation_casts=annotation_casts,
                       operation_domains=operation_domains)
         class Eager(ast.NodeTransformer):
             def visit(self, node):
@@ -1651,6 +1676,7 @@ def analyse(request):
 
         eager = Eager().visit(tree)
         entry['eager'] = facts(eager, unit['filename'], unit=unit['id'], casts=casts,
+                               annotation_casts=annotation_casts,
                                operation_domains=operation_domains)
         entry['opaque'] = entry['eager']['opaque']
         statements = []
@@ -1685,7 +1711,7 @@ def analyse(request):
                     else:
                         end = offset(mapping.end_lineno, mapping.end_col_offset - 1)
                     row = facts(ast.Module(body=[ast.Expr(value=value)], type_ignores=[]),
-                                unit['filename'], unit=unit['id'], casts=casts)
+                                unit['filename'], unit=unit['id'], casts=casts, annotation_casts=annotation_casts)
                     definitions.append(dict(row, unit=unit['id'], start=key.lineno,
                                             end=value.end_lineno, column=key.col_offset,
                                             byteStart=start, byteEnd=end, removable=False,
@@ -1695,6 +1721,7 @@ def analyse(request):
                 statement.body[0].value.args = [ast.Dict(keys=[], values=[]), *node.value.args[1:]]
                 registration = None
             dependency = facts(statement, unit['filename'], unit=unit['id'], casts=casts,
+                               annotation_casts=annotation_casts,
                                operation_domains=operation_domains)
             # Only declarations whose creation has no calls are removable here.
             # Decorators, defaults and class initialization remain real roots;
