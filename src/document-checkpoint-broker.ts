@@ -179,7 +179,9 @@ export interface BrokerCheckpointEvidencePorts {
    * and from every operation-scoped synchronous verifier. */
   recheck(): void;
   currentGeneration(): string;
-  compile: typeof import("./composition/cad").prepareCadScript;
+  compile(
+    ...args: Parameters<typeof import("./composition/cad").prepareCadScript>
+  ): PreparedPythonArtifact | Promise<PreparedPythonArtifact>;
   wrapReceipt(code: string, receipt: string, binding: RpcRecord["binding"]): PreparedPythonArtifact;
   matchResponse(record: RpcRecord): unknown;
   verifyReceipt(record: RpcRecord, receipt: RemoteReceipt): void;
@@ -203,8 +205,7 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
       preview: invocation.preview === true,
     }, undefined, undefined, "param-checkpoint");
   }
-  function expectedProgram(job: QueueJob, record: RpcRecord) {
-    const compiled = compile(job);
+  function expectedProgram(compiled: PreparedPythonArtifact, record: RpcRecord) {
     const callerId = record.request?.id;
     if (typeof callerId !== "string" && typeof callerId !== "number") reject();
     // Exact BrokerAddinClient readOnly=true transformation. No UI guard token
@@ -250,10 +251,23 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
         (authenticated as { evidenceDigest: string }).evidenceDigest !==
           hash(physicalReleaseInput(binding, "dispatch-finally"))) reject();
     const exactRecord = structuredClone(record), exactReceipt = structuredClone(receipt);
+    const exactRequest = canonicalHash(job.request);
+    const compiled = structuredClone(await compile(job));
+    ports.recheck();
+    if (canonicalHash(ports.readJob(job.id).request) !== exactRequest) reject();
+    const expected = expectedProgram(compiled, exactRecord);
     const verifyProducer = createDocumentCheckpointProducer({
       buildHash: ports.buildHash, records: ports.records.evidence,
       readJob: ports.readJob,
-      prepareExpectedProgram: ({ job, record }) => expectedProgram(job, record),
+      prepareExpectedProgram: ({ job: currentJob, record: currentRecord }) => {
+        // Retain only this operation's compiler output. Every synchronous use
+        // still authenticates its exact immutable input and original producer.
+        ports.recheck();
+        if (currentJob.id !== job.id ||
+            canonicalHash(currentJob.request) !== exactRequest ||
+            !isDeepStrictEqual(currentRecord, exactRecord)) reject();
+        return structuredClone(expected);
+      },
       matchResponse: ports.matchResponse,
       decodeReadback: decodeDocumentCheckpointReadback,
       verifyNativeRead(input) {
@@ -271,16 +285,16 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
         };
       },
     });
-    return createDocumentObservationStore({
+    const store = createDocumentObservationStore({
       directory: ports.directory,
       namespace: `checkpoint:${hash(ports.directory)}`,
       verifyProducer,
     });
+    return { store, compiled };
   }
-  function proofFor(job: QueueJob, record: RpcRecord): ObservationProof {
+  function proofFor(job: QueueJob, record: RpcRecord, compiled: PreparedPythonArtifact): ObservationProof {
     const rpcId = record.binding.rpcId;
     if (!/^[A-Za-z0-9_-]{1,256}$/.test(rpcId)) reject();
-    const compiled = compile(job);
     const body: ObservationProof = {
       jobId: job.id, rpcId, probeRequestId: job.requestId,
       requestHash: record.binding.requestHash, buildHash: record.binding.buildHash,
@@ -324,8 +338,8 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
           observation.generation !== ports.currentGeneration() ||
           checkpointGeneration(record.binding["physicalTurn"] as QueuePhysicalBinding) !== observation.generation)
         reject();
-      const store = await authenticatedStore(job, record);
-      const readback = store.persist(observation, proofFor(job, record));
+      const { store, compiled } = await authenticatedStore(job, record);
+      const readback = store.persist(observation, proofFor(job, record, compiled));
       ports.recheck();
       return { ...observation, readback };
     },
@@ -342,7 +356,7 @@ export function createBrokerCheckpointEvidence(ports: BrokerCheckpointEvidencePo
       if (job.clientId !== observation.actorClientId ||
           job.requestId !== observation.readback.probeRequestId) reject();
       const record = recordFor(job.id, stored.proof.rpcId);
-      const store = await authenticatedStore(job, record);
+      const { store } = await authenticatedStore(job, record);
       store.verify(observation);
       ports.recheck();
       const reply = ports.matchResponse(record) as {

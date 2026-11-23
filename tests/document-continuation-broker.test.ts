@@ -5,7 +5,7 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import type { DocumentObservation, QueueRequest, QueueJob } from "@fmcad/core";
-import type { DocumentContinuationBrokerPorts } from "../src/document-continuation-broker";
+import type { ContinuationPrograms, DocumentContinuationBrokerPorts } from "../src/document-continuation-broker";
 import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script";
 
 const root = path.resolve(__dirname, "../..");
@@ -348,6 +348,31 @@ function fixture() {
     counts: () => ({ verifications, finalChecks }),
   };
 }
+
+test("asynchronous source compilation never carries authority across a changed checkpoint or producer", async () => {
+  const programs = helper.compileDocumentContinuationPrograms(request(), guard);
+  for (const change of ["head", "generation", "rights", "source"] as const) {
+    const f = fixture();
+    let release!: (programs: ContinuationPrograms) => void;
+    let entered!: () => void;
+    const compiling = new Promise<void>(resolve => { entered = resolve; });
+    f.ports.compilePrograms = () => {
+      entered();
+      return new Promise(resolve => { release = resolve; });
+    };
+    const pending = f.broker.prepareSubmit(request(), f.actor);
+    await compiling;
+    if (change === "head") f.moveHead();
+    if (change === "generation") f.generation("changed-during-compilation");
+    if (change === "rights") f.revoke();
+    if (change === "source") f.corruptSource();
+    release(programs);
+    const prepared = await pending;
+    assert.throws(() => prepared.submit());
+    assert.equal(Object.keys(f.domain.data.jobs).length, 0,
+      `${change}: compiler output is not permission to publish a job`);
+  }
+});
 
 test("real domain capability binds a fresh phased job, verifies the original worker and reauthenticates each new turn", async () => {
   const f = fixture(),

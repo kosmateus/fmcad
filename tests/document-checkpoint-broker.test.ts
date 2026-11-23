@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type * as P from "../src/queue-broker-ports";
 import type { QueueClient } from "../src/queue-client";
 
@@ -20,11 +20,24 @@ const { nativeReceipts } = fixtures("./fixtures/native-source-envelope.cjs") as 
 const releasedProof = fixtures("./fixtures/physical-turn-fixture.cjs") as
   (binding: P.PhysicalTurnBinding) => P.PhysicalTurnQuiescence;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+// The filesystem fingerprint itself has exact-byte mutation tests. This host
+// adapter seam proves its changed result is still consumed at the RPC boundary.
+const runtimeIdentity = load("./queue-instance") as {
+  buildHash(root?: string): string;
+};
+const originalBuildHash = runtimeIdentity.buildHash;
+let changedRuntime = false, changedRuntimeChecks = 0;
+runtimeIdentity.buildHash = (root?: string) => {
+  if (!changedRuntime) return originalBuildHash(root);
+  changedRuntimeChecks++;
+  return hash("runtime bytes changed after offline preparation");
+};
 
 /** Actual compiled broker, IPC, client preparation, checker and persistence.
  * Only the physical boundary/receipts are synthetic; no Fusion/native SDK runs. */
 async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false,
-  metadataFault?: "program" | "wire", historyCount = 0) {
+  metadataFault?: "program" | "wire" | "runtime", historyCount = 0) {
+  changedRuntime = false; changedRuntimeChecks = 0;
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
   const previousData = process.env["XDG_DATA_HOME"];
@@ -251,6 +264,7 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   t.after(async () => {
     for (const client of clients) client.dispose();
     revoked = false; unknownHistory = false; beforeHistory = undefined;
+    changedRuntime = false;
     try { await broker?.close(); }
     finally {
       process.chdir(cwd);
@@ -268,10 +282,14 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
     nativePath: (file) => file,
     testCheckPrepared(prepared) {
       const scope = prepared.record.binding["documentScope"];
-      if (metadataFault !== "wire" ||
+      if (!["wire", "runtime"].includes(metadataFault ?? "") ||
           !scope || typeof scope !== "object" || Array.isArray(scope) ||
           record(scope)["producer"] !== "compiled-document-metadata-v1")
         return;
+      if (metadataFault === "runtime") {
+        changedRuntime = true;
+        return;
+      }
       const args = prepared.outgoing.params?.arguments;
       assert.ok(args && typeof args["code"] === "string");
       args["code"] += "\n# changed after certification in owned offline fixture\n";
@@ -321,6 +339,7 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
     changeProductGeneration() { differentProductGeneration = true; },
     useWindowsReceipts() { windowsReceiptMode = true; },
     windowsReceipts: () => [...windowsReceipts],
+    changedRuntimeChecks: () => changedRuntimeChecks,
     removePreparation() { Object.defineProperty(physical, "prepareCallTool", { value: undefined }); },
     productJobs: () => [...productJobs],
     revoke(value: boolean) { revoked = value; },
@@ -340,6 +359,70 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 const target = { docFileId: "file-A" };
+
+test("public IPC stays responsive while preparing a guarded continuation",
+  // Inspection and acceptance reconstruct the real Python source several times.
+  // This is only the fixture budget; the peer IPC assertion stays at 1 second
+  // and the actual product worker and wait stay at 45 seconds.
+  { timeout: 240000 }, async (t) => {
+    const f = await fixture(t, true), client = await f.client("compilation-writer");
+    const inspected = record(await client.documentUnlock({
+      action: "inspect", target, requestId: "inspect-before-compilation",
+    }));
+    const accepted = record(await client.documentUnlock({
+      action: "accept", target, requestId: "accept-before-compilation",
+      observationId: record(inspected["observation"])["observationId"],
+    }));
+    assert.equal(accepted["state"], "checkpoint_current");
+    const signal = path.join(f.dir, "compilation-start");
+    const observer = spawn(process.execPath, ["-e", `
+const fs = require("node:fs"), path = require("node:path");
+const {request} = require(process.argv[1]), directory = process.argv[2];
+const signal = process.argv[3], auth = JSON.parse(process.argv[4]);
+const watchdog = setTimeout(() => { console.error("signal never arrived"); process.exit(2); }, 20000);
+let started = false;
+const watcher = fs.watch(path.dirname(signal), async () => {
+  if (started || !fs.existsSync(signal)) return;
+  started = true; watcher.close();
+  try { await request(directory, {action:"status", auth}, {timeoutMs:1000}); }
+  catch (error) { console.error(error.code, error.message); process.exitCode = 1; }
+  finally { clearTimeout(watchdog); }
+});
+process.stdout.write("ready\\n");
+`, load.resolve("./queue-connection"), f.dir, signal, JSON.stringify(client.auth)],
+      { stdio: ["ignore", "pipe", "pipe"] });
+    t.after(() => {
+      if (observer.exitCode === null && observer.signalCode === null) observer.kill();
+    });
+    let stderr = "";
+    observer.stderr.on("data", chunk => { stderr += String(chunk); });
+    const finished = new Promise<number | null>((resolve, reject) => {
+      observer.once("error", reject);
+      observer.once("close", resolve);
+    });
+    await new Promise<void>((resolve, reject) => {
+      observer.stdout.once("data", () => resolve());
+      observer.once("error", reject);
+    });
+    f.beforeHistory(() => {
+      f.beforeHistory(undefined);
+      fs.writeFileSync(signal, "preparing the real guarded source");
+    });
+    const commands = load("./dist/core/application/cad/worker-command") as
+      typeof import("../packages/core/src/application/cad/worker-command");
+    const payload = { version: 1, kind: "cad", operation: "param.apply",
+      doc: "Owned A", docId: "doc-A", docFileId: "file-A",
+      data: { parameters: [{ name: "length", expression: "20 mm" }] } };
+    const admitted = await client.submit({
+      kind: "command", requestId: "fresh-responsive-continuation", payload,
+      cwd: f.dir, timeoutMs: 45000,
+      argv: commands.cadWorkerPolicyArguments(commands.decodeCadWorkerInvocation(payload)),
+    });
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    assert.equal(await finished, 0, stderr);
+    assert.equal(f.writes(), 1);
+  });
 
 test("public inspection seals a fresh Windows-created receipt without changing its original identity",
   { timeout: 120000 }, async (t) => {
@@ -442,9 +525,11 @@ test("actual authenticated IPC shows the same full observed parameters, fresh ac
       "history is authenticated against the original native turn without a CAD probe");
   });
 
-test("actual public IPC routes a fresh accepted continuation through the normal worker and guarded physical source",
-  { timeout: 120000 }, async (t) => {
-    const f = await fixture(t, true), client = await f.client("successor-writer");
+for (const historyCount of [0, 17000]) {
+test("actual public IPC routes a fresh accepted continuation through the normal worker and guarded physical source" +
+  (historyCount ? ` with retained ${historyCount} completed history` : ""),
+  { timeout: historyCount ? 240000 : 120000 }, async (t) => {
+    const f = await fixture(t, true, undefined, historyCount), client = await f.client("successor-writer");
     const original = Object.values(record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")))["jobs"] as Record<string, unknown>)
       .map(record).find((job) => job["requestId"] === "private-foreign-request");
     assert.ok(original);
@@ -485,6 +570,7 @@ test("actual public IPC routes a fresh accepted continuation through the normal 
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false, "the original UNKNOWN is never replayed");
   });
+}
 
 function metadataInput(directory: string, clientId: string, requestId: string, json = false) {
     const { prepareRequest } = load("./dist/composition/execution-request") as
@@ -584,7 +670,7 @@ test("public metadata JSON crosses the normal worker with native output and one 
     assert.equal(f.counts().products, 1);
     assert.equal(f.writes(), 0);
   });
-for (const fault of ["program", "wire"] as const)
+for (const fault of ["program", "wire", "runtime"] as const)
   test(`public metadata refuses changed ${fault} before a physical product RPC`,
     { timeout: 120000 }, async (t) => {
       const f = await fixture(t, true, fault), client = await f.client("metadata-fault");
@@ -593,10 +679,12 @@ for (const fault of ["program", "wire"] as const)
       assert.equal(completed.job.state, "failed", JSON.stringify(completed));
       const outcome = record(record(completed.job)["operationResult"]);
       assert.equal(outcome["code"],
-        fault === "program" ? "DOCUMENT_METADATA_READ_UNPROVEN" : "PYTHON_ADMISSION_CHANGED");
+        fault === "program" ? "DOCUMENT_METADATA_READ_UNPROVEN" :
+          fault === "wire" ? "PYTHON_ADMISSION_CHANGED" : "BUILD_CHANGED");
       assert.equal(outcome["executionOutcome"], "not_started");
       assert.equal(f.counts().products, 0);
       assert.equal(f.writes(), 0);
+      if (fault === "runtime") assert.ok(f.changedRuntimeChecks() > 0);
     });
 test("public metadata rejects a forged command entry and never authorizes a global write",
   { timeout: 120000 }, async (t) => {

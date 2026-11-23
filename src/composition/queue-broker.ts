@@ -874,7 +874,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   });
   const { owner: marker, lock, close } = lifetime;
   let physicalGrantState: "not_attempted" | "unknown" | "issued" = "not_attempted";
+  let metadataEligibilityChecks = 0;
+  let sourceCompiler:
+    ReturnType<typeof import("../broker-source-compiler").createBrokerSourceCompiler> | undefined;
   try {
+  const compiler = sourceCompiler = (
+    runtimeRequire("./broker-source-compiler") as typeof import("../broker-source-compiler")
+  ).createBrokerSourceCompiler({ concurrency: preparationConcurrency });
   async function preparePhysicalGeneration() {
     lifetime.assertOwner();
     if (options.preparePhysicalGeneration) {
@@ -1407,6 +1413,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const checkpointViews = createCheckpointViews();
   const checkpointIdentity = new AsyncLocalStorage<boolean>();
   const checkpointReads = createCheckpointReadWorkflow<P.Send>();
+  // Only live broker-owned checkpoint operations retain their offline output.
+  // This is not persisted authority or a cross-request compiler cache.
+  const checkpointPrograms = new Map<string, {
+    requestHash: string;
+    compiled: import("@fmcad/core").PreparedPythonArtifact;
+  }>();
   let postPrepared = (
     payload: P.Rpc,
     sessionId: string | undefined,
@@ -1902,12 +1914,26 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
 
   function assertCheckpointOwner() {
     resetFence();
-    if (lifetime.stopping || buildHash() !== codeHash ||
+    if (lifetime.stopping ||
+        (!metadataEligibilityChecks && buildHash() !== codeHash) ||
         !same(readJson(lock), marker))
       fail("STORAGE_UNAVAILABLE", "Checkpoint broker ownership changed");
     const actor = checkpointActor.getStore();
     if (actor && clientHashes()[actor.clientId] !== actor.clientTokenHash)
       fail("NOT_AUTHORIZED", "The checkpoint principal is no longer registered");
+  }
+  /** The core capability is eligibility, not permission to send. Keep request,
+   * bridge, principal and private-grant checks, without fingerprinting the entire
+   * runtime for every waiting job on every poll. Compilation, verifyAcceptance,
+   * RPC preparation and the final wire fence retain their full byte checks.
+   * This synchronous scope must never enclose an await or an SDK operation. */
+  function metadataEligibility<T>(read: () => T): T {
+    metadataEligibilityChecks++;
+    try {
+      return read();
+    } finally {
+      metadataEligibilityChecks--;
+    }
   }
   function currentCheckpointGeneration() {
     assertCheckpointOwner();
@@ -1941,10 +1967,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       currentCheckpointGeneration();
     },
     currentGeneration: currentCheckpointGeneration,
-    compile: (operation, data, context, pathMapper, guard, privateReadback) =>
-      (runtimeRequire("./dist/composition/cad") as typeof import("./cad")).prepareCadScript(
-        operation, data, context, pathMapper, guard, privateReadback,
-      ),
+    compile: (operation, data, context, pathMapper, guard, privateReadback) => {
+      if (pathMapper !== undefined)
+        fail("DOCUMENT_CONTINUATION_UNPROVEN", "Checkpoint compilation cannot accept a path mapper");
+      return compiler.cad(operation, data, context, guard, privateReadback);
+    },
     wrapReceipt: (code, receipt, binding) =>
       prepareReceiptScript(code, false, receipt, binding, nativePaths),
     matchResponse: (record) => matchRecordedResponse(record),
@@ -1968,6 +1995,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       typeof import("../document-continuation-broker")
   ).createDocumentContinuationBroker({
     domain: state as unknown as import("@fmcad/core").QueueDomain,
+    compilePrograms: (request, checkpoint) => compiler.continuation(request, checkpoint),
     currentGeneration: currentCheckpointGeneration,
     recheck(actor, target) {
       assertCheckpointOwner();
@@ -2014,7 +2042,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertCheckpointOwner();
       if (clientHashes()[request.clientId] !== clientTokenHash)
         fail("NOT_AUTHORIZED", "The metadata principal is no longer registered");
-      if (buildHash() !== codeHash)
+      if (!metadataEligibilityChecks && buildHash() !== codeHash)
         fail("BUILD_CHANGED", "Metadata compiler runtime changed");
       if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
     };
@@ -2169,7 +2197,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         id: job.id, request: job.request, buildHash: codeHash,
         properties: {}, deadline: Date.now() + job.timeoutMs,
       });
-      const compiled = checkpointEvidence.compile(job);
+      const requestHash = hash(canonical(job.request));
+      const compiled = structuredClone(await checkpointEvidence.compile(job));
+      assertCheckpointOwner();
+      checkpointAdmission.authorize(actor, "inspect", confirmed).recheck();
+      if (hash(canonical(required(state.data.jobs[job.id]).request)) !== requestHash)
+        fail("PHYSICAL_SCOPE_MISMATCH", "Checkpoint request changed during offline compilation");
+      checkpointPrograms.set(job.id, { requestHash, compiled });
       const origin = load("./python").pythonArtifactManifest(compiled);
       const compiledScope = {
         producer: "compiled-cad-v1", operation: "param.inspect",
@@ -2199,7 +2233,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     // The existing scheduler owns lane.begin, SDK turn and failure isolation.
     // No direct physical send and no whole-application reservation is added.
     lifetime.progress();
-    return task.result;
+    try {
+      return await task.result;
+    } finally {
+      checkpointPrograms.delete(job.id);
+    }
   }
   const checkpointController = createDocumentUnlockController({
     domain: state as unknown as import("@fmcad/core").QueueDomain,
@@ -2609,8 +2647,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     for (const key of ["doc", "docId", "docFileId", "component", "projectId"] as const)
       if (invocation[key] !== undefined) compilerContext[key] = invocation[key];
     compilerContext.preview = invocation.preview === true;
-    const expected = prepareCadScript(invocation.operation, invocation.data, compilerContext,
-      undefined, undefined, job.documentInspection ? "param-checkpoint" : undefined);
+    const preparedCheckpoint = job.documentInspection ? checkpointPrograms.get(job.id) : undefined;
+    if (job.documentInspection &&
+        (!preparedCheckpoint || preparedCheckpoint.requestHash !== hash(canonical(job.request))))
+      fail("PHYSICAL_SCOPE_MISMATCH", "Checkpoint has no exact operation-scoped compiler output");
+    const expected = preparedCheckpoint?.compiled ??
+      prepareCadScript(invocation.operation, invocation.data, compilerContext);
     const catalog = runtimeRequire("./catalog/index") as {
       catalog: Record<string,{readOnly?: boolean}>;
     };
@@ -5110,7 +5152,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                   ? preparedContinuation.submit()
                   : preparedMetadata
                     ? state.submitDocumentMetadataRead(request,
-                        state.createDocumentMetadataReadAuthority(() => {
+                        state.createDocumentMetadataReadAuthority(() => metadataEligibility(() => {
                           preparedMetadata!.reverify(
                             request as unknown as import("@fmcad/core").QueueRequest,
                           );
@@ -5119,7 +5161,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                             version: 1, requestHash: proof.requestHash, generation: proof.generation,
                             rpcHash: proof.rpcHash, programHash: proof.programHash,
                           };
-                        }))
+                        })))
                     : state.submit(request, preparedId)) as P.PublicJob;
             } catch (error) {
               if (preparedMetadata && errorInfo(error).code === "DOCUMENT_METADATA_READ_UNPROVEN")
@@ -6053,7 +6095,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return "pending";
       return "idle";
     },
-    retireWorkers: () => phased.close(),
+    retireWorkers: async () => {
+      await Promise.all([phased.close(), compiler.close()]);
+    },
     releaseLease() {
       const lease = state.summary().lease;
       if (lease) {
@@ -6092,6 +6136,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }),
   };
   } catch (error) {
+    try {
+      await sourceCompiler?.close();
+    } catch { /* Preserve the original startup failure and ownership evidence. */ }
     try {
       if (physicalGrantState === "not_attempted")
         lifetime.abortBeforeInitialize({ grantIssuance: "notStarted" });

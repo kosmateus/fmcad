@@ -47,6 +47,11 @@ export interface DocumentContinuationBrokerPorts {
     observation: DocumentObservation,
     actor: ContinuationActor,
   ): Promise<VerifiedContinuationCheckpoint>;
+  /** Offline compilation only. Final authority is rechecked after this await. */
+  compilePrograms?(
+    request: QueueRequest,
+    checkpoint: ParamCheckpointGuardV1,
+  ): ContinuationPrograms | Promise<ContinuationPrograms>;
 }
 export interface ContinuationProgram {
   readonly script: string;
@@ -324,10 +329,10 @@ export function createDocumentContinuationBroker(
       refuse();
     const observation = structuredClone(selected);
     const verified = await ports.verifyObservation(observation, actor);
-    const programs = compileDocumentContinuationPrograms(
+    const programs = structuredClone(await (ports.compilePrograms ?? compileDocumentContinuationPrograms)(
       request,
       verified?.checkpoint,
-    );
+    ));
     if (programs.guardDigest !== observation.stateDigest) refuse();
     const descriptor: DocumentContinuation = {
       version: 1,
