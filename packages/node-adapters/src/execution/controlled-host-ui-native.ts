@@ -121,7 +121,7 @@ function Read-Control($e, [int]$i) {
  if ([double]::IsInfinity($b.X) -or [double]::IsInfinity($b.Y) -or
      [double]::IsNaN($b.X) -or [double]::IsNaN($b.Y)) {
    if (-not $c.IsOffscreen) { throw "Partial visible rectangle" }
-   # Collapsed controls have Rect.Empty. They convey NO input authority.
+   # Collapsed controls grant no input.
    $x=$null;$y=$null;$width=0;$height=0
  }
  $selected = $null
@@ -162,7 +162,7 @@ function Capture {
    throw "Main window capture unavailable"
  }
  $selected = @($tree | Where-Object { $_.selected -eq $true })
- # An exact accessible full installed entry is mandatory. Never infer from a label.
+ # Require the full installed path, not a label.
  if ($selected.Count -gt 1) { throw "Ambiguous selected entry" }
  $entry = $null
  if ($selected.Count -eq 1) { $entry = $selected[0].name }
@@ -194,7 +194,7 @@ if ($r.action -cne "capture") {
  if ($found.Count -ne 1 -or $found[0].offscreen -or -not $found[0].enabled -or
      $found[0].width -le 0 -or $found[0].height -le 0) { throw "Unambiguous visible input required" }
  $element = $before.elements[$found[0].index]
- # Resolve and validate again, without any global foreground or guessed coordinates.
+ # Re-read the exact control.
  $current = Read-Control $element $found[0].index
  if (($current | ConvertTo-Json -Compress) -cne ($found[0] | ConvertTo-Json -Compress)) {
    throw "Control changed before input"
@@ -211,8 +211,7 @@ if ($r.action -cne "capture") {
    Lock-Original $r.intent
    Lock-Original $r.profile
  }
- # A second invocation of this exact original action cannot send another input,
- # even if the first process/result was lost. Never delete or replace this file.
+ # Permanent O_EXCL dispatch fence; never remove.
  $dispatchBytes=[Text.Encoding]::UTF8.GetBytes(($r.attempt | ConvertTo-Json -Compress))
  $dispatch=New-Object IO.FileStream([string]$r.dispatchPath, [IO.FileMode]::CreateNew,
    [IO.FileAccess]::Write, [IO.FileShare]::Read, 4096, [IO.FileOptions]::WriteThrough)
@@ -221,6 +220,14 @@ if ($r.action -cne "capture") {
    $dispatch.Flush($true)
    [ControlledHostWindow]::Private($dispatch)
  } finally { $dispatch.Dispose() }
+ # Fresh owned tree/screenshot after durable I/O, before the ONE input.
+ $reviewed=Capture
+ if (($reviewed.view | ConvertTo-Json -Depth 12 -Compress) -cne
+     ($before.view | ConvertTo-Json -Depth 12 -Compress)) {
+   throw "Selection/control changed after durable attempt; no input"
+ }
+ $before=$reviewed
+ $element=$before.elements[$found[0].index]
  $pattern = $null
  if ($r.action -ceq "select") {
    if ($r.selector.name -cne $r.entry -or
@@ -234,7 +241,7 @@ if ($r.action -cne "capture") {
    }
    $pattern.Invoke()
  }
- # Input delivery is NOT startup success. No wait, retry or second input.
+ # Delivery is not startup. No retry.
 }
 [ordered]@{view=$before.view; png=$before.png; inputDelivered=($r.action -cne "capture")} |
  ConvertTo-Json -Depth 12 -Compress

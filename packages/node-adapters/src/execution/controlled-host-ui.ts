@@ -255,6 +255,14 @@ export function createControlledHostUi(
   lease: ControlledHostUiLease,
 ) {
   const pins = structuredClone(options);
+  const encodedCommand = Buffer.from(
+    controlledHostUiNative,
+    "utf16le",
+  ).toString("base64");
+  if (pins.powershell.length + encodedCommand.length + 128 > 32766)
+    throw new Error(
+      "Qualified UI helper exceeds the Windows command-line budget",
+    );
   const entry = path.win32.join(
     native.installedDirectory,
     "AutodeskFusionMCP.py",
@@ -404,7 +412,7 @@ export function createControlledHostUi(
               "-NoProfile",
               "-NonInteractive",
               "-EncodedCommand",
-              Buffer.from(controlledHostUiNative, "utf16le").toString("base64"),
+              encodedCommand,
             ],
             { stdio: ["pipe", "pipe", "pipe"] },
           );
