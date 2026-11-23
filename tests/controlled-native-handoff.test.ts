@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { createRequire } from "node:module";
 import type { ControlledFusionBootstrapPorts } from "../src/controlled-fusion-bootstrap";
 import {
@@ -175,8 +176,86 @@ test("native program parses as Python without executing imports, source installa
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("rejecting async lease is denied once without native effects or unhandled rejection in an actual strict Node subprocess", () => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "native-handoff-deny-"),
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--unhandled-rejections=strict",
+      "-e",
+      `
+    const assert = require("node:assert/strict");
+    const fs = require("node:fs");
+    const childProcess = require("node:child_process");
+    let spawns = 0, unhandled = 0;
+    childProcess.spawn = () => { spawns++; throw Error("NATIVE_EFFECT_FORBIDDEN"); };
+    process.on("unhandledRejection", () => { unhandled++; });
+    const { createControlledFusionNativeHandoff } = require(${JSON.stringify(path.resolve("src/dist/node-adapters/execution/controlled-native-handoff.js"))});
+    const pins = ${JSON.stringify(pins())};
+    pins.heldLease = { async assertCurrent() {}, async fence() { throw Error("REJECTED_LEASE_FIXTURE"); } };
+    const factory = createControlledFusionNativeHandoff(pins);
+    (async () => {
+      const input = { old: pins.old, qualifiedPackagePins: pins.qualified };
+      await assert.rejects(factory.qualifyNativeInstallationAfterDeath(input), /synchronous/);
+      await assert.rejects(factory.qualifyNativeInstallationAfterDeath(input), /replayed/);
+      setImmediate(() => {
+        assert.equal(spawns, 0);
+        assert.equal(unhandled, 0);
+        assert.deepEqual(fs.readdirSync(${JSON.stringify(directory)}), []);
+        console.log("DENIED_NO_EFFECT_NO_REPLAY_SURVIVED");
+      });
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `,
+    ],
+    { encoding: "utf8", timeout: 10000 },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.signal, null);
+  assert.match(result.stdout, /DENIED_NO_EFFECT_NO_REPLAY_SURVIVED/);
+  assert.equal(result.stderr, "");
+});
+
+test("compiled controller synchronous guard rejects async lease/rebind callbacks without crashing a strict Node subprocess", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--unhandled-rejections=strict",
+      "-e",
+      `
+    const assert = require("node:assert/strict");
+    const fs = require("node:fs");
+    const vm = require("node:vm");
+    const source = fs.readFileSync("dist/src/controlled-fusion-bootstrap.js", "utf8");
+    const start = source.indexOf("function synchronous(");
+    const end = source.indexOf("function frozenFile(", start);
+    assert.ok(start >= 0 && end > start);
+    const guard = vm.runInThisContext(source.slice(start, end) + "; synchronous");
+    let effects = 0, unhandled = 0;
+    process.on("unhandledRejection", () => { unhandled++; });
+    for (const name of ["lease", "rebind"]) {
+      assert.throws(() => { guard(async () => { throw Error("REJECTED_" + name); }); effects++; }, /Synchronous/);
+    }
+    setImmediate(() => {
+      assert.equal(effects, 0);
+      assert.equal(unhandled, 0);
+      console.log("CONTROLLER_DENIED_BOTH_SURVIVED");
+    });
+  `,
+    ],
+    { encoding: "utf8", timeout: 10000 },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.signal, null);
+  assert.match(result.stdout, /CONTROLLER_DENIED_BOTH_SURVIVED/);
+  assert.equal(result.stderr, "");
+});
+
 test("normal staged helper loads without workspace packages and structurally supplies the APP671 concrete ports", () => {
-  const directory = fs.mkdtempSync("/tmp/opencode/native-handoff-staged-");
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "native-handoff-staged-"),
+  );
   const execution = path.join(directory, "execution");
   fs.mkdirSync(execution);
   for (const name of [

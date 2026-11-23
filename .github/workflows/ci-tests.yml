@@ -141,6 +141,7 @@ jobs:
       - run: node --test dist/tests/fusion-bootstrap-autoload.test.js
       - run: node --test dist/tests/bootstrap-entry-evidence.test.js
       - run: node --test dist/tests/controlled-fusion-bootstrap.test.js dist/tests/controlled-fusion-launch.windows.test.js
+      - run: node --test dist/tests/controlled-native-handoff.test.js dist/tests/controlled-native-handoff.windows.test.js
       - run: node --test dist/tests/autodesk-fusion-only.test.js
       - run: node --test dist/tests/successor-private-provisioning.test.js
       - run: node --test dist/tests/retained-python-result.test.js

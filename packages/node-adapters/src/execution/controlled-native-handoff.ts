@@ -128,10 +128,12 @@ function detached(file: ControlledFile): ControlledFile {
 }
 function sync(fence: () => void) {
   const result: unknown = fence();
-  if (result !== undefined)
+  if (result !== undefined) {
+    void Promise.resolve(result).catch(() => {});
     throw new Error(
       "Native handoff fence must be synchronous, not a Promise/flag",
     );
+  }
 }
 
 /**
