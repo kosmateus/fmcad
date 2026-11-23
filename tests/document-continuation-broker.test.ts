@@ -349,6 +349,30 @@ function fixture() {
   };
 }
 
+test("a checkpoint superseded during verification is refused without waiting for a compiler", {
+  timeout: 2000,
+}, async () => {
+  const f = fixture();
+  const verify = f.ports.verifyObservation;
+  let release!: () => void;
+  let entered!: () => void;
+  const verifying = new Promise<void>(resolve => { entered = resolve; });
+  f.ports.verifyObservation = async (...args) => {
+    const original = await verify(...args);
+    entered();
+    await new Promise<void>(resolve => { release = resolve; });
+    return original;
+  };
+  // Compiler availability cannot delay refusal of already superseded authority.
+  f.ports.compilePrograms = () => new Promise(() => {});
+  const pending = f.broker.prepareSubmit(request(), f.actor);
+  await verifying;
+  f.moveHead();
+  release();
+  await assert.rejects(pending, { code: "DOCUMENT_CONTINUATION_UNPROVEN" });
+  assert.equal(Object.keys(f.domain.data.jobs).length, 0);
+});
+
 test("asynchronous source compilation never carries authority across a changed checkpoint or producer", async () => {
   const programs = helper.compileDocumentContinuationPrograms(request(), guard);
   for (const change of ["head", "generation", "rights", "source"] as const) {
