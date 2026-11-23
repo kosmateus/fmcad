@@ -35,7 +35,7 @@ def alternatives(value):
 def plain(value):
     if value[0] == "union":
         return all(plain(x) for x in value[1])
-    if value[0] in ("const", "number", "string", "bool"):
+    if value[0] in ("const", "number", "string", "bool", "plain-derived"):
         return True
     if value[0] == "sequence":
         return plain(value[1])
@@ -126,6 +126,8 @@ class Analyzer:
                     result.extend(x for _, x in v[1])
             elif plain(v) and v[0] in ("const", "string"):
                 result.append(STRING)
+            elif v[0] == "plain-derived":
+                result.append(("plain-derived",))
             else:
                 refuse("Unknown indexing receiver")
         return union(result)
@@ -140,6 +142,8 @@ class Analyzer:
                 result.extend(("const", key) for key, _ in v[1])
             elif v[0] == "string" or v[0] == "const" and isinstance(v[1], str):
                 result.append(STRING)
+            elif v[0] == "plain-derived":
+                result.append(("plain-derived",))
             else:
                 refuse("Unknown iterable protocol")
         return union(result)
@@ -240,7 +244,11 @@ class Analyzer:
             values = [self.expression(x, scope) for x in ([node.operand] if isinstance(node, ast.UnaryOp) else [node.left, node.right])]
             if not all(plain(x) for x in values):
                 refuse("Unknown operator protocol")
-            return BOOL if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not) else union(values)
+            # A result of trusted operations on plain builtin data remains
+            # plain (or raises), but is NOT any operand's literal or shape.
+            # In particular, arithmetic keys must project every possible
+            # container member, preserving any opaque/protected provenance.
+            return BOOL if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not) else ("plain-derived",)
         if isinstance(node, ast.JoinedStr):
             for piece in node.values:
                 if isinstance(piece, ast.FormattedValue):

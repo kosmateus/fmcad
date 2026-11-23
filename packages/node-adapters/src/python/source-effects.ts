@@ -27,7 +27,7 @@ export function provePythonSourceEffects(
   source: string,
 ): PythonSourceEffectProof {
   const pins = {
-    engineVersion: "python-source-effects-v1",
+    engineVersion: "python-source-effects-v2",
     sourceSha256: createHash("sha256").update(source).digest("hex"),
   };
   const unproven = (reason: string): PythonSourceEffectProof =>

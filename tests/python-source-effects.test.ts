@@ -96,6 +96,36 @@ test("aliases and closures resolve actual symbols, not spellings or annotations"
     assert.equal(provePythonSourceEffects(code).status, "unproven", code);
 });
 
+test("operator results never retain operand constants that can hide opaque provenance", () => {
+  for (const expression of [
+    '("a", "b", context)[2]',
+    '("a", "b", context)[1 + 1]',
+    '("a", "b", context)[-1]',
+    '("a", "b", context)[+2]',
+    '("a", "b", context)[~0]',
+    '("a", "b", context)[3 - 1]',
+    '("a", "b", context)[1 << 1]',
+    '{"safe": "text", "unsafe": context}["un" + "safe"]',
+    '{"a": "text", "aa": context}["a" + "a"]',
+    '("a", "b", context)[-(-2)]',
+  ]) {
+    const code = `def run(context):\n return ${expression}`;
+    assert.equal(provePythonSourceEffects(code).status, "unproven", code);
+  }
+  for (const code of [
+    'def pick(i, context):\n return ("a", "b", context)[i]\ndef run(context):\n return pick(1 + 1, context)',
+    'def run(context):\n print(("a", "b", context)[1 + 1])',
+  ])
+    assert.equal(provePythonSourceEffects(code).status, "unproven", code);
+  for (const code of [
+    'def run(context):\n return ("a", "b", context)[1]',
+    'def run(context):\n print(1 + 2, -1, not False, "a" + "b")',
+    'def run(context):\n print(("a", "b")[-1])',
+    'def run(context):\n print(len("a" + "b"), ("a", "b") + ("c",))',
+  ])
+    assert.equal(provePythonSourceEffects(code).status, "proven", code);
+});
+
 test("unknown effects, definition-time calls, magic and introspection fail closed", () => {
   const bodies = [
     "open('/tmp/effect-proof-must-not-exist','w')",
