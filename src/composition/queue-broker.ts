@@ -1966,6 +1966,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const continuationJobs = new Set<string>();
   function acceptedContinuationTarget(request: P.Request) {
     if (request.kind !== "command" || !physicalIsolation) return null;
+    // Parsed non-CAD commands use the existing legacy worker, not CAD model
+    // continuation. Missing/malformed typed CAD payloads must still fail closed.
+    if (request.payload?.["kind"] === "legacy-command") return null;
     const commands = runtimeRequire("./dist/core/application/cad/worker-command") as
       typeof import("../../packages/core/src/application/cad/worker-command");
     const decoded = commands.decodeCadWorkerInvocation(request.payload);
