@@ -169,6 +169,13 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
         ? [{ featureType: "script", object: { script: "changed_program = True", readOnly: false } }, "fusion_mcp_execute"]
         : args);
   }
+  const compileProductOracle = () => {
+    const compiler = load("./dist/composition/cad") as typeof import("../src/composition/cad");
+    return compiler.prepareCadScript("param.apply",
+      { parameters: [{ expression: "20 mm", name: "length" }] },
+      { doc: "Owned A", docId: "doc-A", docFileId: "file-A", preview: false }, undefined, checkpoint());
+  };
+  let productOracle: { checkpoint: string; program: ReturnType<typeof compileProductOracle> } | undefined;
   physical._post = async (payload) => {
     if (payload.method === "initialize")
       return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload.id,
@@ -221,10 +228,10 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
           isActive: true, isModified: false, isSaved: true,
         }] });
       } else if (continuation) {
-        const compiler = load("./dist/composition/cad") as typeof import("../src/composition/cad");
-        const guarded = compiler.prepareCadScript("param.apply",
-          { parameters: [{ expression: "20 mm", name: "length" }] },
-          { doc: "Owned A", docId: "doc-A", docFileId: "file-A", preview: false }, undefined, checkpoint());
+        if (productOracle)
+          assert.equal(productOracle.checkpoint, JSON.stringify(checkpoint()),
+            "the independently prepared fixture oracle must still match the exact current checkpoint");
+        const guarded = productOracle?.program ?? compileProductOracle();
         assert.equal(continuation.sourceHash, hash(guarded.script),
           "the actual accepted job must bind the default compiler's guarded source");
         const folder = path.join(dir, "jobs", snapshot.active);
@@ -275,7 +282,9 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
       if (previousConfig === undefined) delete process.env["XDG_CONFIG_HOME"];
       else process.env["XDG_CONFIG_HOME"] = previousConfig;
     }
-    if (broker) fs.rmSync(home, { recursive: true, force: true });
+    if (broker && process.env["FMCAD_TEST_PRESERVE_ARTIFACTS"] !== "1")
+      fs.rmSync(home, { recursive: true, force: true });
+    else if (broker) console.error("Preserved owned checkpoint fixture:", home);
   });
   try { broker = await serve(cfg, {
     dir, confirmOwnership: true, pollMs: 5, createBackend: () => physical,
@@ -340,6 +349,9 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
     useWindowsReceipts() { windowsReceiptMode = true; },
     windowsReceipts: () => [...windowsReceipts],
     changedRuntimeChecks: () => changedRuntimeChecks,
+    prepareProductOracle() {
+      productOracle = { checkpoint: JSON.stringify(checkpoint()), program: compileProductOracle() };
+    },
     removePreparation() { Object.defineProperty(physical, "prepareCallTool", { value: undefined }); },
     productJobs: () => [...productJobs],
     revoke(value: boolean) { revoked = value; },
@@ -374,6 +386,10 @@ test("public IPC stays responsive while preparing a guarded continuation",
       observationId: record(inspected["observation"])["observationId"],
     }));
     assert.equal(accepted["state"], "checkpoint_current");
+    // Keep the independent exact-source assertion, but prepare the synthetic
+    // backend's oracle before timing real broker/worker responsiveness. A real
+    // physical backend does not compile a second Python program in its send().
+    f.prepareProductOracle();
     const signal = path.join(f.dir, "compilation-start");
     const observer = spawn(process.execPath, ["-e", `
 const fs = require("node:fs"), path = require("node:path");
