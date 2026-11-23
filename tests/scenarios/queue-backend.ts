@@ -132,7 +132,8 @@ export class QueueScenarioBackend implements ScenarioBackend {
         this.config["backend"] !== "addin" ||
         this.config["url"] !== "http://127.0.0.1:8765/mcp" ||
         this.config["protocolVersion"] !== "2025-06-18" ||
-        this.config["tool"] !== "execute_python")
+        (this.config["tool"] !== "execute_python" &&
+          this.config["tool"] !== "fusion_mcp_execute"))
     )
       throw new Error(
         "Live scenario commands require the qualified ADDIN endpoint",
