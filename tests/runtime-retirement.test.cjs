@@ -172,6 +172,47 @@ function successorFixture(observerState) {
   return { previous, current, coverage, authority, project, job };
 }
 
+test("instance epoch advances over authenticated retired UNKNOWN without settling or replay", () => {
+  const f = successorFixture("unknown");
+  const domain = new core.QueueDomain({
+    snapshot: f.project(), recover: true, runtimeRetirement: f.authority, hash,
+    now: () => 400, newId: () => "never-replayed-epoch",
+  });
+  domain.pause(false);
+  const jobs = structuredClone(domain.data.jobs);
+  const epoch = domain.data.epoch;
+  const transition = domain.advanceInstanceEpoch("owned-new-instance");
+  assert.equal(transition.epoch, epoch + 1);
+  assert.deepEqual(domain.data.jobs, jobs);
+  assert.equal(domain.advanceInstanceEpoch("owned-new-instance").alreadyApplied, true);
+  assert.equal(domain.next(), null);
+  domain.pause(true);
+  assert.throws(() => domain.advanceInstanceEpoch("other-instance"), { code: "MANUAL_PAUSE" });
+});
+
+test("retired history does not exempt pending work or a missing UNKNOWN classification from epoch guards", () => {
+  const f = successorFixture();
+  const create = () => new core.QueueDomain({
+    snapshot: f.project(), recover: true, runtimeRetirement: f.authority, hash,
+    now: () => 400, newId: () => "fresh-uncovered-work",
+  });
+  const pending = new core.QueueDomain({
+    now: () => 400, newId: () => "fresh-uncovered-work", hash,
+  });
+  pending.submit({
+    kind: "rpc", clientId: "new-owner", requestId: "fresh-pending", timeoutMs: 1000,
+    payload: { method: "tools/call", params: {} },
+  });
+  assert.equal(pending.data.jobs["fresh-uncovered-work"].state, "queued");
+  assert.throws(() => pending.advanceInstanceEpoch("pending-instance"), { code: "QUEUE_NOT_QUIESCENT" });
+  const missing = create();
+  missing.pause(false);
+  delete f.coverage.jobs[f.job.id];
+  const before = structuredClone(missing.data);
+  assert.throws(() => missing.advanceInstanceEpoch("uncovered-instance"), { code: "QUEUE_NOT_QUIESCENT" });
+  assert.deepEqual(missing.data, before, "failed transition cannot publish epoch or change UNKNOWN");
+});
+
 test("a fresh authenticated root projects the exact previously retired snapshot without settling UNKNOWN", () => {
   const f = successorFixture();
   const projected = f.project();

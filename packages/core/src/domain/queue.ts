@@ -1639,7 +1639,9 @@ export class QueueDomain {
         d.active ||
         d.blocked ||
         d.lease ||
-        Object.values(d.jobs).some((job) => !terminal(job.state))
+        Object.values(d.jobs).some((job) =>
+          !terminal(job.state) &&
+          !runtimeRetiredJob(d, job, retirements.get(this), canonical))
       ) {
         fail(
           "QUEUE_NOT_QUIESCENT",
