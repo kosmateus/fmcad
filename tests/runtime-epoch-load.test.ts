@@ -78,9 +78,17 @@ async function fixture(
     activeCommand: "SelectCommand",
     documents: [],
   };
+  let restoredDomains = 0;
   const readers: BrokerRuntimeIdentityReaders = {
     instance: { ...instance, buildHash: () => build },
-    epochs,
+    epochs: {
+      openIsolatedEpoch(directory, options) {
+        restoredDomains++;
+        return epochs.openIsolatedEpoch(directory, options) as {
+          epoch: P.Epoch | null;
+        };
+      },
+    },
     backend: load("./queue-backend-transition"),
     lineage: load("./queue-epoch-lineage"),
     normalAdmission: load("./dist/node-adapters/broker-ipc/normal-admission"),
@@ -128,21 +136,29 @@ async function fixture(
     },
     async () => observed,
   );
-  return { state, authority, directory, queue };
+  return {
+    state,
+    authority,
+    directory,
+    queue,
+    restoredDomains: () => restoredDomains,
+  };
 }
 
-test("legacy authority reauthorization leaves a bounded heartbeat window with retained metadata history", async (t) => {
+test("legacy authority reauthorizes retained metadata through the owned durable host instead of restoring domains", async (t) => {
   const f = await fixture(t, 17000);
   const original = f.authority.capture();
+  const restoredBefore = f.restoredDomains();
   const started = performance.now();
   for (let i = 0; i < 8; i++) f.authority.assertCurrent(original);
   const elapsed = performance.now() - started;
   t.diagnostic(
     `Eight exact legacy reauthorizations / 17000 retained metadata jobs: ${elapsed.toFixed(2)} ms`,
   );
-  assert.ok(
-    elapsed < 800,
-    `Repeated legacy reauthorization blocked the event loop for ${elapsed.toFixed(2)} ms`,
+  assert.equal(
+    f.restoredDomains(),
+    restoredBefore,
+    "An already-bound host must verify its owned durable snapshot, not reconstruct queue domains",
   );
 });
 
@@ -219,7 +235,9 @@ test("a newly published foreign epoch cannot authorize a previously bound no-epo
 test("older hosts retain the original full restore guard rather than an unchecked epoch fallback", async (t) => {
   const f = await fixture(t, 0, false);
   const capture = f.authority.capture();
+  const restoredBefore = f.restoredDomains();
   f.authority.assertCurrent(capture);
+  assert.ok(f.restoredDomains() > restoredBefore);
   fs.writeFileSync(path.join(f.directory, "queue-state.pending.json"), "{}");
   assert.throws(() => f.authority.assertCurrent(capture), {
     code: "STORAGE_UNAVAILABLE",
