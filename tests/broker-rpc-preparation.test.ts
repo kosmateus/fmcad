@@ -214,6 +214,44 @@ test("clones the full caller wire, allocates unique identity, and retains origin
   assert.equal(a.metadataOnly, false);
 });
 
+test("protocol metadata uses the non-Python certificate and binds the actual rewritten RPC", async () => {
+  const f = fixture();
+  const rpc: P.Rpc = { jsonrpc: "2.0", id: 7, method: "initialize" };
+  const protocolJob = { ...job, kind: "rpc", hash: "protocol-request",
+    request: { ...job.request, kind: "rpc", payload: rpc },
+    protocolMetadata: { version: 1, kind: "protocol-metadata", requestHash: "protocol-request",
+      rpcHash: "protocol-rpc", generation: "generation" } } as P.Job;
+  f.ports.metadata = { ...f.ports.metadata, job: () => protocolJob };
+  const checked: string[] = [];
+  f.ports.protocol = {
+    assertWire(actualJob, outgoing, rpcId) {
+      assert.equal(actualJob, protocolJob);
+      assert.deepEqual({ ...outgoing, id: 7 }, rpc);
+      assert.equal(outgoing.id, "fmcad:" + rpcId);
+      checked.push(rpcId);
+    },
+    assertProtocolMetadata(id, rpcHash) {
+      assert.equal(id, protocolJob.id);
+      assert.equal(rpcHash, "protocol-rpc");
+    },
+  };
+  const prepared = await createBrokerRpcPreparation(f.ports).prepareOwnedPost(rpc, protocolJob);
+  assert.equal(checked.length, 1);
+  assert.equal(prepared.metadataOnly, true);
+  assert.equal(prepared.metadataProof, undefined);
+  assert.ok(prepared.pythonCertificate);
+  assert.equal(prepared.pythonCertificate?.kind, "non-python");
+  assert.deepEqual(prepared.record.binding["protocolScope"], {
+    producer: "compiled-protocol-metadata-v1", requestHash: protocolJob.hash,
+    rpcHash: "protocol-rpc", generation: "generation", buildHash: f.ports.buildHash,
+  });
+  prepared.pythonCertificate.fence(prepared.outgoing);
+  assert.throws(() => prepared.pythonCertificate.fence({ ...prepared.outgoing, method: "tools/call" }));
+  delete f.ports.protocol;
+  await assert.rejects(createBrokerRpcPreparation(f.ports).prepareOwnedPost(rpc, protocolJob),
+    { code: "PROTOCOL_METADATA_UNPROVEN" });
+});
+
 test("notification ID absence and metadata-only classification remain exact", async () => {
   for (const method of [
     "initialize",

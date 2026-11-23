@@ -210,6 +210,7 @@ async function fixture(
     assertDocumentMetadataRead: (...args) =>
       state.assertDocumentMetadataRead(...args),
     assertDocumentCreation: (...args) => state.assertDocumentCreation(...args),
+    assertProtocolMetadata: (...args) => state.assertProtocolMetadata(...args),
   };
   const session = createBrokerSession<P.LaneContext>();
   const lane = helpers.createBrokerLane(session, {

@@ -181,6 +181,9 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
       return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload.id,
         result: { protocolVersion: "2025-06-18" } }) };
     if (payload.method === "notifications/initialized") return { status: 202, raw: "" };
+    if (["tools/list", "ping"].includes(payload.method))
+      return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload.id,
+        result: payload.method === "tools/list" ? { tools: [] } : {} }) };
     const script = payload.params?.arguments?.code ?? payload.params?.arguments?.object?.script;
     assert.equal(typeof script, "string");
     const observed = { ...instance, documentState: {
@@ -643,6 +646,33 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false);
   });
+for (const method of ["initialize", "notifications/initialized", "tools/list", "ping"]) {
+test(`public protocol ${method} crosses retired exposures with one original non-Python RPC`,
+  { timeout: 120000 }, async (t) => {
+    const { buildHash } = load("./queue-instance") as { buildHash(): string };
+    const f = await fixture(t, true), client = await f.client("protocol-owner");
+    const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const original = Object.values(record(before["jobs"])).map(record)
+      .find((job) => job["requestId"] === "private-foreign-request");
+    assert.ok(original);
+    const admitted = await client.submit({
+      kind: "rpc", clientId: "protocol-owner", requestId: "protocol-initialize",
+      cwd: f.dir, timeoutMs: 45000, backend: "addin", buildHash: buildHash(),
+      payload: { jsonrpc: "2.0",
+        ...(method === "notifications/initialized" ? {} : { id: "caller-protocol" }),
+        method, ...(method === "initialize" ?
+          { params: { protocolVersion: "2025-06-18", capabilities: {} } } : {}) },
+    });
+    const completed = await client.wait(admitted.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const stored = record(record(after["jobs"])[admitted.id]);
+    assert.equal(record(stored["protocolMetadata"])["kind"], "protocol-metadata");
+    assert.equal(record(stored["dispatch"])["rpcCount"], 1);
+    assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
+    assert.equal(f.writes(), 0);
+  });
+}
 test("public metadata cannot authorize a raw quarantine relabeled as runtime retirement",
   { timeout: 120000 }, async (t) => {
     const f = await fixture(t, "raw-forged"), client = await f.client("metadata-unproven");

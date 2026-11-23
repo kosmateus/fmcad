@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
-import type { QueueRequest } from "@fmcad/core";
+import type { QueueJob, QueueRequest } from "@fmcad/core";
 import type { ProtocolMetadata } from "../packages/core/src/domain/protocol-metadata";
 
 const load = createRequire(__filename);
@@ -18,11 +18,16 @@ export interface ProtocolMetadataPorts {
   /** Broker-owned synchronous source/root/owner verification. */
   recheck(): void;
 }
+export interface ProtocolMetadataRequest extends QueueRequest {
+  readonly backend?: string | undefined;
+}
 export interface CompiledProtocolMetadata {
   readonly descriptor: ProtocolMetadata;
+  readonly runtimePins: ProtocolMetadataPins;
   reverify(request: QueueRequest): void;
   assertRpc(request: QueueRequest, actual: unknown): void;
 }
+const compiledPrograms = new WeakSet<CompiledProtocolMetadata>();
 function refuse(): never {
   throw Object.assign(new Error("Verified protocol metadata is unavailable"), {
     code: "PROTOCOL_METADATA_UNPROVEN",
@@ -62,7 +67,7 @@ function requestHash(request: QueueRequest): string {
  * In particular, a caller's readonly flag cannot classify tools/call as metadata.
  */
 export function compileProtocolMetadata(
-  input: QueueRequest,
+  input: ProtocolMetadataRequest,
   ports: ProtocolMetadataPorts,
 ): CompiledProtocolMetadata | null {
   if (input.kind !== "rpc") return null;
@@ -89,6 +94,7 @@ export function compileProtocolMetadata(
     refuse();
   const initial = pins(ports);
   if (
+    request.backend !== "addin" ||
     request.buildHash !== initial.buildHash ||
     typeof request.clientId !== "string" ||
     !request.clientId.trim() ||
@@ -115,12 +121,77 @@ export function compileProtocolMetadata(
       refuse();
   };
   reverify(request);
-  return Object.freeze({
+  const prepared = Object.freeze({
     descriptor,
+    runtimePins: initial,
     reverify,
     assertRpc(currentRequest: QueueRequest, actual: unknown) {
       reverify(currentRequest);
       if (hash(actual) !== expectedRpc) refuse();
     },
   });
+  compiledPrograms.add(prepared);
+  return prepared;
+}
+
+/** Broker-owned witnesses are ephemeral. Neither queued JSON nor a repeated
+ * client submission may reconstruct or replace an original admitted witness. */
+export function createProtocolMetadataBroker() {
+  const entries = new Map<string, CompiledProtocolMetadata>();
+  function program(job: QueueJob): CompiledProtocolMetadata {
+    const prepared = entries.get(job.id);
+    if (
+      !prepared ||
+      job.hash !== prepared.descriptor.requestHash ||
+      !isDeepStrictEqual(job.protocolMetadata, prepared.descriptor) ||
+      !["queued", "preparing", "processing", "running", "sending"].includes(
+        job.state,
+      )
+    )
+      refuse();
+    prepared.reverify(job.request);
+    return prepared;
+  }
+  return {
+    prepare: compileProtocolMetadata,
+    admit(job: QueueJob, prepared: CompiledProtocolMetadata) {
+      if (entries.has(job.id)) refuse();
+      if (
+        !compiledPrograms.has(prepared) ||
+        job.hash !== prepared.descriptor.requestHash ||
+        !isDeepStrictEqual(job.protocolMetadata, prepared.descriptor)
+      )
+        refuse();
+      prepared.reverify(job.request);
+      entries.set(job.id, prepared);
+    },
+    program,
+    assertWire(job: QueueJob, outgoing: unknown, physicalRpcId: string) {
+      const prepared = program(job);
+      if (!outgoing || typeof outgoing !== "object" || Array.isArray(outgoing))
+        refuse();
+      const logical: Record<string, unknown> = { ...outgoing };
+      const original = job.request.payload;
+      if (!original) refuse();
+      if (Object.hasOwn(original, "id")) {
+        if (logical["id"] !== "fmcad:" + physicalRpcId) refuse();
+        logical["id"] = original["id"];
+      } else if (Object.hasOwn(logical, "id")) {
+        refuse();
+      }
+      // Only the transport-owned JSON-RPC ID is rebound. All other logical
+      // contents stay bound by canonical hashing and the final wire certificate.
+      prepared.assertRpc(job.request, logical);
+    },
+    prune(lookup: (id: string) => QueueJob | undefined) {
+      for (const id of entries.keys()) {
+        const job = lookup(id);
+        if (
+          !job ||
+          ["succeeded", "failed", "cancelled", "expired"].includes(job.state)
+        )
+          entries.delete(id);
+      }
+    },
+  };
 }

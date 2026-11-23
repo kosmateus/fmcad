@@ -53,6 +53,10 @@ export interface BrokerRpcPreparationPorts {
     program(job: Readonly<P.Job>): Pick<CompiledDocumentMetadataRead, "assertProgram">;
     assertDocumentCreation(jobId: string, programHash: string, rpcHash: string): void;
   };
+  readonly protocol?: {
+    assertWire(job: Readonly<P.Job>, outgoing: P.Rpc, rpcId: string): void;
+    assertProtocolMetadata(jobId: string, rpcHash: string): void;
+  };
   readonly prepareBrokerScript: typeof prepareBrokerScript;
   readonly prepareReceiptScript: ReceiptPreparation;
   retainPythonOrigin(
@@ -124,6 +128,20 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
       const outgoing = structuredClone(payload);
       let pythonArtifact;
       if (own(outgoing, "id")) outgoing.id = "fmcad:" + rpcId;
+      const protocolJob = ports.metadata.job(job.id);
+      if (protocolJob?.protocolMetadata) {
+        if (!ports.protocol || payload.method === "tools/call")
+          fail("PROTOCOL_METADATA_UNPROVEN", "Protocol witness is unavailable");
+        ports.protocol.assertWire(protocolJob, outgoing, rpcId);
+        ports.protocol.assertProtocolMetadata(job.id, protocolJob.protocolMetadata.rpcHash);
+        binding["protocolScope"] = {
+          producer: "compiled-protocol-metadata-v1",
+          requestHash: protocolJob.hash,
+          rpcHash: protocolJob.protocolMetadata.rpcHash,
+          generation: protocolJob.protocolMetadata.generation,
+          buildHash: ports.buildHash,
+        };
+      }
       record.wireRequest = {
         jsonrpc: "2.0",
         method: outgoing.method,

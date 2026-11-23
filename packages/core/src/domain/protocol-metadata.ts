@@ -17,6 +17,15 @@ const authorities = new WeakMap<
 const digest = (value: unknown) =>
   typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 
+export function isProtocolMetadataMethod(method: unknown): boolean {
+  return (
+    typeof method === "string" &&
+    ["initialize", "notifications/initialized", "tools/list", "ping"].includes(
+      method,
+    )
+  );
+}
+
 export function validProtocolMetadata(
   value: unknown,
 ): value is ProtocolMetadata {

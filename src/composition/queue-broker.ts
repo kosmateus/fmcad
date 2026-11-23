@@ -1790,6 +1790,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       program: creationProgram,
       assertDocumentCreation: (id, programHash, rpcHash) => state.assertDocumentCreation(id, programHash, rpcHash),
     },
+    protocol: {
+      assertWire: (job, outgoing, rpcId) =>
+        protocolMetadata.assertWire(job as unknown as import("@fmcad/core").QueueJob, outgoing, rpcId),
+      assertProtocolMetadata: (id, rpcHash) => {
+        protocolProgram(required(state.data.jobs[id]));
+        state.assertProtocolMetadata(id, rpcHash);
+      },
+    },
     prepareBrokerScript,
     prepareReceiptScript,
     retainPythonOrigin,
@@ -2046,6 +2054,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const metadataReads = metadataCompiler.createDocumentMetadataReadBroker();
   const creationCompiler = runtimeRequire("./document-creation-broker") as typeof import("../document-creation-broker");
   const documentCreations = creationCompiler.createDocumentCreationBroker();
+  const protocolCompiler = runtimeRequire("./protocol-metadata-broker") as typeof import("../protocol-metadata-broker");
+  const protocolMetadata = protocolCompiler.createProtocolMetadataBroker();
+  function protocolProgram(job: P.Job) {
+    return protocolMetadata.program(job as unknown as import("@fmcad/core").QueueJob);
+  }
+  function prepareProtocolMetadata(request: P.Request, clientTokenHash: string) {
+    return protocolMetadata.prepare(request as unknown as import("../protocol-metadata-broker").ProtocolMetadataRequest, {
+      recheck() {
+        assertCheckpointOwner();
+        if (clientHashes()[request.clientId] !== clientTokenHash)
+          fail("NOT_AUTHORIZED", "The protocol principal is no longer registered");
+        if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
+      },
+      currentPins: () => ({ buildHash: codeHash, configHash, generation: checkpointGenerationAfterOwnerCheck() }),
+    });
+  }
   function creationProgram(job: P.Job) {
     return documentCreations.program(job as unknown as import("@fmcad/core").QueueJob);
   }
@@ -5152,6 +5176,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           let preparedMetadata:
             import("../document-metadata-read-broker").CompiledDocumentMetadataRead | null = null;
           let preparedCreation: import("../document-creation-broker").CompiledDocumentCreation | null = null;
+          let preparedProtocol: import("../protocol-metadata-broker").CompiledProtocolMetadata | null = null;
           if (target) {
             try {
               // The normal worker reads the canonically persisted request.
@@ -5173,6 +5198,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               request, required(clientHashes()[clientId]),
             );
             if (!preparedMetadata) preparedCreation = await prepareDocumentCreation(request, required(clientHashes()[clientId]));
+            if (!preparedMetadata && !preparedCreation)
+              preparedProtocol = prepareProtocolMetadata(request, required(clientHashes()[clientId]));
             verifyAcceptance();
           }
           const accept = () => {
@@ -5208,7 +5235,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                           void kind;
                           return proof;
                         }))
-                      : state.submit(request, preparedId)) as P.PublicJob;
+                      : preparedProtocol
+                        ? state.submitProtocolMetadata(request, state.createProtocolMetadataAuthority(() => {
+                            verifyAcceptance();
+                            preparedProtocol!.reverify(request as unknown as import("@fmcad/core").QueueRequest);
+                            return preparedProtocol!.descriptor;
+                          }), preparedId)
+                        : state.submit(request, preparedId)) as P.PublicJob;
             } catch (error) {
               if (preparedCreation && errorInfo(error).code === "DOCUMENT_CREATION_UNPROVEN")
                 job = state.refuseDocumentContinuation(request, preparedId) as P.PublicJob;
@@ -5220,6 +5253,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }
             }
             const admitted = state.data.jobs[job.id];
+            if (preparedProtocol && admitted?.protocolMetadata && state.hasProtocolMetadata(job.id)) {
+              protocolMetadata.admit(admitted as unknown as import("@fmcad/core").QueueJob, preparedProtocol);
+              if (!rawPlan || rawPlan.kind !== "raw")
+                fail("PROTOCOL_METADATA_UNPROVEN", "The original protocol RPC preparation is missing");
+              rawPlan.turn.inspect((prepared) => {
+                protocolMetadata.assertWire(admitted as unknown as import("@fmcad/core").QueueJob,
+                  prepared.outgoing, prepared.rpcId);
+                prepared.record.binding["protocolScope"] = {
+                  producer: "compiled-protocol-metadata-v1", requestHash: admitted.hash,
+                  rpcHash: preparedProtocol!.descriptor.rpcHash,
+                  generation: preparedProtocol!.descriptor.generation, buildHash: codeHash,
+                };
+              });
+            }
             if (preparedCreation && admitted?.documentCreation && state.hasDocumentCreation(job.id))
               documentCreations.admit(admitted as unknown as import("@fmcad/core").QueueJob, preparedCreation);
             if (preparedMetadata && admitted?.documentMetadataRead &&
@@ -6053,6 +6100,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         continuation.prune((id) => state.data.jobs[id]);
         metadataReads.prune((id) => state.data.jobs[id]);
         documentCreations.prune((id) => state.data.jobs[id]);
+        protocolMetadata.prune((id) => state.data.jobs[id]);
         // Only outstanding prepared plans, never retained terminal history.
         turnExecution.prunePlans();
         checkpointReads.prune((id) => {

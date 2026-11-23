@@ -78,6 +78,7 @@ export interface QueueJob {
   documentContinuation?: import("./document-continuation").DocumentContinuation;
   documentMetadataRead?: import("./document-metadata-read").DocumentMetadataRead;
   documentCreation?: import("./document-creation").DocumentCreation;
+  protocolMetadata?: import("./protocol-metadata").ProtocolMetadata;
   id: string;
   requestId: string;
   clientId: string;

@@ -29,6 +29,10 @@ import {
   type DocumentMetadataRead, type DocumentMetadataReadAuthority,
 } from "./document-metadata-read";
 import {
+  createProtocolMetadataAuthority, verifiedProtocolMetadata, validProtocolMetadata,
+  isProtocolMetadataMethod, type ProtocolMetadata, type ProtocolMetadataAuthority,
+} from "./protocol-metadata";
+import {
   documentTargetKey,
   validDocumentObservation,
   validDocumentCheckpoints,
@@ -60,6 +64,12 @@ type MetadataReadBinding = {
 const metadataReads = new WeakMap<QueueDomain, Map<string, MetadataReadBinding>>();
 type CreationBinding = { marker: DocumentCreation; authority: DocumentCreationAuthority; originalRpcId?: string };
 const creations = new WeakMap<QueueDomain, Map<string, CreationBinding>>();
+type ProtocolMetadataBinding = {
+  marker: ProtocolMetadata;
+  authority: ProtocolMetadataAuthority;
+  originalRpcId?: string;
+};
+const protocolMetadata = new WeakMap<QueueDomain, Map<string, ProtocolMetadataBinding>>();
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
@@ -435,6 +445,12 @@ export class QueueDomain {
           (!validDocumentCreation(job.documentCreation) || job.documentCreation.requestHash !== job.hash ||
            job.documentInspection || job.documentContinuation || job.documentMetadataRead))
         fail("CORRUPT_STATE", "Invalid broker-authored creation marker");
+      if (job.protocolMetadata !== undefined &&
+          (!validProtocolMetadata(job.protocolMetadata) ||
+           job.protocolMetadata.requestHash !== job.hash ||
+           job.request.kind !== "rpc" || !isProtocolMetadataMethod(job.request.payload?.["method"]) ||
+           job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation))
+        fail("CORRUPT_STATE", "Invalid broker-authored protocol metadata marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
       if (job.workflowObservation && !workflowObservationFor(d, job.id) &&
@@ -616,6 +632,10 @@ export class QueueDomain {
       if (creationCapabilities)
         for (const id of creationCapabilities.keys())
           if (!draft.jobs[id] || terminal(draft.jobs[id].state)) creationCapabilities.delete(id);
+      const protocolCapabilities = protocolMetadata.get(this);
+      if (protocolCapabilities)
+        for (const id of protocolCapabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state)) protocolCapabilities.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -783,9 +803,9 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
-      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job)) {
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job)) {
         this._refuseDocumentConflict(d, job, time);
-        job.code = "CHECKPOINT_CHANGED";
+        job.code = job.protocolMetadata ? "PROTOCOL_METADATA_UNPROVEN" : "CHECKPOINT_CHANGED";
         continue;
       }
       const r = job.request;
@@ -910,6 +930,60 @@ export class QueueDomain {
     return copy(binding.marker);
   }
   hasDocumentCreation(id: string) { return creations.get(this)?.has(id) ?? false; }
+  createProtocolMetadataAuthority(verify: () => ProtocolMetadata) {
+    return createProtocolMetadataAuthority(this, verify);
+  }
+  submitProtocolMetadata(request: unknown, authority: ProtocolMetadataAuthority, preparedId?: string) {
+    const binding = { marker: verifiedProtocolMetadata(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, preparedId, undefined, undefined, false, undefined, undefined, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) &&
+        ["queued", "preparing", "processing"].includes(job.state)) {
+      let entries = protocolMetadata.get(this);
+      if (!entries) protocolMetadata.set(this, entries = new Map());
+      entries.set(job.id, binding);
+    }
+    return result;
+  }
+  _protocolMetadataAllowed(d: QueueSnapshot, job: QueueJob, binding?: ProtocolMetadataBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+      const current = verifiedProtocolMetadata(binding.authority, this);
+      const identity = { ...job.request };
+      delete identity.description;
+      return job.request.kind === "rpc" &&
+        isProtocolMetadataMethod(job.request.payload?.["method"]) &&
+        canonical(current) === canonical(binding.marker) &&
+        canonical(job.protocolMetadata) === canonical(binding.marker) &&
+        current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+        documentConflicts(d, null, retirements.get(this), canonical)
+          .every(documentConflictAllowsInspection);
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["PROTOCOL_METADATA_UNPROVEN", "NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED",
+            "DOCUMENT_UNLOCK_NOT_AUTHENTICATED", "DOCUMENT_UNLOCK_STALE"].includes(code)) return false;
+      throw error;
+    }
+  }
+  assertProtocolMetadata(id: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id);
+    const binding = protocolMetadata.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const intent = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId &&
+        binding?.originalRpcId === committedRpcId && !!committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._protocolMetadataAllowed(this.data, job, binding) ||
+        binding.marker.rpcHash !== rpcHash || !intent)
+      fail("PROTOCOL_METADATA_UNPROVEN", "Metadata must match its one original compiler-bound protocol RPC");
+    return copy(binding.marker);
+  }
+  hasProtocolMetadata(id: string) { return protocolMetadata.get(this)?.has(id) ?? false; }
   submitDocumentMetadataRead(request: unknown, authority: DocumentMetadataReadAuthority) {
     const binding = { marker: verifiedDocumentMetadataRead(authority, this), authority };
     const existingIds = new Set(Object.keys(this.data.jobs));
@@ -974,6 +1048,8 @@ export class QueueDomain {
     return this._submit(request, preparedId, undefined, undefined, true);
   }
   _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
+    if (job.protocolMetadata)
+      return this._protocolMetadataAllowed(d, job, protocolMetadata.get(this)?.get(job.id));
     if (job.documentCreation) return this._creationAllowed(d, job, creations.get(this)?.get(job.id));
     const metadata = metadataReads.get(this)?.get(job.id);
     if (job.documentMetadataRead) return this._metadataReadAllowed(d, job, metadata);
@@ -1049,7 +1125,8 @@ export class QueueDomain {
   // Internal server entrypoint; inspection markers are not decoded from RPC.
   _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
     continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority },
-    refusedContinuation = false, metadata?: MetadataReadBinding, creation?: CreationBinding) {
+    refusedContinuation = false, metadata?: MetadataReadBinding, creation?: CreationBinding,
+    protocol?: ProtocolMetadataBinding) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -1170,6 +1247,7 @@ export class QueueDomain {
         ...(continuation ? { documentContinuation: copy(continuation.marker) } : {}),
         ...(metadata ? { documentMetadataRead: copy(metadata.marker) } : {}),
         ...(creation ? { documentCreation: copy(creation.marker) } : {}),
+        ...(protocol ? { protocolMetadata: copy(protocol.marker) } : {}),
       };
       if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash, retirements.get(this)))
         fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
@@ -1180,8 +1258,11 @@ export class QueueDomain {
         fail("DOCUMENT_METADATA_READ_UNPROVEN", "A current private compiler-bound metadata read is required");
       if (creation && !this._creationAllowed(d, inspectionCandidate, creation))
         fail("DOCUMENT_CREATION_UNPROVEN", "Unfenced work cannot permit new document creation");
+      if (protocol && ((inspection || continuation || metadata || creation) ||
+          !this._protocolMetadataAllowed(d, inspectionCandidate, protocol)))
+        fail("PROTOCOL_METADATA_UNPROVEN", "An exclusive current protocol metadata capability is required");
       if (refusedContinuation ||
-          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata && !creation)) {
+          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata && !creation && !protocol)) {
         const refused: QueueJob = {
           id: preparedId ?? this.newId(), requestId: r.requestId,
           clientId: r.clientId, kind: r.kind, request: r, hash,
@@ -1266,6 +1347,7 @@ export class QueueDomain {
       if (inspection) job.documentInspection = inspection;
       if (metadata) job.documentMetadataRead = copy(metadata.marker);
       if (creation) job.documentCreation = copy(creation.marker);
+      if (protocol) job.protocolMetadata = copy(protocol.marker);
       if (continuation) job.documentContinuation = copy(continuation.marker);
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
@@ -1370,7 +1452,7 @@ export class QueueDomain {
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
         (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
-          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job)),
+          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -1390,7 +1472,7 @@ export class QueueDomain {
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
-        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job)) ||
+        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -1643,6 +1725,7 @@ export class QueueDomain {
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
     const metadata = metadataReads.get(this)?.get(id);
     const creation = creations.get(this)?.get(id);
+    const protocol = protocolMetadata.get(this)?.get(id);
     let originalRpcId: string | undefined;
     const result = this._commit((d) => {
       const job = this._active(d, id);
@@ -1655,6 +1738,17 @@ export class QueueDomain {
       };
       const rpcCount = record.rpcCount ?? old.rpcCount + 1;
       const completedCount = record.completedCount ?? old.completedCount;
+      if (job.protocolMetadata) {
+        const rpcId = record["rpcId"];
+        if (!protocol || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
+          fail("PROTOCOL_METADATA_UNPROVEN", "One original protocol RPC intent is required");
+        if (old.rpcCount === 0 && protocol.originalRpcId === undefined && completedCount === 0 &&
+            (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 && protocol.originalRpcId === rpcId &&
+            job.dispatch?.details?.["rpcId"] === rpcId && completedCount === 1 && record.rpcState === "terminal" && !physical))
+          fail("PROTOCOL_METADATA_UNPROVEN", "The original protocol RPC cannot be replaced or repeated");
+      }
       if (job.documentCreation) {
         const rpcId = record["rpcId"];
         if (!creation || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
@@ -1705,6 +1799,7 @@ export class QueueDomain {
     // Never publish authority for a transaction whose durable commit failed.
     if (metadata && originalRpcId) metadata.originalRpcId = originalRpcId;
     if (creation && originalRpcId) creation.originalRpcId = originalRpcId;
+    if (protocol && originalRpcId) protocol.originalRpcId = originalRpcId;
     return result;
   }
 
@@ -1754,7 +1849,7 @@ export class QueueDomain {
   recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
     return this._commit((d) => {
       const job = this._active(d, id);
-      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation) && !this._documentJobAllowed(d, job))
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata) && !this._documentJobAllowed(d, job))
         fail("DOCUMENT_UNLOCK_REQUIRED", "Document fence changed before the system-read boundary");
       this._appendPhysicalDispatch(job, entry);
       return this._public(job);
