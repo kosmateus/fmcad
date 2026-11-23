@@ -717,7 +717,31 @@ export function queueExecution(
     receipt["executionOutcome"] === "not_started" &&
     receipt["mayHaveMutated"] === false &&
     receipt["code"] === "NOT_DISPATCHED";
-  const sdkSettled = execution["sdkSettled"] === true || notDispatched;
+  // Admission refusals have no execution envelope: the original, bound durable
+  // result proves that no turn started. Never infer this from a failed state or
+  // from an execution envelope that explicitly reports uncertainty.
+  const admissionRefused =
+    raw === undefined &&
+    typeof job["id"] === "string" &&
+    job["id"].length > 0 &&
+    job["state"] === "failed" &&
+    (job["code"] === "UNKNOWN_SCOPE_UNPROVEN" ||
+      job["code"] === "DOCUMENT_UNLOCK_REQUIRED") &&
+    job["dispatch"] == null &&
+    job["mayHaveMutated"] !== true &&
+    job["userScriptSubmitted"] !== true &&
+    (job["executionOutcome"] === undefined ||
+      job["executionOutcome"] === "not_started") &&
+    (job["physicalTurns"] === undefined || job["physicalTurns"] === 0) &&
+    receipt["version"] === 1 &&
+    receipt["jobId"] === job["id"] &&
+    receipt["requestId"] === requestId &&
+    receipt["acceptance"] === "accepted" &&
+    receipt["executionOutcome"] === "not_started" &&
+    receipt["mayHaveMutated"] === false &&
+    receipt["code"] === job["code"];
+  const sdkSettled =
+    execution["sdkSettled"] === true || notDispatched || admissionRefused;
   const state =
     sdkSettled && job["state"] === "succeeded"
       ? "succeeded"
@@ -728,7 +752,9 @@ export function queueExecution(
     requestId,
     state,
     sdkSettled,
-    mayHaveMutated: execution["mayHaveMutated"] !== false,
+    mayHaveMutated: admissionRefused
+      ? false
+      : execution["mayHaveMutated"] !== false,
     stdout: typeof value["stdout"] === "string" ? value["stdout"] : "",
     ...(typeof value["stderr"] === "string" ? { stderr: value["stderr"] } : {}),
     ...(typeof execution["exitCode"] === "number"

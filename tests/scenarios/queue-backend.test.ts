@@ -168,6 +168,89 @@ test("durable preflight no-dispatch proof settles only its exact accepted failed
   }
 });
 
+test("an exact durable admission refusal is failed without claiming an SDK mutation", () => {
+  const original = {
+    job: {
+      ...job,
+      id: "refused-job",
+      state: "failed",
+      code: "UNKNOWN_SCOPE_UNPROVEN",
+      operationResult: {
+        version: 1,
+        requestId: "original",
+        jobId: "refused-job",
+        acceptance: "accepted",
+        executionOutcome: "not_started",
+        mayHaveMutated: false,
+        code: "UNKNOWN_SCOPE_UNPROVEN",
+      },
+    },
+  };
+  const result = queueExecution(original, owner, "original");
+  assert.equal(result.state, "failed");
+  assert.equal(result.sdkSettled, true);
+  assert.equal(result.mayHaveMutated, false);
+  assert.equal(result.brokerReceipt?.jobId, "refused-job");
+  const checkpointRefusal = queueExecution(
+    {
+      job: {
+        ...original.job,
+        code: "DOCUMENT_UNLOCK_REQUIRED",
+        operationResult: {
+          ...original.job.operationResult,
+          code: "DOCUMENT_UNLOCK_REQUIRED",
+        },
+      },
+    },
+    owner,
+    "original",
+  );
+  assert.equal(checkpointRefusal.state, "failed");
+  assert.equal(checkpointRefusal.mayHaveMutated, false);
+  for (const changed of [
+    { ...original, execution: null },
+    { ...original, execution: {} },
+    { ...original, execution: { sdkSettled: false } },
+    { ...original, execution: { mayHaveMutated: true } },
+    { ...original, job: { ...original.job, state: "running" } },
+    { ...original, job: { ...original.job, id: "" } },
+    { ...original, job: { ...original.job, mayHaveMutated: true } },
+    { ...original, job: { ...original.job, userScriptSubmitted: true } },
+    { ...original, job: { ...original.job, executionOutcome: "unknown" } },
+    { ...original, job: { ...original.job, operationResult: undefined } },
+    {
+      job: {
+        ...original.job,
+        code: "OTHER",
+        operationResult: { ...original.job.operationResult, code: "OTHER" },
+      },
+    },
+    { ...original, job: { ...original.job, dispatch: { rpcCount: 1 } } },
+    { ...original, job: { ...original.job, physicalTurns: 1 } },
+    ...[
+      ["version", 2],
+      ["jobId", "foreign"],
+      ["requestId", "foreign"],
+      ["acceptance", "rejected"],
+      ["executionOutcome", "unknown"],
+      ["mayHaveMutated", true],
+      ["code", "OTHER"],
+    ].map(([key, value]) => ({
+      job: {
+        ...original.job,
+        operationResult: {
+          ...original.job.operationResult,
+          [String(key)]: value,
+        },
+      },
+    })),
+  ]) {
+    const uncertain = queueExecution(changed, owner, "original");
+    assert.equal(uncertain.state, "unknown", JSON.stringify(changed));
+    assert.equal(uncertain.sdkSettled, false);
+  }
+});
+
 test("legacy child receipt lookup uses the selected scenario artifact root", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "legacy-queue-receipt-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
