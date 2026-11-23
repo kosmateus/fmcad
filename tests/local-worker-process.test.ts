@@ -280,12 +280,14 @@ test("termination and completion do not expose or settle another worker", async 
   await b.completion;
 });
 
-test("a stream sync or close fault still closes both owned descriptors", async (t) => {
-  for (const mode of ["sync", "close"]) {
+for (const mode of ["sync", "close"]) {
+  test(`${mode} fault preserves the failure boundary and closes both owned descriptors`, async (t) => {
     const f = fixture(t);
     const originalSync = fs.fsyncSync,
       originalClose = fs.closeSync;
     const synced: number[] = [];
+    const closed: string[] = [];
+    const failure = new Error(`injected ${mode} failure`);
     const isOutput = (fd: number) => {
       try {
         return (
@@ -297,23 +299,68 @@ test("a stream sync or close fault still closes both owned descriptors", async (
     };
     const sync = t.mock.method(fs, "fsyncSync", (fd: number) => {
       synced.push(fd);
-      if (mode === "sync" && isOutput(fd))
-        throw new Error("injected fsync failure");
+      if (mode === "sync" && isOutput(fd)) throw failure;
       return originalSync(fd);
     });
     const close = t.mock.method(fs, "closeSync", (fd: number) => {
       const fail = mode === "close" && isOutput(fd);
+      const file = fs.readlinkSync(`/proc/self/fd/${fd}`);
+      if ([f.output("stdout.txt"), f.output("stderr.txt")].includes(file))
+        closed.push(file);
       originalClose(fd);
-      if (fail) throw new Error("injected close failure after close");
+      if (fail) throw failure;
     });
-    const result = await f.launch().completion;
+    const handle = f.launch();
+    if (mode === "close")
+      await assert.rejects(handle.completion, (error) => error === failure);
+    else
+      assert.deepEqual(await handle.completion, {
+        exitCode: 1,
+        publicationFailed: true,
+      });
     sync.mock.restore();
     close.mock.restore();
-    assert.equal(result.publicationFailed, true);
     assert.ok(synced.length >= 2);
+    assert.deepEqual(
+      closed.sort(),
+      [f.output("stdout.txt"), f.output("stderr.txt")].sort(),
+    );
     for (const name of ["stdout.txt", "stderr.txt"])
       assert.deepEqual(openDescriptors(f.output(name)), []);
-  }
+  });
+}
+
+test("output-open rejection wins over a secondary close failure during cleanup", async (t) => {
+  const f = fixture(t);
+  fs.writeFileSync(f.output("stderr.txt"), "retained evidence");
+  const originalOpen = fs.openSync,
+    originalClose = fs.closeSync;
+  let openFailure: unknown;
+  const cleanupFailure = new Error("secondary close failure");
+  t.mock.method(fs, "openSync", (...args: Parameters<typeof fs.openSync>) => {
+    try {
+      return originalOpen(...args);
+    } catch (error) {
+      openFailure = error;
+      throw error;
+    }
+  });
+  t.mock.method(fs, "closeSync", (fd: number) => {
+    const stdout =
+      fs.readlinkSync(`/proc/self/fd/${fd}`) === f.output("stdout.txt");
+    originalClose(fd);
+    if (stdout) throw cleanupFailure;
+  });
+  const h = f.launch();
+  await assert.rejects(
+    h.completion,
+    (error) => error === openFailure && error !== cleanupFailure,
+  );
+  assert.deepEqual(openDescriptors(f.output("stdout.txt")), []);
+  assert.equal(
+    fs.readFileSync(f.output("stderr.txt"), "utf8"),
+    "retained evidence",
+  );
 });
 
 test("a failed identity notification cannot strand process completion", async (t) => {

@@ -20,7 +20,7 @@ export interface LocalWorkerProcess {
     birth: string | null;
     running: boolean;
   }>;
-  /** Intent/output-open failure rejects its original cause after owned FD cleanup.
+  /** Intent/output-open or close failure rejects after owned FD cleanup.
    * A resolved child exit is local evidence only, never SDK settlement. */
   readonly completion: Promise<LocalWorkerCompletion>;
 }
@@ -63,6 +63,9 @@ export function launchLocalWorker(
     publicationFailed = false;
   let spawnFailed = false;
   let outputsOpened = false;
+  let flushFailed = false,
+    closeFailed = false,
+    closeFailure: unknown;
   const descriptors: number[] = [];
   let resolveCompletion!: (value: LocalWorkerCompletion) => void;
   let rejectCompletion!: (error: unknown) => void;
@@ -81,13 +84,16 @@ export function launchLocalWorker(
       try {
         fs.fsyncSync(fd);
       } catch {
+        flushFailed = true;
         publicationFailed = true;
       }
     }
     for (const fd of descriptors) {
       try {
         fs.closeSync(fd);
-      } catch {
+      } catch (error) {
+        if (!closeFailed) closeFailure = error;
+        closeFailed = true;
         publicationFailed = true;
       }
     }
@@ -96,7 +102,12 @@ export function launchLocalWorker(
   const finish = (exitCode: number) => {
     if (finished) return;
     cleanup();
-    resolveCompletion({ exitCode, publicationFailed });
+    if (closeFailed) rejectCompletion(closeFailure);
+    else
+      resolveCompletion({
+        exitCode: flushFailed ? 1 : exitCode,
+        publicationFailed,
+      });
   };
   const terminateOwnProcess = () => {
     if (running) child?.kill("SIGKILL");
