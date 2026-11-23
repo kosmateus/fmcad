@@ -1937,6 +1937,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
   function currentCheckpointGeneration() {
     assertCheckpointOwner();
+    return checkpointGenerationAfterOwnerCheck();
+  }
+  /** Pure local binding read; callers must synchronously check the owner first.
+   * The metadata compiler's pins() calls recheck() immediately before this port,
+   * so repeating the entire installation fingerprint here adds no send fence. */
+  function checkpointGenerationAfterOwnerCheck() {
     if (!physicalIsolation)
       fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint reads require native physical capabilities");
     const id = randomUUID();
@@ -2042,8 +2048,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertCheckpointOwner();
       if (clientHashes()[request.clientId] !== clientTokenHash)
         fail("NOT_AUTHORIZED", "The metadata principal is no longer registered");
-      if (!metadataEligibilityChecks && buildHash() !== codeHash)
-        fail("BUILD_CHANGED", "Metadata compiler runtime changed");
       if (state.epoch || approvedRuntimeRoot) admitEpochRequest(request);
     };
     return metadataReads.prepare(
@@ -2051,7 +2055,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       {
         recheck,
         currentPins: () => ({
-          buildHash: codeHash, configHash, generation: currentCheckpointGeneration(),
+          buildHash: codeHash, configHash, generation: checkpointGenerationAfterOwnerCheck(),
         }),
       },
     );
