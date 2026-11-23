@@ -149,6 +149,62 @@ test('identity detects added, deleted and renamed modules and denies symlinks ev
   assert.throws(() => runtime.runtimeBuildIdentity(paths), { code: 'UNPINNED_BUILD' });
 });
 
+test('identity accepts stable installation aliases and aliases in earlier ancestors', t => {
+  const root = fixture(t);
+  const install = path.join(root, 'physical/package');
+  const worker = path.join(install, 'dist/processes/queue-worker.js');
+  fs.mkdirSync(path.dirname(worker), { recursive: true });
+  fs.writeFileSync(path.join(install, 'package.json'), '{"name":"fmcad"}');
+  fs.writeFileSync(worker, '// worker');
+  fs.symlinkSync(install, path.join(root, 'current'), 'dir');
+  fs.symlinkSync(path.join(root, 'physical'), path.join(root, 'ancestor'), 'dir');
+  const identity = (anchor: string) => runtime.runtimeBuildIdentity(
+    runtime.resolveRuntimePaths({ anchor, home: root, env: {} }));
+  const expected = identity(worker);
+  assert.equal(identity(path.join(root, 'current/dist/processes/queue-worker.js')), expected);
+  assert.equal(identity(path.join(root, 'ancestor/package/dist/processes/queue-worker.js')), expected);
+  fs.writeFileSync(worker, '// changed');
+  assert.notEqual(identity(path.join(root, 'current/dist/processes/queue-worker.js')), expected);
+});
+
+for (const target of ['package.json', 'dist/processes/queue-worker.js']) {
+  test(`identity refuses an installation alias retarget while reading ${target}`,
+    { skip: process.platform !== 'linux', timeout: 5000 }, t => {
+      const root = fixture(t);
+      for (const name of ['first', 'second']) {
+        const install = path.join(root, name);
+        fs.mkdirSync(path.join(install, 'dist/processes'), { recursive: true });
+        fs.writeFileSync(path.join(install, 'package.json'), '{"name":"fmcad"}');
+        fs.writeFileSync(path.join(install, 'dist/processes/queue-worker.js'), '// worker');
+      }
+      const alias = path.join(root, 'current');
+      fs.symlinkSync(path.join(root, 'first'), alias, 'dir');
+      const script = `
+        const fs = require('node:fs'), path = require('node:path');
+        const api = require(process.argv[1]), root = process.argv[2], target = process.argv[3];
+        const alias = path.join(root, 'current');
+        const paths = api.resolveRuntimePaths({ anchor: path.join(alias, 'dist/processes/queue-worker.js'), home: root, env: {} });
+        const read = fs.readSync;
+        let injected = false;
+        fs.readSync = function(fd, ...args) {
+          const count = read.call(this, fd, ...args);
+          if (!injected && fs.readlinkSync('/proc/self/fd/' + fd) === path.join(root, 'first', target)) {
+            injected = true;
+            fs.unlinkSync(alias); fs.symlinkSync(path.join(root, 'second'), alias, 'dir');
+          }
+          return count;
+        };
+        try { api.runtimeBuildIdentity(paths); console.log(JSON.stringify({ injected, accepted: true })); }
+        catch (error) { console.log(JSON.stringify({ injected, accepted: false, code: error.code })); }
+      `;
+      const result = spawnSync(process.execPath, ['-e', script,
+        path.join(adapterRoot, 'runtime-paths.js'), root, target],
+        { encoding: 'utf8', timeout: 3000 });
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout), { injected: true, accepted: false, code: 'UNPINNED_BUILD' });
+    });
+}
+
 test('streamed identity preserves the exact sorted path/byte delimiter format and duplicate roots', t => {
   const root = fixture(t);
   const files: Array<[string, string]> = [

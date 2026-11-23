@@ -12,6 +12,7 @@ import {
   readlinkSync,
   readSync,
   readdirSync,
+  realpathSync,
   type BigIntStats,
   type Dirent,
 } from "node:fs";
@@ -199,10 +200,18 @@ export function runtimeBuildIdentity(paths: RuntimePaths): string {
   function hashFile(file: string, name: string, pinnedParent: boolean): void {
     let fd: number | undefined;
     try {
-      const expected = constants.O_NOFOLLOW
-        ? undefined
-        : lstatSync(file, { bigint: true });
+      const expected =
+        constants.O_NOFOLLOW && pinnedParent
+          ? undefined
+          : lstatSync(file, { bigint: true });
       if (expected && !expected.isFile()) reject(file);
+      // Stable aliases in installation ancestors are supported. Authenticate
+      // the opened object against a physical path captured before opening,
+      // rather than comparing it with the caller's lexical alias.
+      const physical =
+        process.platform === "linux" && !pinnedParent
+          ? realpathSync(file)
+          : undefined;
       fd = openSync(
         file,
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -211,9 +220,8 @@ export function runtimeBuildIdentity(paths: RuntimePaths): string {
       if (!before.isFile() || (expected && !stableFile(expected, before)))
         reject(file);
       if (
-        process.platform === "linux" &&
-        !pinnedParent &&
-        readlinkSync(`/proc/self/fd/${fd}`) !== resolve(file)
+        physical !== undefined &&
+        readlinkSync(`/proc/self/fd/${fd}`) !== physical
       )
         reject(file);
       hash.update(name + "\0");
@@ -227,6 +235,12 @@ export function runtimeBuildIdentity(paths: RuntimePaths): string {
         remaining -= read;
       }
       if (!stableFile(before, fstatSync(fd, { bigint: true }))) reject(file);
+      if (
+        physical !== undefined &&
+        (realpathSync(file) !== physical ||
+          !stableFile(before, lstatSync(file, { bigint: true })))
+      )
+        reject(file);
       hash.update("\0");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ELOOP") reject(file);
