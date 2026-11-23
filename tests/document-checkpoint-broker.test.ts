@@ -36,7 +36,8 @@ runtimeIdentity.buildHash = (root?: string) => {
 /** Actual compiled broker, IPC, client preparation, checker and persistence.
  * Only the physical boundary/receipts are synthetic; no Fusion/native SDK runs. */
 async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false,
-  metadataFault?: "program" | "wire" | "runtime", historyCount = 0) {
+  metadataFault?: "program" | "wire" | "runtime", historyCount = 0,
+  preparedHook?: (prepared: P.PreparedCall) => void | Promise<void>) {
   changedRuntime = false; changedRuntimeChecks = 0;
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
@@ -314,7 +315,8 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   try { broker = await serve(cfg, {
     dir, confirmOwnership: true, pollMs: 5, createBackend: () => physical,
     nativePath: (file) => file,
-    testCheckPrepared(prepared) {
+    async testCheckPrepared(prepared) {
+      await preparedHook?.(prepared);
       const scope = prepared.record.binding["documentScope"];
       if (!["wire", "runtime"].includes(metadataFault ?? "") ||
           !scope || typeof scope !== "object" || Array.isArray(scope) ||
@@ -645,6 +647,58 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);
     assert.equal(f.productJobs().includes(String(original["id"])), false);
+  });
+test("parallel identical public protocol submissions retain the original witness and raw turn",
+  { timeout: 120000 }, async (t) => {
+    let release!: () => void;
+    const both = new Promise<void>((resolve) => { release = resolve; });
+    let preparations = 0;
+    const creation = load("./document-creation-broker") as typeof import("../src/document-creation-broker");
+    const factory = creation.createDocumentCreationBroker;
+    let releaseAdmissions!: () => void;
+    const bothAdmissions = new Promise<void>((resolve) => { releaseAdmissions = resolve; });
+    let admissions = 0;
+    creation.createDocumentCreationBroker = () => {
+      const broker = factory();
+      return { ...broker, async prepare(...args) {
+        const value = await broker.prepare(...args);
+        if (args[0].requestId === "same-original-protocol") {
+          admissions++;
+          if (admissions === 2) releaseAdmissions();
+          await bothAdmissions;
+        }
+        return value;
+      } };
+    };
+    t.after(() => { creation.createDocumentCreationBroker = factory; });
+    const f = await fixture(t, true, undefined, 0, async (prepared) => {
+      if (prepared.outgoing.method !== "ping") return;
+      preparations++;
+      if (preparations === 2) release();
+      await both;
+    });
+    const client = await f.client("protocol-concurrent");
+    const input = {
+      kind: "rpc" as const, clientId: "protocol-concurrent", requestId: "same-original-protocol",
+      cwd: f.dir, timeoutMs: 45000, backend: "addin",
+      buildHash: runtimeIdentity.buildHash(),
+      payload: { jsonrpc: "2.0", id: "logical-ping", method: "ping" },
+    };
+    const [first, second] = await Promise.all([client.submit(input), client.submit(input)]);
+    assert.equal(preparations, 2, "both independent raw RPCs are prepared before either admission");
+    assert.equal(admissions, 2, "both raw flights completed before either domain commit");
+    assert.equal(first.id, second.id);
+    const completed = await client.wait(first.id, { signal: AbortSignal.timeout(45000) });
+    assert.equal(completed.job.state, "succeeded", JSON.stringify(completed));
+    const duplicate = await client.submit(input);
+    assert.equal(duplicate.id, first.id);
+    assert.equal(duplicate.state, "succeeded");
+    const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
+    const stored = record(record(after["jobs"])[first.id]);
+    assert.equal(record(stored["dispatch"])["rpcCount"], 1);
+    assert.equal(Object.values(record(after["jobs"])).map(record)
+      .filter((job) => job["requestId"] === input.requestId).length, 1);
+    assert.equal(f.writes(), 0);
   });
 for (const method of ["initialize", "notifications/initialized", "tools/list", "ping"]) {
 test(`public protocol ${method} crosses retired exposures with one original non-Python RPC`,

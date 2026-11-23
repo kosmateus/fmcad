@@ -5253,7 +5253,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               }
             }
             const admitted = state.data.jobs[job.id];
-            if (preparedProtocol && admitted?.protocolMetadata && state.hasProtocolMetadata(job.id)) {
+            // A concurrent duplicate can finish preparation before the first
+            // submit commits. Core dedup returns that original job, never its
+            // newly prepared ID: retain its witness and original raw turn.
+            if (preparedProtocol && job.id === preparedId &&
+                admitted?.protocolMetadata && state.hasProtocolMetadata(job.id)) {
               protocolMetadata.admit(admitted as unknown as import("@fmcad/core").QueueJob, preparedProtocol);
               if (!rawPlan || rawPlan.kind !== "raw")
                 fail("PROTOCOL_METADATA_UNPROVEN", "The original protocol RPC preparation is missing");
