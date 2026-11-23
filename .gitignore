@@ -312,6 +312,8 @@ src/fresh-host-proof.js
 src/fresh-host-proof.d.ts
 src/controlled-fusion-bootstrap.js
 src/controlled-fusion-bootstrap.d.ts
+src/controlled-stdout-provider.js
+src/controlled-stdout-provider.d.ts
 src/document-unlock-controller.js
 src/document-unlock-controller.d.ts
 src/document-unlock-diagnostics.js

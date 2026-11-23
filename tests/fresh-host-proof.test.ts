@@ -13,6 +13,11 @@ import {
   type BootstrapEntryIntent,
 } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import type { ControlledFusionBootstrapTranscript } from "../src/controlled-fusion-bootstrap";
+import { createControlledStdoutProvider } from "../src/controlled-stdout-provider";
+import {
+  compilePythonStdout,
+  pythonStdoutInputDigests,
+} from "../src/python-diagnostic-broker";
 import type {
   NativeRuntimeActivationCompletion,
   NativeRuntimeActivationPublication,
@@ -347,6 +352,88 @@ test("controlled origin and MAC-authenticated original references yield a held c
   f.loseWindow();
   assert.throws(prepared.recheck, /CONTROLLED_WINDOW_REVOKED/);
   await assert.rejects(f.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+});
+
+test("private provider uses the actual kernel, original input and a new native reader for each preparation", async () => {
+  const f = controlledFixture();
+  const sha = (value: string) =>
+    createHash("sha256").update(value).digest("hex");
+  f.preparationContext.brokerBuild = f.compilerPins.buildHash = sha("broker");
+  f.preparationContext.brokerConfig = f.compilerPins.configHash = sha("config");
+  let readers = 0;
+  const provider = createControlledStdoutProvider(
+    {
+      controller: f.ports.controller,
+      transcript: f.ports.transcript,
+      assertBootstrapHeld: f.ports.assertBootstrapHeld,
+      readCurrentHost: () => {
+        const {
+          descriptor,
+          brokerBuild,
+          brokerConfig,
+          purpose,
+          engineVersion,
+        } = f.preparationContext;
+        return {
+          descriptor,
+          brokerBuild,
+          brokerConfig,
+          purpose,
+          engineVersion,
+        };
+      },
+      createReader() {
+        readers++;
+        return { ...f.ports.reader };
+      },
+    },
+    f.publication,
+    f.completion,
+  );
+  const request = {
+    kind: "rpc" as const,
+    backend: "addin",
+    clientId: "provider-client",
+    requestId: "provider-request",
+    timeoutMs: 45000,
+    ownerToken: "a".repeat(64),
+    payload: {
+      jsonrpc: "2.0",
+      id: "original-id",
+      method: "tools/call",
+      params: {
+        name: "execute_python",
+        arguments: { code: "print('provider output')", persistent: false },
+      },
+    },
+  };
+  const ports = await provider(request, f.compilerPins);
+  const compiled = await compilePythonStdout(request, ports);
+  assert.ok(compiled);
+  assert.equal(
+    compiled.descriptor.sourceHash,
+    pythonStdoutInputDigests(request).sourceDigest,
+  );
+  const rpc = compiled.rpc();
+  const params = rpc["params"];
+  assert.ok(params && typeof params === "object" && "arguments" in params);
+  const args = params.arguments;
+  assert.ok(args && typeof args === "object" && "code" in args);
+  assert.notEqual(
+    args.code,
+    request.payload.params.arguments.code,
+    "the real kernel must be generated, not the original script forwarded",
+  );
+  compiled.assertWire(
+    request,
+    { ...rpc, id: "fmcad:owned-turn" },
+    "owned-turn",
+  );
+  await provider(request, f.compilerPins);
+  assert.equal(readers, 2);
+  assert.equal(f.calls(), 2);
+  f.loseWindow();
+  assert.throws(() => compiled.reverify(request), /CONTROLLED_WINDOW_REVOKED/);
 });
 
 test("missing or mismatched authenticated original references permanently deny the window", async () => {
