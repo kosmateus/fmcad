@@ -7,7 +7,7 @@ import type * as Backend from "./queue-backend-transition";
 import type * as Lineage from "./queue-epoch-lineage";
 import type * as NormalAdmission from "../packages/node-adapters/src/broker-ipc/normal-admission";
 import type * as NormalRestart from "../packages/node-adapters/src/broker-ipc/normal-restart";
-import type * as AtomicObservation from "./composition/library-atomic-workflow-observation";
+import type { BrokerStartup } from "../packages/node-adapters/src/execution/broker-lifetime";
 import type {
   ApprovedRuntimeRoot,
   RuntimeRootPhysicalWiring,
@@ -166,7 +166,7 @@ export interface BrokerRuntimeIdentityReaders {
     | "commitSettledNormalRestart"
   >;
   atomicObservation: Pick<
-    typeof AtomicObservation,
+    BrokerModules["./atomic-workflow-observation"],
     "isAtomicObservationCandidate"
   >;
   hasRuntimeRootEvidence(directory: string): boolean;
@@ -216,9 +216,7 @@ export interface BrokerRuntimeIdentityOptions {
   confirmVersionTransition?: boolean;
   /** Preserve the existing explicit injected-backend test seam, not a new flag. */
   testBackendFactory?: NonNullable<P.Options["createBackend"]>;
-  observationScope: Parameters<
-    typeof AtomicObservation.isAtomicObservationCandidate
-  >[2];
+  observationScope: P.AtomicScopeConfig;
 }
 
 function reject(code: string, message: string): never {
@@ -230,7 +228,7 @@ type BackendCommit = NonNullable<
   ReturnType<typeof Backend.prepareBackendTransition>
 >;
 export interface BrokerRuntimeStartupProbe {
-  binding: P.Binding;
+  binding: BrokerStartup["binding"];
   receiptPath: string;
   diagnosticPath: string;
 }
@@ -251,7 +249,11 @@ export interface BrokerRuntimeIdentity {
   assertCurrent(capture: RuntimeAuthorityCapture): void;
   bindQueue(
     port: BrokerRuntimeQueue,
-    claims: { owner: P.Owner; successorAuthority?: P.Reference },
+    claims: {
+      owner: P.Owner;
+      /** claimSuccessorBroker.authorityEntry, not its authority DTO or an older epoch link. */
+      successorAuthority?: P.Reference;
+    },
   ): void;
   identifyStartup(
     probe: BrokerRuntimeStartupProbe,
@@ -587,6 +589,17 @@ export async function openBrokerRuntimeAuthority(
         );
       started = true;
       assertOwner();
+      if (
+        probe.binding.brokerNonce !== owner!.nonce ||
+        probe.binding.ownerPid !== owner!.pid ||
+        probe.binding.ownerBirth !== owner!.birth ||
+        probe.binding.buildHash !== options.buildHash ||
+        probe.binding.stage !== "startup"
+      )
+        reject(
+          "RUNTIME_AUTHORITY_CHANGED",
+          "Startup binding differs from the original claimed owner",
+        );
       if (
         !backendTransition &&
         identity &&

@@ -40,7 +40,7 @@ const readers: BrokerRuntimeIdentityReaders = {
 const observationScope = (
   load(
     "./atomic-workflow-observation",
-  ) as typeof import("../src/composition/library-atomic-workflow-observation")
+  ) as import("../src/queue-broker-modules").BrokerModules["./atomic-workflow-observation"]
 ).fastenersScope;
 const codeHash = instance.buildHash();
 const observed: P.Instance = {
@@ -74,6 +74,19 @@ function port(
     writerStatus: () => state.writerStatus(),
   };
 }
+function startupProbe(dir: string, owner: P.Owner) {
+  return {
+    binding: Object.freeze({
+      brokerNonce: owner.nonce,
+      ownerPid: owner.pid,
+      ownerBirth: owner.birth,
+      buildHash: codeHash,
+      stage: "startup" as const,
+    }),
+    receiptPath: path.join(dir, `broker-startup-${owner.nonce}.receipt.json`),
+    diagnosticPath: path.join(dir, `broker-startup-${owner.nonce}.result.json`),
+  };
+}
 function fixture(t: import("node:test").TestContext) {
   const dir = fs.mkdtempSync("/tmp/opencode/runtime-identity-");
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -95,16 +108,7 @@ function fixture(t: import("node:test").TestContext) {
     configHash: options.configHash,
     instance: observed,
   };
-  const probe = {
-    binding: {
-      jobId: "startup",
-      rpcId: randomUUID(),
-      requestHash: "startup",
-      buildHash: codeHash,
-    },
-    receiptPath: path.join(dir, "startup-receipt.json"),
-    diagnosticPath: path.join(dir, "startup-observation.json"),
-  };
+  const probe = startupProbe(dir, owner);
   return { dir, owner, options, identity, probe, state: makeState() };
 }
 
@@ -184,6 +188,8 @@ test("selection rejects configuration without claiming; bind pins the later life
 
 test("legacy startup owns selection, publication and immutable current identity", async (t) => {
   const f = fixture(t);
+  assert.equal(f.probe.binding.stage, "startup");
+  assert.equal("rpcId" in f.probe.binding, false);
   const authority = await openBrokerRuntimeAuthority(f.options, readers);
   assert.equal(
     authority.selection().identityFile,
@@ -216,6 +222,25 @@ test("legacy startup owns selection, publication and immutable current identity"
     }),
     { code: "RUNTIME_STARTUP_ALREADY_STARTED" },
   );
+});
+
+test("a startup binding from another claimed owner cannot reach the observation transport", async (t) => {
+  const f = fixture(t);
+  const foreign = fixture(t);
+  const authority = await openBrokerRuntimeAuthority(f.options, readers);
+  authority.bindQueue(port(f.state), { owner: f.owner });
+  await assert.rejects(
+    authority.identifyStartup(
+      {
+        ...f.probe,
+        binding: foreign.probe.binding,
+      },
+      async () =>
+        assert.fail("A foreign startup binding cannot submit an observation"),
+    ),
+    { code: "RUNTIME_AUTHORITY_CHANGED" },
+  );
+  assert.equal(fs.existsSync(path.join(f.dir, "instance.json")), false);
 });
 
 test("original durable identity is rechecked after the startup await, without adoption or replay", async (t) => {
@@ -352,6 +377,76 @@ test("configuration rejection and restored unresolved control send no startup pr
   assert.deepEqual(f.state.data.controlBlocked, { rpcId: "original-control" });
 });
 
+test("legacy old-build holder uses the real configured atomic candidate guard", async (t) => {
+  for (const matches of [true, false]) {
+    const f = fixture(t);
+    const reportPath = path.join(f.dir, "original-atomic-report.json");
+    const requestId = "original-atomic-request";
+    const submitted = f.state.submit({
+      kind: "command",
+      clientId: "original-owner",
+      requestId,
+      cwd: f.dir,
+      argv: ["batch", "run"],
+      timeoutMs: 100,
+      phased: true,
+      backend: "addin",
+      buildHash: "original-build",
+      payload: {
+        version: 1,
+        kind: "cad",
+        operation: "batch.run",
+        doc: "Original document",
+        docId: "original-document",
+        data: { atomic: true, runId: "original-run", reportPath },
+      },
+    });
+    const jobId = submitted["id"];
+    assert.ok(typeof jobId === "string");
+    f.state.readyTurn(jobId);
+    assert.ok(f.state.next());
+    assert.equal(f.state.data.active, jobId);
+    f.state.markDispatch(jobId, { rpcCount: 1, completedCount: 1 });
+    f.state.releaseTurn(jobId, 100);
+    f.state.readyTurn(jobId);
+    assert.ok(f.state.next());
+    f.state.markDispatch(jobId, { rpcCount: 2, completedCount: 1 });
+    f.state.block(jobId, "original native outcome remains UNKNOWN");
+    const configuredScope: P.AtomicScopeConfig = {
+      ...observationScope,
+      jobId,
+      requestId,
+      projectDirectory: f.dir,
+      reportPath,
+      docId: matches ? "original-document" : "foreign-document",
+    };
+    instance.durable(path.join(f.dir, "instance.json"), {
+      ...f.identity,
+      buildHash: "original-build",
+    });
+    const authority = await openBrokerRuntimeAuthority(
+      {
+        ...f.options,
+        observationScope: configuredScope,
+      },
+      readers,
+    );
+    authority.bindQueue(port(f.state), { owner: f.owner });
+    const result = authority.identifyStartup(f.probe, async () =>
+      assert.fail("The exact old-build holder is metadata-only, never a probe"),
+    );
+    if (matches) {
+      assert.equal((await result).atomicObservationOnly, true);
+      assert.equal(authority.isAtomicObservationOnly(), true);
+      assert.equal(authority.current().buildHash, "original-build");
+    } else {
+      await assert.rejects(result, { code: "BUILD_CHANGED" });
+    }
+    assert.equal(f.state.data.jobs[jobId]?.state, "needs_reconciliation");
+    assert.equal(f.state.data.jobs[jobId]?.dispatch?.rpcCount, 2);
+  }
+});
+
 test("unproven native-root markers cannot select legacy state", async (t) => {
   const f = fixture(t);
   instance.durable(path.join(f.dir, "runtime-rebaseline-head.json"), {
@@ -463,12 +558,14 @@ function epochFixture(
     advanceInstanceEpoch: (id) => epoch.state.advanceInstanceEpoch(id),
     writerStatus: () => epoch.state.writerStatus(),
   };
+  const owner = instance.readJson<P.Owner>(path.join(epoch.dir, "broker.lock"));
   return {
     ...f,
     ...epoch,
     options,
     q,
-    owner: instance.readJson<P.Owner>(path.join(epoch.dir, "broker.lock")),
+    owner,
+    probe: startupProbe(epoch.dir, owner),
   };
 }
 
@@ -658,6 +755,11 @@ test("real successor lineage activates only the published qualified identity and
       "./queue-isolated-epoch",
     ) as typeof import("../src/queue-isolated-epoch")
   ).openIsolatedEpoch(successor.dir, { recover: false });
+  assert.notDeepEqual(
+    state.epoch?.succession,
+    successor.authorityEntry,
+    "The current epoch's prior link is not the new pre-publication successor claim",
+  );
   const q: BrokerRuntimeQueue = {
     epoch: () => state.epoch,
     admissionMode: () => state.admissionMode,
