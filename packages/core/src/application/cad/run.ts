@@ -214,6 +214,16 @@ del __fmcad_run_identity_guard
           role: "wrapper",
         }
       : null;
+  const userNamespace: RunUnit | null = sourceManifest
+    ? {
+        id: "run-user-namespace",
+        filename: "<fmcad-run-namespace>",
+        source: `globals()['__name__'] = '__fmcad_script__'
+globals()['__file__'] = ${pythonValue(file)}
+`,
+        role: "wrapper",
+      }
+    : null;
   const entrypointAlias = sourceManifest
     ? "__fmcad_user_entrypoint__ = globals().get('run')\n"
     : "";
@@ -268,6 +278,7 @@ ${sourceManifest ? "\nglobals()['run'] = __fmcad_guarded_run" : ""}
       ...(helperVersion ? [] : (sourceManifest?.units ?? [])),
       ...units,
       ...(identityGuard ? [identityGuard] : []),
+      ...(userNamespace ? [userNamespace] : []),
       ...(sourceManifest ? [userUnit] : [{ ...userUnit, embedded: true }]),
       {
         id: "wrapper",
