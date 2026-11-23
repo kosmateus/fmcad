@@ -115,7 +115,7 @@ export interface BrokerTurnServices {
   > & { status(id: string): P.PublicJob };
   lane: Pick<
     ReturnType<typeof createBrokerLane>,
-    "assertCurrent" | "currentGrant" | "hasHold" | "hold" | "settle"
+    "assertCurrent" | "currentGrant" | "heldContext" | "hold" | "settle"
   >;
   gate: Pick<QueueGate, "run" | "isAdministrative"> & {
     beginActivity(): ActivityToken;
@@ -323,20 +323,20 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
   const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
   const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
   const debugRawReceived = new WeakSet<P.PreparedCall>();
-  let heldContext: Context | undefined;
   const jobDir = (id: string) => path.join(config.directory, "jobs", id);
   const currentInstance = () => required(authority.current().instance);
   const contextFor = (grant: ProductGrant) => required(contexts.get(grant));
+  const heldExecutionContext = () => {
+    const held = lane.heldContext();
+    if (held)
+      for (const [grant, context] of contexts)
+        if (grant.context === held) return context;
+    return undefined;
+  };
   const currentContext = () => {
     const grant = lane.currentGrant();
     if (grant) return contexts.get(grant);
-    return lane.hasHold() &&
-      heldContext &&
-      (queue.data.blocked?.id === heldContext.job.id ||
-        queue.data.active === heldContext.job.id ||
-        queue.data.localUnknown?.id === heldContext.job.id)
-      ? heldContext
-      : undefined;
+    return heldExecutionContext();
   };
   const assertCurrent = (context: Context) => {
     lane.assertCurrent(context.grant);
@@ -349,7 +349,6 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           queue.block(context.job.id, reason);
       })
     ) {
-      heldContext = context;
       telemetry.changed();
     }
   };
@@ -358,7 +357,6 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       queue.finish(grant.jobId, details);
       documents.continuation.forget(grant.jobId, grant.turn);
     });
-    if (heldContext?.grant === grant) heldContext = undefined;
   };
   function trace(context: Context, event: DebugTraceEvent): void {
     telemetry.writeRequestTrace(context.job.request, context.job.clientId, {
@@ -981,7 +979,10 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
         }
       },
       settle(prepared, response: P.Response) {
-        assertCurrent(context);
+        // Retaining/validating the original bound response is not a new SDK
+        // grant. Preserve its evidence even if the local executable changed;
+        // the postflight pre-send guard has its existing SDK-complete path.
+        lane.assertCurrent(grant);
         const { outgoing, record, rpcId, journal } = prepared;
         const tracing = telemetry.debugTraceContext(
           context.job.request,
@@ -1429,7 +1430,9 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     // from a changed remote/owner identity. No probe has been submitted here.
     if (files.buildHash() !== config.buildHash)
       throw Object.assign(
-        new Error("Pinned executable build changed before the instance probe was submitted"),
+        new Error(
+          "Pinned executable build changed before the instance probe was submitted",
+        ),
         { code: "BUILD_CHANGED", probeNotSubmitted: true },
       );
     const runtimePin = authority.capture();
@@ -1510,7 +1513,6 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     allowsBusyAfter: boolean,
     observed: P.Instance | undefined,
   ) {
-    const flights = plan?.flights;
     const context = createContext(job, grant);
     let code: number | undefined,
       publicationError = false;
@@ -1673,7 +1675,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
         !context.pending.size &&
         !context.nativeActivityToken &&
         lane.currentGrant() !== grant &&
-        heldContext !== context
+        heldExecutionContext() !== context
       )
         contexts.delete(grant);
     }
@@ -2294,6 +2296,16 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
         )
           plans.delete(id);
       }
+      for (const [grant, context] of contexts)
+        if (
+          !context.running &&
+          !context.pending.size &&
+          !context.nativeActivityToken &&
+          (!context.workerProcess || context.workerClosed) &&
+          lane.currentGrant() !== grant &&
+          lane.heldContext() !== grant.context
+        )
+          contexts.delete(grant);
     },
     run,
     post,
@@ -2307,7 +2319,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       const context = currentContext();
       return context?.postflight ? null : snapshot(context);
     },
-    heldSnapshot: () => snapshot(lane.hasHold() ? heldContext : undefined),
+    heldSnapshot: () => snapshot(heldExecutionContext()),
     workerStatus(message: { jobId?: string; workerToken?: string }) {
       const context = currentContext();
       if (
