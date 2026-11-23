@@ -88,6 +88,7 @@
     "tests/fixtures/python-literal.cts",
     "tests/fixtures/file-workflows/load.cts",
     "tests/legacy-inspect-admission.test.ts",
+    "tests/legacy-export-admission.test.ts",
     "tests/legacy-parameters-admission.test.ts",
     "tests/legacy-document-admission.test.ts",
     "tests/legacy-cloud-admission.test.ts",

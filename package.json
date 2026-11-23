@@ -42,6 +42,7 @@
     "test:native:multidocument": "node dist/tests/live-normal-multidocument.js --run",
     "test:native:response-recovery": "node dist/tests/live-response-recovery.js --run",
     "test:import-contracts": "node --test dist/tests/live-import-receipt.test.js dist/tests/fixed-native-program-source.test.js dist/tests/fixed-import-checker.test.js",
+    "test:legacy-export-admission": "node --test dist/tests/legacy-export-admission.test.js",
     "test:scenarios:unit": "tsc -p tsconfig.runtime-tests.json && node --test --test-concurrency=1 dist/tests/scenarios/*.test.js",
     "test:scenarios:component": "node dist/tests/scenarios/cli.js --backend simulator --profile component",
     "test:scenarios:broker": "node dist/tests/scenarios/cli.js --backend simulator --profile broker",

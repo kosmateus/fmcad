@@ -280,7 +280,13 @@ function cli(args: string[]) {
     assert.equal(receipt.requestId, prefix + receiptId);
     assert.match(receiptId, /^[a-f0-9-]{36}$/u);
     assert.ok(["succeeded", "failed"].includes(receipt.state));
-    assert.equal(receipt.operationResult["executionOutcome"], receipt.state);
+    const outcome = receipt.operationResult["executionOutcome"];
+    if (outcome === "not_started") {
+      assert.equal(receipt.state, "failed");
+      assert.equal(receipt.operationResult["mayHaveMutated"], false);
+    } else {
+      assert.equal(outcome, receipt.state);
+    }
   } catch (error) {
     unsafe = true;
     throw error;
@@ -300,8 +306,10 @@ def run(_context: str) -> None:
     app = adsk.core.Application.get()
     docs = [{"name": d.name, "creationId": d.creationId, "modified": d.isModified, "saved": d.isSaved, "fileId": d.dataFile.id if d.dataFile else None, "active": d == app.activeDocument} for d in app.documents]
     state: dict[str, object] = {"documents": docs, "active": app.activeDocument.name if app.activeDocument else None}
-    if state["active"] == ${JSON.stringify(name)}:
-        design = app.activeProduct
+    targets = [d for d in app.documents if d.creationId == ${JSON.stringify(lease?.document.creationId)} and d.name == ${JSON.stringify(name)}]
+    if targets:
+        assert len(targets) == 1, 'Owned target identity is ambiguous'
+        design = targets[0].products.itemByProductType('DesignProductType')
         assert isinstance(design, adsk.fusion.Design)
         state["designType"] = int(cast(int, design.designType))
         state["timelineCount"] = design.timeline.count

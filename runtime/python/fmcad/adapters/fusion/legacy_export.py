@@ -2,18 +2,18 @@ import adsk.core
 import adsk.fusion
 
 OP = "help"
-ARGS = []
+ARGS: list[str] = []
 
 USAGE = [
     "export <stl|step> <body|''> <out_path> <doc>",
 ]
 
 
-def _err(msg):
+def _err(msg: str) -> None:
     print("ERROR " + msg)
 
 
-def _design(doc_name):
+def _design(doc_name: str) -> adsk.fusion.Design | None:
     app = adsk.core.Application.get()
     if not doc_name:
         _err("document commands require a document name")
@@ -21,8 +21,8 @@ def _design(doc_name):
     for d in app.documents:
         if d.name.lower() == doc_name.lower():
             d.activate()
-            design = adsk.fusion.Design.cast(app.activeProduct)
-            if design is None:
+            design = app.activeProduct
+            if not isinstance(design, adsk.fusion.Design):
                 _err("document is not a design: " + doc_name)
                 return None
             print("DOC name=" + d.name)
@@ -31,20 +31,21 @@ def _design(doc_name):
     return None
 
 
-def _find_body(root, name):
+def _find_body(root: adsk.fusion.Component, name: str) -> adsk.fusion.BRepBody | None:
     for i in range(root.bRepBodies.count):
         b = root.bRepBodies.item(i)
+        assert b is not None
         if b.name == name:
             return b
     return None
 
 
-def cmd_export(data, fmt, body_name, out_path, doc_name):
+def cmd_export(data: adsk.core.Data, fmt: str, body_name: str, out_path: str, doc_name: str) -> None:
     design = _design(doc_name)
     if design is None:
         return
     root = design.rootComponent
-    geom = root
+    geom: adsk.fusion.Component | adsk.fusion.BRepBody = root
     if body_name:
         b = _find_body(root, body_name)
         if b is None:
@@ -69,7 +70,7 @@ def cmd_export(data, fmt, body_name, out_path, doc_name):
     print("DONE")
 
 
-def run(_context: str):
+def run(_context: str) -> None:
     app = adsk.core.Application.get()
     data = app.data
     if OP == "export":
