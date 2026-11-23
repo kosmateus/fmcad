@@ -472,7 +472,20 @@ test(
         },
       );
       const profileBytes = planControlledFusionAutoload(
-        Buffer.from(JSON.stringify({ loadedScripts: [] })),
+        Buffer.from(
+          JSON.stringify({
+            loadedScripts: [
+              {
+                name: "Owned SDK-free fixture",
+                path: value.meta.installedEntry.name,
+                location: 1,
+                isRemoved: false,
+                isFavorite: false,
+                runOnStartup: false,
+              },
+            ],
+          }),
+        ),
         value.meta.installedEntry.name,
       ).registrationBytes();
       fs.writeFileSync(mapped(paths.profile), profileBytes);
