@@ -8,6 +8,9 @@ import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/pytho
 
 const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "dist/src/queue-broker.js"));
+const compilerRequire = createRequire(
+  path.join(root, "dist/src/broker-source-compiler.js"),
+);
 const { createBrokerSourceCompiler } = load(
   "./broker-source-compiler",
 ) as typeof import("../src/broker-source-compiler");
@@ -72,6 +75,13 @@ function request(): QueueRequest {
     argv: cadWorkerPolicyArguments(decodeCadWorkerInvocation(payload)),
   };
 }
+
+test("runtime-test emission includes the source compiler worker entry", () => {
+  assert.equal(
+    compilerRequire.resolve("./broker-source-compiler-worker.js"),
+    path.join(root, "dist/src/broker-source-compiler-worker.js"),
+  );
+});
 
 test("CAD compiler preserves the complete prepared artifact", async (t) => {
   const compiler = createBrokerSourceCompiler({ concurrency: 1 });
