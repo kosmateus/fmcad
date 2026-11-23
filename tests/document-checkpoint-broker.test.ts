@@ -770,9 +770,20 @@ test("a checkpoint replaced during submit verification durably binds the refused
       assert.equal(accepted["state"], "checkpoint_current", JSON.stringify(accepted));
     }
     await acceptFresh("before");
+    const inspectedDuringAwait = record(await client.documentUnlock({
+      action: "inspect", target, requestId: "inspect-race-during-await",
+    }));
+    assert.equal(inspectedDuringAwait["error"], undefined, JSON.stringify(inspectedDuringAwait));
+    const duringAwaitObservationId = record(inspectedDuringAwait["observation"])["observationId"];
+    let acceptedDuringSubmitVerification = false;
     f.beforeHistory(async () => {
       f.beforeHistory(undefined);
-      await acceptFresh("during-await");
+      const accepted = record(await client.documentUnlock({
+        action: "accept", target, requestId: "accept-race-during-await",
+        observationId: duringAwaitObservationId,
+      }));
+      assert.equal(accepted["state"], "checkpoint_current", JSON.stringify(accepted));
+      acceptedDuringSubmitVerification = true;
     });
     const payload = {
       version: 1, kind: "cad", operation: "param.apply", doc: "Owned A",
@@ -786,6 +797,8 @@ test("a checkpoint replaced during submit verification durably binds the refused
       argv: commands.cadWorkerPolicyArguments(commands.decodeCadWorkerInvocation(payload)),
     };
     const refused = await client.submit(input);
+    assert.equal(acceptedDuringSubmitVerification, true,
+      "the fresh checkpoint must be accepted inside submit verification");
     assert.equal(refused.state, "failed");
     assert.equal(record(refused)["code"], "DOCUMENT_UNLOCK_REQUIRED");
     assert.equal(f.writes(), 0);
