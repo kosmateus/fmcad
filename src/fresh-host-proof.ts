@@ -168,7 +168,27 @@ export function createFreshHostProofFactory(
 }
 
 type ControlledBootstrap = ReturnType<typeof createControlledFusionBootstrap>;
-export interface ControlledHostProofPorts extends FreshHostProofPorts {
+/** Original logical input, before kernel compilation or receipt wrapping.
+ * Compiled program/RPC and final native wire belong to later certificates;
+ * none of these fields claims to be a final wire digest. */
+export interface ControlledHostPreparationContext {
+  descriptor: PhysicalGenerationDescriptor;
+  /** Actual full broker executable closure, including kernel preparation code.
+   * The assembled kernel artifact is verified later by the compiler, not
+   * represented here by a made-up pre-compilation manifest. */
+  brokerBuild: string;
+  brokerConfig: string;
+  purpose: "isolated-stdout-v1";
+  engineVersion: 2;
+  originalRequestDigest: string;
+  originalLogicalRpcDigest: string;
+  sourceDigest: string;
+}
+export interface ControlledHostProofPorts extends Omit<
+  FreshHostProofPorts,
+  "readCurrent"
+> {
+  readCurrent(): ControlledHostPreparationContext;
   /** The original live controller, not a reconstructed transcript reader. */
   controller: Pick<
     ControlledBootstrap,
@@ -191,7 +211,7 @@ export interface ControlledHostProofPorts extends FreshHostProofPorts {
  */
 export function createControlledHostProofFactory(
   ports: ControlledHostProofPorts,
-  expectedContext: FreshHostContext,
+  expectedContext: ControlledHostPreparationContext,
   publication: NativeRuntimeActivationPublication,
   completion: NativeRuntimeActivationCompletion,
 ) {
@@ -221,6 +241,11 @@ export function createControlledHostProofFactory(
     if (
       expected.purpose !== "isolated-stdout-v1" ||
       expected.engineVersion !== 2 ||
+      ![
+        expected.originalRequestDigest,
+        expected.originalLogicalRpcDigest,
+        expected.sourceDigest,
+      ].every((digest) => /^[a-f0-9]{64}$/.test(digest)) ||
       ports.controller !== controller ||
       ports.transcript !== originalTranscript ||
       !same(ports.readCurrent(), expected)

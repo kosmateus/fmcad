@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   preparePythonDiagnostic,
   createPythonStdoutBroker,
+  pythonStdoutInputDigests,
   type StdoutCompilationPorts,
   type DiagnosticPreparationPorts,
 } from "../src/python-diagnostic-broker";
@@ -25,6 +26,50 @@ const kernelArtifact = (program: string, source: string) =>
       embedded: true,
     },
   ]);
+
+test("host preparation digests bind original logical input without claiming a compiled program or final wire", () => {
+  const f = fixture();
+  const original = pythonStdoutInputDigests(f.request);
+  assert.deepEqual(Object.keys(original).sort(), [
+    "originalLogicalRpcDigest",
+    "originalRequestDigest",
+    "sourceDigest",
+  ]);
+  assert.equal(original.sourceDigest, sha(f.source));
+  assert.deepEqual(
+    pythonStdoutInputDigests({ ...f.request, description: "display only" }),
+    original,
+  );
+  const differentId = pythonStdoutInputDigests({
+    ...f.request,
+    payload: { ...f.request.payload, id: "another-original-logical-id" },
+  });
+  assert.notEqual(
+    differentId.originalRequestDigest,
+    original.originalRequestDigest,
+  );
+  assert.notEqual(
+    differentId.originalLogicalRpcDigest,
+    original.originalLogicalRpcDigest,
+  );
+  assert.equal(differentId.sourceDigest, original.sourceDigest);
+  const differentSource = pythonStdoutInputDigests({
+    ...f.request,
+    payload: {
+      ...f.request.payload,
+      params: {
+        name: "execute_python",
+        arguments: { code: "print('another source')", persistent: false },
+      },
+    },
+  });
+  assert.notEqual(differentSource.sourceDigest, original.sourceDigest);
+  assert.notEqual(
+    differentSource.originalLogicalRpcDigest,
+    original.originalLogicalRpcDigest,
+  );
+  assert.equal(f.request.payload.params.arguments.code, f.source);
+});
 
 test("the broker accepts the actual approved kernel artifact without replacing the original source", async () => {
   const f = fixture();

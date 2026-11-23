@@ -5,6 +5,7 @@ import type {
   QueueJob,
   QueueRequest,
   PreparedPythonArtifact,
+  PythonArtifactManifest,
 } from "@fmcad/core";
 import type { PythonStdout } from "../packages/core/src/domain/python-stdout";
 import type { ProtocolMetadataPins } from "./protocol-metadata-broker";
@@ -201,6 +202,22 @@ export interface StdoutKernel {
   readonly engineVersion: "python-source-effects-v2";
   readonly profileVersion: "isolated-stdout-v1";
 }
+/** Data only, for the host-preparation stage. These are the ORIGINAL logical
+ * request/RPC/source, never the compiled program or final physical wire. */
+export function pythonStdoutInputDigests(input: QueueRequest) {
+  const request = structuredClone(input);
+  const source = sourceOf(request);
+  if (
+    source === null ||
+    object(object(request.payload)["params"])["name"] !== "execute_python"
+  )
+    refuse();
+  return Object.freeze({
+    originalRequestDigest: requestHash(request),
+    originalLogicalRpcDigest: hash(request.payload),
+    sourceDigest: sha(source),
+  });
+}
 export interface StdoutCompilationPorts extends Omit<
   DiagnosticPreparationPorts,
   "analyze" | "engineVersion"
@@ -236,10 +253,18 @@ function hostProof(
 }
 /** Compiles one exact nonpersistent RPC for the bounded stdout namespace. This
  * still needs private domain admission and the final wire certificate. */
+export interface CompiledPythonStdout {
+  readonly descriptor: PythonStdout;
+  reverify(request: QueueRequest): void;
+  rpc(): NonNullable<QueueRequest["payload"]>;
+  origin(): PythonArtifactManifest;
+  assertProgram(request: QueueRequest, source: string): void;
+  assertWire(request: QueueRequest, wire: unknown, rpcId: string): void;
+}
 export async function compilePythonStdout(
   input: DiagnosticRequest,
   ports: StdoutCompilationPorts,
-) {
+): Promise<CompiledPythonStdout | null> {
   if (
     input.kind !== "rpc" ||
     object(input.payload)["method"] !== "tools/call" ||
@@ -348,11 +373,15 @@ export async function compilePythonStdout(
   compiledStdout.add(compiled);
   return compiled;
 }
-type CompiledStdout = NonNullable<
-  Awaited<ReturnType<typeof compilePythonStdout>>
->;
+type CompiledStdout = CompiledPythonStdout;
 const compiledStdout = new WeakSet<CompiledStdout>();
-export function createPythonStdoutBroker() {
+export interface PythonStdoutBroker {
+  prepare: typeof compilePythonStdout;
+  admit(job: QueueJob, prepared: CompiledPythonStdout): void;
+  program(job: QueueJob): CompiledPythonStdout;
+  prune(lookup: (id: string) => QueueJob | undefined): void;
+}
+export function createPythonStdoutBroker(): PythonStdoutBroker {
   const entries = new Map<string, CompiledStdout>();
   function program(job: QueueJob) {
     const prepared = entries.get(job.id);

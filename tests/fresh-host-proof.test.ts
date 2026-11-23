@@ -6,6 +6,7 @@ import {
   createControlledHostProofFactory,
   type FreshHostContext,
   type ControlledHostProofPorts,
+  type ControlledHostPreparationContext,
 } from "../src/fresh-host-proof";
 import {
   bootstrapInstalledFilesDigest,
@@ -275,8 +276,19 @@ function controlledFixture() {
     configHash: f.current.brokerConfig,
     generation: "compiler-generation-not-native-epoch",
   };
+  const preparationContext: ControlledHostPreparationContext = {
+    descriptor: f.current.descriptor,
+    brokerBuild: f.current.brokerBuild,
+    brokerConfig: f.current.brokerConfig,
+    purpose: "isolated-stdout-v1",
+    engineVersion: 2,
+    originalRequestDigest: "1".repeat(64),
+    originalLogicalRpcDigest: "2".repeat(64),
+    sourceDigest: "3".repeat(64),
+  };
   const ports: ControlledHostProofPorts = {
     ...f.ports,
+    readCurrent: () => structuredClone(preparationContext),
     transcript,
     readCompilerPins: () => ({ ...compilerPins }),
     controller: {
@@ -302,7 +314,7 @@ function controlledFixture() {
   };
   const factory = createControlledHostProofFactory(
     ports,
-    f.current,
+    preparationContext,
     f.publication,
     f.completion,
   );
@@ -313,6 +325,7 @@ function controlledFixture() {
     context,
     ports,
     compilerPins,
+    preparationContext,
     loseWindow: () => (windowHeld = false),
   };
 }
@@ -369,6 +382,19 @@ test("native or compiler context changes during or after preparation revoke the 
   assert.throws(prepared.recheck, { code: "FRESH_HOST_CONTEXT_CHANGED" });
   await assert.rejects(g.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
 });
+
+for (const field of [
+  "originalRequestDigest",
+  "originalLogicalRpcDigest",
+  "sourceDigest",
+] as const)
+  test(`controlled preparation rechecks original ${field} across native awaits`, async () => {
+    const f = controlledFixture();
+    f.duringVerify(() => (f.preparationContext[field] = "f".repeat(64)));
+    await assert.rejects(f.factory.prepare(), {
+      code: "FRESH_HOST_CONTEXT_CHANGED",
+    });
+  });
 
 test("old readers without authenticated references and native verification errors cannot prepare a controlled port", async () => {
   const f = controlledFixture();
