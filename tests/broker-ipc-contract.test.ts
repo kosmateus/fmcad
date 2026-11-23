@@ -513,7 +513,7 @@ async function fixture(
     }
   });
   const broker = await serve(
-    { backend: "mcp", timeoutMs: 5000 },
+    { backend: "addin", timeoutMs: 5000 },
     {
       dir,
       confirmOwnership: true,
