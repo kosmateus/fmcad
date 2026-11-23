@@ -614,9 +614,106 @@ def shadowed_names(parsed):
     return names
 
 
-def registry_expansions(unit, tree, functions):
+def registry_alias_expansions(unit, tree, context=()):
+    """Prove a literal mapping is private and consumed only by registry update."""
+    nodes = [node for candidate in [tree, *context] for node in ast.walk(candidate)]
+    parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+    lines = unit['source'].encode('utf-8').splitlines(keepends=True)
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+    result = []
+    for statement in tree.body:
+        if isinstance(statement, ast.AnnAssign):
+            target, mapping = statement.target, statement.value
+        elif isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target, mapping = statement.targets[0], statement.value
+        else:
+            continue
+        if not isinstance(target, ast.Name) or not isinstance(mapping, ast.Dict):
+            continue
+        unsafe_reflection = False
+        for node in nodes:
+            if not (isinstance(node, ast.Name)
+                    and node.id in {'globals', 'locals', 'vars', 'eval', 'exec'}):
+                continue
+            call = parents.get(node)
+            access = parents.get(call)
+            lookup = parents.get(access)
+            # A literal lookup of another global does not expose this mapping.
+            if not (node.id == 'globals' and isinstance(node.ctx, ast.Load)
+                    and isinstance(call, ast.Call) and call.func is node
+                    and not call.args and not call.keywords
+                    and isinstance(access, ast.Attribute) and access.value is call
+                    and access.attr == 'get' and isinstance(lookup, ast.Call)
+                    and lookup.func is access and 1 <= len(lookup.args) <= 2
+                    and not lookup.keywords
+                    and isinstance(lookup.args[0], ast.Constant)
+                    and isinstance(lookup.args[0].value, str)
+                    and lookup.args[0].value != target.id):
+                unsafe_reflection = True
+                break
+        if unsafe_reflection:
+            continue
+        uses = [node for node in nodes if isinstance(node, ast.Name) and node.id == target.id]
+        if len(uses) != 2 or target not in uses:
+            continue
+        if any((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and node.name == target.id)
+               or (isinstance(node, ast.alias)
+                   and (node.asname or node.name.split('.')[0]) == target.id)
+               or (isinstance(node, ast.arg) and node.arg == target.id)
+               or (isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+                   and node.name == target.id)
+               for node in nodes):
+            continue
+        load = next(node for node in uses if node is not target)
+        call = parents.get(load)
+        if not (isinstance(load.ctx, ast.Load) and isinstance(call, ast.Call)
+                and call.args == [load] and not call.keywords
+                and isinstance(call.func, ast.Attribute) and call.func.attr == 'update'
+                and isinstance(call.func.value, ast.Name) and call.func.value.id == 'CAD_HANDLERS'
+                and isinstance(parents.get(call), ast.Expr)
+                and parents.get(call) in tree.body
+                and call.lineno > statement.end_lineno):
+            continue
+        entries = []
+        for key, value in zip(mapping.keys, mapping.values):
+            if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+                break
+            inert_lambda = (isinstance(value, ast.Lambda) and not value.args.defaults
+                            and not any(value.args.kw_defaults))
+            bound_function = False
+            if isinstance(value, ast.Name):
+                bindings = [node for node in nodes
+                            if ((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                                 and node.name == value.id)
+                                or (isinstance(node, ast.Name) and node.id == value.id
+                                    and not isinstance(node.ctx, ast.Load))
+                                or (isinstance(node, ast.arg) and node.arg == value.id)
+                                or (isinstance(node, ast.alias)
+                                    and (node.asname or node.name.split('.')[0]) == value.id))]
+                bound_function = (len(bindings) == 1 and bindings[0] in tree.body
+                                  and isinstance(bindings[0], ast.FunctionDef)
+                                  and inert_function(bindings[0])
+                                  and bindings[0].end_lineno < statement.lineno)
+            if not (bound_function or inert_lambda):
+                break
+            entries.append(dict(operation=key.value,
+                                source=repr(key.value) + ': ' + ast.get_source_segment(unit['source'], value)))
+        else:
+            if len({entry['operation'] for entry in entries}) != len(entries):
+                continue
+            result.append(dict(unit=unit['id'],
+                               byteStart=starts[mapping.lineno - 1] + mapping.col_offset,
+                               byteEnd=starts[mapping.end_lineno - 1] + mapping.end_col_offset,
+                               entries=entries))
+    return result
+
+
+def registry_expansions(unit, tree, functions, context=()):
     """Finite comprehension values are inert closures; never evaluate user code."""
-    rows = []
+    rows = registry_alias_expansions(unit, tree, context)
     lines = unit['source'].encode('utf-8').splitlines(keepends=True)
     starts = [0]
     for line in lines:
@@ -1181,7 +1278,9 @@ def analyse(request):
         wraps.clear()
     for unit, tree in parsed:
         if request.get('specialize', False):
-            expansions.extend(registry_expansions(unit, tree, functions))
+            expansions.extend(registry_expansions(
+                unit, tree, functions,
+                [candidate for _, candidate in parsed if candidate is not tree] + [user_tree]))
         if unit['id'] == 'helpers':
             for node in tree.body:
                 if isinstance(node, ast.ClassDef) and node.name == 'FMCAD':
