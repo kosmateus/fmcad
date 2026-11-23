@@ -2,21 +2,21 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type * as P from "./queue-broker-ports";
 import type { prepareBrokerScript } from "../packages/node-adapters/src/execution/broker-preparation";
-import type { createQueueInstance } from "../packages/node-adapters/src/execution/queue-instance";
+import type { BrokerModules } from "./queue-broker-modules";
 import type { createPythonRpcAdmission } from "../packages/node-adapters/src/python/admission";
 import type { CompiledDocumentMetadataRead } from "./document-metadata-read-broker";
 
 export type RpcPreparationJob = Readonly<
   Pick<P.Job, "id"> & Partial<Pick<P.Job, "request">>
 >;
+type ReceiptPreparation =
+  BrokerModules["./queue-instance"]["prepareReceiptScript"];
 
 /** Existing broker services, not a second executor or mutable broker context. */
 export interface BrokerRpcPreparationPorts {
   readonly buildHash: string;
   readonly nativeMcp: boolean;
-  readonly nativePaths: Parameters<
-    ReturnType<typeof createQueueInstance>["prepareReceiptScript"]
-  >[4];
+  readonly nativePaths: Parameters<ReceiptPreparation>[4];
   view(): Readonly<{
     epoch: Readonly<P.Epoch> | null | undefined;
     admissionMode: string | undefined;
@@ -50,15 +50,11 @@ export interface BrokerRpcPreparationPorts {
     ): void;
   };
   readonly prepareBrokerScript: typeof prepareBrokerScript;
-  readonly prepareReceiptScript: ReturnType<
-    typeof createQueueInstance
-  >["prepareReceiptScript"];
+  readonly prepareReceiptScript: ReceiptPreparation;
   retainPythonOrigin(
-    artifact: ReturnType<
-      ReturnType<typeof createQueueInstance>["prepareReceiptScript"]
-    >,
+    artifact: ReturnType<ReceiptPreparation>,
     origin: P.Origin,
-  ): ReturnType<ReturnType<typeof createQueueInstance>["prepareReceiptScript"]>;
+  ): ReturnType<ReceiptPreparation>;
   prepareMetadataWire(payload: P.Rpc): P.MetadataWireProof;
   readonly pythonAdmission: Pick<
     ReturnType<typeof createPythonRpcAdmission>,

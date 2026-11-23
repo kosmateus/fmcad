@@ -7,6 +7,7 @@ import {
   type BrokerRpcPreparationPorts,
 } from "../src/broker-rpc-preparation";
 import type * as P from "../src/queue-broker-ports";
+import type { BrokerModules } from "../src/queue-broker-modules";
 import { prepareMetadataWire } from "../src/queue-broker-modules";
 import { prepareBrokerScript } from "../packages/node-adapters/src/execution/broker-preparation";
 import { createQueueInstance } from "../packages/node-adapters/src/execution/queue-instance";
@@ -94,6 +95,8 @@ function fixture() {
     path.resolve("src/queue-broker.js"),
     platform,
   );
+  const facadeReceipt: BrokerModules["./queue-instance"]["prepareReceiptScript"] =
+    real.prepareReceiptScript;
   const ports: {
     -readonly [
       K in keyof BrokerRpcPreparationPorts
@@ -133,7 +136,7 @@ function fixture() {
         assert.fail("unexpected metadata assertion"),
     },
     prepareBrokerScript,
-    prepareReceiptScript: real.prepareReceiptScript,
+    prepareReceiptScript: facadeReceipt,
     retainPythonOrigin: (artifact, origin) =>
       retainPythonOrigin(
         artifact,
