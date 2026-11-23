@@ -16,6 +16,7 @@ export const queueRuntimeModules = [
   "document-creation-broker",
   "protocol-metadata-broker",
   "python-diagnostic-broker",
+  "fresh-host-proof",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",
   "queue-audit-facts-capture",
