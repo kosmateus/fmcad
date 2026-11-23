@@ -52,10 +52,19 @@ def dictionary_keys(node, bindings, dictionaries):
     raise Unknown()
 
 
+def imports_namespace_access(nodes):
+    return any(isinstance(node, ast.ImportFrom) and node.module == 'builtins'
+               and any(alias.name in {'getattr', 'hasattr', 'globals', 'locals', 'vars',
+                                      'eval', 'exec', '__import__', 'dir', '*'}
+                       for alias in node.names) for node in nodes)
+
+
 def finite_membership_domains(parsed, user_tree):
     trees = [tree for _, tree in parsed] + [user_tree]
     nodes = [node for tree in trees for node in ast.walk(tree)]
     parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+    if imports_namespace_access(nodes):
+        return {}
     if any((isinstance(node, ast.Name)
             and node.id in {'globals', 'locals', 'vars', 'eval', 'exec',
                             '__builtins__', 'getattr', 'hasattr'})
@@ -918,6 +927,8 @@ def registry_alias_expansions(unit, tree, context=()):
     """Prove a literal mapping is private and consumed only by registry update."""
     nodes = [node for candidate in [tree, *context] for node in ast.walk(candidate)]
     parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+    if imports_namespace_access(nodes):
+        return []
     for node in nodes:
         if isinstance(node, ast.Name) and node.id in {'getattr', 'hasattr'}:
             parent = parents.get(node)
@@ -1559,8 +1570,25 @@ def analyse(request):
         return dict(unsupported=True)
     parsed = [(unit, ast.parse(unit['source'], filename=unit['filename'])) for unit in request['units']]
     casts = {alias.asname or alias.name for _, tree in parsed for node in ast.walk(tree)
-             if isinstance(node, ast.ImportFrom) and node.module == 'typing'
-              for alias in node.names if alias.name == 'cast'}
+              if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+               for alias in node.names if alias.name == 'cast'}
+    for tree in [*(tree for _, tree in parsed), user_tree]:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.arg):
+                casts.discard(node.arg)
+            elif isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+                casts.discard(node.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                casts.discard(node.name)
+            elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+                casts.discard(node.name)
+            elif isinstance(node, ast.MatchMapping):
+                casts.discard(node.rest)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    if not (isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                            and alias.name == 'cast'):
+                        casts.discard(alias.asname or alias.name.split('.')[0])
     type_guards = {alias.asname or alias.name for _, tree in parsed for node in tree.body
                    if isinstance(node, ast.ImportFrom) and node.module == 'typing'
                    for alias in node.names if alias.name == 'TYPE_CHECKING'}

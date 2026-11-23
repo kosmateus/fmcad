@@ -62,6 +62,8 @@ class RegistryAliasSelection(unittest.TestCase):
                 "def read_size(): return len(read(a, '__glo' + 'bals__')['handlers'])\n" + prefix + update,
                 "read = __builtins__['getattr']\n"
                 "def read_size(): return len(read(a, '__glo' + 'bals__')['handlers'])\n" + prefix + update,
+                "from builtins import getattr as read\n"
+                "def read_size(): return len(read(a, '__glo' + 'bals__')['handlers'])\n" + prefix + update,
                 "handlers = {'keep': a, 'drop': make_handler()}\n" + update,
                 "handlers = {'keep': a, 'drop': lambda x=effect(): x}\n" + update,
                 "handlers = {'keep': a, 'keep': b}\n" + update,

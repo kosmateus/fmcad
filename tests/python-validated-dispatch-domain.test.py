@@ -10,9 +10,10 @@ spec.loader.exec_module(module)
 
 
 class ValidatedDispatchDomain(unittest.TestCase):
-    def handler_facts(self, guard, intervening="", suffix="", dispatch=None):
+    def handler_facts(self, guard, intervening="", suffix="", dispatch=None,
+                      parameters="", imports=""):
         source = (
-            "def checked(ctx, data):\n"
+            imports + f"def checked(ctx, data{parameters}):\n"
             "    spec = data['measurement']\n"
             "    operation = spec['operation']\n"
             "    if type(operation) is not str:\n"
@@ -72,6 +73,16 @@ class ValidatedDispatchDomain(unittest.TestCase):
             with self.subTest(dispatch=dispatch):
                 facts = self.handler_facts(guard, dispatch=dispatch)
                 self.assertTrue(facts["opaque"])
+
+    def test_cast_call_requires_the_import_binding_not_a_shadowing_parameter(self):
+        guard = ("    if operation not in _OPERATIONS:\n"
+                 "        raise ValueError('unsupported operation')\n")
+        for parameters, opaque in [("", False), (", cast", True)]:
+            with self.subTest(parameters=parameters):
+                facts = self.handler_facts(
+                    guard, imports="from typing import cast\n", parameters=parameters,
+                    dispatch="    return ctx.call(cast(str, operation), spec['data'])\n")
+                self.assertEqual(facts["opaque"], opaque)
 
 
 if __name__ == "__main__":
