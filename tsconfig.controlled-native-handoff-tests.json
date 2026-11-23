@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": false,
+    "allowUnreachableCode": false,
+    "sourceMap": false
+  },
+  "include": [
+    "tests/controlled-native-handoff.test.ts",
+    "tests/controlled-native-handoff.windows.test.ts"
+  ]
+}
