@@ -19,6 +19,7 @@
     "tests/python-diagnostic-broker.test.ts",
     "tests/python-stdout-domain.test.ts",
     "tests/python-source-effects.test.ts",
+    "tests/isolated-stdout.test.ts",
     "tests/broker-source-compiler.test.ts",
     "src/broker-source-compiler-worker.ts",
     "tests/document-checkpoint-producer.test.ts",
