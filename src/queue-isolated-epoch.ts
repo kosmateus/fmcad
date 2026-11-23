@@ -214,6 +214,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
   let current = historical;
   const oldRequests = new Map<string, string>();
   const retired = new Map<string, { store: HostState; epochId: string }>();
+  const retiredStores = new Set<HostState>();
   function validate(p: Pointer) {
     const qualificationRoot = epochControlDirectory(root, p);
     if (
@@ -366,6 +367,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     pointer = p;
     oldRequests.clear();
     retired.clear();
+    retiredStores.clear();
     for (const job of Object.values(historical.data.jobs))
       oldRequests.set(job.clientId + "\0" + job.requestId, job.id);
     for (const previous of epochLineage(root, p)) {
@@ -374,6 +376,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
         recover: false,
         expectedSnapshotHash: previous.authority.predecessor.state.sha256,
       });
+      retiredStores.add(store);
       for (const job of Object.values(store.data.jobs)) {
         const key = job.clientId + "\0" + job.requestId;
         if (
@@ -472,10 +475,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
             isolatedEpochDirectory(root);
             validate(pointer);
             current.assertDurableSnapshot();
-            for (const store of new Set(
-              [...retired.values()].map((entry) => entry.store),
-            ))
-              store.assertDurableSnapshot();
+            for (const store of retiredStores) store.assertDurableSnapshot();
             return pointer;
           };
         if (key === "admissionMode") return admissionMode();

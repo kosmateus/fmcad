@@ -13,6 +13,7 @@ import {
 import type * as P from "../src/queue-broker-ports";
 import type * as Epochs from "../src/queue-isolated-epoch";
 import type { QueueSnapshot } from "../packages/core/src/domain/queue-model";
+import { initialQueueSnapshot } from "../packages/core/src/domain/queue-model";
 
 const runtime =
   process.env["FMCAD_TEST_RUNTIME"] || path.join(process.cwd(), "dist");
@@ -296,4 +297,53 @@ test("retained isolated host refuses changed pointers and current epoch bytes", 
   fs.writeFileSync(pointerFile, bytes);
   fs.appendFileSync(path.join(f.pointer.root, "queue-state.json"), " ");
   assert.throws(() => state.verifyCurrentEpoch(), { code: "CORRUPT_STATE" });
+});
+
+test("an empty retired epoch remains a checked durable store independently of job lookup", (t) => {
+  const base = fs.mkdtempSync("/tmp/opencode/empty-retired-epoch-");
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  type Host = ReturnType<typeof epochs.openIsolatedEpoch>;
+  const makeSuccessor = sourceFixture(
+    "./fixtures/dead-epoch-successor.cjs",
+  ) as (
+    base: string,
+    runtime: string,
+  ) => {
+    dir: string;
+    pointer: Parameters<Host["installEpoch"]>[0];
+    identity: Parameters<Host["installEpoch"]>[1];
+    initialization: Parameters<Host["installEpoch"]>[2];
+    authority: { predecessor: { state: P.Reference } };
+    authorityEntry: P.Reference;
+  };
+  const f = makeSuccessor(base, runtime);
+  const lineage = load(
+    "./queue-epoch-lineage",
+  ) as typeof import("../src/queue-epoch-lineage");
+  // Seed a valid, empty predecessor before opening/binding it. Refresh its
+  // synthetic authority reference rather than mutating an already-bound host.
+  const predecessor = f.authority.predecessor.state.path;
+  instance.durable(predecessor, initialQueueSnapshot());
+  f.authority.predecessor.state = lineage.reference(predecessor);
+  instance.durable(f.authorityEntry.path, f.authority);
+  f.pointer.succession = lineage.reference(f.authorityEntry.path);
+  const state = epochs.openIsolatedEpoch(f.dir, { recover: false });
+  assert.equal(Object.keys(state.data.jobs).length, 0);
+  state.installEpoch(f.pointer, f.identity, f.initialization);
+  assert.equal(state.verifyCurrentEpoch()?.epochId, f.pointer.epochId);
+  const pending = path.join(
+    path.dirname(predecessor),
+    "queue-state.pending.json",
+  );
+  fs.writeFileSync(pending, "{}");
+  assert.throws(() => epochs.openIsolatedEpoch(f.dir, { recover: false }), {
+    code: "STORAGE_UNAVAILABLE",
+  });
+  assert.throws(() => state.verifyCurrentEpoch(), {
+    code: "STORAGE_UNAVAILABLE",
+  });
+  fs.unlinkSync(pending);
+  assert.equal(state.verifyCurrentEpoch()?.epochId, f.pointer.epochId);
+  fs.appendFileSync(predecessor, " ");
+  assert.throws(() => state.verifyCurrentEpoch());
 });
