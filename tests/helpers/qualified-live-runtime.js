@@ -68,7 +68,20 @@ function resolveQualifiedLiveRuntime(env = process.env) {
       `FMCAD_LIVE_RUNTIME_ROOT cannot be resolved; no queue SDK was loaded: ${selected}`,
     );
   }
-  const dist = path.join(root, "dist");
+  const rootPackagePath = path.join(root, "package.json");
+  const rootPackage = fs.lstatSync(rootPackagePath, { throwIfNoEntry: false })
+    ? record(
+        readJson(rootPackagePath, "Installed package manifest"),
+        "Installed package manifest",
+      )
+    : undefined;
+  // A staged distribution is itself the runtime root; a source installation
+  // keeps the same immutable distribution under dist. Never fall back after
+  // selecting a distribution marker, even when its validation later fails.
+  const dist =
+    rootPackage && Object.hasOwn(rootPackage, "fmcadRuntimeLayout")
+      ? root
+      : path.join(root, "dist");
   const packagePath = path.join(dist, "package.json");
   const packageManifest = record(
     readJson(packagePath, "Installed package manifest"),
@@ -124,7 +137,7 @@ function resolveQualifiedLiveRuntime(env = process.env) {
   }
   if (actualFingerprint !== fingerprint) {
     throw new Error(
-      "Installed runtime bytes do not match dist/runtime-build.json; no queue SDK was loaded.",
+      `Installed runtime bytes do not match ${dist === root ? "runtime-build.json" : "dist/runtime-build.json"}; no queue SDK was loaded.`,
     );
   }
 

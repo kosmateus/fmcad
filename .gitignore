@@ -290,6 +290,8 @@ src/document-checkpoint-receipt.js
 src/document-checkpoint-receipt.d.ts
 src/document-continuation-broker.js
 src/document-continuation-broker.d.ts
+src/document-metadata-read-broker.js
+src/document-metadata-read-broker.d.ts
 src/document-unlock-controller.js
 src/document-unlock-controller.d.ts
 src/document-unlock-diagnostics.js

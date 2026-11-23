@@ -218,7 +218,7 @@ export const DOC_SUB: Record<string, CommandDescriptor> = {
     example: 'fmcad doc new --name "New Design"',
   },
   list: {
-    usage: "doc list",
+    usage: "doc list [--json]",
     desc: "List currently open documents with isActive/isModified/isSaved.",
     example: "fmcad doc list",
   },
@@ -421,6 +421,7 @@ for (const [sub, descriptor] of Object.entries(DOC_SUB)) {
     {
       search: { minArgs: 1, maxArgs: 1, flags: { "--project": "value" } },
       open: { minArgs: 1, maxArgs: 1 },
+      list: { flags: { "--json": "boolean" } },
       new: { flags: { "--name": "value" } },
       close: {
         flags: { "--save": "boolean", "--discard": "boolean" },

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type {
   Execution,
@@ -132,7 +133,8 @@ export class QueueScenarioBackend implements ScenarioBackend {
         this.config["backend"] !== "addin" ||
         this.config["url"] !== "http://127.0.0.1:8765/mcp" ||
         this.config["protocolVersion"] !== "2025-06-18" ||
-        this.config["tool"] !== "execute_python")
+        (this.config["tool"] !== "execute_python" &&
+          this.config["tool"] !== "fusion_mcp_execute"))
     )
       throw new Error(
         "Live scenario commands require the qualified ADDIN endpoint",
@@ -211,11 +213,14 @@ export class QueueScenarioBackend implements ScenarioBackend {
         argv,
         cwd: request.directory,
       });
-      const receipt = queueExecReceipt(
-        submitted.stderr,
-        request.owner,
-        request.requestId,
-      );
+      const receipt = queueExecReceiptWithDiagnostics({
+        result: submitted,
+        directory: this.#scenarioRoot,
+        cliPath,
+        argv,
+        owner: request.owner,
+        requestId: request.requestId,
+      });
       const key = requestKey(request.owner, request.requestId);
       this.#jobIds.set(key, receipt.jobId);
       const original = record(
@@ -544,6 +549,119 @@ export function queueExecReceipt(
     jobId: jobs[0]!["jobId"] as string,
     ...(result ? { state: result["state"] as string } : {}),
   };
+}
+
+/** Persist the exact public CLI output before receipt validation can reject it. */
+export function queueExecReceiptWithDiagnostics(input: {
+  result: QueueExecProcessResult;
+  directory: string;
+  cliPath: string;
+  argv: readonly string[];
+  owner: Pick<Owner, "clientId">;
+  requestId: string;
+}): QueueExecReceipt {
+  let diagnosticPath: string | undefined;
+  let diagnosticWriteError: unknown;
+  let temporaryPath: string | undefined;
+  let descriptor: number | undefined;
+  let temporaryCreated = false;
+  try {
+    const directory = path.join(input.directory, "queue-exec-diagnostics");
+    try {
+      fs.mkdirSync(directory, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const stat = fs.lstatSync(directory);
+    if (
+      !stat.isDirectory() ||
+      stat.isSymbolicLink() ||
+      (typeof process.getuid === "function" && stat.uid !== process.getuid()) ||
+      (process.platform !== "win32" && (stat.mode & 0o077) !== 0)
+    )
+      throw new Error("Queue diagnostic directory is not private");
+    const identity = createHash("sha256")
+      .update(JSON.stringify([input.requestId, input.owner.clientId]))
+      .digest("hex");
+    const finalPath = path.join(directory, `queue-exec-${identity}.json`);
+    const scriptIdentity = createHash("sha256")
+      .update(JSON.stringify([input.cliPath, input.argv]))
+      .digest("hex");
+    const content = JSON.stringify({
+      requestId: input.requestId,
+      clientId: input.owner.clientId,
+      scriptIdentity,
+      status: input.result.status,
+      stdout: input.result.stdout,
+      stderr: input.result.stderr,
+    });
+    temporaryPath = path.join(
+      directory,
+      `.queue-exec-${identity}-${process.pid}-${randomUUID()}.tmp`,
+    );
+    descriptor = fs.openSync(temporaryPath, "wx", 0o600);
+    temporaryCreated = true;
+    fs.writeFileSync(descriptor, content);
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    // A hard link publishes the fully-written inode atomically and fails with
+    // EEXIST rather than replacing an earlier artifact.
+    fs.linkSync(temporaryPath, finalPath);
+    diagnosticPath = finalPath;
+    fs.unlinkSync(temporaryPath);
+    temporaryPath = undefined;
+    temporaryCreated = false;
+    const directoryDescriptor = fs.openSync(directory, fs.constants.O_RDONLY);
+    try {
+      fs.fsyncSync(directoryDescriptor);
+    } finally {
+      fs.closeSync(directoryDescriptor);
+    }
+  } catch (error) {
+    diagnosticWriteError = error;
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        fs.closeSync(descriptor);
+      } catch {
+        // Preserve the primary diagnostic write error.
+      }
+    }
+    if (temporaryCreated && temporaryPath) {
+      try {
+        fs.unlinkSync(temporaryPath);
+        temporaryCreated = false;
+      } catch (error) {
+        if (diagnosticWriteError === undefined) diagnosticWriteError = error;
+      }
+    }
+  }
+  try {
+    return queueExecReceipt(input.result.stderr, input.owner, input.requestId);
+  } catch (error) {
+    if (diagnosticPath !== undefined)
+      Object.defineProperty(error, "diagnosticPath", {
+        value: diagnosticPath,
+        enumerable: true,
+      });
+    if (diagnosticWriteError !== undefined)
+      Object.defineProperties(error, {
+        diagnosticWriteFailed: { value: true, enumerable: true },
+        diagnosticWriteError: {
+          value: {
+            code:
+              diagnosticWriteError instanceof Error &&
+              "code" in diagnosticWriteError
+                ? diagnosticWriteError.code
+                : undefined,
+            message: String(diagnosticWriteError),
+          },
+          enumerable: true,
+        },
+      });
+    throw error;
+  }
 }
 type QueueModule = Omit<ClientModule, "QueueClient"> & {
   QueueClient: new (

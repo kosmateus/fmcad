@@ -954,6 +954,15 @@ async function runQueued(
       streams.invocationContext?.purpose ||
       invocation.context.getStore()?.description;
     if (purpose) input["description"] = purpose;
+    const { prepareRequest } = runtimeRequire(
+      "./dist/composition/execution-request",
+    ) as typeof import("./composition/execution-request");
+    Object.assign(
+      input,
+      prepareRequest({
+        request: { ...input, argv: pinned, cwd: process.cwd() },
+      }),
+    );
     const sequence = sequenceOptions(opts);
     if (sequence) input["sequence"] = sequence;
     if (

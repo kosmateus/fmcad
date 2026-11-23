@@ -6,24 +6,30 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   currentProcessIdentity,
   discoverOwnedUnsavedFixtureProofs,
+  prepareSupplementalCloseProof,
+  publishSupplementalCloseProof,
 } from "./fixture-provenance";
 import {
   captureOriginalView,
+  assertViewReadmission,
   prepareCaptureView,
   verifiedViewCapture,
   viewCapturePlanFile,
   type CaptureViewPlan,
 } from "./original-view-programs";
 import type { ScenarioBackend, Owner, Execution } from "./contracts";
+import { fixture } from "./test-support";
 import {
   create as createProgram,
   snapshot as inventorySnapshot,
+  program,
 } from "./programs";
 
 function ancestry(
   t: TestContext,
   sharedRoot?: string,
   originalUser?: { creationId: string; name: string; fileId: null },
+  backendIdentity = "view-ancestry:v1",
 ) {
   const root = sharedRoot ?? fs.mkdtempSync("/tmp/opencode/view-ancestry-");
   if (!sharedRoot)
@@ -67,7 +73,7 @@ function ancestry(
     restorationProfile: "style-relative-1e-5",
   };
   const backend: ScenarioBackend = {
-    identity: "view-ancestry:v1",
+    identity: backendIdentity,
     mode: "fusion",
     qualification: "broker",
     protocol: "addin",
@@ -647,6 +653,202 @@ test("capture inventory proofs refresh after asynchronous ancestry reads settle 
     "closed",
     "Do not dispatch a census frozen before the awaited receipt reads",
   );
+});
+
+test("a payload prepared before a canonical peer close refuses without effects and captures the exact user on fresh admission", async (t) => {
+  const buildHash = "b".repeat(64);
+  const f = ancestry(t, undefined, undefined, "view:addin:" + buildHash);
+  const { model } = await fixture(t);
+  const setup = await model.execute(
+    program(`import adsk.core
+app = adsk.core.Application.get()
+user = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+user.creationId = ${JSON.stringify(f.user.creationId)}
+user.name = ${JSON.stringify(f.user.name)}
+class Workspace:
+    id = 'FusionSolidEnvironment'
+    def activate(self):
+        app.userInterface.activeWorkspace = self
+        return True
+class Workspaces:
+    def itemById(self, key):
+        assert key == 'FusionSolidEnvironment'
+        return Workspace()
+app.userInterface.activeWorkspace = Workspace()
+app.userInterface.workspaces = Workspaces()
+peer = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+peer.creationId = ${JSON.stringify(f.document.creationId)}
+peer.name = ${JSON.stringify(f.document.name)}
+assert user.activate()`),
+  );
+  assert.equal(setup.success, true, setup.error);
+  const original = await model.execute(captureOriginalView(true));
+  assert.equal(original.success, true, original.error);
+  const originalView = JSON.parse(
+    original.stdout.trim().slice("FMCAD_SCENARIO ".length),
+  ) as Record<string, unknown>;
+  const baseline = [
+    ...f.snapshot.documents,
+    { ...f.document, fileId: null, saved: false, modified: false },
+  ];
+  const prior = await prepareCaptureView(f.root, f.backend, baseline, f.read);
+  const prepared = captureOriginalView(true, prior);
+  const retained = new Map<string, Execution>(
+    f.report.requests.map((entry) => [entry.requestId, entry.result]),
+  );
+  const backend = {
+    ...f.backend,
+    lookup: async (owner: Owner, requestId: string) => {
+      assert.deepEqual(owner, f.report.owner);
+      return retained.get(requestId) ?? null;
+    },
+  };
+  const originals = new Map(
+    f.report.requests.map((entry) => [
+      entry.requestId,
+      f.originals.get(entry.result.brokerReceipt.jobId),
+    ]),
+  );
+  const ports = {
+    readRuntimeBinding: async () => ({
+      buildHash,
+      instanceId: "view-readmission-component",
+    }),
+    readOriginalResult: async (owner: Owner, requestId: string) => {
+      assert.deepEqual(owner, f.report.owner);
+      assert.ok(originals.has(requestId));
+      return originals.get(requestId);
+    },
+  };
+  const requestId = f.report.owner.clientId + ":2";
+  const close = await prepareSupplementalCloseProof(
+    f.directory,
+    backend,
+    requestId,
+    ports,
+  );
+  fs.writeFileSync(close.executionSourceFile, close.source, { flag: "wx" });
+  const jobId = randomUUID();
+  const startedAt = Date.now();
+  const closed = await model.execute(close.source);
+  const finishedAt = Date.now();
+  assert.equal(closed.success, true, closed.error);
+  const operationResult = {
+    version: 1,
+    requestId,
+    jobId,
+    acceptance: "accepted",
+    executionOutcome: "succeeded",
+    mayHaveMutated: true,
+  };
+  const execution: Execution = {
+    requestId,
+    state: closed.success ? "succeeded" : "failed",
+    sdkSettled: true,
+    mayHaveMutated: true,
+    exitCode: closed.success ? 0 : 1,
+    stdout: closed.stdout,
+    brokerReceipt: {
+      requestId,
+      jobId,
+      clientId: f.report.owner.clientId,
+      state: "succeeded",
+      operationResult,
+    },
+  };
+  retained.set(requestId, execution);
+  originals.set(requestId, {
+    job: {
+      id: jobId,
+      requestId,
+      clientId: f.report.owner.clientId,
+      kind: "command",
+      state: execution.state,
+      submittedAt: startedAt,
+      startedAt,
+      finishedAt,
+      operationResult,
+    },
+    execution: {
+      state: execution.state,
+      sdkSettled: execution.sdkSettled,
+      mayHaveMutated: execution.mayHaveMutated,
+      exitCode: execution.exitCode,
+      publicationOutcome: "published",
+    },
+    stdout: closed.stdout,
+    provenance: {
+      status: "available",
+      inputs: [
+        {
+          kind: "source",
+          originalPath: close.executionSourceFile,
+          sha256: createHash("sha256").update(close.source).digest("hex"),
+          bytes: Buffer.byteLength(close.source),
+        },
+      ],
+    },
+  });
+  const refused = await model.execute(prepared);
+  assert.equal(refused.success, true, refused.error);
+  assert.doesNotMatch(refused.stdout, /FMCAD_VIEW_EFFECT/u);
+  const refusal = JSON.parse(
+    refused.stdout.trim().slice("FMCAD_SCENARIO ".length),
+  ) as Record<string, unknown>;
+  assert.deepEqual(refusal, {
+    viewAdmissionChanged: true,
+    missingPeer: f.document.creationId,
+    bodyCalls: 0,
+    mutationStarted: false,
+    strictCamera: true,
+  });
+  const unproved = await prepareCaptureView(
+    f.root,
+    f.backend,
+    baseline,
+    f.read,
+  );
+  assert.equal(
+    unproved.peers.find(
+      (peer) => peer.document.creationId === f.document.creationId,
+    )?.state,
+    "open",
+    "Physical absence alone must not manufacture a canonical close",
+  );
+  assert.throws(() => assertViewReadmission(prior, unproved, refusal));
+  await publishSupplementalCloseProof(f.directory, backend, ports);
+  const next = await prepareCaptureView(f.root, f.backend, baseline, f.read);
+  const closeProof = next.peers.find(
+    (peer) => peer.document.creationId === f.document.creationId,
+  );
+  assert.equal(closeProof?.supplementalClose?.jobId, jobId);
+  assert.equal(closeProof?.supplementalClose?.requestId, requestId);
+  assert.equal(
+    next.peers.find(
+      (peer) => peer.document.creationId === f.document.creationId,
+    )?.state,
+    "closed",
+  );
+  assert.equal(
+    assertViewReadmission(prior, next, refusal),
+    f.document.creationId,
+  );
+  const captured = await model.execute(captureOriginalView(true, next));
+  assert.equal(captured.success, true, captured.error);
+  const actual = JSON.parse(
+    captured.stdout.trim().slice("FMCAD_SCENARIO ".length),
+  ) as Record<string, unknown>;
+  assert.deepEqual(actual["active"], f.user);
+  const camera = actual["camera"] as Record<string, unknown>;
+  assert.deepEqual(camera["document"], {
+    creationId: f.user.creationId,
+    name: f.user.name,
+    dataFileId: null,
+  });
+  assert.equal(actual["restorationProfile"], "motion-absolute-1e-7");
+  assert.deepEqual(actual["camera"], originalView["camera"]);
+  assert.deepEqual(actual["nativeCamera"], originalView["nativeCamera"]);
+  assert.equal(actual["workspace"], originalView["workspace"]);
 });
 
 test("capture preparation waits for an already accepted peer SaveAs without submitting SDK or granting an unsettled exemption", async (t) => {

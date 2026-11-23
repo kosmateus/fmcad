@@ -398,6 +398,161 @@ test("a later UNKNOWN remains an active blocker after an actual domain restart",
     code: "SDK_QUIESCENCE_UNPROVEN",
   });
 });
+
+function metadataFixture() {
+  const f = fixture();
+  let id = 0;
+  const domain = new core.QueueDomain({
+    snapshot: f.project(), runtimeRetirement: f.authority,
+    now: () => 200, newId: () => "metadata-" + ++id, hash,
+  });
+  domain.pause(false);
+  const request = {
+    kind: "command", requestId: "metadata-public-request", clientId: "metadata-owner",
+    argv: ["doc", "list"], cwd: "/owned-fixture", timeoutMs: 1000,
+  };
+  const marker = {
+    version: 1, requestHash: hash(core.canonical(request)),
+    generation: "current-generation", programHash: "a".repeat(64), rpcHash: "b".repeat(64),
+  };
+  const capability = domain.createDocumentMetadataReadAuthority(() => marker);
+  return { f, domain, request, marker, capability };
+}
+test("private metadata admission preserves UNKNOWN and requires the exact one RPC", () => {
+  const { f, domain, request, marker, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  assert.equal(read.state, "queued");
+  assert.equal(domain.next().id, read.id);
+  domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash);
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, "c".repeat(64), marker.rpcHash),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, "d".repeat(64)),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+  domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId: "first-read-rpc" });
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+  domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "first-read-rpc");
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "second-rpc"),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+  assert.deepEqual(domain.data.jobs[f.old.id], f.frozen.jobs[f.old.id]);
+});
+test("a metadata intent cannot replace its original RPC under unchanged counters", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  domain.next();
+  domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId: "original-rpc" });
+  const before = structuredClone(domain.data);
+  for (const rpcId of ["replacement-rpc", "original-rpc"]) {
+    assert.throws(() => domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId }),
+      { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+    assert.deepEqual(domain.data, before);
+  }
+  domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "original-rpc");
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "replacement-rpc"),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+  domain.markDispatch(read.id, {
+    rpcCount: 1, completedCount: 1, rpcId: "original-rpc", rpcState: "terminal",
+  });
+  assert.equal(domain.data.jobs[read.id].dispatch.completedCount, 1);
+});
+test("metadata original RPC identity is not authority from mutable dispatch JSON", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  domain.next();
+  domain.markDispatch(read.id, { rpcCount: 1, completedCount: 0, rpcId: "original-rpc" });
+  domain.data.jobs[read.id].dispatch.details.rpcId = "replacement-rpc";
+  assert.throws(() => domain.assertDocumentMetadataRead(read.id, marker.programHash, marker.rpcHash, "replacement-rpc"),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+});
+test("metadata authority cannot upgrade an existing refused request", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  const old = domain.submit(request);
+  assert.equal(old.code, "UNKNOWN_SCOPE_UNPROVEN");
+  assert.equal(domain.submitDocumentMetadataRead(request, capability).id, old.id);
+  assert.equal(domain.hasDocumentMetadataRead(old.id), false);
+  assert.throws(() => domain.assertDocumentMetadataRead(old.id, marker.programHash, marker.rpcHash),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+});
+test("verifier reentry cannot replace authority of an already admitted metadata read", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  let nested;
+  const replacement = domain.createDocumentMetadataReadAuthority(() => {
+    nested ??= domain.submitDocumentMetadataRead(request, capability);
+    return { ...marker, programHash: "f".repeat(64) };
+  });
+  const result = domain.submitDocumentMetadataRead(request, replacement);
+  assert.equal(result.id, nested.id);
+  assert.equal(domain.next().id, nested.id);
+  domain.assertDocumentMetadataRead(nested.id, marker.programHash, marker.rpcHash);
+  assert.throws(() => domain.assertDocumentMetadataRead(nested.id, "f".repeat(64), marker.rpcHash),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+});
+test("caller flags or serialized metadata markers do not authorize a read or write", () => {
+  for (const argv of [["doc", "list"], ["param", "apply", '{"name":"unsafe","expression":"1mm"}']]) {
+    const { domain, request, marker } = metadataFixture();
+    const result = domain.submit({
+      ...request, argv, readOnly: true, documentMetadataRead: marker,
+      payload: { readOnly: true, documentMetadataRead: marker },
+    });
+    assert.equal(result.state, "failed");
+    assert.equal(result.code, "UNKNOWN_SCOPE_UNPROVEN");
+    assert.equal(domain.hasDocumentMetadataRead(result.id), false);
+  }
+});
+test("changed metadata proof is refused before scheduling", () => {
+  const { domain, request, marker, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  marker.generation = "replacement-generation";
+  assert.equal(domain.next(), null);
+  assert.equal(domain.data.jobs[read.id].state, "failed");
+});
+test("a changed metadata request cannot keep its original compiler authority", () => {
+  const { domain, request, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  domain.data.jobs[read.id].request.argv = ["run", "untrusted.py"];
+  assert.equal(domain.next(), null);
+  assert.equal(domain.data.jobs[read.id].state, "failed");
+});
+test("a persisted metadata marker is not interchangeable with its private binding", () => {
+  const { domain, request, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  domain.data.jobs[read.id].documentMetadataRead.rpcHash = "e".repeat(64);
+  assert.equal(domain.next(), null);
+  assert.equal(domain.data.jobs[read.id].state, "failed");
+});
+test("metadata proof storage faults stay faults, not ordinary expiration", () => {
+  const { domain, request, marker } = metadataFixture();
+  let unavailable = false;
+  const cap = domain.createDocumentMetadataReadAuthority(() => {
+    if (unavailable) throw Object.assign(new Error("owned verifier storage failed"), { code: "EIO" });
+    return marker;
+  });
+  const read = domain.submitDocumentMetadataRead(request, cap);
+  unavailable = true;
+  assert.throws(() => domain.next(), { code: "EIO" });
+  assert.equal(domain.data.jobs[read.id].state, "queued");
+  assert.equal(domain.data.active, null);
+});
+test("metadata authority does not survive JSON restore or raw UNKNOWN", () => {
+  const { f, domain, request, capability } = metadataFixture();
+  const read = domain.submitDocumentMetadataRead(request, capability);
+  const restored = new core.QueueDomain({
+    snapshot: structuredClone(domain.data), runtimeRetirement: f.authority, hash,
+    now: () => 201, newId: () => "restore-unused",
+  });
+  assert.equal(restored.hasDocumentMetadataRead(read.id), false);
+  assert.equal(restored.next(), null);
+  assert.equal(restored.data.jobs[read.id].state, "failed");
+  const raw = new core.QueueDomain({
+    snapshot: f.frozen, hash, now: () => 201, newId: () => "raw-unused",
+  });
+  const rawCap = raw.createDocumentMetadataReadAuthority(() => ({
+    version: 1, requestHash: hash(core.canonical(request)),
+    generation: "unverified", programHash: "a".repeat(64), rpcHash: "b".repeat(64),
+  }));
+  assert.throws(() => raw.submitDocumentMetadataRead(request, rawCap),
+    { code: "DOCUMENT_METADATA_READ_UNPROVEN" });
+});
 test("a JSON fenceKind field cannot turn a raw quarantine into retirement authority", () => {
   assert.equal(
     policy.documentConflictAllowsInspection({
