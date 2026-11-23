@@ -206,6 +206,8 @@ function monotonicEpoch(): () => number {
 export class QueueState extends QueueDomain {
   readonly dir: string;
   readonly file: string;
+  /** Recheck the live host store, not a reconstructed domain or caller snapshot. */
+  readonly assertDurableSnapshot: () => void;
   constructor(dir: string, options: QueueStateOptions = {}) {
     const now = options.now === undefined ? monotonicEpoch() : options.now;
     validateQueueOptions({ ...options, now });
@@ -323,5 +325,22 @@ export class QueueState extends QueueDomain {
     });
     this.dir = path.resolve(dir);
     this.file = path.join(this.dir, "queue-state.json");
+    this.assertDurableSnapshot = () => {
+      if (fs.lstatSync(this.dir).isSymbolicLink())
+        throw Object.assign(new Error("Queue directory must not be a symlink"), {
+          code: "CORRUPT_STATE",
+        });
+      if (options.runtimeRetirement)
+        assertRetirementNamespace(
+          dir,
+          verifiedRuntimeRetirement(options.runtimeRetirement),
+        );
+      if (!this.writerStatus().ready || store.restore() !== serialized)
+        throw Object.assign(
+          new Error("Current queue differs from its validated durable snapshot"),
+          { code: "CORRUPT_STATE" },
+        );
+      assertPhysicalCatalog(this.data, options.physicalCatalogDirectory ?? dir);
+    };
   }
 }

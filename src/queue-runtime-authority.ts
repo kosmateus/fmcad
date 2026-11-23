@@ -192,6 +192,9 @@ export type BrokerRuntimeStartupView = Readonly<
 
 export interface BrokerRuntimeQueue {
   epoch(): P.Epoch | null;
+  /** Concrete live host action: exact validated/committed bytes and epoch proofs.
+   * Older hosts retain the complete restore-based guard below. */
+  readCurrentEpoch?(): P.Epoch | null;
   admissionMode(): string;
   current(): BrokerRuntimeStartupView;
   assertEpoch(normal: boolean): void;
@@ -307,8 +310,11 @@ export async function openBrokerRuntimeAuthority(
       "PHYSICAL_CAPABILITY_CONFLICT",
       "Native runtime-root startup cannot also claim a legacy transition",
     );
+  let queue: BrokerRuntimeQueue | undefined;
   const readEpoch = () =>
-    readers.epochs.openIsolatedEpoch(dir, { recover: false }).epoch;
+    queue?.readCurrentEpoch
+      ? queue.readCurrentEpoch()
+      : readers.epochs.openIsolatedEpoch(dir, { recover: false }).epoch;
   const resolveHead = (): BackendScope =>
     readers.backend.resolveBackendHead(dir, () => ({ epoch: readEpoch() }));
   let backendScope: BackendScope = approvedRuntimeRoot
@@ -362,7 +368,6 @@ export async function openBrokerRuntimeAuthority(
       ? freeze(structuredClone(initialIdentity))
       : null,
   });
-  let queue: BrokerRuntimeQueue | undefined;
   let successor: ReturnType<typeof Lineage.successionAuthority> | null = null;
   let identity = initialIdentity;
   let atomicObservationOnly = false;

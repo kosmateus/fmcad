@@ -1036,6 +1036,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   runtimeAuthority.bindQueue({
     epoch: () => state.epoch ?? null,
+    readCurrentEpoch: () => state.verifyCurrentEpoch(),
     admissionMode: () => state.admissionMode,
     current: () => state.data,
     assertEpoch: (normal) => state.assertEpoch(normal),

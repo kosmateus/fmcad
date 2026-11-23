@@ -93,6 +93,7 @@ interface Grant {
   nativeFixture?: { kind: string };
 }
 type Facade = Omit<QueueDomain, "summary"> & {
+  verifyCurrentEpoch(): Pointer | null;
   historical: QueueSnapshot | null;
   lookup(id: string): QueueSnapshot["jobs"][string] | undefined;
   installEpoch(
@@ -118,8 +119,9 @@ type Facade = Omit<QueueDomain, "summary"> & {
     requestId: string,
   ): Record<string, unknown> | null;
 };
+type HostState = QueueDomain & { assertDurableSnapshot(): void };
 const { QueueState } = runtimeRequire("./queue-state") as {
-  QueueState: new (root: string, options: StateOptions) => QueueDomain;
+  QueueState: new (root: string, options: StateOptions) => HostState;
 };
 const {
   durable,
@@ -211,7 +213,8 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
   );
   let current = historical;
   const oldRequests = new Map<string, string>();
-  const retired = new Map<string, { store: QueueDomain; epochId: string }>();
+  const retired = new Map<string, { store: HostState; epochId: string }>();
+  const retiredStores = new Set<HostState>();
   function validate(p: Pointer) {
     const qualificationRoot = epochControlDirectory(root, p);
     if (
@@ -364,6 +367,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     pointer = p;
     oldRequests.clear();
     retired.clear();
+    retiredStores.clear();
     for (const job of Object.values(historical.data.jobs))
       oldRequests.set(job.clientId + "\0" + job.requestId, job.id);
     for (const previous of epochLineage(root, p)) {
@@ -372,6 +376,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
         recover: false,
         expectedSnapshotHash: previous.authority.predecessor.state.sha256,
       });
+      retiredStores.add(store);
       for (const job of Object.values(store.data.jobs)) {
         const key = job.clientId + "\0" + job.requestId;
         if (
@@ -448,6 +453,31 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     {
       get(_target, key) {
         if (key === "epoch") return pointer;
+        if (key === "verifyCurrentEpoch")
+          return () => {
+            // The live host already decoded/validated these exact durable bytes.
+            // Re-read them (including pending-write/path guards), never trust a
+            // pointer id, stat cache or a caller-supplied verification marker.
+            historical.assertDurableSnapshot();
+            if (!pointer) {
+              if (fs.existsSync(pointerFile))
+                fail(
+                  "EPOCH_PROOF_INVALID",
+                  "Durable admission epoch pointer changed",
+                );
+              return null;
+            }
+            if (canonicalHash(read(pointerFile)) !== canonicalHash(pointer))
+              fail(
+                "EPOCH_PROOF_INVALID",
+                "Durable admission epoch pointer changed",
+              );
+            isolatedEpochDirectory(root);
+            validate(pointer);
+            current.assertDurableSnapshot();
+            for (const store of retiredStores) store.assertDurableSnapshot();
+            return pointer;
+          };
         if (key === "admissionMode") return admissionMode();
         if (key === "assertEpoch")
           return (normal = false) => {
