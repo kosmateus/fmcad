@@ -150,6 +150,7 @@ jobs:
       - run: node --test dist/tests/document-unlock-controller.test.js
       - run: node --test dist/tests/document-checkpoint-broker.test.js
       - run: node --test dist/tests/document-continuation-broker.test.js
+      - run: node --test dist/tests/protocol-metadata-broker.test.js
       - run: node --test dist/tests/document-checkpoint-producer.test.js
       - run: node --test tests/runtime-retirement.test.cjs tests/document-unlock-ipc-deadline.test.mjs tests/checkpoint-receipt-privacy.test.mjs dist/tests/library-native-root.test.js
       - run: node --test tests/runtime-retirement-bootstrap.test.cjs
