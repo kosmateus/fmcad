@@ -1965,10 +1965,26 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   });
   const continuationJobs = new Set<string>();
   function acceptedContinuationTarget(request: P.Request) {
-    if (request.kind !== "command" || !physicalIsolation) return null;
-    // Parsed non-CAD commands use the existing legacy worker, not CAD model
-    // continuation. Missing/malformed typed CAD payloads must still fail closed.
-    if (request.payload?.["kind"] === "legacy-command") return null;
+    if (request.kind !== "command") return null;
+    if (request.payload?.["kind"] === "legacy-command") {
+      const { prepareRequest } = runtimeRequire("./dist/composition/execution-request") as
+        typeof import("./execution-request");
+      const parsed = prepareRequest({
+        request: {
+          ...request, cwd: required(request.cwd), argv: required(request.argv),
+        },
+      });
+      // Compare the complete DTO as it crosses JSON IPC (undefined optional
+      // parser fields are absent on the wire), not merely its caller-supplied
+      // kind. The worker must not reparse this into another command or drop
+      // fields that admission never authorized.
+      if (parsed.payload?.["kind"] !== "legacy-command" ||
+          !same(parsed.argv, request.argv) ||
+          !same(JSON.parse(JSON.stringify(parsed.payload)), request.payload))
+        fail("INVALID_COMMAND_PAYLOAD", "Legacy worker payload differs from its canonical command");
+      return null;
+    }
+    if (!physicalIsolation) return null;
     const commands = runtimeRequire("./dist/core/application/cad/worker-command") as
       typeof import("../../packages/core/src/application/cad/worker-command");
     const decoded = commands.decodeCadWorkerInvocation(request.payload);

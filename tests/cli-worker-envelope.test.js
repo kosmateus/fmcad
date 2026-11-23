@@ -62,8 +62,10 @@ test(
       bridgeSource: () => load("./addin-bridge").addinBridgeSource(),
     });
     let products = 0;
+    let physicalRequests = 0;
     const released = new Set();
     physical._post = async (payload) => {
+      physicalRequests++;
       if (payload.method === "initialize")
         return {
           status: 200,
@@ -336,5 +338,106 @@ def run(context: str) -> None:
       }
       assert.equal(products, 3);
     });
+    await t.test(
+      "inconsistent legacy envelopes are denied before job creation or dispatch",
+      async () => {
+        const { QueueClient } = load("./queue-client");
+        const { prepareRequest } = load("./dist/composition/execution-request");
+        const client = new QueueClient("legacy-envelope-" + randomUUID(), {
+          cfg,
+        });
+        const wire = (value) => JSON.parse(JSON.stringify(value));
+        const canonical = wire(
+          prepareRequest({
+            request: { cwd: home, argv: ["doc", "list"] },
+          }),
+        );
+        const jobsBefore = Object.keys(
+          JSON.parse(
+            fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+          ).jobs,
+        );
+        const cases = [
+          ["incomplete", { version: 1, kind: "legacy-command" }],
+          ["version", { ...canonical.payload, version: 2 }],
+          ["unknown field", { ...canonical.payload, ignored: true }],
+          [
+            "unknown entry field",
+            {
+              ...canonical.payload,
+              entry: { ...canonical.payload.entry, ignored: true },
+            },
+          ],
+          [
+            "changed target",
+            {
+              ...canonical.payload,
+              entry: { ...canonical.payload.entry, target: "docCloseCmd" },
+            },
+          ],
+          ["changed args", { ...canonical.payload, args: ["foreign"] }],
+          ["changed rawArgs", { ...canonical.payload, rawArgs: ["foreign"] }],
+          [
+            "changed flags",
+            { ...canonical.payload, flags: { "--discard": true } },
+          ],
+          ["changed options", { ...canonical.payload, options: {} }],
+          [
+            "missing field",
+            (() => {
+              const payload = { ...canonical.payload };
+              delete payload.listing;
+              return payload;
+            })(),
+          ],
+          [
+            "argv means CAD",
+            canonical.payload,
+            [
+              "cad",
+              "status",
+              "--doc",
+              "Model",
+              "--doc-id",
+              document.creationId,
+            ],
+          ],
+        ];
+      try {
+        await client.register({ autoStart: false });
+        const dispatchesBefore = physicalRequests;
+          for (const [label, payload, argv = canonical.argv] of cases) {
+            const input = {
+              kind: "command",
+              requestId: randomUUID(),
+              cwd: home,
+              argv,
+              payload,
+              backend: "addin",
+              timeoutMs: 60000,
+            };
+            assert.notDeepEqual(
+              wire(prepareRequest({ request: input }).payload),
+              payload,
+              label + " must differ from the real worker's parsed meaning",
+            );
+            await assert.rejects(
+              client.submit(input),
+              (error) => error.code === "INVALID_COMMAND_PAYLOAD",
+              label + " must be rejected before admission",
+            );
+            const state = JSON.parse(
+              fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+            );
+          assert.deepEqual(Object.keys(state.jobs), jobsBefore, label);
+          assert.equal(products, 3, label + " must not dispatch");
+          assert.equal(physicalRequests, dispatchesBefore,
+            label + " must not send even an extra physical probe");
+          }
+        } finally {
+          client.dispose();
+        }
+      },
+    );
   },
 );
