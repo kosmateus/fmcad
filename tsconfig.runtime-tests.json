@@ -10,6 +10,8 @@
   "include": [
     "tests/controlled-ingress-window.test.ts",
     "tests/controlled-startup-policy.test.ts",
+    "tests/fixed-startup-observation.test.ts",
+    "tests/fixed-startup-observation-broker.test.ts",
     "tests/controlled-lifecycle-lease.test.ts",
     "tests/controlled-host-ui.test.ts",
     "tests/controlled-host-ui.windows.test.ts",

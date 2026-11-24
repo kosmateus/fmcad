@@ -146,6 +146,10 @@ jobs:
       - run: node --test dist/tests/controlled-lifecycle-lease.test.js
       - run: node --test dist/tests/controlled-ingress-window.test.js
       - run: node --test dist/tests/controlled-startup-policy.test.js
+      - run: node --test dist/tests/fixed-startup-observation.test.js
+        env:
+          FMCAD_STARTUP_TEST_TYPING_ROOT: dist/runtime/python/typing
+      - run: node --test --test-concurrency=1 dist/tests/fixed-startup-observation-broker.test.js
       - run: node --test dist/tests/controlled-native-handoff.test.js dist/tests/controlled-native-handoff.windows.test.js
       - run: node --test dist/tests/controlled-host-compiler-integration.test.js
       - run: node --test dist/tests/autodesk-fusion-only.test.js
