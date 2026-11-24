@@ -446,8 +446,11 @@ print(_encode(snap(v["path"])))
         );
       const request = originalFile(extra.handoffRequest),
         completion = originalFile(extra.handoffReceipt);
+      const { allDiscoveryRoots, ...observedBase } = base;
       const options: OwnedNativeReboundOptions = {
-        ...base,
+        ...observedBase,
+        scopeKind: "controlled-native-runtime-v1",
+        observedDiscoveryRoots: allDiscoveryRoots,
         owned: {
           database: result["database"] as {
             nativePath: string;

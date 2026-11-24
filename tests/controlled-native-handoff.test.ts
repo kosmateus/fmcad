@@ -21,7 +21,7 @@ import {
 } from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
 
 function ownedPins(): OwnedNativeReboundOptions {
-  const base = pins();
+  const { allDiscoveryRoots, ...base } = pins();
   const file = (nativePath: string) => {
     const bytes = Buffer.from("{}");
     return {
@@ -53,6 +53,8 @@ function ownedPins(): OwnedNativeReboundOptions {
   ];
   return {
     ...base,
+    observedDiscoveryRoots: allDiscoveryRoots,
+    scopeKind: "controlled-native-runtime-v1",
     owned,
     mappedPaths: {
       ...base.mappedPaths,
@@ -64,7 +66,20 @@ function ownedPins(): OwnedNativeReboundOptions {
 }
 test("owned readonly port exposes no mutating operations and requires exact distinct original mappings", () => {
   assert.throws(
-    () => createControlledFusionNativeHandoff(ownedPins()),
+    () =>
+      createControlledFusionNativeHandoff(
+        Object.assign(pins(), {
+          observedDiscoveryRoots: ["C:\\observed"],
+          scopeKind: "controlled-native-runtime-v1",
+        }),
+      ),
+    /Manual handoff requires its complete discovery roots contract/,
+  );
+  assert.throws(
+    () =>
+      createControlledFusionNativeHandoff(
+        Object.assign(pins(), { owned: ownedPins().owned }),
+      ),
     /Separate owned readonly factory/,
   );
   assert.deepEqual(Object.keys(createOwnedNativeReboundObserver(ownedPins())), [
@@ -72,6 +87,12 @@ test("owned readonly port exposes no mutating operations and requires exact dist
     "assertOriginalOwnedReboundWitness",
   ]);
   for (const change of [
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p, { allDiscoveryRoots: ["C:\\guessed"] }),
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p, { scopeKind: "global-clean-host" }),
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p, { observedDiscoveryRoots: [] }),
     (p: OwnedNativeReboundOptions) =>
       Object.assign(p.owned, { auditPath: p.paths.provision }),
     (p: OwnedNativeReboundOptions) =>

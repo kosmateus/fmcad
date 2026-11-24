@@ -404,6 +404,10 @@ const ownedReboundExtension = String.raw`
 # Readonly role: mutating functions above are deliberately unreachable.
 if action not in ("observe-owned-rebound","assert-owned-rebound"):
     raise ValueError("Readonly owned role refuses install/rebind/lifecycle operations")
+# Observed protected source scope, not a globally complete vendor loader map.
+if (p.get("scopeKind")!="controlled-native-runtime-v1" or "allDiscoveryRoots" in p
+    or type(p.get("observedDiscoveryRoots")) is not list or not p["observedDiscoveryRoots"]):
+    raise ValueError("Explicit observed controlled native runtime scope required")
 o=p["owned"]
 def owned_match(reference):
     if type(reference) is not dict or set(reference)!={"nativePath","sha256","identity"}:
