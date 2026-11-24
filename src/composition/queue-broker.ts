@@ -121,6 +121,9 @@ const {
   "./dist/node-adapters/execution/broker-recovery-evidence",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-recovery-evidence");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
+const { readBytes: readStartupObservationBytes, MAX_JSON_RECORD_BYTES: startupObservationBudget } = runtimeRequire(
+  "./dist/node-adapters/persistence/records",
+) as typeof import("../../packages/node-adapters/src/persistence/records");
 const { QueueGate } = load("./queue-gate");
 const { PauseBudget } = load("./pause-budget");
 const nativeReceipts = load("./queue-native-receipt");
@@ -512,6 +515,9 @@ function hasRuntimeRootEvidence(directory: string): boolean {
     .hasRuntimeRootEvidence(directory);
 }
 export async function serve(cfg: P.Config, options: P.Options = {}) {
+  const startupCapture = options.captureStartupObservation;
+  if (startupCapture !== undefined && typeof startupCapture !== "function")
+    fail("STARTUP_OBSERVATION_UNPROVEN", "Private startup observation capture must be a function");
   let runtimeRootWiring:
     import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
   if (process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined) {
@@ -1136,6 +1142,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   // Only the private fixed queue-instance probe producer enters this scope.
   // A certificate or caller-supplied readOnly/metadata flag cannot create it.
   const fixedReadiness = new AsyncLocalStorage<() => void>();
+  let startupPhysicalRead: {
+    original: P.StartupObservation["originalPhysicalRead"];
+    binding: P.PhysicalTurnBinding;
+  } | undefined;
+  let startupObservation: P.StartupObservation | undefined;
+  function startupArtifact(file: string): P.StartupObservation["originalReceipt"] {
+    const bytes = readStartupObservationBytes(file, startupObservationBudget);
+    return Object.freeze({ path: file, sha256: hash(bytes), bytes: Uint8Array.from(bytes) });
+  }
+  function freezeStartupData<T>(value: T): T {
+    if (value && typeof value === "object") {
+      for (const child of Object.values(value)) freezeStartupData(child);
+      Object.freeze(value);
+    }
+    return value;
+  }
   const underlyingPost = client._post.bind(client);
   const originalPost: typeof client._post = (payload, sessionId, requestOptions) => {
     // One boundary for product sends, observations and lifecycle/readiness
@@ -1628,13 +1650,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ["running","sending"].includes(currentJob.state)
         ? (currentJob.physicalDispatchCount ?? currentJob.physicalDispatches?.length ?? 0) + 1
         : undefined;
-      durable(path.join(privateDirectory(path.join(dir, "physical-reads")), hash(physicalRequestId) + ".json",
-        ), {
+      const physicalReadPath = path.join(
+        privateDirectory(path.join(dir, "physical-reads")), hash(physicalRequestId) + ".json");
+      durable(physicalReadPath, {
         version: 1, purpose, request, physicalTurn: physical,
         ...(catalogIndex === undefined ? {} : {catalogIndex}),
         receiptPath: probe.receiptPath ?? null,
       }, true,
       );
+      if (probe.startupAudit && startupCapture) {
+        if (startupPhysicalRead)
+          fail("STARTUP_OBSERVATION_UNPROVEN", "The original startup read cannot be replaced");
+        startupPhysicalRead = { original: startupArtifact(physicalReadPath), binding: physical };
+      }
       if (currentJob && catalogIndex !== undefined)
         registerPhysicalDispatch(currentJob, request, physical, catalogIndex);
       return required(options.withPhysicalTurn)(physical, send);
@@ -2526,19 +2554,58 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     receipt: startupReceipt,
     diagnosticPath,
   }: BrokerStartup) {
+    let observedStartup: {
+      identity: P.Instance;
+      audit: NonNullable<P.Instance["startupAudit"]>;
+      receipt: P.StartupObservation["originalReceipt"];
+    } | undefined;
+    if (startupCapture && !physicalIsolation)
+      fail("PHYSICAL_CAPABILITY_REQUIRED", "Startup observation needs the existing private physical system-read turn");
     const result = await runtimeAuthority.identifyStartup({
       binding: startupBinding,
       receiptPath: startupReceipt,
       diagnosticPath,
-    }, () => gate.administrative(() =>
-        instanceProbe({
+    }, () => gate.administrative(async () => {
+        const observed = await instanceProbe({
           receiptPath: startupReceipt,
           binding: startupBinding,
           requireIdle: false,
           diagnosticPath,
-        }),
-      ), backendTransition);
+          ...(startupCapture ? {
+            startupAudit: true as const,
+            onObservation(identity: P.Instance, receipt?: P.StartupObservation["originalReceipt"]) {
+              const { startupAudit, ...ordinaryIdentity } = identity;
+              if (!startupAudit || !receipt || observedStartup)
+                fail("STARTUP_OBSERVATION_UNPROVEN", "One original bound startup audit is required");
+              observedStartup = { identity: ordinaryIdentity, audit: startupAudit, receipt };
+            },
+          } : {}),
+        });
+        if (!startupCapture) return observed;
+        const { startupAudit: unusedAudit, ...ordinaryIdentity } = observed;
+        void unusedAudit;
+        return ordinaryIdentity;
+      }), backendTransition);
     setHold(result.hold);
+    if (startupCapture) {
+      if (!observedStartup || !startupPhysicalRead)
+        fail("STARTUP_OBSERVATION_UNPROVEN", "Startup authority did not execute an original bound SDK observation");
+      const observed = required(observedStartup);
+      const physical = required(startupPhysicalRead);
+      const native = physical.binding.physicalRuntime;
+      if (native.pid !== observed.identity.pid || native.birth !== observed.identity.birth ||
+          native.version !== observed.identity.version)
+        fail("STARTUP_OBSERVATION_UNPROVEN", "Original startup SDK and physical process differ");
+      startupObservation = Object.freeze({
+        identity: freezeStartupData(structuredClone(observed.identity)),
+        startupAudit: freezeStartupData(structuredClone(observed.audit)),
+        originalReceipt: observed.receipt,
+        originalPhysicalRead: physical.original,
+        binding: freezeStartupData(structuredClone(startupBinding)),
+        broker: freezeStartupData({ owner: structuredClone(marker), buildHash: codeHash, configHash }),
+        native: freezeStartupData(structuredClone(native)),
+      });
+    }
   }
 
   function clientProperties() {
@@ -6413,9 +6480,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
     pollMs: options.pollMs || 100,
   });
-  if (options.captureControlledIngress) {
-    const ingress = required(controlledIngress);
+  if (options.captureControlledIngress || startupCapture) {
     try {
+      if (options.captureControlledIngress) {
+      const ingress = required(controlledIngress);
       const window = ingress.sealForTransfer();
       const { readControlledIngressIdentity } = runtimeRequire(
         "./dist/node-adapters/execution/controlled-ingress-window",
@@ -6430,11 +6498,33 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         void Promise.resolve(result).catch(() => {});
         fail("CONTROLLED_INGRESS_UNPROVEN", "Private ingress capture must be synchronous");
       }
+      }
+      if (startupCapture) {
+        const captured = required(startupObservation);
+        const assertOriginal = () => {
+          assertCheckpointIdentity();
+          if (buildHash() !== codeHash ||
+              checkpointGeneration(checkpointPhysicalBindingAfterOwnerCheck()) !==
+                checkpointGeneration(required(startupPhysicalRead).binding) ||
+              hash(Buffer.from(captured.originalReceipt.bytes)) !== captured.originalReceipt.sha256 ||
+              hash(Buffer.from(captured.originalPhysicalRead.bytes)) !== captured.originalPhysicalRead.sha256 ||
+              hash(readStartupObservationBytes(captured.originalReceipt.path, startupObservationBudget)) !== captured.originalReceipt.sha256 ||
+              hash(readStartupObservationBytes(captured.originalPhysicalRead.path, startupObservationBudget)) !== captured.originalPhysicalRead.sha256)
+            fail("STARTUP_OBSERVATION_UNPROVEN", "Original startup source/native/receipt binding changed");
+        };
+        assertOriginal();
+        const result: unknown = startupCapture(captured);
+        if (result !== undefined) {
+          void Promise.resolve(result).catch(() => {});
+          fail("STARTUP_OBSERVATION_UNPROVEN", "Private startup observation capture must return void synchronously");
+        }
+        assertOriginal();
+      }
     } catch (cause) {
       // serve must never reject after listen while leaving an unowned live
       // broker behind. Revoke first, including a window retained by a throwing
       // callback, then use this instance's existing supported shutdown.
-      ingress.revoke();
+      controlledIngress?.revoke();
       try {
         await close();
       } catch (cleanup) {

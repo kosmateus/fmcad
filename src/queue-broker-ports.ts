@@ -27,6 +27,17 @@ export interface Instance {
   activeCommand?: string;
   documents?: Array<{ isModified?: boolean; creationId?: string }>;
   documentState?: DocumentSnapshot;
+  startupAudit?: import("../packages/node-adapters/src/execution/queue-instance").StartupSdkAudit;
+}
+/** Private readonly observation. None of these data are dispatch authority. */
+export interface StartupObservation {
+  readonly identity: Readonly<Omit<Instance, "startupAudit">>;
+  readonly startupAudit: import("../packages/node-adapters/src/execution/queue-instance").StartupSdkAudit;
+  readonly originalReceipt: import("../packages/node-adapters/src/execution/queue-instance").ProbeReceiptObservation;
+  readonly originalPhysicalRead: import("../packages/node-adapters/src/execution/queue-instance").ProbeReceiptObservation;
+  readonly binding: Readonly<Record<string, unknown>>;
+  readonly broker: { readonly owner: Readonly<Owner>; readonly buildHash: string; readonly configHash: string };
+  readonly native: Readonly<PhysicalTurnBinding["physicalRuntime"]>;
 }
 export interface Identity {
   configHash: string;
@@ -396,6 +407,9 @@ export type PhysicalTurnQuiescence =
   | { state: "released"; binding: PhysicalTurnBinding; physicalEvidenceReference: string; evidenceDigest: string;
     };
 export interface Options {
+  /** Same-process operator data export only, never config, CLI or IPC input.
+   * Selects one fixed startup-readiness audit; must return void synchronously. */
+  captureStartupObservation?: (observation: StartupObservation) => void;
   authorizePhysicalRequest?: (endpoint: string,
   ) => Readonly<Record<string, string>>;
   preparePhysicalGeneration?: (claim: {
@@ -517,6 +531,7 @@ export interface Flight {
   send: Send<Instance>;
 }
 export interface ProbeOptions {
+  startupAudit?: true;
   assertCurrent?: () => void;
   mapPath?: (file: string) => string;
   receiptPath?: string;
@@ -525,7 +540,10 @@ export interface ProbeOptions {
   diagnosticPath?: string | undefined;
   documentSelector?: DocumentSelector | null | undefined;
   prepared?: Flight | undefined;
-  onObservation?: (instance: Instance) => void | Promise<void>;
+  onObservation?: (
+    instance: Instance,
+    receipt?: import("../packages/node-adapters/src/execution/queue-instance").ProbeReceiptObservation,
+  ) => void | Promise<void>;
 }
 export interface ResetProof {
   nonce: string;

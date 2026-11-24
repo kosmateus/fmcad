@@ -17,6 +17,7 @@ import {
   MAX_JSON_RECORD_BYTES,
 } from "../persistence/records";
 import type { PythonArtifactManifest } from "../../../core/src/domain/python-artifact";
+import { decodeAdmissionJson } from "./admission-json";
 
 const PROBE_OBSERVATION_SCHEMA = "fmcad-instance-probe-v1";
 const PUBLIC_PYTHON_RESULT_SCHEMA = "fmcad-public-python-result-v1";
@@ -29,6 +30,32 @@ export interface FusionIdentity extends ProcessIdentity {
   version: string;
   activeCommand?: string;
   documents: unknown[];
+  /** Observation data only, never process/startup qualification or authority. */
+  startupAudit?: StartupSdkAudit;
+}
+export interface StartupSdkAudit {
+  readonly kind: "fmcad-startup-sdk-audit";
+  readonly version: 1;
+  readonly applicationVersion: string;
+  readonly preferences: { readonly defaultPathForScriptsAndAddIns: string };
+  readonly scripts: {
+    readonly countBefore: number;
+    readonly countAfter: number;
+    readonly items: readonly {
+      readonly index: number;
+      readonly folder: string;
+      readonly location: { readonly name: string; readonly value: number };
+      readonly isAddIn: boolean;
+      readonly isRunOnStartup: boolean | null;
+      readonly isRunning: boolean;
+      readonly isVisible: boolean;
+      readonly manifest: {
+        readonly content: string;
+        readonly sha256: string;
+        readonly parseStatus: "json-object";
+      };
+    }[];
+  };
 }
 export interface BrokerPhysicalConfig {
   backend?: unknown;
@@ -85,6 +112,12 @@ export interface ProbeOutput {
   data?: unknown;
   rawResponse?: string;
 }
+export interface ProbeReceiptObservation {
+  readonly path: string;
+  readonly sha256: string;
+  /** Exact original bytes that were decoded and checked, not a reconstructed DTO. */
+  readonly bytes: Uint8Array;
+}
 interface ProbeArguments {
   featureType: string;
   object: { script: string; readOnly: boolean };
@@ -102,11 +135,13 @@ export interface ProbeClient {
   callTool(args: ProbeArguments, tool: string): Promise<ProbeOutput>;
 }
 export interface ProbeOptions {
+  /** Private fixed-program selection, never read from config/IPC/RPC flags. */
+  startupAudit?: true;
   assertCurrent?: () => void;
   receiptPath?: string;
   binding?: unknown;
   requireIdle?: boolean;
-  onObservation?: (identity: FusionIdentity) => unknown;
+  onObservation?: (identity: FusionIdentity, receipt?: ProbeReceiptObservation) => unknown;
   diagnosticPath?: string;
   documentSelector?: unknown;
   mapPath?: (file: string) => string;
@@ -478,8 +513,118 @@ def _qi_identity() -> dict[str, object]:
             'activeCommand':_app.userInterface.activeCommand}
 `;
 
-  const probeScript = (metadata: boolean) => `${identityPython}
+  const startupAuditPython = String.raw`
+import hashlib as _qs_hashlib, math as _qs_math
+from pathlib import Path as _qs_Path
+def _qs_fail(_code: str, _field: str) -> None:
+    raise RuntimeError('BOOTSTRAP_STARTUP_AUDIT_' + _code + ': ' + _field)
+def _qs_text(_raw: object, _field: str, _limit: int, _path: bool = False) -> str:
+    if type(_raw) is not str:
+        raise TypeError('BOOTSTRAP_STARTUP_AUDIT_VALUE_UNVERIFIED: ' + _field)
+    if not _raw or len(_raw.encode('utf-8')) > _limit or '\0' in _raw or (_path and not _qs_Path(_raw).is_absolute()):
+        _qs_fail('VALUE_UNVERIFIED', _field)
+    return _raw
+def _qs_bool(_raw: object, _field: str) -> bool:
+    if type(_raw) is not bool:
+        raise TypeError('BOOTSTRAP_STARTUP_AUDIT_VALUE_UNVERIFIED: ' + _field)
+    return _raw
+def _qs_count(_raw: object) -> int:
+    if type(_raw) is not int or _raw < 0:
+        raise TypeError('BOOTSTRAP_STARTUP_AUDIT_VALUE_UNVERIFIED: scripts.count')
+    if _raw > 1024:
+        _qs_fail('COUNT_BUDGET_EXCEEDED', 'scripts.count')
+    return _raw
+def _qs_enum(_raw: object) -> int:
+    # SDK enum getters are numeric at runtime; never coerce unknown/bool values.
+    if type(_raw) is not int:
+        raise TypeError('BOOTSTRAP_STARTUP_AUDIT_ENUM_UNVERIFIED: ScriptSourceLocations')
+    return _raw
+def _qs_pairs(_items: list[tuple[str, object]]) -> dict[str, object]:
+    _result: dict[str, object] = {}
+    for _key, _item in _items:
+        if _key in _result:
+            _qs_fail('MANIFEST_UNVERIFIED', 'duplicate JSON key')
+        _result[_key] = _item
+    return _result
+def _qs_bad(_text: str) -> object:
+    _qs_fail('MANIFEST_UNVERIFIED', 'nonfinite JSON')
+    return None
+def _qs_float(_text: str) -> float:
+    _number = float(_text)
+    if not _qs_math.isfinite(_number):
+        _qs_fail('MANIFEST_UNVERIFIED', 'nonfinite JSON')
+    return _number
+def _qs_size(_value: object) -> int:
+    return len(_qi_json.dumps(_value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8'))
+def _qs_audit(_app: _qi_core.Application) -> dict[str, object]:
+    _version = _qs_text(_app.version, 'Application.version', 65536)
+    _parent = _qs_text(_app.preferences.apiPreferences.defaultPathForScriptsAndAddIns,
+                      'defaultPathForScriptsAndAddIns', 65536, True)
+    _scripts = _qi_cast('_qi_core.Scripts | None', _app.scripts)
+    if _scripts is None:
+        raise TypeError('BOOTSTRAP_STARTUP_AUDIT_VALUE_UNVERIFIED: Application.scripts')
+    _before = _qs_count(_scripts.count)
+    _locations: dict[int, str] = {}
+    for _name, _candidate in (
+        ('AppStoreScriptSourceLocation', _qi_core.ScriptSourceLocations.AppStoreScriptSourceLocation),
+        ('OtherInstalledScriptSourceLocation', _qi_core.ScriptSourceLocations.OtherInstalledScriptSourceLocation),
+        ('UserDefinedScriptSourceLocation', _qi_core.ScriptSourceLocations.UserDefinedScriptSourceLocation),
+        ('InternalScriptSourceLocation', _qi_core.ScriptSourceLocations.InternalScriptSourceLocation),
+        ('SamplesScriptSourceLocation', _qi_core.ScriptSourceLocations.SamplesScriptSourceLocation),
+        ('LinkedScriptSourceLocation', _qi_core.ScriptSourceLocations.LinkedScriptSourceLocation)):
+        _enum = _qs_enum(_candidate)
+        if _enum in _locations:
+            raise TypeError('BOOTSTRAP_STARTUP_AUDIT_ENUM_UNVERIFIED: ScriptSourceLocations')
+        _locations[_enum] = _name
+    _rows: list[dict[str, object]] = []
+    _budget = 0
+    for _index in range(_before):
+        # SDK documentation explicitly permits null for an invalid item index.
+        _script = _qi_cast('_qi_core.Script | None', _scripts.item(_index))
+        if _script is None:
+            raise TypeError('BOOTSTRAP_STARTUP_AUDIT_VALUE_UNVERIFIED: scripts.item')
+        _folder = _qs_text(_script.folder, 'folder', 65536, True)
+        _location = _qs_enum(_script.location)
+        if _location not in _locations:
+            raise TypeError('BOOTSTRAP_STARTUP_AUDIT_ENUM_UNVERIFIED: location')
+        _addin = _qs_bool(_script.isAddIn, 'isAddIn')
+        _startup = _qs_bool(_script.isRunOnStartup, 'isRunOnStartup') if _addin else None
+        _running = _qs_bool(_script.isRunning, 'isRunning')
+        _visible = _qs_bool(_script.isVisible, 'isVisible')
+        _manifest = _qs_text(_script.manifestContent, 'manifestContent', 256 * 1024)
+        _parsed = _qi_cast(object, _qi_json.loads(_manifest, object_pairs_hook=_qs_pairs,
+                          parse_constant=_qs_bad, parse_float=_qs_float))
+        if type(_parsed) is not dict:
+            _qs_fail('MANIFEST_UNVERIFIED', 'manifestContent')
+        _row: dict[str, object] = {
+            'index': _index, 'folder': _folder,
+            'location': {'name': _locations[_location], 'value': _location},
+            'isAddIn': _addin, 'isRunOnStartup': _startup,
+            'isRunning': _running, 'isVisible': _visible,
+            'manifest': {'content': _manifest, 'sha256': _qs_hashlib.sha256(_manifest.encode('utf-8')).hexdigest(),
+                         'parseStatus': 'json-object'}}
+        _budget += _qs_size(_row)
+        if _budget > 4 * 1024 * 1024:
+            _qs_fail('BYTE_BUDGET_EXCEEDED', 'scripts')
+        _rows.append(_row)
+    _after = _qs_count(_scripts.count)
+    if _before != _after:
+        _qs_fail('COLLECTION_CHANGED', 'scripts.count')
+    _parent_after = _qs_text(_app.preferences.apiPreferences.defaultPathForScriptsAndAddIns,
+                            'defaultPathForScriptsAndAddInsAfter', 65536, True)
+    if _parent != _parent_after:
+        _qs_fail('PREFERENCES_CHANGED', 'defaultPathForScriptsAndAddIns')
+    _audit: dict[str, object] = {
+        'kind': 'fmcad-startup-sdk-audit', 'version': 1, 'applicationVersion': _version,
+        'preferences': {'defaultPathForScriptsAndAddIns': _parent},
+        'scripts': {'countBefore': _before, 'countAfter': _after, 'items': _rows}}
+    if _qs_size(_audit) > 4 * 1024 * 1024:
+        _qs_fail('BYTE_BUDGET_EXCEEDED', 'audit')
+    return _audit
+`;
+  const probeScript = (metadata: boolean, startupAudit = false) => `${identityPython}
 import json as _qi_json
+${startupAudit ? startupAuditPython : ""}
 def run(_context: str) -> dict[str, object]:
     _value = _qi_identity()
     _app = _qi_core.Application.get()
@@ -493,7 +638,7 @@ def run(_context: str) -> dict[str, object]:
         _row['fileId'] = _data.id if _data else None${metadata ? "\n        _row['version'] = _data.versionNumber if _data else None" : ""}
         if _error:
             _row['dataFileError'] = _error
-        _documents.append(_row)
+        _documents.append(_row)${startupAudit ? "\n    _value['startupAudit'] = _qs_audit(_app)" : ""}
     print('FMCAD_QUEUE_INSTANCE ' + _qi_json.dumps(_value))
     return _value
 `;
@@ -513,6 +658,98 @@ def run(_context: str) -> dict[str, object]:
     !!identity && ["", "SelectCommand"].includes(identity.activeCommand!);
   function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+  function isStartupAudit(value: unknown): value is StartupSdkAudit {
+    const manifestObject = (raw: string): boolean => {
+      try {
+        if (!isRecord(JSON.parse(raw))) return false;
+        // JSON.parse checks grammar, but discards duplicate keys and permits
+        // overflow to Infinity. Scan complete lexical tokens to retain native
+        // object_pairs_hook/finite-float semantics without executing metadata.
+        const containers: Array<Set<string> | null> = [];
+        for (const match of raw.matchAll(/"(?:\\[\s\S]|[^"\\])*"|[{}\[\]]|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g)) {
+          const token = match[0];
+          if (token === "{") containers.push(new Set());
+          else if (token === "[") containers.push(null);
+          else if (token === "}" || token === "]") containers.pop();
+          else if (token.startsWith('"')) {
+            let cursor = match.index + token.length;
+            while (" \t\r\n".includes(raw[cursor] ?? "\0")) cursor++;
+            if (raw[cursor] === ":") {
+              const keys = containers.at(-1);
+              const key = JSON.parse(token) as string;
+              if (!keys || keys.has(key)) return false;
+              keys.add(key);
+            }
+          } else if (/[.eE]/.test(token) && !Number.isFinite(Number(token)))
+            return false;
+        }
+        return true;
+      } catch { return false; }
+    };
+    const exact = (row: unknown, keys: readonly string[]): row is Record<string, unknown> =>
+      isRecord(row) &&
+      isDeepStrictEqual(Object.keys(row).sort(), [...keys].sort());
+    const text = (raw: unknown, limit: number, absolute = false): raw is string =>
+      typeof raw === "string" && !!raw && !raw.includes("\0") &&
+      Buffer.byteLength(raw, "utf8") <= limit &&
+      Buffer.from(raw, "utf8").toString("utf8") === raw &&
+      (!absolute || path.posix.isAbsolute(raw) ||
+        /^[a-z]:[\\/]/i.test(raw) || raw.startsWith("\\\\"));
+    const size = (raw: unknown) => Buffer.byteLength(
+      JSON.stringify(raw).replace(/[\u007f-\uffff]/g,
+        (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0")),
+      "utf8",
+    );
+    if (!exact(value, ["kind", "version", "applicationVersion", "preferences", "scripts"]) ||
+        value["kind"] !== "fmcad-startup-sdk-audit" || value["version"] !== 1 ||
+        !text(value["applicationVersion"], 65536) ||
+        !exact(value["preferences"], ["defaultPathForScriptsAndAddIns"]) ||
+        !text(value["preferences"]["defaultPathForScriptsAndAddIns"], 65536, true) ||
+        !exact(value["scripts"], ["countBefore", "countAfter", "items"]))
+      return false;
+    const scripts = value["scripts"];
+    if (!Number.isSafeInteger(scripts["countBefore"]) ||
+        (scripts["countBefore"] as number) < 0 ||
+        (scripts["countBefore"] as number) > 1024 ||
+        scripts["countAfter"] !== scripts["countBefore"] ||
+        !Array.isArray(scripts["items"]) ||
+        scripts["items"].length !== scripts["countBefore"])
+      return false;
+    const names = new Set([
+      "AppStoreScriptSourceLocation", "OtherInstalledScriptSourceLocation",
+      "UserDefinedScriptSourceLocation", "InternalScriptSourceLocation",
+      "SamplesScriptSourceLocation", "LinkedScriptSourceLocation",
+    ]);
+    const locations = new Map<string, number>();
+    const values = new Map<number, string>();
+    for (const [index, row] of scripts["items"].entries()) {
+      if (!exact(row, ["index", "folder", "location", "isAddIn", "isRunOnStartup",
+        "isRunning", "isVisible", "manifest"]) || row["index"] !== index ||
+          !text(row["folder"], 65536, true) ||
+          typeof row["isAddIn"] !== "boolean" ||
+          (row["isAddIn"] ? typeof row["isRunOnStartup"] !== "boolean" : row["isRunOnStartup"] !== null) ||
+          typeof row["isRunning"] !== "boolean" || typeof row["isVisible"] !== "boolean" ||
+          !exact(row["location"], ["name", "value"]) ||
+          typeof row["location"]["name"] !== "string" ||
+          !names.has(row["location"]["name"]) ||
+          !Number.isSafeInteger(row["location"]["value"]) ||
+          !exact(row["manifest"], ["content", "sha256", "parseStatus"]))
+        return false;
+      const location = row["location"];
+      const name = location["name"] as string, number = location["value"] as number;
+      if ((locations.has(name) && locations.get(name) !== number) ||
+          (values.has(number) && values.get(number) !== name))
+        return false;
+      locations.set(name, number); values.set(number, name);
+      const manifest = row["manifest"];
+      if (!text(manifest["content"], 256 * 1024) ||
+          manifest["parseStatus"] !== "json-object" ||
+          manifest["sha256"] !== hash(manifest["content"]))
+        return false;
+      if (!manifestObject(manifest["content"])) return false;
+    }
+    return size(value) <= 4 * 1024 * 1024;
   }
   function isProbeIdentity(value: unknown): value is FusionIdentity {
     if (
@@ -657,6 +894,7 @@ def run(_context: str) -> dict[str, object]:
       assertCurrent,
       diagnosticPath,
       documentSelector,
+      startupAudit,
       mapPath = fusionPath,
     }: ProbeOptions = {},
   ) {
@@ -664,6 +902,10 @@ def run(_context: str) -> dict[str, object]:
     client.server.timeoutMs = Math.min(previousTimeout, 15000);
     let output: ProbeOutput;
     try {
+      if (startupAudit !== undefined && startupAudit !== true)
+        fail("INSTANCE_UNAVAILABLE", "Closed startup audit option must be true or absent");
+      if (startupAudit && (!receiptPath || !client.prepareCallTool))
+        fail("INSTANCE_UNAVAILABLE", "Startup audit requires the original bound receipt and prepared fixed probe");
       if (receiptPath) {
         if (!isRecord(binding) || Object.keys(binding).length === 0)
           fail(
@@ -693,6 +935,7 @@ def run(_context: str) -> dict[str, object]:
       const identitySource = probeScript(
         isRecord(documentSelector) &&
           documentSelector["kind"] === "saved-document-metadata",
+        startupAudit,
       );
       const wrapper =
         documentSelector !== undefined
@@ -808,10 +1051,14 @@ def run(_context: str) -> dict[str, object]:
       if (diagnosticPath)
         durable(diagnosticPath, { ...diagnostic, ...wireEvidence });
       let receiptObservation: FusionIdentity | undefined;
+      let receiptOriginal: ProbeReceiptObservation | undefined;
       if (receiptPath) {
         let receipt: Record<string, unknown> = {};
+        let originalBytes: Buffer | undefined;
         try {
-          const value: unknown = readJson(receiptPath);
+          const value: unknown = startupAudit
+            ? decodeAdmissionJson((originalBytes = readBytes(receiptPath, MAX_JSON_RECORD_BYTES)).toString("utf8"))
+            : readJson(receiptPath);
           if (!isRecord(value)) throw new Error("Receipt is not an object");
           receipt = value;
         } catch {
@@ -888,6 +1135,9 @@ def run(_context: str) -> dict[str, object]:
             "Source-bound Fusion instance probe receipt is incomplete or mismatched",
           );
         receiptObservation = identity as FusionIdentity;
+        if (originalBytes)
+          receiptOriginal = Object.freeze({ path: receiptPath,
+            sha256: hash(originalBytes), bytes: Uint8Array.from(originalBytes) });
       }
       if (!lines.length && !receiptObservation)
         fail(
@@ -940,6 +1190,13 @@ def run(_context: str) -> dict[str, object]:
         );
       }
       const result = receiptObservation ?? results[0]!;
+      if (startupAudit && (!receiptObservation ||
+          !isDeepStrictEqual(Object.keys(result).sort(),
+            ["pid", "birth", "version", "activeCommand", "documents", "startupAudit",
+              ...(documentSelector !== undefined ? ["documentState"] : [])].sort()) ||
+          !isStartupAudit(result.startupAudit) ||
+          result.startupAudit.applicationVersion !== result.version))
+        fail("INSTANCE_UNAVAILABLE", "Original bound startup SDK audit is missing or malformed");
       if (diagnosticPath)
         durable(diagnosticPath, {
           ...diagnostic,
@@ -956,7 +1213,8 @@ def run(_context: str) -> dict[str, object]:
               }
             : { observationSource: "wire-marker" }),
         });
-      if (onObservation) await onObservation(result);
+      if (onObservation) await onObservation(result, receiptOriginal);
+      if (startupAudit) assertCurrent?.();
       if (requireIdle && !idle(result))
         throw Object.assign(
           new Error("An interactive Fusion command is open"),
