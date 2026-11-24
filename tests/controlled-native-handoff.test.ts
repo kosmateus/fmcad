@@ -10,6 +10,7 @@ import type { ControlledFusionBootstrapPorts } from "../src/controlled-fusion-bo
 import type { OwnedFusionBootstrapPorts } from "../src/owned-fusion-bootstrap";
 import {
   createControlledFusionNativeHandoff,
+  createTrustedNativeInstallation,
   type ControlledNativeHandoffOptions,
   createOwnedNativeReboundObserver,
   type OwnedNativeReboundOptions,
@@ -64,6 +65,35 @@ function ownedPins(): OwnedNativeReboundOptions {
     },
   };
 }
+test("trusted installer exposes installation only and never claims a globally clean host", () => {
+  const { allDiscoveryRoots, ...base } = pins();
+  const options = { ...base, observedDiscoveryRoots: allDiscoveryRoots };
+  const port = createTrustedNativeInstallation(options);
+  assert.deepEqual(Object.keys(port), [
+    "qualifyNativeInstallationAfterDeath",
+    "datahostTrustModel",
+    "globalCleanHost",
+  ]);
+  assert.equal(port.datahostTrustModel, "controlled-native-runtime-v1");
+  assert.equal(port.globalCleanHost, "NOT_PROVEN");
+  assert.throws(() =>
+    createTrustedNativeInstallation({ ...options, observedDiscoveryRoots: [] }),
+  );
+  assert.throws(
+    () =>
+      createTrustedNativeInstallation(
+        Object.assign({}, options, { allDiscoveryRoots }),
+      ),
+    /Separate trusted installation/,
+  );
+  assert.throws(
+    () =>
+      createTrustedNativeInstallation(
+        Object.assign({}, options, { owned: ownedPins().owned }),
+      ),
+    /Separate trusted installation/,
+  );
+});
 test("owned readonly port exposes no mutating operations and requires exact distinct original mappings", () => {
   assert.throws(
     () =>
@@ -721,6 +751,14 @@ test("normal staged helper loads without workspace packages and structurally sup
     "./execution/controlled-native-handoff.js",
   ) as typeof import("../packages/node-adapters/src/execution/controlled-native-handoff");
   const factory = staged.createControlledFusionNativeHandoff(pins());
+  const { allDiscoveryRoots, ...trustedBase } = pins();
+  const installer = staged.createTrustedNativeInstallation({
+    ...trustedBase,
+    observedDiscoveryRoots: allDiscoveryRoots,
+  });
+  assert.equal(installer.globalCleanHost, "NOT_PROVEN");
+  assert.equal(installer.datahostTrustModel, "controlled-native-runtime-v1");
+  assert.equal("rebindNative" in installer, false);
   assert.deepEqual(
     Object.keys(staged.createOwnedNativeReboundObserver(ownedPins())),
     ["observeNativeRebound", "assertOriginalOwnedReboundWitness"],

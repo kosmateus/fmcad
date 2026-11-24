@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   createControlledFusionNativeHandoff,
+  createTrustedNativeInstallation,
   type ControlledNativeHandoffOptions,
   createOwnedNativeReboundObserver,
   type OwnedNativeReboundOptions,
@@ -394,9 +395,12 @@ test(
         ),
         heldLease: { async assertCurrent() {}, fence() {} },
       };
-      const installed = await createControlledFusionNativeHandoff(
-        base,
-      ).qualifyNativeInstallationAfterDeath({
+      const { allDiscoveryRoots: installationRoots, ...installationBase } =
+        base;
+      const installed = await createTrustedNativeInstallation({
+        ...installationBase,
+        observedDiscoveryRoots: installationRoots,
+      }).qualifyNativeInstallationAfterDeath({
         old: f.old,
         qualifiedPackagePins: base.qualified,
       });

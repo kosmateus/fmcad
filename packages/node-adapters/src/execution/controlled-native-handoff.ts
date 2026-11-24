@@ -84,12 +84,14 @@ export interface OwnedNativeReboundOriginals {
   /** Also allowlist this path in ROOT's native reader/transcript mappings. */
   readonly auditPath: string;
 }
-export interface OwnedNativeReboundOptions extends Omit<
+export interface TrustedNativeInstallationOptions extends Omit<
   ControlledNativeHandoffOptions,
   "allDiscoveryRoots"
 > {
   /** Observed, protected source scope only; no global loader completeness claim. */
   readonly observedDiscoveryRoots: readonly string[];
+}
+export interface OwnedNativeReboundOptions extends TrustedNativeInstallationOptions {
   readonly scopeKind: "controlled-native-runtime-v1";
   readonly owned: OwnedNativeReboundOriginals;
 }
@@ -208,9 +210,25 @@ export function createOwnedNativeReboundObserver(
     assertOriginalOwnedReboundWitness: ports.assertOriginalOwnedReboundWitness,
   });
 }
+/** Observed protected roots only; this does not establish global host isolation. */
+export function createTrustedNativeInstallation(
+  options: TrustedNativeInstallationOptions,
+) {
+  if (
+    "allDiscoveryRoots" in options ||
+    "owned" in options ||
+    "scopeKind" in options
+  )
+    throw new Error("Separate trusted installation observed scope required");
+  const { qualifyNativeInstallationAfterDeath } = createHandoff(options);
+  return Object.freeze({
+    qualifyNativeInstallationAfterDeath,
+    datahostTrustModel: "controlled-native-runtime-v1" as const,
+    globalCleanHost: "NOT_PROVEN" as const,
+  });
+}
 function createHandoff(
-  options:
-    ControlledNativeHandoffOptions | Omit<OwnedNativeReboundOptions, "owned">,
+  options: ControlledNativeHandoffOptions | TrustedNativeInstallationOptions,
   ownedOptions?: OwnedNativeReboundOriginals,
 ) {
   const { heldLease: suppliedLease, ...data } = options;
@@ -222,7 +240,7 @@ function createHandoff(
     : suppliedLease;
   const pins = structuredClone(data);
   const owned = ownedOptions && structuredClone(ownedOptions);
-  const discoveryRoots =
+  const protectedSourceRoots =
     "observedDiscoveryRoots" in pins
       ? pins.observedDiscoveryRoots
       : pins.allDiscoveryRoots;
@@ -233,7 +251,7 @@ function createHandoff(
     pins.qualified.directory,
     pins.manifest.nativePath,
     pins.executable,
-    ...discoveryRoots,
+    ...protectedSourceRoots,
     ...Object.values(pins.paths),
   ])
     nativePath(name);
@@ -247,8 +265,8 @@ function createHandoff(
       pins.qualified.build ||
     !pins.nextGeneration.instance ||
     !pins.nextGeneration.epoch ||
-    !discoveryRoots.length ||
-    !discoveryRoots.some((root) => below(root, pins.qualified.directory))
+    !protectedSourceRoots.length ||
+    !protectedSourceRoots.some((root) => below(root, pins.qualified.directory))
   )
     throw new Error("Trusted complete qualified handoff pins required");
   record(pins.qualified, ["directory", "source", "build", "files"]);
@@ -301,7 +319,7 @@ function createHandoff(
     throw new Error(
       "Complete qualified audited package with safe unique Windows names required",
     );
-  for (const root of discoveryRoots)
+  for (const root of protectedSourceRoots)
     for (const outside of [
       pins.helperDirectory,
       pins.paths.stage,
@@ -309,7 +327,7 @@ function createHandoff(
     ])
       if (below(root, outside))
         throw new Error(
-          owned
+          "observedDiscoveryRoots" in pins
             ? "Qualified input/staging/backup must be outside observed source roots"
             : "Qualified input/staging/backup must be outside ALL discovery roots",
         );
@@ -379,7 +397,7 @@ function createHandoff(
         throw new Error("Allowlisted exact owned mapping required");
     }
     for (const root of [
-      ...discoveryRoots,
+      ...protectedSourceRoots,
       pins.helperDirectory,
       pins.qualified.directory,
     ])
