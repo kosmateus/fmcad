@@ -162,7 +162,8 @@ test("changed original bytes, foreign paths and invalid UTF-8 are not disabled-a
 function nativeFixture() {
   const f = fixture();
   let held = true,
-    changed = false;
+    changed = false,
+    beforeLaunch = true;
   let afterRead: (() => void) | undefined;
   const files = f.autorun.map((file, index) => ({
     ...file,
@@ -170,7 +171,9 @@ function nativeFixture() {
   }));
   const ports = {
     expected: f.expected,
-    assertBeforeLaunch() {},
+    assertBeforeLaunch() {
+      if (!beforeLaunch) throw new Error("Launch already began");
+    },
     assertHeld() {
       if (!held) throw new Error("Original lease revoked");
     },
@@ -217,6 +220,9 @@ function nativeFixture() {
     },
     onRead(callback: () => void) {
       afterRead = callback;
+    },
+    launch() {
+      beforeLaunch = false;
     },
   };
 }
@@ -265,5 +271,26 @@ test("asynchronous pretend held flags cannot attest startup inputs", async () =>
   await assert.rejects(
     prepareControlledStartupInputs(untypedCaller),
     /Original held/,
+  );
+  await assert.rejects(
+    prepareControlledStartupInputs({
+      ...f.ports,
+      assertBeforeLaunch: async () => {},
+    }),
+    /Original held/,
+  );
+});
+test("startup input capture cannot begin after launch or complete across the launch boundary", async () => {
+  const early = nativeFixture();
+  early.launch();
+  await assert.rejects(
+    prepareControlledStartupInputs(early.ports),
+    /Launch already began/,
+  );
+  const during = nativeFixture();
+  during.onRead(() => during.launch());
+  await assert.rejects(
+    prepareControlledStartupInputs(during.ports),
+    /Launch already began/,
   );
 });
