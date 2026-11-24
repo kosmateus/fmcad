@@ -84,6 +84,8 @@ export interface NormalObserverLaunchPins extends ControlledFusionLaunchPins {
   assertHeld(): void;
 }
 export interface OwnedAutoloadLaunchOriginals extends NormalObserverLaunchOriginals {
+  /** Original provision's admission protocol identity, not installed native code. */
+  readonly admissionPins: { readonly source: string; readonly build: string };
   readonly autorunOriginals: readonly [ControlledFile, ControlledFile];
   readonly discoveryOriginals: readonly ControlledFile[];
 }
@@ -324,9 +326,27 @@ function createLaunchAdapter(
   if (normalOptions && ownedOptions)
     throw new Error("Disjoint native launch roles required");
   const owned = ownedOptions && structuredClone(ownedOptions);
-  const normal =
-    (normalOptions || ownedOptions) &&
-    structuredClone(normalOptions || ownedOptions!);
+  const lifecycle = owned
+    ? (({ admissionPins, ...originals }) => {
+        void admissionPins;
+        return originals;
+      })(owned)
+    : normalOptions;
+  const normal = lifecycle && structuredClone(lifecycle);
+  if (owned) {
+    const admission = closed(owned.admissionPins, ["source", "build"]);
+    for (const key of ["source", "build"]) {
+      const value = admission[key];
+      if (
+        typeof value !== "string" ||
+        !value ||
+        value.length > 65536 ||
+        value.includes("\0") ||
+        Buffer.from(value, "utf8").toString("utf8") !== value
+      )
+        throw new Error("Exact original admission identity required");
+    }
+  }
   const normalProgram = normal
     ? Buffer.from(
         owned
@@ -397,7 +417,7 @@ function createLaunchAdapter(
     throw new Error("Qualified native launch pins required");
   const names = Object.keys(pins.installedFiles);
   if (
-    normal
+    normal && !owned
       ? !sha(pins.installedBuild)
       : pins.installedBuild !==
         bootstrapInstalledFilesDigest(pins.installedFiles)
@@ -708,6 +728,7 @@ function createLaunchAdapter(
       sourceDirectory: pins.sourceDirectory,
       installedDirectory: pins.installedDirectory,
       installedFiles: pins.installedFiles,
+      ...(owned ? { installedSource: pins.installedSource } : {}),
       executable: pins.executable,
       executableSha256: pins.executableSha256,
       arguments: pins.arguments,
@@ -727,8 +748,8 @@ function createLaunchAdapter(
                     discoveryOriginals: owned.discoveryOriginals.map(reference),
                   }
                 : {}),
-              source: pins.installedSource,
-              build: pins.installedBuild,
+              source: owned ? owned.admissionPins.source : pins.installedSource,
+              build: owned ? owned.admissionPins.build : pins.installedBuild,
             },
           }
         : {}),

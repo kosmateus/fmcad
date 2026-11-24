@@ -12,6 +12,7 @@ import {
   type NormalObserverLaunchPins,
 } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
 import { ownedAutoloadLaunchNative } from "../packages/node-adapters/src/execution/owned-autoload-launch-native";
+import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import { normalObserverNativeBootstrap } from "../packages/node-adapters/src/execution/controlled-fusion-launch-native";
 
 const sha = (data: Uint8Array) =>
@@ -212,6 +213,10 @@ assert intent["provision"]["path"]==os.environ["FUSION_MCP_ADMISSION_PROVISION"]
 assert intent["generation"]=={"instance":provision["instance"],"epoch":provision["epoch"]}
 assert [r["runOnStartup"] for r in profile["loadedScripts"]]==[False,True]
 correct=(intent["process"]=={"pid":os.getpid(),"birth":birth} and provision["pid"]`,
+  )
+  .replace(
+    '"source":provision["source"],"build":provision["build"],',
+    '"source":provision["source"],"build":provision["build"],"installedSource":intent["installed"]["source"],"installedDigest":hashlib.sha256(json.dumps(intent["installed"]["files"],sort_keys=True,separators=(",",":")).encode()).hexdigest(),',
   );
 const waitReport = String.raw`
 import json,sys,time
@@ -302,10 +307,15 @@ test(
         ),
         hash,
       );
-    function fixture(withWindow = false) {
+    function fixture(
+      withWindow = false,
+      admissionSource = config.source,
+      admissionBuild = protocolBuild,
+    ) {
       const f = native(config, setup, {
         ...config,
-        build: protocolBuild,
+        source: admissionSource,
+        build: admissionBuild,
         ...(withWindow ? { windowProgram: ownWindow } : {}),
       }) as {
         root: string;
@@ -395,7 +405,11 @@ test(
       return { f, pins, report };
     }
     function ownedFixture() {
-      const { f, pins, report } = fixture();
+      const { f, pins, report } = fixture(
+        false,
+        "7".repeat(40),
+        "8".repeat(64),
+      );
       const values = native(
         config,
         String.raw`
@@ -434,6 +448,7 @@ print(json.dumps({"refs":out}))
       const { normal, ...base } = pins;
       const ownedPins: OwnedAutoloadLaunchPins = {
         ...base,
+        installedBuild: bootstrapInstalledFilesDigest(config.installedFiles),
         arguments: ["-I", "-S", "-B", "-c", ownedChildProgram, report],
         originalPaths: [
           ...base.originalPaths,
@@ -447,6 +462,7 @@ print(json.dumps({"refs":out}))
         },
         owned: {
           ...normal,
+          admissionPins: { source: "7".repeat(40), build: "8".repeat(64) },
           autorunOriginals: [refs[0]!, refs[1]!],
           discoveryOriginals: [refs[2]!],
         },
@@ -790,6 +806,12 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
         assert.equal(first["pid"], result.process.pid);
         assert.equal(first["birth"], result.process.birth);
         assert.equal(first["bootstrapIntent"], pins.paths.intent);
+        assert.equal(first["source"], pins.owned.admissionPins.source);
+        assert.equal(first["build"], pins.owned.admissionPins.build);
+        assert.equal(first["installedSource"], pins.installedSource);
+        assert.equal(first["installedDigest"], pins.installedBuild);
+        assert.notEqual(first["source"], first["installedSource"]);
+        assert.notEqual(first["build"], first["installedDigest"]);
         assert.deepEqual(first["sdkModules"], []);
         assert.equal(locked, true);
         assert.equal(result.startupProven, false);
@@ -798,6 +820,7 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
         );
         assert.equal(intent.version, 3);
         assert.equal(intent.mode, "owned-autoload-v1");
+        assert.equal(intent.installed.source, pins.installedSource);
         assert.deepEqual(intent.process, result.process);
         assert.equal(intent.provision.sha256, result.provision.sha256);
         assert.deepEqual(
@@ -818,6 +841,22 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
           adapter.launchAfterDeath(f.old, "f".repeat(32)),
           /replayed/,
         );
+      },
+    );
+    await t.test(
+      "owned admission mismatch refuses before CreateProcess without changing original provision",
+      async () => {
+        const { f, pins, report } = ownedFixture();
+        const before = fs.readFileSync(mapped(pins.paths.provision));
+        Object.assign(pins.owned.admissionPins, { source: "9".repeat(40) });
+        const adapter = createOwnedAutoloadLaunchAdapter(pins);
+        await assert.rejects(
+          adapter.launchAfterDeath(f.old, "b".repeat(32)),
+          ControlledFusionNativeError,
+        );
+        assert.deepEqual(fs.readFileSync(mapped(pins.paths.provision)), before);
+        assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
+        assert.equal(fs.existsSync(mapped(report)), false);
       },
     );
     await t.test(

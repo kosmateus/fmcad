@@ -13,6 +13,15 @@ old provision SHA, complete installed inventory, and fresh original output paths
 These reuse the native NORMAL lifecycle validation implementation, not its policy
 or authority. The separate native action is `owned-autoload-launch`.
 
+`owned.admissionPins` is required and closed to `source` and `build`. These are
+the original provision's admission protocol pins, independently of
+`installedSource` and the full `installedBuild` manifest digest. The original
+provision hash and native lifecycle/database checks bind them before process
+creation. The producer preserves both admission fields; the v3 intent's
+`installed.source` and `installed.files` describe the separately qualified native
+installation. There is no fallback from missing admission pins to installed
+identity. Manual and NORMAL constructors keep their existing contracts.
+
 `owned.autorunOriginals` must be exactly two `ControlledFile` originals;
 `owned.discoveryOriginals` must be nonempty. Each must be distinct and explicitly
 allowlisted in `originalPaths` and `mappedOriginalPaths`. They must not alias
