@@ -188,7 +188,7 @@ export function createControlledFusionNativeHandoff(
           part === "." ||
           part === ".." ||
           /[. ]$/.test(part) ||
-          /^(con|prn|aux|nul|com[1-9]|lpt[1-9])([.]|$)/i.test(part),
+          /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])([.]|$)/i.test(part),
       )
     )
       return false;

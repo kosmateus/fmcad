@@ -10,6 +10,7 @@ import {
 } from "../packages/node-adapters/src/execution/controlled-native-handoff";
 import { createControlledFusionLaunchAdapter } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+import { controlledNativeHandoffProgram } from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
 import type { ControlledProcess } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
 
 const fixturePinsPath = process.env["FMCAD_CONTROLLED_WINDOWS_FIXTURE_PINS"];
@@ -143,6 +144,66 @@ interface Owned {
   provisionSha256: string;
   pythonVersion: string;
 }
+
+test(
+  "Windows superscript devices refuse before helper import or filesystem effects",
+  {
+    skip:
+      !fixturePinsPath &&
+      "NOTRUN: explicit SDK-free Windows fixture pins required",
+  },
+  async (t) => {
+    assert.ok(fixturePinsPath);
+    const config = JSON.parse(
+      fs.readFileSync(fixturePinsPath, "utf8"),
+    ) as FixturePins;
+    const raw = fs.readFileSync(config.mappedManifest);
+    assert.equal(hash(raw), config.manifestSha256);
+    const original = JSON.parse(raw.toString("utf8")) as Record<string, string>;
+    assert.equal(
+      hash(fs.readFileSync(config.mappedNativePython)),
+      config.nativePythonSha256,
+    );
+    for (const device of ["COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"]) {
+      await t.test(device, () => {
+        for (const name of [
+          `lib/${device}`,
+          `lib/${device}.py`,
+          `lib/${device}/entry.py`,
+        ]) {
+          const files = { ...original, [name]: "a".repeat(64) };
+          const qualified = {
+            directory: "C:\\unused-owned-fixture",
+            source: config.source,
+            files,
+            build: bootstrapInstalledFilesDigest(files),
+          };
+          const result = spawnSync(
+            config.mappedNativePython,
+            ["-I", "-S", "-B", "-c", controlledNativeHandoffProgram],
+            {
+              cwd: config.mappedSourceDirectory,
+              input: JSON.stringify({
+                pins: { qualified },
+                action: "install",
+                input: {},
+              }),
+              encoding: "utf8",
+            },
+          );
+          assert.notEqual(result.status, 0, name);
+          assert.match(
+            result.stderr,
+            /Unsafe qualified Windows name\/hash/,
+            name,
+          );
+          assert.doesNotMatch(result.stderr, /KeyError|WinDLL|adsk/, name);
+          assert.equal(result.stdout, "");
+        }
+      });
+    }
+  },
+);
 
 test(
   "actual Windows qualified-install/six-field-rebind fixtures; NO Fusion SDK/UI/deployment",

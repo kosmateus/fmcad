@@ -42,7 +42,7 @@ for name,digest in q["files"].items():
         or re.fullmatch("[a-f0-9]{64}",digest) is None
         or re.search(r'[\x00-\x1f<>:"\\|?*]',name)
         or any(not part or part in (".","..") or part.endswith(("."," "))
-          or re.match(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])([.]|$)",part,re.I)
+          or re.match(r"^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])([.]|$)",part,re.I)
           for part in name.split("/"))):
         raise ValueError("Unsafe qualified Windows name/hash")
     parts=name.split("/")

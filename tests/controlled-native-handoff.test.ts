@@ -412,6 +412,99 @@ test("fixed native program independently refuses unsafe package pins before plat
   }
 });
 
+const superscriptDevicePaths = [
+  "COM¹",
+  "COM²",
+  "COM³",
+  "LPT¹",
+  "LPT²",
+  "LPT³",
+].flatMap((name) => [`lib/${name}`, `lib/${name}.py`, `lib/${name}/entry.py`]);
+
+test("Windows superscript device names refuse in the TypeScript validator in every path position", () => {
+  const options = pins();
+  for (const name of superscriptDevicePaths) {
+    const files = { ...options.qualified.files, [name]: "a".repeat(64) };
+    assert.throws(
+      () =>
+        createControlledFusionNativeHandoff({
+          ...options,
+          qualified: {
+            ...options.qualified,
+            files,
+            build: bootstrapInstalledFilesDigest(files),
+          },
+        }),
+      /safe unique Windows names/,
+      name,
+    );
+  }
+});
+
+test("exact native program refuses Windows superscript device names before platform or imports", () => {
+  const options = pins();
+  for (const name of superscriptDevicePaths) {
+    const files = { ...options.qualified.files, [name]: "a".repeat(64) };
+    const qualified = {
+      ...options.qualified,
+      files,
+      build: bootstrapInstalledFilesDigest(files),
+    };
+    const result = spawnSync(
+      "python3",
+      ["-I", "-S", "-B", "-c", controlledNativeHandoffProgram],
+      {
+        input: JSON.stringify({
+          pins: { qualified },
+          action: "install",
+          input: {},
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, /Unsafe qualified Windows name\/hash/, name);
+    assert.doesNotMatch(
+      result.stderr,
+      /Native Windows required|WinDLL|adsk/,
+      name,
+    );
+    assert.equal(result.stdout, "");
+  }
+});
+
+test("ordinary Unicode UTF-8 paths remain accepted by both package validators", () => {
+  const options = pins();
+  for (const name of ["lib/zażółć.py", "資料/通常.py", "lib/serial-¹.py"]) {
+    const files = { ...options.qualified.files, [name]: "a".repeat(64) };
+    const qualified = {
+      ...options.qualified,
+      files,
+      build: bootstrapInstalledFilesDigest(files),
+    };
+    assert.ok(createControlledFusionNativeHandoff({ ...options, qualified }));
+    const result = spawnSync(
+      "python3",
+      ["-I", "-S", "-B", "-c", controlledNativeHandoffProgram],
+      {
+        input: JSON.stringify({
+          pins: { qualified },
+          action: "install",
+          input: {},
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Native Windows required/, name);
+    assert.doesNotMatch(
+      result.stderr,
+      /Unsafe qualified|case alias|adsk/,
+      name,
+    );
+  }
+});
+
 test("rejecting async lease is denied once without native effects or unhandled rejection in an actual strict Node subprocess", () => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "native-handoff-deny-"),
