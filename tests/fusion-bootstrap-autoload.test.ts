@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   planControlledFusionAutoload,
   matchesControlledFusionAutoload,
+  planNormalObserverAutoload,
 } from "../packages/node-adapters/src/execution/fusion-bootstrap-autoload";
 
 const fork = "C:/Users/operator/AddIns/AutodeskFusionMCP/AutodeskFusionMCP.py";
@@ -118,4 +119,85 @@ test("unknown registration schemas and malformed bytes are refused instead of dr
       code: "FUSION_AUTOLOAD_UNPROVEN",
     },
   );
+});
+
+test("normal observer enables only the exact fork and preserves every foreign registration", () => {
+  const value = fixture();
+  value.loadedScripts[0]!.isRemoved = true;
+  const original = bytes(value);
+  const plan = planNormalObserverAutoload(
+    original,
+    fork.toUpperCase().replaceAll("/", "\\"),
+  );
+  assert.equal(plan.kind, "normal-observer-autoload-plan-v1");
+  assert.equal(plan.authority, "NONE");
+  assert.equal(plan.isolation, "NOT_PROVEN");
+  assert.equal(plan.forkStart, "normal-startup");
+  assert.equal(plan.installedForkEntry, fork);
+  assert.equal(
+    plan.originalSha256,
+    createHash("sha256").update(original).digest("hex"),
+  );
+  const output = plan.registrationBytes();
+  assert.equal(
+    plan.plannedSha256,
+    createHash("sha256").update(output).digest("hex"),
+  );
+  const planned = JSON.parse(output.toString());
+  assert.deepEqual(
+    planned.loadedScripts,
+    value.loadedScripts.map((row, index) =>
+      index === 2 ? { ...row, runOnStartup: true } : row,
+    ),
+  );
+  output.fill(0);
+  original.fill(0);
+  assert.deepEqual(JSON.parse(plan.registrationBytes().toString()), planned);
+});
+
+test("normal observer startup is never accepted as a controlled all-OFF registration", () => {
+  const original = planControlledFusionAutoload(
+    bytes(fixture()),
+    fork,
+  ).registrationBytes();
+  assert.equal(matchesControlledFusionAutoload(original, fork), true);
+  const observer = planNormalObserverAutoload(original, fork);
+  assert.equal(
+    matchesControlledFusionAutoload(observer.registrationBytes(), fork),
+    false,
+  );
+  assert.equal(matchesControlledFusionAutoload(original, fork), true);
+});
+
+test("normal observer cannot select by basename or enable a missing, removed or duplicate fork", () => {
+  const missing = fixture();
+  missing.loadedScripts[2]!.path =
+    "D:/Other/AutodeskFusionMCP/AutodeskFusionMCP.py";
+  const removed = fixture();
+  removed.loadedScripts[2]!.isRemoved = true;
+  const duplicate = fixture();
+  duplicate.loadedScripts.push({
+    ...duplicate.loadedScripts[2]!,
+    path: fork.toUpperCase(),
+  });
+  for (const input of [missing, removed, duplicate]) {
+    const original = bytes(input);
+    assert.throws(() => planNormalObserverAutoload(original, fork), {
+      code: "FUSION_AUTOLOAD_UNPROVEN",
+    });
+    assert.deepEqual(JSON.parse(original.toString()), input);
+  }
+});
+
+test("normal observer refuses malformed and unknown profile data rather than dropping it", () => {
+  for (const input of [
+    Buffer.from([0xff]),
+    Buffer.from('{"loadedScripts":[],"loadedScripts":[]}'),
+    bytes({ loadedScripts: fixture().loadedScripts, extra: true }),
+    bytes({ loadedScripts: [{ ...fixture().loadedScripts[2]!, extra: true }] }),
+  ]) {
+    assert.throws(() => planNormalObserverAutoload(input, fork), {
+      code: "FUSION_AUTOLOAD_UNPROVEN",
+    });
+  }
 });

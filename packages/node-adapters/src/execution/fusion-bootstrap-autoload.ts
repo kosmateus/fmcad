@@ -129,3 +129,41 @@ export function matchesControlledFusionAutoload(
   }
   return found === 1;
 }
+
+/**
+ * Ordinary observer startup only. This is deliberately NOT the controlled
+ * all-OFF plan: foreign registrations are preserved and no isolation is proved.
+ * Publication still requires the supported stopped-process boundary; the new
+ * process provision must be bound before its suspended main thread resumes.
+ */
+export function planNormalObserverAutoload(
+  original: Uint8Array,
+  installedForkEntry: string,
+) {
+  const expected = entryPath(installedForkEntry);
+  const rows = registration(original);
+  const matches = rows.filter(
+    (row) =>
+      path.win32.isAbsolute(row.path) && entryPath(row.path) === expected,
+  );
+  const match = matches[0];
+  if (matches.length !== 1 || !match || match.isRemoved) refuse();
+  const planned = rows.map((row) =>
+    row === match ? { ...row, runOnStartup: true } : row,
+  );
+  const bytes = Buffer.from(
+    JSON.stringify({ loadedScripts: planned }, null, 2) + "\n",
+  );
+  return Object.freeze({
+    kind: "normal-observer-autoload-plan-v1" as const,
+    authority: "NONE" as const,
+    isolation: "NOT_PROVEN" as const,
+    forkStart: "normal-startup" as const,
+    originalSha256: digest(original),
+    plannedSha256: digest(bytes),
+    installedForkEntry: match.path,
+    registrationBytes() {
+      return Buffer.from(bytes);
+    },
+  });
+}
