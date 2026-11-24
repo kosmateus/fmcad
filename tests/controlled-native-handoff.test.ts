@@ -19,7 +19,14 @@ function pins(): ControlledNativeHandoffOptions {
       "AutodeskFusionMCP.py",
       "addon_runtime.py",
       "lib/bootstrap_entry.py",
-      ...Array.from({ length: 97 }, (_, i) => `fixture-${i}.txt`),
+      "lib/startup_audit.py",
+      "lib/physical_authority.py",
+      "lib/rebaseline_fence.py",
+      "lib/request_admission.py",
+      "fusion_bridge/dispatch.py",
+      "fusion_bridge/runtime.py",
+      "fusion_bridge/admission_runtime.py",
+      "fixture.txt",
     ].map((name) => [name, "a".repeat(64)]),
   );
   const paths = Object.fromEntries(
@@ -82,6 +89,62 @@ function pins(): ControlledNativeHandoffOptions {
   };
 }
 
+test(
+  "approved startup-audit package retains the complete source/build manifest",
+  { skip: !process.env["FMCAD_CONTROLLED_WINDOWS_FIXTURE_PINS"] },
+  () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(
+        process.env["FMCAD_CONTROLLED_WINDOWS_FIXTURE_PINS"]!,
+        "utf8",
+      ),
+    ) as {
+      mappedManifest: string;
+      source: string;
+      legacyMappedManifest: string;
+    };
+    const files = JSON.parse(
+      fs.readFileSync(fixture.mappedManifest, "utf8"),
+    ) as Record<string, string>;
+    assert.equal(fixture.source, "8818d2c8dcbcc9988992da561f276ea9b6a0e241");
+    assert.equal(Object.keys(files).length, 104);
+    assert.equal(
+      bootstrapInstalledFilesDigest(files),
+      "38d188040c6ffc0b55fe9aeb5cc10521512ce85a13823b8ab96420976c8bae88",
+    );
+    const options = pins();
+    assert.ok(
+      createControlledFusionNativeHandoff({
+        ...options,
+        qualified: {
+          ...options.qualified,
+          files,
+          source: fixture.source,
+          build: bootstrapInstalledFilesDigest(files),
+        },
+      }),
+    );
+    const legacy = JSON.parse(
+      fs.readFileSync(fixture.legacyMappedManifest, "utf8"),
+    ) as Record<string, string>;
+    assert.equal(Object.keys(legacy).length, 100);
+    assert.equal(legacy["lib/startup_audit.py"], undefined);
+    assert.throws(
+      () =>
+        createControlledFusionNativeHandoff({
+          ...options,
+          qualified: {
+            ...options.qualified,
+            files: legacy,
+            source: "d52dbe4d3b4540b5fe3af72e762c4337a9f6589d",
+            build: bootstrapInstalledFilesDigest(legacy),
+          },
+        }),
+      /audited package/,
+    );
+  },
+);
+
 test("private factory denies incomplete discovery, in-discovery backup/stage and nonqualified build/data", () => {
   const original = pins();
   assert.ok(createControlledFusionNativeHandoff(original));
@@ -109,6 +172,142 @@ test("private factory denies incomplete discovery, in-discovery backup/stage and
     },
   ])
     assert.throws(() => createControlledFusionNativeHandoff(changed));
+});
+
+test("qualified file count follows original full-map pins, not a fixed package size", () => {
+  const options = pins();
+  for (const additions of [0, 2, 93]) {
+    const files = {
+      ...options.qualified.files,
+      ...Object.fromEntries(
+        Array.from({ length: additions }, (_, i) => [
+          `resources/qualified-${i}.txt`,
+          "a".repeat(64),
+        ]),
+      ),
+    };
+    assert.ok(
+      createControlledFusionNativeHandoff({
+        ...options,
+        qualified: {
+          ...options.qualified,
+          files,
+          build: bootstrapInstalledFilesDigest(files),
+        },
+      }),
+    );
+  }
+});
+
+test("unsafe Windows names, case aliases, missing audit/core and oversized maps refuse even with recomputed digest", () => {
+  const options = pins();
+  for (const name of [
+    "../escape.py",
+    "/absolute.py",
+    "lib//other.py",
+    "lib/./other.py",
+    "lib/../other.py",
+    "lib\\other.py",
+    "C:other.py",
+    "nul.txt",
+    "lib/COM1.py",
+    "trailing.",
+    "trailing ",
+    "lib/other?.py",
+    "lib/\0.py",
+    "LIB/other.py",
+    "lib/STARTUP_AUDIT.py",
+    "lib",
+  ]) {
+    const files = { ...options.qualified.files, [name]: "a".repeat(64) };
+    assert.throws(
+      () =>
+        createControlledFusionNativeHandoff({
+          ...options,
+          qualified: {
+            ...options.qualified,
+            files,
+            build: bootstrapInstalledFilesDigest(files),
+          },
+        }),
+      /safe unique Windows names/,
+      name,
+    );
+  }
+  for (const name of Object.keys(options.qualified.files).filter(
+    (name) => name !== "fixture.txt",
+  )) {
+    const files = { ...options.qualified.files };
+    delete files[name];
+    assert.throws(
+      () =>
+        createControlledFusionNativeHandoff({
+          ...options,
+          qualified: {
+            ...options.qualified,
+            files,
+            build: bootstrapInstalledFilesDigest(files),
+          },
+        }),
+      /audited package/,
+      name,
+    );
+  }
+  const files = Object.fromEntries(
+    Array.from({ length: 4097 }, (_, i) => [`file-${i}`, "a".repeat(64)]),
+  );
+  assert.throws(() =>
+    createControlledFusionNativeHandoff({
+      ...options,
+      qualified: {
+        ...options.qualified,
+        files,
+        build: bootstrapInstalledFilesDigest(files),
+      },
+    }),
+  );
+});
+
+test("caller JSON cannot replace original source/build/full map or truncate evolution after factory capture", async () => {
+  for (const field of [
+    "source",
+    "build",
+    "missing",
+    "extra",
+    "renamed",
+    "changed",
+  ]) {
+    const options = pins();
+    let leaseCalls = 0;
+    const factory = createControlledFusionNativeHandoff({
+      ...options,
+      heldLease: {
+        async assertCurrent() {
+          leaseCalls++;
+        },
+        fence() {},
+      },
+    });
+    const qualified = { ...options.qualified };
+    const files = { ...qualified.files };
+    if (field === "source") qualified.source = "0".repeat(40);
+    if (field === "build") qualified.build = "0".repeat(64);
+    if (field === "missing") delete files["fixture.txt"];
+    if (field === "extra") files["extra.txt"] = "0".repeat(64);
+    if (field === "renamed") {
+      delete files["fixture.txt"];
+      files["renamed.txt"] = "a".repeat(64);
+    }
+    if (field === "changed") files["fixture.txt"] = "0".repeat(64);
+    await assert.rejects(
+      factory.qualifyNativeInstallationAfterDeath({
+        old: options.old,
+        qualifiedPackagePins: { ...qualified, files },
+      }),
+      /original old tuple\/qualified package differs/,
+    );
+    assert.equal(leaseCalls, 0);
+  }
 });
 
 test("foreign/deserialized rebind records are never original private witnesses", async () => {
@@ -174,6 +373,43 @@ test("native program parses as Python without executing imports, source installa
     },
   );
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("fixed native program independently refuses unsafe package pins before platform/import/effects", () => {
+  const qualified = pins().qualified;
+  const missingAudit = { ...qualified.files };
+  delete missingAudit["lib/startup_audit.py"];
+  for (const changed of [
+    { ...qualified, source: "not-a-source" },
+    { ...qualified, build: "not-a-build" },
+    { ...qualified, files: missingAudit },
+    {
+      ...qualified,
+      files: { ...qualified.files, "LIB/other.py": "a".repeat(64) },
+    },
+    {
+      ...qualified,
+      files: { ...qualified.files, "lib/nul.txt": "a".repeat(64) },
+    },
+    { ...qualified, files: { ...qualified.files, lib: "a".repeat(64) } },
+  ]) {
+    const result = spawnSync(
+      "python3",
+      ["-I", "-S", "-B", "-c", controlledNativeHandoffProgram],
+      {
+        input: JSON.stringify({
+          pins: { qualified: changed },
+          action: "install",
+          input: {},
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /qualified|Qualified/);
+    assert.doesNotMatch(result.stderr, /Native Windows required|WinDLL|adsk/);
+    assert.equal(result.stdout, "");
+  }
 });
 
 test("rejecting async lease is denied once without native effects or unhandled rejection in an actual strict Node subprocess", () => {

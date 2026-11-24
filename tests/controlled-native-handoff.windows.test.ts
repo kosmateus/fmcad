@@ -23,6 +23,7 @@ interface FixturePins {
   mappedSourceDirectory: string;
   source: string;
   mappedManifest: string;
+  sourceManifest: string;
   manifestSha256: string;
 }
 function mapped(name: string) {
@@ -36,7 +37,7 @@ p=json.load(sys.stdin);root=Path(tempfile.mkdtemp(prefix="sol-native-handoff-"))
 subprocess.run([str(Path(os.environ["SystemRoot"])/"System32"/"icacls.exe"),str(root),
  "/inheritance:r","/grant:r",getpass.getuser()+":(OI)(CI)F"],check=True,stdout=subprocess.PIPE)
 helper=root/"qualified";shutil.copytree(p["sourceDirectory"],helper,copy_function=shutil.copyfile)
-manifest=root/"manifest.json";manifest.write_bytes((Path(p["sourceDirectory"]).parent/"package-manifest.json").read_bytes())
+manifest=root/"manifest.json";manifest.write_bytes(Path(p["sourceManifest"]).read_bytes())
 discovery=root/"discovery";discovery.mkdir();other=root/"other-discovery";other.mkdir()
 target=discovery/"Fork";shutil.copytree(helper,target,copy_function=shutil.copyfile)
 (target/"README.md").write_bytes((target/"README.md").read_bytes()+b"\nlegacy owned fixture\n")
@@ -161,6 +162,12 @@ test(
       string,
       string
     >;
+    assert.equal(config.source, "8818d2c8dcbcc9988992da561f276ea9b6a0e241");
+    assert.equal(Object.keys(files).length, 104);
+    assert.equal(
+      bootstrapInstalledFilesDigest(files),
+      "38d188040c6ffc0b55fe9aeb5cc10521512ce85a13823b8ab96420976c8bae88",
+    );
     const make = async (mode = "success") => {
       const own = native(config, setup, config) as unknown as Owned;
       t.diagnostic(
@@ -375,8 +382,44 @@ test(
         assert.equal(fs.existsSync(mapped(f.paths.stage)), false);
       },
     );
+    for (const mode of [
+      "missing",
+      "extra",
+      "renamed",
+      "changed",
+      "case-changed",
+    ]) {
+      await t.test(
+        `qualified helper ${mode} refuses before staging or moving owned installation`,
+        async () => {
+          const f = await make();
+          const root = mapped(f.own.helper);
+          const original = path.join(root, "README.md");
+          if (mode === "missing") fs.unlinkSync(original);
+          if (mode === "extra")
+            fs.writeFileSync(
+              path.join(root, "unqualified-extra.txt"),
+              "not pinned",
+            );
+          if (mode === "renamed")
+            fs.renameSync(original, path.join(root, "renamed-readme.md"));
+          if (mode === "changed")
+            fs.appendFileSync(original, "\nchanged qualified input");
+          if (mode === "case-changed") {
+            fs.renameSync(original, path.join(root, "case-intermediate.txt"));
+            fs.renameSync(
+              path.join(root, "case-intermediate.txt"),
+              path.join(root, "readme.md"),
+            );
+          }
+          await assert.rejects(f.install());
+          assert.equal(fs.existsSync(mapped(f.paths.backup)), false);
+          assert.equal(fs.existsSync(mapped(f.paths.stage)), false);
+        },
+      );
+    }
     await t.test(
-      "full old tree including unknown files is backed up outside ALL discovery roots; new source is exact100",
+      "full old tree including unknown files is backed up outside ALL discovery roots; new source matches every qualified file",
       async () => {
         const f = await make();
         const receipt = await f.install();

@@ -3,7 +3,7 @@
  * only from the closed qualified package. No add-in entrypoint is executed.
  */
 export const controlledNativeHandoffProgram = String.raw`
-import base64,ctypes,hashlib,json,math,os,sqlite3,sys
+import base64,ctypes,hashlib,json,math,os,re,sqlite3,sys
 from ctypes import wintypes as w
 from pathlib import Path
 
@@ -25,6 +25,36 @@ if len(raw)>4194304:raise ValueError("Envelope budget")
 e=decode(raw)
 if set(e)!={"pins","action","input"}:raise ValueError("Closed handoff envelope required")
 p,action,v=e["pins"],e["action"],e["input"]
+q=p["qualified"]
+required={"AutodeskFusionMCP.py","addon_runtime.py","lib/bootstrap_entry.py",
+ "lib/startup_audit.py","lib/physical_authority.py","lib/rebaseline_fence.py",
+ "lib/request_admission.py","fusion_bridge/dispatch.py","fusion_bridge/runtime.py",
+ "fusion_bridge/admission_runtime.py"}
+if (type(q) is not dict or set(q)!={"directory","source","build","files"}
+    or type(q["source"]) is not str or re.fullmatch("[a-f0-9]{40}",q["source"]) is None
+    or type(q["build"]) is not str or re.fullmatch("[a-f0-9]{64}",q["build"]) is None
+    or type(q["files"]) is not dict or not 0<len(q["files"])<=4096
+    or not required.issubset(q["files"])):
+    raise ValueError("Complete qualified audited package required")
+aliases={}
+for name,digest in q["files"].items():
+    if (type(name) is not str or type(digest) is not str
+        or re.fullmatch("[a-f0-9]{64}",digest) is None
+        or re.search(r'[\x00-\x1f<>:"\\|?*]',name)
+        or any(not part or part in (".","..") or part.endswith(("."," "))
+          or re.match(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])([.]|$)",part,re.I)
+          for part in name.split("/"))):
+        raise ValueError("Unsafe qualified Windows name/hash")
+    parts=name.split("/")
+    for i in range(1,len(parts)+1):
+        prefix="/".join(parts[:i]);key=prefix.casefold()
+        if key in aliases and aliases[key]!=prefix:raise ValueError("Qualified Windows case alias")
+        aliases[key]=prefix
+file_keys={name.casefold()for name in q["files"]}
+for name in q["files"]:
+    parts=name.split("/")
+    if any("/".join(parts[:i]).casefold()in file_keys for i in range(1,len(parts))):
+        raise ValueError("Qualified file/directory alias")
 if sys.platform!="win32":raise RuntimeError("Native Windows required")
 sys.dont_write_bytecode=True
 k=ctypes.WinDLL("kernel32",use_last_error=True)
