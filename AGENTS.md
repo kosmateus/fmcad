@@ -2,6 +2,15 @@
 
 These explicit user requirements replace the generic `team-coordinator` staffing defaults for this project.
 
+## Autonomiczne decyzje techniczne
+
+- Zespół sam rozstrzyga decyzje architektoniczne, model zaufania, sposób kwalifikacji i obejście ograniczeń platformy w uzgodnionym zakresie. Nie pytaj użytkownika ponownie o takie wybory ani nie ustanawiaj dla nich jego bramki akceptacji.
+- ROOT wybiera najprostszy wykonalny kontrakt zachowujący publiczną semantykę, zapisuje decyzję i uzasadnienie w Beads, informuje o istotnym kompromisie i kontynuuje implementację, wymagane review oraz rzeczywiste testy.
+- Założenie modelu zaufania nie jest dowodem izolacji. Raportuj dokładnie sprawdzony zakres; brak globalnego dowodu nie uprawnia do deklaracji pełnej izolacji ani automatycznie do blokowania dostarczenia dodatkowym wymaganiem.
+- Nadal zachowuj dane, historyczne UNKNOWN, identyfikację procesów i dokumentów, powiązania receiptów, owner/queue/source guards oraz uprawnienia narzędzi. Pytanie jest potrzebne tylko o rzeczywiste uprawnienia, niedostępny zasób lub nieautoryzowany koszt bądź utratę danych, nie o zwykłą decyzję techniczną.
+
+## Zespół i dostarczanie
+
 - Use `openai/gpt-6.1-sol` for work previously assigned to Luna and for new standard assignments. Use `openai/gpt-6-astra` for work previously assigned to Sol and for escalations beyond Sol. Existing Astra assignments stay with Astra. Use the default variants unless the user requests otherwise; do not assign implementation work to Luna.
 - Explicit testing exception: Luna may execute existing live tests and write result reports. Sol/Astra implement fixes; Astra compares actual failures against the historical JS implementation. Test execution and a concrete result inventory take priority over additional analysis or optimization.
 - Preserve the session, worktree, branch, evidence, and running operations when changing models. Confirm the configured model and the model of actual execution separately. Update open Beads assignees to `sol-<scope>` or `astra-<scope>` and record the model, variant, and session ID; preserve historical owners of closed tasks.
