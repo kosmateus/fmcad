@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
 import {
   createNormalObserverLaunchAdapter,
   type NormalObserverLaunchPins,
+  createOwnedAutoloadLaunchAdapter,
+  type OwnedAutoloadLaunchPins,
 } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import {
@@ -13,6 +17,7 @@ import {
   normalObserverFusionLaunchNative,
   normalObserverNativeBootstrap,
 } from "../packages/node-adapters/src/execution/controlled-fusion-launch-native";
+import { ownedAutoloadLaunchNative } from "../packages/node-adapters/src/execution/owned-autoload-launch-native";
 
 function pins(): NormalObserverLaunchPins {
   const root = "C:\\fixture";
@@ -104,6 +109,7 @@ test("normal native program compiles as complete Python, including suspended bin
     controlledFusionLaunchNative,
     normalObserverFusionLaunchNative(),
     normalObserverNativeBootstrap,
+    ownedAutoloadLaunchNative(),
   ]) {
     const result = spawnSync(
       "python3",
@@ -114,6 +120,113 @@ test("normal native program compiles as complete Python, including suspended bin
       },
     );
     assert.equal(result.status, 0, result.stderr);
+  }
+});
+
+function ownedPins(): OwnedAutoloadLaunchPins {
+  const { normal, ...base } = pins();
+  const originals = ["one.xml", "two.xml", "discovery.json"].map((name) => {
+    const bytes = Buffer.from("benign fixture " + name);
+    return {
+      nativePath: `C:\\fixture\\${name}`,
+      identity: "[1,2,3,4,5,6,7,8,9,1,0]",
+      bytes,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  });
+  return {
+    ...base,
+    originalPaths: [
+      ...base.originalPaths,
+      ...originals.map((x) => x.nativePath),
+    ],
+    mappedOriginalPaths: {
+      ...base.mappedOriginalPaths,
+      ...Object.fromEntries(
+        originals.map((x, i) => [x.nativePath, `/fixture/owned-${i}`]),
+      ),
+    },
+    owned: {
+      ...normal,
+      autorunOriginals: [originals[0]!, originals[1]!],
+      discoveryOriginals: [originals[2]!],
+    },
+    assertBeforeResumeOriginals() {},
+  };
+}
+test("owned producer exposes only its disjoint one-shot launch API and requires original nonempty allowlisted inputs", () => {
+  assert.deepEqual(Object.keys(createOwnedAutoloadLaunchAdapter(ownedPins())), [
+    "launchAfterDeath",
+  ]);
+  for (const change of [
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned, { discoveryOriginals: [] }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned, { autorunOriginals: [] }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.autorunOriginals[0], {
+        nativePath: p.paths.provision,
+      }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.autorunOriginals[0], { sha256: "f".repeat(64) }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p, { assertBeforeResumeOriginals: null }),
+  ]) {
+    const p = ownedPins();
+    change(p);
+    assert.throws(() => createOwnedAutoloadLaunchAdapter(p));
+  }
+});
+test("owned original fence is synchronous and irrevocably refuses launch before any native executable access", async () => {
+  for (const boundary of [
+    () => {
+      throw new Error("ORIGINAL_WITNESS_LOST");
+    },
+    async () => {},
+  ]) {
+    const adapter = createOwnedAutoloadLaunchAdapter({
+      ...ownedPins(),
+      assertBeforeResumeOriginals: boundary,
+    });
+    await assert.rejects(
+      adapter.launchAfterDeath({ pid: 1, birth: "1" }, "a".repeat(32)),
+      /ORIGINAL_WITNESS_LOST|Synchronous/,
+    );
+    await assert.rejects(
+      adapter.launchAfterDeath({ pid: 1, birth: "1" }, "b".repeat(32)),
+      /replayed/,
+    );
+  }
+});
+test("owned mapped symlink and hardlink inputs refuse before native executable access", async (t) => {
+  const root = fs.mkdtempSync("/tmp/opencode/owned-mapped-originals-");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const alias of ["symlink", "hardlink"]) {
+    const p = ownedPins();
+    const refs = [...p.owned.autorunOriginals, ...p.owned.discoveryOriginals];
+    const mappings = { ...p.mappedOriginalPaths };
+    for (const [i, ref] of refs.entries()) {
+      const name = path.join(root, `${alias}-${i}`);
+      fs.writeFileSync(name, ref.bytes);
+      mappings[ref.nativePath] = name;
+    }
+    const original = mappings[refs[0]!.nativePath]!;
+    const linked = original + ".alias";
+    if (alias === "symlink") fs.symlinkSync(original, linked);
+    else fs.linkSync(original, linked);
+    mappings[refs[0]!.nativePath] = linked;
+    const adapter = createOwnedAutoloadLaunchAdapter({
+      ...p,
+      mappedOriginalPaths: mappings,
+    });
+    await assert.rejects(
+      adapter.launchAfterDeath({ pid: 1, birth: "1" }, "a".repeat(32)),
+      /Mapped owned input (alias|hardlink) refused/,
+    );
+    await assert.rejects(
+      adapter.launchAfterDeath({ pid: 1, birth: "1" }, "b".repeat(32)),
+      /replayed/,
+    );
   }
 });
 
@@ -140,6 +253,10 @@ test("standard staged runtime includes the private normal adapter and native ext
   assert.deepEqual(
     Object.keys(staged.createNormalObserverLaunchAdapter(pins())),
     ["requestNormalCloseAndWait", "launchAfterDeath"],
+  );
+  assert.deepEqual(
+    Object.keys(staged.createOwnedAutoloadLaunchAdapter(ownedPins())),
+    ["launchAfterDeath"],
   );
 });
 

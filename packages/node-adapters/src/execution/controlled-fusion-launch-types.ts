@@ -29,6 +29,17 @@ export interface ControlledLaunch {
   readonly attempt: ControlledFile;
   readonly sourceClosure: ControlledFile;
 }
+/** Suspended-process originals only; completion does not prove isolated startup. */
+export interface OwnedAutoloadLaunch extends ControlledLaunch {
+  readonly profile: ControlledFile;
+  readonly profileBackup: ControlledFile;
+  readonly provision: ControlledFile;
+  readonly provisionBackup: ControlledFile;
+  readonly provisionReceipt: ControlledFile;
+  readonly coldProcess: ControlledFile;
+  readonly intent: ControlledFile;
+  readonly startupProven: false;
+}
 export interface ControlledNativeAdapter {
   readonly paths: ControlledLaunchPaths;
   readonly installedDirectory: string;

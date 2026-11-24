@@ -3,8 +3,8 @@ import { createRequire } from "node:module";
 /**
  * Pinned Windows-Python stdlib operator. Only private local composition invokes
  * this program. It never imports Fusion/SDK, discovers a Fusion process, kills a
- * process or starts an add-in. NORMAL alone binds provision while suspended;
- * no result is host authority.
+ * process or starts an add-in through SDK/UI. NORMAL and the separate owned
+ * program bind provision while suspended; no result is host authority.
  */
 export const controlledFusionLaunchNative = String.raw`
 import base64, ctypes, hashlib, json, math, os, stat, subprocess, sys, time

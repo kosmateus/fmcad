@@ -9,14 +9,19 @@ import {
   normalObserverFusionLaunchNative,
   normalObserverNativeBootstrap,
 } from "./controlled-fusion-launch-native";
+import { ownedAutoloadLaunchNative } from "./owned-autoload-launch-native";
 import { bootstrapInstalledFilesDigest } from "./bootstrap-entry-evidence";
-import { planNormalObserverAutoload } from "./fusion-bootstrap-autoload";
+import {
+  planControlledFusionAutoload,
+  planNormalObserverAutoload,
+} from "./fusion-bootstrap-autoload";
 import type {
   ControlledNativeAdapter,
   ControlledFile,
   ControlledLaunch,
   ControlledLaunchPaths,
   ControlledProcess,
+  OwnedAutoloadLaunch,
 } from "./controlled-fusion-launch-types";
 
 export interface ControlledFusionLaunchPins {
@@ -78,6 +83,16 @@ export interface NormalObserverLaunchPins extends ControlledFusionLaunchPins {
   /** Trusted synchronous held lifecycle boundary, never JSON or a public flag. */
   assertHeld(): void;
 }
+export interface OwnedAutoloadLaunchOriginals extends NormalObserverLaunchOriginals {
+  readonly autorunOriginals: readonly [ControlledFile, ControlledFile];
+  readonly discoveryOriginals: readonly ControlledFile[];
+}
+export interface OwnedAutoloadLaunchPins extends ControlledFusionLaunchPins {
+  readonly owned: OwnedAutoloadLaunchOriginals;
+  assertHeld(): void;
+  /** Actual ROOT startup/discovery witness fence; not a serialized grant. */
+  assertBeforeResumeOriginals(): void;
+}
 type PrivateLaunchAdapter = ControlledNativeAdapter & {
   closeNormal(old: ControlledProcess): Promise<ControlledFile>;
   launchNormal(
@@ -86,6 +101,12 @@ type PrivateLaunchAdapter = ControlledNativeAdapter & {
     bytes: Uint8Array,
     nonce: string,
   ): Promise<NormalObserverLaunch>;
+  launchOwned(
+    old: ControlledProcess,
+    original: ControlledFile,
+    bytes: Uint8Array,
+    nonce: string,
+  ): Promise<OwnedAutoloadLaunch>;
 };
 export class ControlledFusionNativeError extends Error {
   readonly outcome = "UNKNOWN";
@@ -180,10 +201,11 @@ function validateSource(
 export function createControlledFusionLaunchAdapter(
   options: ControlledFusionLaunchPins,
 ): ControlledNativeAdapter {
-  const { launchNormal, closeNormal, ...controlled } =
+  const { launchNormal, launchOwned, closeNormal, ...controlled } =
     createLaunchAdapter(options);
   void launchNormal;
   void closeNormal;
+  void launchOwned;
   return Object.freeze(controlled);
 }
 
@@ -233,22 +255,116 @@ export function createNormalObserverLaunchAdapter(
   });
 }
 
+/** Separate original pre-resume owned producer. Never a NORMAL isolation flag. */
+export function createOwnedAutoloadLaunchAdapter(
+  options: OwnedAutoloadLaunchPins,
+) {
+  if ("normal" in options)
+    throw new Error("Disjoint owned constructor; NORMAL options refused");
+  const { owned, assertHeld, assertBeforeResumeOriginals, ...base } = options;
+  if (
+    typeof assertHeld !== "function" ||
+    typeof assertBeforeResumeOriginals !== "function"
+  )
+    throw new Error(
+      "Actual held owned lifecycle and startup-original fences required",
+    );
+  const adapter = createLaunchAdapter(
+    base,
+    undefined,
+    assertHeld,
+    owned,
+    assertBeforeResumeOriginals,
+  );
+  let attempted = false;
+  return Object.freeze({
+    async launchAfterDeath(
+      old: ControlledProcess,
+      nonce: string,
+    ): Promise<OwnedAutoloadLaunch> {
+      if (attempted)
+        throw new Error("Owned autoload launch cannot be replayed");
+      attempted = true;
+      await adapter.confirmDead(old);
+      const original = await adapter.readProfileAfterDeath(old);
+      const entry = path.win32.join(
+        base.installedDirectory,
+        "AutodeskFusionMCP.py",
+      );
+      // Reuse only the strict closed registration parser; native owned policy
+      // independently checks the final exact-one-ON/every-foreign-OFF bytes.
+      const allOff = planControlledFusionAutoload(original.bytes, entry);
+      const value = decodeAdmissionJson(
+        Buffer.from(allOff.registrationBytes()).toString("utf8"),
+      ) as {
+        loadedScripts: Array<{ path: string; runOnStartup: boolean }>;
+      };
+      for (const row of value.loadedScripts)
+        row.runOnStartup =
+          path.win32.isAbsolute(row.path) &&
+          windowsPath(path.win32.normalize(row.path)) === windowsPath(entry);
+      return adapter.launchOwned(
+        old,
+        original,
+        Buffer.from(JSON.stringify(value) + "\n"),
+        nonce,
+      );
+    },
+  });
+}
+
 function createLaunchAdapter(
   options: ControlledFusionLaunchPins,
   normalOptions?: NormalObserverLaunchOriginals,
   heldBoundary?: () => void,
+  ownedOptions?: OwnedAutoloadLaunchOriginals,
+  originalBoundary?: () => void,
 ): PrivateLaunchAdapter {
   const pins = structuredClone(options);
-  const normal = normalOptions && structuredClone(normalOptions);
+  if (normalOptions && ownedOptions)
+    throw new Error("Disjoint native launch roles required");
+  const owned = ownedOptions && structuredClone(ownedOptions);
+  const normal =
+    (normalOptions || ownedOptions) &&
+    structuredClone(normalOptions || ownedOptions!);
   const normalProgram = normal
-    ? Buffer.from(normalObserverFusionLaunchNative(), "utf8")
+    ? Buffer.from(
+        owned
+          ? ownedAutoloadLaunchNative()
+          : normalObserverFusionLaunchNative(),
+        "utf8",
+      )
     : null;
+  let ownedMapped: string[] | undefined;
   function assertHeld() {
     if (!heldBoundary) return;
     const result: unknown = heldBoundary();
     if (result !== undefined) {
       void Promise.resolve(result).catch(() => {});
       throw new Error("Synchronous held normal lifecycle boundary required");
+    }
+    if (owned) {
+      if (!originalBoundary)
+        throw new Error("Original owned startup fence required");
+      const checked: unknown = originalBoundary();
+      if (checked !== undefined) {
+        void Promise.resolve(checked).catch(() => {});
+        throw new Error("Synchronous original owned startup fence required");
+      }
+      const stamps = [
+        ...owned.autorunOriginals,
+        ...owned.discoveryOriginals,
+      ].map((file) => {
+        const mapped = pins.mappedOriginalPaths[file.nativePath]!;
+        if (fs.realpathSync(mapped) !== path.resolve(mapped))
+          throw new Error("Mapped owned input alias refused");
+        if (fs.lstatSync(mapped, { bigint: true }).nlink !== 1n)
+          throw new Error("Mapped owned input hardlink refused");
+        return mappedStamp(mapped, file.sha256);
+      });
+      if (ownedMapped && !isDeepStrictEqual(ownedMapped, stamps))
+        throw new Error("Mapped original owned input identity changed");
+      ownedMapped ??= stamps;
     }
   }
   for (const value of [
@@ -413,6 +529,40 @@ function createLaunchAdapter(
       }
     }
   }
+  if (owned) {
+    if (owned.autorunOriginals.length !== 2 || !owned.discoveryOriginals.length)
+      throw new Error(
+        "Two original autorun files and nonempty discovery originals required",
+      );
+    const inputs = [...owned.autorunOriginals, ...owned.discoveryOriginals];
+    const seen = new Set<string>();
+    const reserved = [
+      ...Object.values(pins.paths),
+      normal!.database.nativePath,
+      normal!.handoffRequest.nativePath,
+      normal!.handoffReceipt.nativePath,
+      normal!.provisionBackupPath,
+      normal!.provisionReceiptPath,
+      normal!.retiredProcessPath,
+      normal!.coldProcessPath,
+    ].map(windowsPath);
+    for (const input of inputs) {
+      const name = windowsPath(input.nativePath);
+      if (
+        !pins.originalPaths.includes(input.nativePath) ||
+        !allowed.has(input.nativePath) ||
+        seen.has(name) ||
+        reserved.includes(name) ||
+        !identity(input.identity) ||
+        !sha(input.sha256) ||
+        digest(input.bytes) !== input.sha256
+      )
+        throw new Error(
+          "Distinct pinned original owned input bytes/identity required",
+        );
+      seen.add(name);
+    }
+  }
   for (const nativePath of allowed) {
     if (
       nativePath !== pins.paths.receiptDirectory &&
@@ -569,8 +719,14 @@ function createLaunchAdapter(
       mainWindowClass: pins.mainWindowClass,
       ...(normal
         ? {
-            normal: {
+            [owned ? "owned" : "normal"]: {
               ...normal,
+              ...(owned
+                ? {
+                    autorunOriginals: owned.autorunOriginals.map(reference),
+                    discoveryOriginals: owned.discoveryOriginals.map(reference),
+                  }
+                : {}),
               source: pins.installedSource,
               build: pins.installedBuild,
             },
@@ -614,7 +770,8 @@ function createLaunchAdapter(
         child.stdout.on("data", (text: string) => {
           if (stdout.length + text.length <= 32 * 1024 * 1024) stdout += text;
           else overflow = true;
-          if (action !== "normal-launch") return;
+          if (action !== "normal-launch" && action !== "owned-autoload-launch")
+            return;
           pending += text;
           while (pending.includes("\n")) {
             const end = pending.indexOf("\n"),
@@ -622,11 +779,29 @@ function createLaunchAdapter(
             pending = pending.slice(end + 1);
             try {
               const value = object(decodeAdmissionJson(line));
-              if (value["kind"] !== "normal-observer-checkpoint-v1") {
+              const ownedAction = action === "owned-autoload-launch";
+              if (
+                value["kind"] !==
+                (ownedAction
+                  ? "owned-autoload-checkpoint-v1"
+                  : "normal-observer-checkpoint-v1")
+              ) {
+                if (
+                  ownedAction &&
+                  value["kind"] !== "controlled-fusion-native-v1"
+                )
+                  throw new Error("Unexpected owned checkpoint kind");
                 finalOutput += line + "\n";
                 continue;
               }
-              closed(value, ["kind", "phase", "nonce", "process", "provision"]);
+              closed(value, [
+                "kind",
+                "phase",
+                "nonce",
+                "process",
+                "provision",
+                ...(ownedAction ? ["intent"] : []),
+              ]);
               if (
                 value["phase"] !== expectedPhases[checkpointIndex] ||
                 value["nonce"] !== input["nonce"] ||
@@ -634,29 +809,59 @@ function createLaunchAdapter(
               )
                 throw new Error("Wrong normal native checkpoint");
               if (checkpointIndex === 0) {
-                if (value["process"] !== null || value["provision"] !== null)
+                if (
+                  value["process"] !== null ||
+                  value["provision"] !== null ||
+                  (ownedAction && value["intent"] !== null)
+                )
                   throw new Error("Unexpected early normal process");
               } else {
                 const current = process(value["process"]);
                 if (created && !isDeepStrictEqual(created, current))
                   throw new Error("Normal checkpoint process changed");
                 created = current;
-                if (
+                if (ownedAction && checkpointIndex === 2) {
+                  for (const [key, target] of [
+                    ["provision", pins.paths.provision],
+                    ["intent", pins.paths.intent],
+                  ]) {
+                    const ref = closed(value[key!], [
+                      "nativePath",
+                      "sha256",
+                      "identity",
+                    ]);
+                    if (
+                      ref["nativePath"] !== target ||
+                      !sha(ref["sha256"]) ||
+                      !identity(ref["identity"])
+                    )
+                      throw new Error("Original owned checkpoint ref differs");
+                  }
+                } else if (
                   checkpointIndex === 1
                     ? value["provision"] !== null
                     : !sha(value["provision"])
                 )
                   throw new Error("Normal checkpoint provision differs");
+                if (
+                  ownedAction &&
+                  checkpointIndex === 1 &&
+                  value["intent"] !== null
+                )
+                  throw new Error("Premature owned intent ref");
               }
               assertHeld();
               checkpointIndex++;
               child.stdin.write(
                 JSON.stringify({
-                  kind: "normal-observer-continue-v1",
+                  kind: ownedAction
+                    ? "owned-autoload-continue-v1"
+                    : "normal-observer-continue-v1",
                   phase: value["phase"],
                   nonce: value["nonce"],
                   process: value["process"],
                   provision: value["provision"],
+                  ...(ownedAction ? { intent: value["intent"] } : {}),
                 }) + "\n",
               );
             } catch {
@@ -676,10 +881,16 @@ function createLaunchAdapter(
           /* close/error owns the terminal result; never resend */
         });
         child.on("close", (code) =>
-          code !== 0 || overflow
+          code !== 0 ||
+          overflow ||
+          (action === "owned-autoload-launch" && checkpointIndex !== 3)
             ? reject(new ControlledFusionNativeError(action, stdout, stderr))
             : resolve({
-                stdout: action === "normal-launch" ? finalOutput : stdout,
+                stdout:
+                  action === "normal-launch" ||
+                  action === "owned-autoload-launch"
+                    ? finalOutput
+                    : stdout,
                 stderr,
               }),
         );
@@ -693,7 +904,7 @@ function createLaunchAdapter(
         const prefix = program
           ? Buffer.concat([Buffer.from(`${program.length}\n`), program])
           : Buffer.alloc(0);
-        if (action === "normal-launch") {
+        if (action === "normal-launch" || action === "owned-autoload-launch") {
           child.stdin.write(prefix);
           child.stdin.write(envelope + "\n");
         } else child.stdin.end(Buffer.concat([prefix, Buffer.from(envelope)]));
@@ -853,6 +1064,57 @@ function createLaunchAdapter(
         ),
         coldProcess: file(result["coldProcess"], normal.coldProcessPath),
         isolation: "NOT_PROVEN",
+      });
+    },
+    async launchOwned(
+      old,
+      original,
+      bytes,
+      nonce,
+    ): Promise<OwnedAutoloadLaunch> {
+      if (!owned || launchAttempted || !/^[a-f0-9]{32}$/.test(nonce))
+        throw new Error("Fresh private owned autoload launch required");
+      launchAttempted = true;
+      const result = closed(
+        await invoke("owned-autoload-launch", {
+          old: inputProcess(old),
+          original: reference(original),
+          base64: Buffer.from(bytes).toString("base64"),
+          nonce,
+        }),
+        [
+          "process",
+          "journal",
+          "attempt",
+          "sourceClosure",
+          "profile",
+          "profileBackup",
+          "provisionBackup",
+          "provision",
+          "provisionReceipt",
+          "coldProcess",
+          "intent",
+        ],
+      );
+      return Object.freeze({
+        process: process(result["process"]),
+        journal: file(result["journal"], pins.paths.launchJournal),
+        attempt: file(result["attempt"], pins.paths.launchAttempt),
+        sourceClosure: file(result["sourceClosure"], pins.paths.sourceClosure),
+        profile: file(result["profile"], pins.paths.profile),
+        profileBackup: file(result["profileBackup"], pins.paths.profileBackup),
+        provision: file(result["provision"], pins.paths.provision),
+        provisionBackup: file(
+          result["provisionBackup"],
+          owned.provisionBackupPath,
+        ),
+        provisionReceipt: file(
+          result["provisionReceipt"],
+          owned.provisionReceiptPath,
+        ),
+        coldProcess: file(result["coldProcess"], owned.coldProcessPath),
+        intent: file(result["intent"], pins.paths.intent),
+        startupProven: false as const,
       });
     },
     async closeNormal(old) {

@@ -6,9 +6,13 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   createNormalObserverLaunchAdapter,
+  createOwnedAutoloadLaunchAdapter,
+  type OwnedAutoloadLaunchPins,
   ControlledFusionNativeError,
   type NormalObserverLaunchPins,
 } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
+import { ownedAutoloadLaunchNative } from "../packages/node-adapters/src/execution/owned-autoload-launch-native";
+import { normalObserverNativeBootstrap } from "../packages/node-adapters/src/execution/controlled-fusion-launch-native";
 
 const sha = (data: Uint8Array) =>
   createHash("sha256").update(data).digest("hex");
@@ -186,6 +190,29 @@ with sqlite3.connect(provision["database"],timeout=2) as db:
 Path(sys.argv[1]+".database-write").write_text(json.dumps({"databaseWrite":True}),encoding="utf-8")
 time.sleep(0.1)
 `;
+const ownedChildProgram = childProgram
+  .replace(
+    "import ctypes,json,os,sqlite3,sys,time",
+    "import ctypes,hashlib,json,os,sqlite3,sys,time",
+  )
+  .replace(
+    'correct=(provision["pid"]',
+    String.raw`
+intent_path=os.environ["FUSION_MCP_BOOTSTRAP_INTENT"]
+intent=json.loads(Path(intent_path).read_bytes())
+profile_path=Path(intent["profile"]["path"])
+profile=json.loads(profile_path.read_bytes())
+assert set(intent)=={"kind","version","mode","nonce","process","purpose","engineVersion","executable","installed","profile","receipts","provision","generation"}
+assert intent["version"]==3 and intent["mode"]=="owned-autoload-v1" and intent["purpose"]=="isolated-stdout-v1"
+assert intent["engineVersion"]==2 and intent["executable"]["path"].casefold()==sys.executable.casefold()
+assert intent["executable"]["sha256"]==hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest()
+assert intent["profile"]["sha256"]==hashlib.sha256(profile_path.read_bytes()).hexdigest()
+assert intent["provision"]["sha256"]==hashlib.sha256(raw).hexdigest()
+assert intent["provision"]["path"]==os.environ["FUSION_MCP_ADMISSION_PROVISION"]
+assert intent["generation"]=={"instance":provision["instance"],"epoch":provision["epoch"]}
+assert [r["runOnStartup"] for r in profile["loadedScripts"]]==[False,True]
+correct=(intent["process"]=={"pid":os.getpid(),"birth":birth} and provision["pid"]`,
+  );
 const waitReport = String.raw`
 import json,sys,time
 from pathlib import Path
@@ -367,7 +394,107 @@ test(
       t.diagnostic(`Owned SDK-free fixture: ${f.root}`);
       return { f, pins, report };
     }
+    function ownedFixture() {
+      const { f, pins, report } = fixture();
+      const values = native(
+        config,
+        String.raw`
+import ctypes,hashlib,json,sys
+from ctypes import wintypes as w
+from pathlib import Path
+r=json.load(sys.stdin);root=Path(r["private"])
+class Info(ctypes.Structure):
+ _fields_=[("attributes",w.DWORD),("creation",w.FILETIME),("access",w.FILETIME),("write",w.FILETIME),
+           ("volume",w.DWORD),("sizeHigh",w.DWORD),("sizeLow",w.DWORD),("links",w.DWORD),
+           ("indexHigh",w.DWORD),("indexLow",w.DWORD)]
+k=ctypes.WinDLL("kernel32",use_last_error=True)
+k.CreateFileW.argtypes=[w.LPCWSTR,w.DWORD,w.DWORD,ctypes.c_void_p,w.DWORD,w.DWORD,w.HANDLE];k.CreateFileW.restype=w.HANDLE
+k.GetFileInformationByHandle.argtypes=[w.HANDLE,ctypes.c_void_p];k.CloseHandle.argtypes=[w.HANDLE]
+out=[]
+for name in ("autorun-one.xml","autorun-two.xml","discovery-original.json"):
+ p=root/name;p.write_text("original benign fixture "+name,encoding="utf-8")
+ h=k.CreateFileW(str(p),0x80020000,1,None,3,0x00200000,None);info=Info()
+ assert h not in(None,ctypes.c_void_p(-1).value) and k.GetFileInformationByHandle(h,ctypes.byref(info))
+ ident=json.dumps([info.volume,info.indexHigh,info.indexLow,info.creation.dwHighDateTime,info.creation.dwLowDateTime,
+  info.write.dwHighDateTime,info.write.dwLowDateTime,info.sizeHigh,info.sizeLow,info.links,info.attributes],separators=(",",":"))
+ k.CloseHandle(h)
+ out.append({"nativePath":str(p),"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),"identity":ident})
+print(json.dumps({"refs":out}))
+`,
+        { private: f.private },
+      )["refs"] as Array<{
+        nativePath: string;
+        sha256: string;
+        identity: string;
+      }>;
+      const refs = values.map((v) => ({
+        ...v,
+        bytes: fs.readFileSync(mapped(v.nativePath)),
+      }));
+      const { normal, ...base } = pins;
+      const ownedPins: OwnedAutoloadLaunchPins = {
+        ...base,
+        arguments: ["-I", "-S", "-B", "-c", ownedChildProgram, report],
+        originalPaths: [
+          ...base.originalPaths,
+          ...refs.map((v) => v.nativePath),
+        ],
+        mappedOriginalPaths: {
+          ...base.mappedOriginalPaths,
+          ...Object.fromEntries(
+            refs.map((v) => [v.nativePath, mapped(v.nativePath)]),
+          ),
+        },
+        owned: {
+          ...normal,
+          autorunOriginals: [refs[0]!, refs[1]!],
+          discoveryOriginals: [refs[2]!],
+        },
+        assertBeforeResumeOriginals() {},
+      };
+      return { f, pins: ownedPins, report };
+    }
 
+    await t.test(
+      "owned native program refuses manual/NORMAL actions before any filesystem or process mutation",
+      () => {
+        const program = Buffer.from(ownedAutoloadLaunchNative(), "utf8");
+        for (const action of [
+          "launch",
+          "normal-launch",
+          "normal-close",
+          "replace-profile",
+          "publish",
+        ]) {
+          const envelope = Buffer.from(
+            JSON.stringify({
+              pins: {},
+              action,
+              request: {},
+              expectedSource: null,
+            }) + "\n",
+          );
+          const result = spawnSync(
+            config.mappedNativePython,
+            ["-I", "-S", "-B", "-c", normalObserverNativeBootstrap],
+            {
+              input: Buffer.concat([
+                Buffer.from(`${program.length}\n`),
+                program,
+                envelope,
+              ]),
+              encoding: "utf8",
+            },
+          );
+          assert.notEqual(result.status, 0);
+          assert.match(
+            result.stderr,
+            /Separate owned native role refuses manual\/NORMAL actions/,
+          );
+          assert.doesNotMatch(result.stderr, /createdProcess/);
+        }
+      },
+    );
     await t.test(
       "one normal close selects the sole visible same-class owned window and publishes OS death facts",
       async () => {
@@ -626,6 +753,155 @@ test(
         });
         fs.writeFileSync(
           mapped(`${f.private}\\explicit-fixture-cleanup.json`),
+          JSON.stringify(cleanup),
+        );
+        assert.equal(cleanup["productionOutcome"], "UNKNOWN-preserved");
+      },
+    );
+    await t.test(
+      "owned first user instructions see original v3 intent, bound provision and exact-one-ON profile before one resume",
+      async () => {
+        const { f, pins, report } = ownedFixture();
+        let locked = false;
+        Object.assign(pins, {
+          assertBeforeResumeOriginals() {
+            if (fs.existsSync(mapped(pins.paths.intent)) && !locked) {
+              const result = native(
+                config,
+                String.raw`
+import json,sys
+from pathlib import Path
+r=json.load(sys.stdin)
+try:Path(r["path"]).write_bytes(b"FORBIDDEN MUTATION");blocked=False
+except OSError:blocked=True
+print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
+`,
+                { path: pins.owned.autorunOriginals[0].nativePath },
+              );
+              assert.equal(result["retainedOriginalWriteBlocked"], true);
+              locked = true;
+            }
+          },
+        });
+        const adapter = createOwnedAutoloadLaunchAdapter(pins);
+        const result = await adapter.launchAfterDeath(f.old, "e".repeat(32));
+        const first = native(config, waitReport, { report });
+        assert.equal(first["correctFirstRead"], true);
+        assert.equal(first["pid"], result.process.pid);
+        assert.equal(first["birth"], result.process.birth);
+        assert.equal(first["bootstrapIntent"], pins.paths.intent);
+        assert.deepEqual(first["sdkModules"], []);
+        assert.equal(locked, true);
+        assert.equal(result.startupProven, false);
+        const intent = JSON.parse(
+          Buffer.from(result.intent.bytes).toString("utf8"),
+        );
+        assert.equal(intent.version, 3);
+        assert.equal(intent.mode, "owned-autoload-v1");
+        assert.deepEqual(intent.process, result.process);
+        assert.equal(intent.provision.sha256, result.provision.sha256);
+        assert.deepEqual(
+          JSON.parse(
+            Buffer.from(result.profile.bytes).toString(),
+          ).loadedScripts.map(
+            (row: { runOnStartup: boolean }) => row.runOnStartup,
+          ),
+          [false, true],
+        );
+        assert.equal(
+          native(config, waitReport, { report: report + ".database-write" })[
+            "databaseWrite"
+          ],
+          true,
+        );
+        await assert.rejects(
+          adapter.launchAfterDeath(f.old, "f".repeat(32)),
+          /replayed/,
+        );
+      },
+    );
+    await t.test(
+      "owned changed autorun or discovery originals refuse before creation without fallback",
+      async () => {
+        for (const which of [0, 1, 2, "native-identity"] as const) {
+          const { f, pins, report } = ownedFixture();
+          const refs = [
+            ...pins.owned.autorunOriginals,
+            ...pins.owned.discoveryOriginals,
+          ];
+          if (which === "native-identity")
+            Object.assign(refs[0]!, { identity: "[1,2,3,4,5,6,7,8,9,1,0]" });
+          else
+            fs.writeFileSync(
+              mapped(refs[which]!.nativePath),
+              "changed fixture original",
+            );
+          const adapter = createOwnedAutoloadLaunchAdapter(pins);
+          await assert.rejects(
+            adapter.launchAfterDeath(f.old, "a".repeat(32)),
+            (error: unknown) =>
+              which === "native-identity"
+                ? error instanceof ControlledFusionNativeError &&
+                  error.action === "owned-autoload-launch" &&
+                  !error.stderr.includes("createdProcess")
+                : error instanceof Error && /Mapped/.test(error.message),
+          );
+          assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
+          assert.equal(fs.existsSync(mapped(report)), false);
+          await assert.rejects(
+            adapter.launchAfterDeath(f.old, "b".repeat(32)),
+            /replayed/,
+          );
+        }
+      },
+    );
+    await t.test(
+      "owned final original-witness revocation retains v3 and suspended tuple but never resumes",
+      async () => {
+        const { f, pins, report } = ownedFixture();
+        Object.assign(pins, {
+          assertBeforeResumeOriginals() {
+            if (fs.existsSync(mapped(pins.paths.intent)))
+              throw new Error("ORIGINAL_STARTUP_WITNESS_REVOKED");
+          },
+        });
+        const adapter = createOwnedAutoloadLaunchAdapter(pins);
+        await assert.rejects(
+          adapter.launchAfterDeath(f.old, "d".repeat(32)),
+          (error: unknown) =>
+            error instanceof ControlledFusionNativeError &&
+            error.outcome === "UNKNOWN" &&
+            error.stdout.includes("bound-before-resume") &&
+            error.stderr.includes("createdProcess"),
+        );
+        assert.equal(fs.existsSync(mapped(report)), false);
+        assert.equal(fs.existsSync(mapped(pins.paths.intent)), true);
+        const journal = fs.readFileSync(mapped(pins.paths.launchJournal));
+        fs.writeFileSync(
+          mapped(`${f.private}\\owned-negative-evidence.json`),
+          JSON.stringify({
+            reportAbsentBeforeCleanup: true,
+            productionResume: false,
+            outcome: "UNKNOWN",
+            journalSha256: sha(journal),
+            intentSha256: sha(fs.readFileSync(mapped(pins.paths.intent))),
+          }),
+        );
+        await assert.rejects(
+          adapter.launchAfterDeath(f.old, "e".repeat(32)),
+          /replayed/,
+        );
+        const cleanup = native(config, cleanupSuspendedFixture, {
+          root: f.root,
+          journal: pins.paths.launchJournal,
+          journalSha256: sha(journal),
+          executable: config.nativePython,
+          executableSha256: config.nativePythonSha256,
+          nonce: "d".repeat(32),
+          report,
+        });
+        fs.writeFileSync(
+          mapped(`${f.private}\\owned-explicit-fixture-cleanup.json`),
           JSON.stringify(cleanup),
         );
         assert.equal(cleanup["productionOutcome"], "UNKNOWN-preserved");
