@@ -40,7 +40,12 @@ const ref = (file: {
 
 function fixture(
   fault?:
-    "journal" | "cold" | "generation" | "foreign-startup" | "native-unknown",
+    | "journal"
+    | "cold"
+    | "generation"
+    | "foreign-startup"
+    | "native-unknown"
+    | "lease",
 ) {
   const f = controlledFusionBootstrapFixture({ captureStartupInputs: true });
   const native = f.native;
@@ -115,7 +120,12 @@ function fixture(
   const ports: OwnedFusionBootstrapPorts = {
     native,
     lifecycle,
-    acquireExclusiveLifecycleLease: f.ports.acquireExclusiveLifecycleLease,
+    acquireExclusiveLifecycleLease:
+      fault === "lease"
+        ? async () => {
+            throw new Error("Original lifecycle acquisition denied");
+          }
+        : f.ports.acquireExclusiveLifecycleLease,
     qualifyNativeInstallationAfterDeath:
       f.ports.qualifyNativeInstallationAfterDeath,
     async prepareBeforeLaunch({ lease }) {
@@ -441,6 +451,37 @@ test("owned original controller composes through MAC-reference port and provider
   assert.equal(reads, 1);
   f.revoke();
   assert.throws(() => compiled.reverify(request), /revoked/);
+});
+
+for (const failure of ["unacquired", "revoked"] as const) {
+  test(`owned UNKNOWN stays local when lifecycle lease is ${failure}`, async () => {
+    const f = fixture(failure === "unacquired" ? "lease" : undefined);
+    if (failure === "revoked") f.revoke();
+    let publications = 0;
+    f.native.publishOriginal = async () => {
+      publications++;
+      throw new Error("Native publication must not start without held lease");
+    };
+    const result = await f.owned.run();
+    assert.equal(result.state, "UNKNOWN");
+    assert.equal(publications, 0);
+    await assert.rejects(f.owned.run(), /replayed/);
+  });
+}
+
+test("owned UNKNOWN can retain one native transcript while the original lifecycle lease remains held", async () => {
+  const f = fixture("journal");
+  const publish = f.native.publishOriginal;
+  let publications = 0;
+  f.native.publishOriginal = async (name, bytes) => {
+    publications++;
+    return publish(name, bytes);
+  };
+  const result = await f.owned.run();
+  assert.equal(result.state, "UNKNOWN");
+  assert.equal(publications, 1);
+  assert.equal(f.files.has(f.native.paths.transcript), true);
+  await assert.rejects(f.owned.run(), /replayed/);
 });
 
 test("owned controller preserves original pre-resume chain and never calls the manual UI path", async () => {

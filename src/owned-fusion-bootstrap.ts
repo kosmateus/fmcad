@@ -553,10 +553,14 @@ export function createOwnedFusionBootstrap(
         if (!transcriptAttempted) {
           transcriptAttempted = true;
           try {
+            // UNKNOWN is not permission to write outside the original held
+            // lifecycle window. The returned result still preserves uncertainty.
+            await fence();
             await native.publishOriginal(
               native.paths.transcript,
               Buffer.from(JSON.stringify(result) + "\n"),
             );
+            await fence();
           } catch {
             /* Original partial failure remains UNKNOWN; never overwrite/retry. */
           }
