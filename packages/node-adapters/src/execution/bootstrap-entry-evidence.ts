@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual as same } from "node:util";
 import path from "node:path";
-import { decodeAdmissionJson } from "./admission-json";
+import {
+  decodeAdmissionJson,
+  validateOpaqueJsonObject,
+} from "./admission-json";
 import { matchesControlledFusionAutoload } from "./fusion-bootstrap-autoload";
 
 export interface BootstrapEntryExecutableReference {
@@ -264,7 +267,8 @@ function validStartupAudit(value: unknown): value is BootstrapStartupAudit {
   const preferences = value["preferences"];
   const scripts = value["scripts"];
   const defaultPath = preferences["defaultPathForScriptsAndAddIns"];
-  if (typeof defaultPath !== "string") return false;
+  if (typeof defaultPath !== "string" || !utf8(defaultPath, 65536))
+    return false;
   try {
     canonicalNativePath(defaultPath);
   } catch {
@@ -319,7 +323,11 @@ function validStartupAudit(value: unknown): value is BootstrapStartupAudit {
       return false;
     const folder = item["folder"];
     const manifest = item["manifest"];
-    if (typeof folder !== "string" || typeof manifest["content"] !== "string")
+    if (
+      typeof folder !== "string" ||
+      !utf8(folder, 65536) ||
+      typeof manifest["content"] !== "string"
+    )
       return false;
     try {
       canonicalNativePath(folder);
@@ -329,14 +337,9 @@ function validStartupAudit(value: unknown): value is BootstrapStartupAudit {
     const content = utf8(manifest["content"], MAX_MANIFEST_BYTES);
     if (!content || sha(content) !== manifest["sha256"]) return false;
     try {
-      if (
-        !record(
-          decodeAdmissionJson(
-            new TextDecoder("utf-8", { fatal: true }).decode(content),
-          ),
-        )
-      )
-        return false;
+      validateOpaqueJsonObject(
+        new TextDecoder("utf-8", { fatal: true }).decode(content),
+      );
     } catch {
       return false;
     }

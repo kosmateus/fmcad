@@ -5,6 +5,11 @@ export function decodeAdmissionJson(text: string): unknown {
   return decodeJson(text, "protocol");
 }
 
+/** Validate an opaque native JSON object without materializing its numbers. */
+export function validateOpaqueJsonObject(text: string): void {
+  decodeJson(text, "opaque-manifest");
+}
+
 /** Queue execution metadata stays protocol-strict; only declared user blobs
  * use finite JSON numbers. Numeric policy is applied before returning values. */
 export function decodeOpaqueQueueJson(text: string): unknown {
@@ -57,7 +62,8 @@ function opaqueRecordPath(path: readonly string[]): boolean {
 
 function decodeJson(
   text: string,
-  numberPolicy: "protocol" | "queue-snapshot" | "runtime-record",
+  numberPolicy:
+    "protocol" | "queue-snapshot" | "runtime-record" | "opaque-manifest",
 ): unknown {
   let cursor = 0;
   const fail = (): never => {
@@ -77,10 +83,13 @@ function decodeJson(
     while (cursor < text.length) {
       const char = text[cursor++];
       if (char === "\\") cursor++;
-      else if (char === '"')
-        return decode
-          ? (JSON.parse(text.slice(start, cursor)) as string)
-          : undefined;
+      else if (char === '"') {
+        if (decode || numberPolicy === "opaque-manifest") {
+          const parsed = JSON.parse(text.slice(start, cursor)) as string;
+          return decode ? parsed : undefined;
+        }
+        return undefined;
+      }
     }
     return fail();
   }
@@ -147,6 +156,9 @@ function decodeJson(
     const raw = numberToken.exec(text)?.[0];
     if (!raw) return fail();
     cursor += raw.length;
+    const arbitraryInteger =
+      numberPolicy === "opaque-manifest" && !/[.eE]/.test(raw);
+    if (arbitraryInteger) return;
     const opaque =
       numberPolicy === "queue-snapshot"
         ? opaqueSnapshotPath(currentPath)
@@ -156,18 +168,21 @@ function decodeJson(
     const number = Number(raw);
     if (
       !Number.isFinite(number) ||
-      (!opaque &&
+      (numberPolicy !== "opaque-manifest" &&
+        !opaque &&
         ((Number.isInteger(number) && !Number.isSafeInteger(number)) ||
           (/[.eE]/.test(raw) && decimal(raw) !== decimal(String(number)))))
     )
       return fail();
   }
-  // Validate every token, duplicate key, depth and numeric policy before the
-  // native parser materializes values. In particular, decoding must never
-  // silently discard a duplicate or round a protocol number before validation.
+  // Opaque manifests are syntax-checked without materializing their arbitrary
+  // precision integers. All other modes validate tokens before JSON.parse.
+  space();
+  if (numberPolicy === "opaque-manifest" && text[cursor] !== "{") return fail();
   value(0);
   space();
   if (cursor !== text.length) return fail();
+  if (numberPolicy === "opaque-manifest") return;
   return JSON.parse(text) as unknown;
 }
 
