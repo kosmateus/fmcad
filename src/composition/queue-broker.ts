@@ -6415,20 +6415,32 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   });
   if (options.captureControlledIngress) {
     const ingress = required(controlledIngress);
-    const window = ingress.sealForTransfer();
-    const { readControlledIngressIdentity } = runtimeRequire(
-      "./dist/node-adapters/execution/controlled-ingress-window",
-    ) as typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window");
-    const ready = Object.freeze({
-      window,
-      identity: readControlledIngressIdentity(window),
-      activate() { ingress.open(); },
-    });
-    const result: unknown = options.captureControlledIngress(ready);
-    if (result !== undefined) {
-      void Promise.resolve(result).catch(() => {});
+    try {
+      const window = ingress.sealForTransfer();
+      const { readControlledIngressIdentity } = runtimeRequire(
+        "./dist/node-adapters/execution/controlled-ingress-window",
+      ) as typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window");
+      const ready = Object.freeze({
+        window,
+        identity: readControlledIngressIdentity(window),
+        activate() { ingress.open(); },
+      });
+      const result: unknown = options.captureControlledIngress(ready);
+      if (result !== undefined) {
+        void Promise.resolve(result).catch(() => {});
+        fail("CONTROLLED_INGRESS_UNPROVEN", "Private ingress capture must be synchronous");
+      }
+    } catch (cause) {
+      // serve must never reject after listen while leaving an unowned live
+      // broker behind. Revoke first, including a window retained by a throwing
+      // callback, then use this instance's existing supported shutdown.
       ingress.revoke();
-      fail("CONTROLLED_INGRESS_UNPROVEN", "Private ingress capture must be synchronous");
+      try {
+        await close();
+      } catch (cleanup) {
+        throw new AggregateError([cause, cleanup], "Controlled ingress capture and broker shutdown failed");
+      }
+      throw cause;
     }
   }
   diagnostics();

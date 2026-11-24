@@ -531,6 +531,32 @@ test("real broker accepts original reset barrier transfer before its supported r
   });
 const target = { docFileId: "file-A" };
 
+for (const fault of ["throw", "promise", "value"] as const)
+test(`real broker capture failure ${fault} closes its listener and revokes the original window`,
+  { timeout: 120000 }, async (t) => {
+    let directory: string | undefined;
+    let captured: Parameters<NonNullable<P.Options["captureControlledIngress"]>>[0] | undefined;
+    await assert.rejects(fixture(t, false, undefined, 0, undefined, undefined,
+      (ready) => {
+        captured = ready;
+        if (fault === "throw") throw new Error("Owned synchronous capture failure");
+        if (fault === "promise") return Promise.resolve();
+        return 1;
+      },
+      async (dir) => { directory = dir; return {}; }),
+      fault === "throw" ? /Owned synchronous capture failure/ : /must be synchronous/);
+    assert.ok(directory);
+    assert.ok(captured);
+    const { queueSocket } = load("./queue-connection") as { queueSocket(dir: string): string };
+    assert.equal(fs.existsSync(queueSocket(directory)), false, "rejected serve must close its own listener");
+    assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false, "rejected serve must release its owner");
+    const ingress = load("./dist/node-adapters/execution/controlled-ingress-window") as
+      typeof import("../packages/node-adapters/src/execution/controlled-ingress-window");
+    assert.throws(() => ingress.assertControlledIngressTransition(captured!.window, captured!.identity),
+      /Original current/);
+    assert.throws(() => captured!.activate(), /Original current/);
+  });
+
 test("public IPC stays responsive while preparing a guarded continuation",
   // Inspection and acceptance reconstruct the real Python source several times.
   // This is only the fixture budget; the peer IPC assertion stays at 1 second
