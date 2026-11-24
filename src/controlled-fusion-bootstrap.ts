@@ -1,14 +1,19 @@
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { isDeepStrictEqual } from "node:util";
 import type {
-  BootstrapEntryIntent,
+  BootstrapEntryExecutableReference,
+  BootstrapEntryIntentV2,
   BootstrapEntryOriginals,
 } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 const load = createRequire(__filename);
 const { bindBootstrapEntryEvidence } = load(
   "./dist/node-adapters/execution/bootstrap-entry-evidence",
 ) as typeof import("../packages/node-adapters/src/execution/bootstrap-entry-evidence");
+const { decodeAdmissionJson } = load(
+  "./dist/node-adapters/execution/admission-json",
+) as typeof import("../packages/node-adapters/src/execution/admission-json");
 const { planControlledFusionAutoload, matchesControlledFusionAutoload } = load(
   "./dist/node-adapters/execution/fusion-bootstrap-autoload",
 ) as typeof import("../packages/node-adapters/src/execution/fusion-bootstrap-autoload");
@@ -17,6 +22,7 @@ import type {
   ControlledFile,
   ControlledNativeAdapter,
   ControlledLaunch,
+  ControlledLaunchPaths,
 } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
 const { ControlledFusionNativeError } = load(
   "./dist/node-adapters/execution/controlled-fusion-launch",
@@ -44,6 +50,106 @@ function synchronous(fence: () => void): void {
 }
 function frozenFile(file: ControlledFile): ControlledFile {
   return Object.freeze({ ...file, bytes: Buffer.from(file.bytes) });
+}
+function nativePath(value: string): string {
+  if (typeof value !== "string" || !value || value.includes("\0"))
+    throw new Error("Invalid native launch path");
+  if (/^[A-Za-z]:[\\/]/.test(value))
+    return path.win32.normalize(value).toLowerCase();
+  if (path.posix.isAbsolute(value) && !value.startsWith("//"))
+    return path.posix.normalize(value);
+  throw new Error("Absolute local native launch path required");
+}
+function canonicalNativePath(value: string): string {
+  const normalized = nativePath(value);
+  const canonical = /^[A-Za-z]:[\\/]/.test(value)
+    ? path.win32.normalize(value)
+    : path.posix.normalize(value);
+  if (canonical !== value)
+    throw new Error("Canonical native launch path required");
+  return normalized;
+}
+function nativeKeys(value: unknown, expected: string): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const actual = Object.keys(value).sort();
+  const names = expected.split(",").sort();
+  return (
+    actual.length === names.length &&
+    actual.every((name, index) => name === names[index])
+  );
+}
+function nativeRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+function decodeNativeRecord(bytes: Uint8Array): unknown {
+  return decodeAdmissionJson(
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+  );
+}
+function referenceForNativeFile(file: ControlledFile) {
+  return {
+    nativePath: file.nativePath,
+    sha256: file.sha256,
+    identity: file.identity,
+  };
+}
+function executableFromLaunch(
+  launch: ControlledLaunch,
+  old: ControlledProcess,
+  process: ControlledProcess,
+  nonce: string,
+  profile: ControlledFile,
+  paths: ControlledLaunchPaths,
+): BootstrapEntryExecutableReference {
+  const attempt = decodeNativeRecord(launch.attempt.bytes);
+  const journal = decodeNativeRecord(launch.journal.bytes);
+  const sourceClosure = referenceForNativeFile(launch.sourceClosure);
+  if (
+    !nativeRecord(attempt) ||
+    !nativeKeys(
+      attempt,
+      "executable,executableSha256,kind,nonce,old,profile,sourceClosure",
+    ) ||
+    attempt["kind"] !== "controlled-launch-attempt-v1" ||
+    attempt["nonce"] !== nonce ||
+    !isDeepStrictEqual(attempt["old"], old) ||
+    !isDeepStrictEqual(attempt["profile"], referenceForNativeFile(profile)) ||
+    !isDeepStrictEqual(attempt["sourceClosure"], sourceClosure) ||
+    typeof attempt["executable"] !== "string" ||
+    typeof attempt["executableSha256"] !== "string" ||
+    !/^[a-f0-9]{64}$/.test(attempt["executableSha256"]) ||
+    !nativeRecord(journal) ||
+    !nativeKeys(
+      journal,
+      "attempt,executable,executableSha256,kind,nonce,process",
+    ) ||
+    journal["kind"] !== "controlled-created-process-v1" ||
+    journal["nonce"] !== nonce ||
+    !isDeepStrictEqual(journal["process"], process) ||
+    journal["executable"] !== attempt["executable"] ||
+    journal["executableSha256"] !== attempt["executableSha256"] ||
+    !isDeepStrictEqual(
+      journal["attempt"],
+      referenceForNativeFile(launch.attempt),
+    ) ||
+    nativePath(launch.attempt.nativePath) !== nativePath(paths.launchAttempt) ||
+    nativePath(launch.journal.nativePath) !== nativePath(paths.launchJournal) ||
+    nativePath(launch.sourceClosure.nativePath) !==
+      nativePath(paths.sourceClosure) ||
+    canonicalNativePath(attempt["executable"]) ===
+      nativePath(launch.attempt.nativePath) ||
+    canonicalNativePath(attempt["executable"]) ===
+      nativePath(launch.journal.nativePath) ||
+    canonicalNativePath(attempt["executable"]) ===
+      nativePath(launch.sourceClosure.nativePath) ||
+    canonicalNativePath(attempt["executable"]) ===
+      nativePath(profile.nativePath)
+  )
+    throw new Error("Original created-process executable binding differs");
+  return Object.freeze({
+    path: attempt["executable"],
+    sha256: attempt["executableSha256"],
+  });
 }
 
 /** Actual held resource-safe/exclusive ingress lease supplied by trusted ROOT. */
@@ -139,7 +245,7 @@ export function createControlledFusionBootstrap(
       process: ControlledProcess;
       files: readonly ControlledFile[];
       evidence: BootstrapEntryOriginals;
-      expected: BootstrapEntryIntent;
+      expected: BootstrapEntryIntentV2;
       revoked: boolean;
     }
   >();
@@ -210,7 +316,7 @@ export function createControlledFusionBootstrap(
     },
     async readOriginalIntent(
       transcript: ControlledFusionBootstrapTranscript,
-    ): Promise<BootstrapEntryIntent> {
+    ): Promise<BootstrapEntryIntentV2> {
       await assertOriginalTranscript(transcript);
       const original = originals.get(transcript);
       if (!original) throw new Error("Original bootstrap intent unavailable");
@@ -334,6 +440,14 @@ export function createControlledFusionBootstrap(
         keep(launch.attempt);
         keep(launch.journal);
         keep(launch.sourceClosure);
+        const executable = executableFromLaunch(
+          launch,
+          oldProcess,
+          process,
+          nonce,
+          profile,
+          native.paths,
+        );
         phases.push("create-process-origin-bound");
         await fence();
         await native.assertProcess(process);
@@ -370,11 +484,12 @@ export function createControlledFusionBootstrap(
             "Manager preparation changed the all-autoload-off boundary",
           );
         phases.push("fresh-manager-prepared-actual-all-off-profile-rebound");
-        const expected: BootstrapEntryIntent = {
+        const expected: BootstrapEntryIntentV2 = {
           kind: "fmcad-bootstrap-entry-intent",
-          version: 1,
+          version: 2,
           nonce,
           process,
+          executable,
           purpose: "isolated-stdout-v1",
           engineVersion: 2,
           installed: {

@@ -11,8 +11,9 @@ import {
 } from "../src/fresh-host-proof";
 import {
   bootstrapInstalledFilesDigest,
-  type BootstrapEntryIntent,
+  type BootstrapEntryIntentV2,
 } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+import { controlledStartupAuditFixture } from "./controlled-fusion-bootstrap-fixture";
 import type { ControlledFusionBootstrapTranscript } from "../src/controlled-fusion-bootstrap";
 import { createControlledStdoutProvider } from "../src/controlled-stdout-provider";
 import {
@@ -177,11 +178,16 @@ function controlledFixture() {
       },
     ],
   });
-  const expected: BootstrapEntryIntent = {
+  const executable = {
+    path: "C:\\Program Files\\Autodesk\\Fusion\\Fusion.exe",
+    sha256: "f".repeat(64),
+  };
+  const expected: BootstrapEntryIntentV2 = {
     kind: "fmcad-bootstrap-entry-intent",
-    version: 1,
+    version: 2,
     nonce: "a".repeat(32),
     process: { pid: 2, birth: "fusion-birth" },
+    executable,
     purpose: "isolated-stdout-v1",
     engineVersion: 2,
     installed: {
@@ -207,11 +213,12 @@ function controlledFixture() {
   });
   const base = {
     kind: "fmcad-bootstrap-entry-receipt",
-    version: 1,
+    version: 2,
     nonce: expected.nonce,
     process: expected.process,
     purpose: expected.purpose,
     engineVersion: 2,
+    executable,
     intent: reference(intent),
     profile: expected.profile,
     installed: {
@@ -222,12 +229,43 @@ function controlledFixture() {
   };
   const entry = file("C:\\private\\receipts\\entry.json", {
     ...base,
-    phase: "entry-before-addon-import",
+    phase: "entry-audited-before-addon-import",
+    startupAudit: controlledStartupAuditFixture(),
   });
   const returned = file("C:\\private\\receipts\\returned.json", {
     ...base,
     phase: "run-returned",
     entry: reference(entry),
+  });
+  const sourceClosure = file("C:\\private\\source-closure.json", {});
+  const launchAttempt = file("C:\\private\\launch-attempt.json", {
+    kind: "controlled-launch-attempt-v1",
+    nonce: expected.nonce,
+    old: { pid: 1, birth: "old-birth" },
+    executable: executable.path,
+    executableSha256: executable.sha256,
+    profile: {
+      nativePath: profile.nativePath,
+      sha256: profile.sha256,
+      identity: profile.identity,
+    },
+    sourceClosure: {
+      nativePath: sourceClosure.nativePath,
+      sha256: sourceClosure.sha256,
+      identity: sourceClosure.identity,
+    },
+  });
+  const launchJournal = file("C:\\private\\launch-journal.json", {
+    kind: "controlled-created-process-v1",
+    nonce: expected.nonce,
+    process: expected.process,
+    executable: executable.path,
+    executableSha256: executable.sha256,
+    attempt: {
+      nativePath: launchAttempt.nativePath,
+      sha256: launchAttempt.sha256,
+      identity: launchAttempt.identity,
+    },
   });
   const transcript: ControlledFusionBootstrapTranscript = {
     kind: "controlled-fusion-bootstrap-transcript-v1",
@@ -241,7 +279,16 @@ function controlledFixture() {
     error: null,
   };
   const transcriptFile = file("C:\\private\\transcript.json", transcript);
-  const files = [intent, profile, entry, returned, transcriptFile];
+  const files = [
+    intent,
+    profile,
+    entry,
+    returned,
+    sourceClosure,
+    launchAttempt,
+    launchJournal,
+    transcriptFile,
+  ];
   const context = {
     nonce: expected.nonce,
     process: expected.process,

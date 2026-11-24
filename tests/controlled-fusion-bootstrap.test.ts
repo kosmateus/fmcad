@@ -43,10 +43,49 @@ test("one-shot controller orders retirement/death/profile/launch/rebind/fresh ma
   assert.equal(persisted.nativePath, f.native.paths.transcript);
   const originals = await f.controller.readOriginalEvidence(transcript);
   const intent = await f.controller.readOriginalIntent(transcript);
+  assert.equal(intent.version, 2);
+  assert.equal(intent.purpose, "isolated-stdout-v1");
+  assert.deepEqual(intent.executable, {
+    path: "C:\\Program Files\\Autodesk\\Fusion\\Fusion.exe",
+    sha256: "f".repeat(64),
+  });
+  assert.deepEqual(
+    JSON.parse(Buffer.from(originals.intent.bytes).toString("utf8")),
+    intent,
+    "the emitted intent bytes are the exact original v2 intent",
+  );
+  const entry = JSON.parse(Buffer.from(originals.entry.bytes).toString("utf8"));
+  const returned = JSON.parse(
+    Buffer.from(originals.returned.bytes).toString("utf8"),
+  );
+  assert.equal(entry.version, 2);
+  assert.equal(entry.phase, "entry-audited-before-addon-import");
+  assert.equal(entry.executable.path, intent.executable.path);
+  assert.equal(entry.startupAudit.scripts.countBefore, 2);
+  assert.equal(entry.startupAudit.scripts.items[1].isVisible, false);
+  assert.equal(returned.version, 2);
+  assert.equal(returned.phase, "run-returned");
+  assert.equal(
+    returned.entry.sha256,
+    f.files.get(f.native.paths.entry)?.sha256,
+  );
+  assert.equal("startupAudit" in returned, false);
   assert.equal(intent.nonce, transcript.nonce);
   assert.deepEqual(intent.process, f.fresh);
   assert.equal(path.win32.basename(originals.intent.nativePath), "intent.json");
   await assert.rejects(f.controller.run(), /replayed/);
+});
+
+test("a launch journal with a different executable pin cannot emit an intent or start the add-in", async () => {
+  const f = controlledFusionBootstrapFixture({
+    tamperExecutableJournal: true,
+  });
+  const transcript = await f.controller.run();
+  assert.equal(transcript.state, "UNKNOWN");
+  assert.match(transcript.error ?? "", /executable binding differs/);
+  assert.equal(f.events.includes("intent"), false);
+  assert.equal(f.events.includes("start-once"), false);
+  assert.equal(f.files.has(f.native.paths.intent), false);
 });
 
 test("a mistakenly asynchronous local fence cannot pass the synchronous final seam", async () => {

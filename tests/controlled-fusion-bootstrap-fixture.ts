@@ -15,10 +15,63 @@ const hash = (bytes: Uint8Array) =>
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
 const old = { pid: 20, birth: "100" },
   fresh = { pid: 21, birth: "200" };
+export function controlledStartupAuditFixture() {
+  const addInManifest = '{"id":"controlled-fork"}';
+  const hiddenScriptManifest = '{ "id": "hidden-peer", "version": 1 }';
+  return {
+    kind: "fmcad-startup-sdk-audit",
+    version: 1,
+    applicationVersion: "2.0.0 fixture",
+    preferences: {
+      defaultPathForScriptsAndAddIns: "C:\\Users\\fixture\\Fusion",
+    },
+    scripts: {
+      countBefore: 2,
+      countAfter: 2,
+      items: [
+        {
+          index: 0,
+          folder: "C:\\fixture\\fork",
+          location: {
+            name: "UserDefinedScriptSourceLocation",
+            value: 2,
+          },
+          isAddIn: true,
+          isRunOnStartup: false,
+          isRunning: true,
+          isVisible: true,
+          manifest: {
+            content: addInManifest,
+            sha256: hash(Buffer.from(addInManifest, "utf8")),
+            parseStatus: "json-object",
+          },
+        },
+        {
+          index: 1,
+          folder: "C:\\Users\\fixture\\Fusion\\Scripts\\peer",
+          location: {
+            name: "SamplesScriptSourceLocation",
+            value: 4,
+          },
+          isAddIn: false,
+          isRunOnStartup: null,
+          isRunning: false,
+          isVisible: false,
+          manifest: {
+            content: hiddenScriptManifest,
+            sha256: hash(Buffer.from(hiddenScriptManifest, "utf8")),
+            parseStatus: "json-object",
+          },
+        },
+      ],
+    },
+  };
+}
 export function controlledFusionBootstrapFixture(
   options: {
     partial?: boolean;
     wrongProcess?: boolean;
+    tamperExecutableJournal?: boolean;
     vendorNormalize?: boolean;
     cancelAfterLaunch?: AbortController;
   } = {},
@@ -141,11 +194,45 @@ export function controlledFusionBootstrapFixture(
       assert.match(nonce, /^[a-f0-9]{32}$/);
       events.push("launch");
       options.cancelAfterLaunch?.abort();
+      const sourceClosure = file(actualPaths.sourceClosure);
+      const executable = "C:\\Program Files\\Autodesk\\Fusion\\Fusion.exe";
+      const executableSha256 = "f".repeat(64);
+      const reference = (original: ControlledFile) => ({
+        nativePath: original.nativePath,
+        sha256: original.sha256,
+        identity: original.identity,
+      });
+      const attempt = file(
+        actualPaths.launchAttempt,
+        encode({
+          kind: "controlled-launch-attempt-v1",
+          nonce,
+          old: value,
+          executable,
+          executableSha256,
+          profile: reference(profile),
+          sourceClosure: reference(sourceClosure),
+        }),
+      );
+      const process = options.wrongProcess ? old : fresh;
+      const journal = file(
+        actualPaths.launchJournal,
+        encode({
+          kind: "controlled-created-process-v1",
+          nonce,
+          process,
+          executable,
+          executableSha256: options.tamperExecutableJournal
+            ? "0".repeat(64)
+            : executableSha256,
+          attempt: reference(attempt),
+        }),
+      );
       return {
-        process: options.wrongProcess ? old : fresh,
-        attempt: file(actualPaths.launchAttempt),
-        journal: file(actualPaths.launchJournal),
-        sourceClosure: file(actualPaths.sourceClosure),
+        process,
+        attempt,
+        journal,
+        sourceClosure,
       };
     },
     async assertProcess(value) {
@@ -196,6 +283,7 @@ export function controlledFusionBootstrapFixture(
         Buffer.from(intent.bytes).toString("utf8"),
       ) as {
         nonce: string;
+        executable: { path: string; sha256: string };
         installed: {
           directory: string;
           source: string;
@@ -205,11 +293,12 @@ export function controlledFusionBootstrapFixture(
       };
       const base = {
         kind: "fmcad-bootstrap-entry-receipt",
-        version: 1,
+        version: 2,
         nonce: expected.nonce,
         process: fresh,
         purpose: "isolated-stdout-v1",
         engineVersion: 2,
+        executable: expected.executable,
         intent: { path: intent.nativePath, sha256: intent.sha256 },
         profile: expected.profile,
         installed: {
@@ -220,7 +309,11 @@ export function controlledFusionBootstrapFixture(
       };
       const entry = file(
         actualPaths.entry,
-        encode({ ...base, phase: "entry-before-addon-import" }),
+        encode({
+          ...base,
+          phase: "entry-audited-before-addon-import",
+          startupAudit: controlledStartupAuditFixture(),
+        }),
       );
       const returned = file(
         actualPaths.returned,
