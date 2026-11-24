@@ -7,7 +7,7 @@ import { inflateSync } from "node:zlib";
 import { decodeAdmissionJson } from "./admission-json";
 import { controlledHostUiNative } from "./controlled-host-ui-native";
 import { ControlledFusionNativeError } from "./controlled-fusion-launch";
-import type { BootstrapEntryIntent } from "./bootstrap-entry-evidence";
+import { readControlledUiEntryIntentV2 } from "./controlled-ui-intent-v2";
 import { matchesControlledFusionAutoload } from "./fusion-bootstrap-autoload";
 import type {
   ControlledFile,
@@ -52,7 +52,10 @@ interface Capture {
   png: string;
   inputDelivered: boolean;
 }
-function validateImage(png: Buffer, view: View) {
+export function validateControlledHostUiImage(
+  png: Buffer,
+  view: { main: Record<string, unknown> },
+) {
   if (
     png.length < 57 ||
     png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
@@ -168,7 +171,7 @@ export function readControlledHostUiCapture(
   if (png.toString("base64") !== result.png)
     throw new Error("Original screenshot missing/partial");
   validateView(result.view);
-  validateImage(png, result.view);
+  validateControlledHostUiImage(png, result.view);
   return result;
 }
 /** Explicit finite whitelist for the existing native private-file adapter. */
@@ -218,7 +221,10 @@ function sync(fence: () => void) {
     throw new Error("Synchronous held lease fence required");
   }
 }
-function mappedBytes(file: string, expected?: string): Buffer {
+export function readControlledMappedBytes(
+  file: string,
+  expected?: string,
+): Buffer {
   const before = fs.lstatSync(file, { bigint: true });
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n)
     throw new Error("Regular non-aliased mapped original required");
@@ -242,6 +248,7 @@ function mappedBytes(file: string, expected?: string): Buffer {
     fs.closeSync(fd);
   }
 }
+const mappedBytes = readControlledMappedBytes;
 
 /**
  * Private ROOT-only one-shot UI ports. Native adapter supplies full qualified
@@ -677,15 +684,19 @@ export function createControlledHostUi(
         )
           throw new Error("Original intent path/bytes required");
         await fenced(() => native.assertOriginal(intent));
-        const value = decodeAdmissionJson(
+        const value = readControlledUiEntryIntentV2(
           Buffer.from(intent.bytes).toString("utf8"),
-        ) as BootstrapEntryIntent;
+        );
         if (
           !value ||
           Object.keys(value).sort().join() !==
-            "engineVersion,installed,kind,nonce,process,profile,purpose,receipts,version" ||
+            "engineVersion,executable,installed,kind,nonce,process,profile,purpose,receipts,version" ||
           value.kind !== "fmcad-bootstrap-entry-intent" ||
-          value.version !== 1 ||
+          value.version !== 2 ||
+          !isDeepStrictEqual(value.executable, {
+            path: pins.executable,
+            sha256: pins.executableSha256,
+          }) ||
           value.purpose !== "isolated-stdout-v1" ||
           value.engineVersion !== 2 ||
           !/^[a-f0-9]{32}$/.test(value.nonce) ||

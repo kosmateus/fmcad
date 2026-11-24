@@ -11,6 +11,8 @@
     "tests/controlled-lifecycle-lease.test.ts",
     "tests/controlled-host-ui.test.ts",
     "tests/controlled-host-ui.windows.test.ts",
+    "tests/controlled-legacy-ui.test.ts",
+    "tests/controlled-legacy-ui.windows.test.ts",
     "tests/fresh-host-proof.test.ts",
     "tests/controlled-host-compiler-integration.test.ts",
     "tests/fusion-bootstrap-autoload.test.ts",
