@@ -70,6 +70,7 @@
     "tests/queue-runtime-authority.test.ts",
     "tests/runtime-epoch-load.test.ts",
     "tests/queue-runtime-identity.test.ts",
+    "tests/paused-instance-observation.test.ts",
     "tests/broker-rpc-preparation.test.ts",
     "tests/broker-turn-execution.test.ts",
     "tests/local-worker-process.test.ts",

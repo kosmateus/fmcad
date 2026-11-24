@@ -347,6 +347,27 @@ export function validateQueueOptions({
     fail("INVALID_OPTIONS", "now must be a clock function");
 }
 
+function advanceQuiescentInstanceEpoch(
+  d: QueueSnapshot,
+  transitionId: string,
+  retirement: RuntimeRetirementAuthority | undefined,
+) {
+  if (
+    d.active || d.blocked || d.lease ||
+    Object.values(d.jobs).some((job) =>
+      !terminal(job.state) && !runtimeRetiredJob(d, job, retirement, canonical))
+  )
+    fail("QUEUE_NOT_QUIESCENT",
+      "Automatic instance recovery requires terminal jobs and no active job, block or lease");
+  if (d.lastInstanceTransitionId === transitionId)
+    return { alreadyApplied: true, revision: d.revision, epoch: d.epoch };
+  const previous = { revision: d.revision, epoch: d.epoch };
+  d.revision++;
+  d.epoch++;
+  d.lastInstanceTransitionId = transitionId;
+  return { alreadyApplied: false, previous, revision: d.revision, epoch: d.epoch };
+}
+
 export class QueueDomain {
   data: QueueSnapshot;
   readonly maxQueued: number;
@@ -1905,31 +1926,21 @@ export class QueueDomain {
           "MANUAL_PAUSE",
           "Automatic instance recovery does not clear a manual pause",
         );
-      if (
-        d.active ||
-        d.blocked ||
-        d.lease ||
-        Object.values(d.jobs).some((job) =>
-          !terminal(job.state) &&
-          !runtimeRetiredJob(d, job, retirements.get(this), canonical))
-      ) {
-        fail(
-          "QUEUE_NOT_QUIESCENT",
-          "Automatic instance recovery requires terminal jobs and no active job, block or lease",
-        );
-      }
-      if (d.lastInstanceTransitionId === transitionId)
-        return { alreadyApplied: true, revision: d.revision, epoch: d.epoch };
-      const previous = { revision: d.revision, epoch: d.epoch };
-      d.revision++;
-      d.epoch++;
-      d.lastInstanceTransitionId = transitionId;
-      return {
-        alreadyApplied: false,
-        previous,
-        revision: d.revision,
-        epoch: d.epoch,
-      };
+      return advanceQuiescentInstanceEpoch(d, transitionId, retirements.get(this));
+    });
+  }
+
+  /** Startup identity observation is not resume authority. Preserve the whole
+   * pause/control state and all history while fencing the new physical instance. */
+  observePausedInstanceEpoch(transitionId: string) {
+    if (!identifier(transitionId))
+      fail("INVALID_TRANSITION", "A stable instance transition id is required");
+    return this._commit((d) => {
+      if (!d.paused)
+        fail("PAUSED_STARTUP_REQUIRED", "Paused startup observation requires an existing manual pause");
+      if (d.localUnknown || d.controlBlocked)
+        fail("QUEUE_NOT_QUIESCENT", "Paused startup observation cannot bypass a local or control UNKNOWN");
+      return advanceQuiescentInstanceEpoch(d, transitionId, retirements.get(this));
     });
   }
 

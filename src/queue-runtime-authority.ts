@@ -172,7 +172,7 @@ export interface BrokerRuntimeIdentityReaders {
   hasRuntimeRootEvidence(directory: string): boolean;
 }
 
-/** Only the current startup/control view and two existing domain operations. */
+/** Only the current startup/control view and instance-epoch operations. */
 export type BrokerRuntimeStartupView = Readonly<
   Pick<
     P.Snapshot,
@@ -200,6 +200,8 @@ export interface BrokerRuntimeQueue {
   assertEpoch(normal: boolean): void;
   writerStatus(): { readonly ready: boolean };
   advanceInstanceEpoch(transitionId: string): unknown;
+  /** Startup-only identity fence; preserves manual pause, never resumes work. */
+  observePausedInstanceEpoch?(transitionId: string): unknown;
 }
 
 export interface BrokerRuntimeIdentityOptions {
@@ -821,9 +823,13 @@ export async function openBrokerRuntimeAuthority(
             probe.receiptPath,
             { priorProcessAlive },
           );
-        const queueTransition = q.advanceInstanceEpoch(transitionId);
+        const queueTransition = current.paused && !versionChanged && q.observePausedInstanceEpoch
+          ? q.observePausedInstanceEpoch(transitionId)
+          : q.advanceInstanceEpoch(transitionId);
         durable(path.join(dir, `instance-transition-${transitionId}.json`), {
-          source: versionChanged
+          source: current.paused
+            ? "paused-startup-instance-observation"
+            : versionChanged
             ? "explicit-quiescent-version-transition"
             : "automatic-quiescent-restart-recovery",
           transitionId,
