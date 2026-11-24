@@ -422,6 +422,13 @@ export interface Options {
     request: import("@fmcad/core").QueueRequest,
     pins: import("./protocol-metadata-broker").ProtocolMetadataPins,
   ) => Promise<import("./python-diagnostic-broker").StdoutCompilationPorts>;
+  /** Same-process operator handoff only; never runtime config or IPC data. */
+  captureControlledIngress?: (ready: {
+    readonly window: import("../packages/node-adapters/src/execution/controlled-ingress-window").ControlledIngressWindow;
+    readonly identity: import("../packages/node-adapters/src/execution/controlled-ingress-window").ControlledIngressIdentity;
+    /** After the existing supported resume completes, never an unpause override. */
+    activate(): void;
+  }) => void;
   /** Explicit physical test adapter only. Production always uses its WSL/native mapping. */
   nativePath?: (file: string) => string;
   stateOptions?: Record<string, unknown>;

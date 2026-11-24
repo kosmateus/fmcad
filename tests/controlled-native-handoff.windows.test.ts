@@ -10,6 +10,7 @@ import {
 } from "../packages/node-adapters/src/execution/controlled-native-handoff";
 import { createControlledFusionLaunchAdapter } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+import { controlledNativeHandoffProgram } from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
 import type { ControlledProcess } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
 
 const fixturePinsPath = process.env["FMCAD_CONTROLLED_WINDOWS_FIXTURE_PINS"];
@@ -23,6 +24,7 @@ interface FixturePins {
   mappedSourceDirectory: string;
   source: string;
   mappedManifest: string;
+  sourceManifest: string;
   manifestSha256: string;
 }
 function mapped(name: string) {
@@ -36,7 +38,7 @@ p=json.load(sys.stdin);root=Path(tempfile.mkdtemp(prefix="sol-native-handoff-"))
 subprocess.run([str(Path(os.environ["SystemRoot"])/"System32"/"icacls.exe"),str(root),
  "/inheritance:r","/grant:r",getpass.getuser()+":(OI)(CI)F"],check=True,stdout=subprocess.PIPE)
 helper=root/"qualified";shutil.copytree(p["sourceDirectory"],helper,copy_function=shutil.copyfile)
-manifest=root/"manifest.json";manifest.write_bytes((Path(p["sourceDirectory"]).parent/"package-manifest.json").read_bytes())
+manifest=root/"manifest.json";manifest.write_bytes(Path(p["sourceManifest"]).read_bytes())
 discovery=root/"discovery";discovery.mkdir();other=root/"other-discovery";other.mkdir()
 target=discovery/"Fork";shutil.copytree(helper,target,copy_function=shutil.copyfile)
 (target/"README.md").write_bytes((target/"README.md").read_bytes()+b"\nlegacy owned fixture\n")
@@ -144,6 +146,66 @@ interface Owned {
 }
 
 test(
+  "Windows superscript devices refuse before helper import or filesystem effects",
+  {
+    skip:
+      !fixturePinsPath &&
+      "NOTRUN: explicit SDK-free Windows fixture pins required",
+  },
+  async (t) => {
+    assert.ok(fixturePinsPath);
+    const config = JSON.parse(
+      fs.readFileSync(fixturePinsPath, "utf8"),
+    ) as FixturePins;
+    const raw = fs.readFileSync(config.mappedManifest);
+    assert.equal(hash(raw), config.manifestSha256);
+    const original = JSON.parse(raw.toString("utf8")) as Record<string, string>;
+    assert.equal(
+      hash(fs.readFileSync(config.mappedNativePython)),
+      config.nativePythonSha256,
+    );
+    for (const device of ["COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"]) {
+      await t.test(device, () => {
+        for (const name of [
+          `lib/${device}`,
+          `lib/${device}.py`,
+          `lib/${device}/entry.py`,
+        ]) {
+          const files = { ...original, [name]: "a".repeat(64) };
+          const qualified = {
+            directory: "C:\\unused-owned-fixture",
+            source: config.source,
+            files,
+            build: bootstrapInstalledFilesDigest(files),
+          };
+          const result = spawnSync(
+            config.mappedNativePython,
+            ["-I", "-S", "-B", "-c", controlledNativeHandoffProgram],
+            {
+              cwd: config.mappedSourceDirectory,
+              input: JSON.stringify({
+                pins: { qualified },
+                action: "install",
+                input: {},
+              }),
+              encoding: "utf8",
+            },
+          );
+          assert.notEqual(result.status, 0, name);
+          assert.match(
+            result.stderr,
+            /Unsafe qualified Windows name\/hash/,
+            name,
+          );
+          assert.doesNotMatch(result.stderr, /KeyError|WinDLL|adsk/, name);
+          assert.equal(result.stdout, "");
+        }
+      });
+    }
+  },
+);
+
+test(
   "actual Windows qualified-install/six-field-rebind fixtures; NO Fusion SDK/UI/deployment",
   {
     skip:
@@ -161,6 +223,12 @@ test(
       string,
       string
     >;
+    assert.equal(config.source, "8818d2c8dcbcc9988992da561f276ea9b6a0e241");
+    assert.equal(Object.keys(files).length, 104);
+    assert.equal(
+      bootstrapInstalledFilesDigest(files),
+      "38d188040c6ffc0b55fe9aeb5cc10521512ce85a13823b8ab96420976c8bae88",
+    );
     const make = async (mode = "success") => {
       const own = native(config, setup, config) as unknown as Owned;
       t.diagnostic(
@@ -375,8 +443,44 @@ test(
         assert.equal(fs.existsSync(mapped(f.paths.stage)), false);
       },
     );
+    for (const mode of [
+      "missing",
+      "extra",
+      "renamed",
+      "changed",
+      "case-changed",
+    ]) {
+      await t.test(
+        `qualified helper ${mode} refuses before staging or moving owned installation`,
+        async () => {
+          const f = await make();
+          const root = mapped(f.own.helper);
+          const original = path.join(root, "README.md");
+          if (mode === "missing") fs.unlinkSync(original);
+          if (mode === "extra")
+            fs.writeFileSync(
+              path.join(root, "unqualified-extra.txt"),
+              "not pinned",
+            );
+          if (mode === "renamed")
+            fs.renameSync(original, path.join(root, "renamed-readme.md"));
+          if (mode === "changed")
+            fs.appendFileSync(original, "\nchanged qualified input");
+          if (mode === "case-changed") {
+            fs.renameSync(original, path.join(root, "case-intermediate.txt"));
+            fs.renameSync(
+              path.join(root, "case-intermediate.txt"),
+              path.join(root, "readme.md"),
+            );
+          }
+          await assert.rejects(f.install());
+          assert.equal(fs.existsSync(mapped(f.paths.backup)), false);
+          assert.equal(fs.existsSync(mapped(f.paths.stage)), false);
+        },
+      );
+    }
     await t.test(
-      "full old tree including unknown files is backed up outside ALL discovery roots; new source is exact100",
+      "full old tree including unknown files is backed up outside ALL discovery roots; new source matches every qualified file",
       async () => {
         const f = await make();
         const receipt = await f.install();

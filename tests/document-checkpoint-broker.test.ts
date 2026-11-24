@@ -38,7 +38,9 @@ runtimeIdentity.buildHash = (root?: string) => {
 async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" = false,
   metadataFault?: "program" | "wire" | "runtime", historyCount = 0,
   preparedHook?: (prepared: P.PreparedCall) => void | Promise<void>,
-  controlledStdout?: P.Options["prepareControlledStdout"]) {
+  controlledStdout?: P.Options["prepareControlledStdout"],
+  captureIngress?: P.Options["captureControlledIngress"],
+  beforeServe?: (directory: string) => Promise<Pick<P.Options, "fusionResetNonce">>) {
   changedRuntime = false; changedRuntimeChecks = 0;
   const home = fs.mkdtempSync("/tmp/opencode/checkpoint-broker-");
   const previous = process.env["XDG_STATE_HOME"], cwd = process.cwd();
@@ -57,6 +59,7 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   });
   const { queueDirectory } = load("./queue-connection") as { queueDirectory(): string };
   const dir = queueDirectory();
+  const lifecycleOptions = await beforeServe?.(dir);
   const instance = { pid: 991, birth: "synthetic-checkpoint-991", version: "fixture",
     activeCommand: "SelectCommand", documents: [] };
   let expression = "10 mm", identityCalls = 0, products = 0, queries = 0, writes = 0;
@@ -154,6 +157,10 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
         comment: "authorized model data", metadata: { includesModel: true },
       }],
     };
+  }
+  if (captureIngress) {
+    const { openIsolatedEpoch } = load("./queue-isolated-epoch") as typeof import("../src/queue-isolated-epoch");
+    openIsolatedEpoch(dir, { recover: false }).pause(true, "owned-controlled-transfer");
   }
   const { createBrokerTransport } = load("./dist/fusion-transport/broker") as {
     createBrokerTransport(config: unknown, dependencies: unknown): P.Client;
@@ -330,6 +337,8 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
   try { broker = await serve(cfg, {
     dir, confirmOwnership: true, pollMs: 5, createBackend: () => physical,
     ...(controlledStdout ? { prepareControlledStdout: controlledStdout } : {}),
+    ...(captureIngress ? { captureControlledIngress: captureIngress } : {}),
+    ...lifecycleOptions,
     nativePath: (file) => file,
     async testCheckPrepared(prepared) {
       await preparedHook?.(prepared);
@@ -354,7 +363,9 @@ async function fixture(t: TestContext, foreignConflict: boolean | "raw-forged" =
           instance: differentProductGeneration && request.kind === "product" ? "generation-B" : "generation-A",
         },
         grantDigest: hash("isolated-private-fixture-grant"),
-        physicalRuntime: { ...instance, source: "fixture-source", build: "fixture-build" },
+        physicalRuntime: { ...instance,
+          source: captureIngress ? "a".repeat(40) : "fixture-source",
+          build: captureIngress ? hash("owned-native-build") : "fixture-build" },
         turnId: request.physicalRequestId,
         target: JSON.stringify(request.documentSelector ?? null),
       };
@@ -413,7 +424,138 @@ function record(value: unknown): Record<string, unknown> {
   assert.ok(value && typeof value === "object" && !Array.isArray(value));
   return value as Record<string, unknown>;
 }
+test("real broker captures paused private ingress and activates only after supported resume",
+  { timeout: 120000 }, async (t) => {
+    let ready: Parameters<NonNullable<P.Options["captureControlledIngress"]>>[0] | undefined;
+    const f = await fixture(t, false, undefined, 0, undefined, undefined,
+      (original) => { ready = original; });
+    assert.ok(ready);
+    const ingress = load("./dist/node-adapters/execution/controlled-ingress-window") as
+      typeof import("../packages/node-adapters/src/execution/controlled-ingress-window");
+    ingress.assertControlledIngressTransition(ready.window, ready.identity);
+    assert.throws(() => ingress.assertControlledIngressWindow(ready!.window, ready!.identity));
+    assert.throws(() => ready!.activate(), /resume|ingress/i);
+    // An early activation call is terminal, so a caller cannot regain a window
+    // by later changing the public paused state.
+    assert.throws(() => ingress.assertControlledIngressTransition(ready!.window, ready!.identity));
+    const client = await f.client("owned-controlled-operator");
+    const current = record(await client.call("control-status"));
+    const resumed = record(await client.call("resume", { control: {
+      requestId: "owned-supported-resume", instanceId: current["instanceId"],
+      expectedGeneration: current["generation"],
+    } }));
+    assert.ok(["RUNNING", "RESUMING"].includes(String(resumed["phase"])));
+    assert.throws(() => ready!.activate());
+    assert.equal(f.writes(), 0);
+  });
+
+test("real broker supported resume preserves the original pending ingress witness",
+  { timeout: 120000 }, async (t) => {
+    let ready: Parameters<NonNullable<P.Options["captureControlledIngress"]>>[0] | undefined;
+    const f = await fixture(t, false, undefined, 0, undefined, undefined,
+      (original) => { ready = original; });
+    assert.ok(ready);
+    const ingress = load("./dist/node-adapters/execution/controlled-ingress-window") as
+      typeof import("../packages/node-adapters/src/execution/controlled-ingress-window");
+    const client = await f.client("owned-controlled-operator");
+    const current = record(await client.call("control-status"));
+    const resumed = record(await client.call("resume", { control: {
+      requestId: "owned-valid-supported-resume", instanceId: current["instanceId"],
+      expectedGeneration: current["generation"],
+    } }));
+    assert.equal(resumed["phase"], "RUNNING");
+    ready.activate();
+    ingress.assertControlledIngressWindow(ready.window, ready.identity);
+    assert.throws(() => ingress.assertControlledIngressWindow(
+      Object.freeze({}) as NonNullable<typeof ready>["window"], ready!.identity));
+    f.revoke(true);
+    assert.throws(() => ingress.assertControlledIngressWindow(ready!.window, ready!.identity));
+    f.revoke(false);
+    assert.throws(() => ingress.assertControlledIngressWindow(ready!.window, ready!.identity));
+    assert.equal(f.writes(), 0);
+  });
+test("real broker accepts original reset barrier transfer before its supported resume",
+  { timeout: 120000 }, async (t) => {
+    type Lifecycle = ReturnType<typeof import("../packages/node-adapters/src/execution/controlled-lifecycle-lease").createControlledLifecycleLease>;
+    let lifecycle: Lifecycle | undefined;
+    let ready: Parameters<NonNullable<P.Options["captureControlledIngress"]>>[0] | undefined;
+    let originalInode: bigint | undefined;
+    let stops = 0, retirements = 0;
+    const f = await fixture(t, false, undefined, 0, undefined, undefined,
+      (original) => { ready = original; },
+      async (directory) => {
+        fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        const { createControlledLifecycleLease } = load(
+          "./dist/node-adapters/execution/controlled-lifecycle-lease") as
+          typeof import("../packages/node-adapters/src/execution/controlled-lifecycle-lease");
+        const { processBirth, buildHash } = load("./queue-instance") as {
+          processBirth(pid: number): string; buildHash(): string;
+        };
+        lifecycle = createControlledLifecycleLease({
+          directory, operator: { pid: process.pid, birth: processBirth(process.pid) },
+          old: { pid: 42, birth: "456" }, buildHash: buildHash(),
+          fence() {},
+          async assertQuiescent() {},
+          async stopBrokerOnce() { stops++; },
+          async assertIngressHeld() {
+            assert.ok(fs.existsSync(path.join(directory, "fusion-reset.lock")));
+          },
+          async retireOldNormally() { retirements++; },
+        });
+        const lease = await lifecycle.acquireExclusiveLifecycleLease();
+        await lease.retireOldNormally({ pid: 42, birth: "456" });
+        const marker = record(JSON.parse(fs.readFileSync(path.join(directory, "fusion-reset.lock"), "utf8")));
+        originalInode = fs.statSync(path.join(directory, "fusion-reset.lock"), { bigint: true }).ino;
+        return { fusionResetNonce: String(marker["nonce"]) };
+      });
+    assert.ok(ready);
+    assert.ok(lifecycle);
+    assert.ok(fs.existsSync(path.join(f.dir, "fusion-reset.lock")));
+    const transferred = lifecycle.transferToBroker(ready.window, ready.identity);
+    assert.equal(fs.existsSync(path.join(f.dir, "fusion-reset.lock")), false);
+    assert.equal(fs.statSync(transferred.originalBarrier, { bigint: true }).ino, originalInode);
+    const client = await f.client("owned-transfer-operator");
+    const status = record(await client.call("control-status"));
+    const resumed = record(await client.call("resume", { control: {
+      requestId: "owned-transfer-resume", instanceId: status["instanceId"],
+      expectedGeneration: status["generation"],
+    } }));
+    assert.equal(resumed["phase"], "RUNNING");
+    ready.activate();
+    const ingress = load("./dist/node-adapters/execution/controlled-ingress-window") as
+      typeof import("../packages/node-adapters/src/execution/controlled-ingress-window");
+    ingress.assertControlledIngressWindow(ready.window, ready.identity);
+    assert.equal(stops, 1);
+    assert.equal(retirements, 1);
+    assert.equal(f.writes(), 0);
+  });
 const target = { docFileId: "file-A" };
+
+for (const fault of ["throw", "promise", "value"] as const)
+test(`real broker capture failure ${fault} closes its listener and revokes the original window`,
+  { timeout: 120000 }, async (t) => {
+    let directory: string | undefined;
+    let captured: Parameters<NonNullable<P.Options["captureControlledIngress"]>>[0] | undefined;
+    await assert.rejects(fixture(t, false, undefined, 0, undefined, undefined,
+      (ready) => {
+        captured = ready;
+        if (fault === "throw") throw new Error("Owned synchronous capture failure");
+        if (fault === "promise") return Promise.resolve();
+        return 1;
+      },
+      async (dir) => { directory = dir; return {}; }),
+      fault === "throw" ? /Owned synchronous capture failure/ : /must be synchronous/);
+    assert.ok(directory);
+    assert.ok(captured);
+    const { queueSocket } = load("./queue-connection") as { queueSocket(dir: string): string };
+    assert.equal(fs.existsSync(queueSocket(directory)), false, "rejected serve must close its own listener");
+    assert.equal(fs.existsSync(path.join(directory, "broker.lock")), false, "rejected serve must release its owner");
+    const ingress = load("./dist/node-adapters/execution/controlled-ingress-window") as
+      typeof import("../packages/node-adapters/src/execution/controlled-ingress-window");
+    assert.throws(() => ingress.assertControlledIngressTransition(captured!.window, captured!.identity),
+      /Original current/);
+    assert.throws(() => captured!.activate(), /Original current/);
+  });
 
 test("public IPC stays responsive while preparing a guarded continuation",
   // Inspection and acceptance reconstruct the real Python source several times.
@@ -666,6 +808,7 @@ test("public doc list uses one compiler-bound metadata RPC without accepting or 
   });
 test("public raw stdout uses private compilation ports, exact scope and the original retired ledger",
   { timeout: 120000 }, async (t) => {
+    let ready: Parameters<NonNullable<P.Options["captureControlledIngress"]>>[0] | undefined;
     const { prepareIsolatedStdout } = load("./dist/python/isolated-stdout") as
       typeof import("../packages/node-adapters/src/python/isolated-stdout");
     const f = await fixture(t, true, undefined, 0, undefined, async (_request, pins) => ({
@@ -677,8 +820,19 @@ test("public raw stdout uses private compilation ports, exact scope and the orig
       verifyHostBindings: () => ({
         proofHash: "a".repeat(64), profileVersion: "isolated-stdout-v1",
       }),
-    }));
+    }), (original) => { ready = original; });
+    assert.ok(ready);
     const client = await f.client("controlled-stdout");
+    const current = record(await client.call("control-status"));
+    const resumed = record(await client.call("resume", { control: {
+      requestId: "stdout-supported-resume", instanceId: current["instanceId"],
+      expectedGeneration: current["generation"],
+    } }));
+    assert.equal(resumed["phase"], "RUNNING");
+    ready.activate();
+    const ingress = load("./dist/node-adapters/execution/controlled-ingress-window") as
+      typeof import("../packages/node-adapters/src/execution/controlled-ingress-window");
+    ingress.assertControlledIngressWindow(ready.window, ready.identity);
     const before = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     const original = Object.values(record(before["jobs"])).map(record)
       .find((job) => job["requestId"] === "private-foreign-request");
@@ -709,6 +863,7 @@ test("public raw stdout uses private compilation ports, exact scope and the orig
     const duplicate = await client.submit(input);
     assert.equal(duplicate.id, admitted.id);
     assert.equal(f.counts().products, 1);
+    ingress.assertControlledIngressWindow(ready.window, ready.identity);
     assert.equal(f.writes(), 0);
     const after = record(JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8")));
     assert.deepEqual(record(after["jobs"])[String(original["id"])], original);

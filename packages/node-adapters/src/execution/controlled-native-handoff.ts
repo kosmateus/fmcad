@@ -174,25 +174,56 @@ export function createControlledFusionNativeHandoff(
     )
   )
     throw new Error("Trusted complete qualified handoff pins required");
-  const names = Object.keys(pins.qualified.files);
+  record(pins.qualified, ["directory", "source", "build", "files"]);
+  const names = Object.keys(record(pins.qualified.files));
+  const fileNames = new Set(names.map((name) => name.toLowerCase()));
+  const windowsNames = new Map<string, string>();
+  const safeName = (name: string) => {
+    const parts = name.split("/");
+    if (
+      /[\x00-\x1f<>:"\\|?*]/.test(name) ||
+      parts.some(
+        (part) =>
+          !part ||
+          part === "." ||
+          part === ".." ||
+          /[. ]$/.test(part) ||
+          /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])([.]|$)/i.test(part),
+      )
+    )
+      return false;
+    for (let i = 1; i <= parts.length; i++) {
+      const prefix = parts.slice(0, i).join("/");
+      const key = prefix.toLowerCase();
+      const previous = windowsNames.get(key);
+      if (previous !== undefined && previous !== prefix) return false;
+      if (i < parts.length && fileNames.has(key)) return false;
+      windowsNames.set(key, prefix);
+    }
+    return true;
+  };
   if (
-    names.length !== 100 ||
+    !names.length ||
+    names.length > 4096 ||
     names.some(
-      (name) =>
-        !digest(pins.qualified.files[name]) ||
-        name.includes("\\") ||
-        name.includes(":") ||
-        path.posix.normalize(name) !== name ||
-        name.startsWith("/") ||
-        name.split("/").some((part) => part === ".." || part === "."),
+      (name) => !digest(pins.qualified.files[name]) || !safeName(name),
     ) ||
     ![
       "AutodeskFusionMCP.py",
       "addon_runtime.py",
       "lib/bootstrap_entry.py",
+      "lib/startup_audit.py",
+      "lib/physical_authority.py",
+      "lib/rebaseline_fence.py",
+      "lib/request_admission.py",
+      "fusion_bridge/dispatch.py",
+      "fusion_bridge/runtime.py",
+      "fusion_bridge/admission_runtime.py",
     ].every((name) => names.includes(name))
   )
-    throw new Error("Complete qualified 100-file package required");
+    throw new Error(
+      "Complete qualified audited package with safe unique Windows names required",
+    );
   for (const root of pins.allDiscoveryRoots)
     for (const outside of [
       pins.helperDirectory,

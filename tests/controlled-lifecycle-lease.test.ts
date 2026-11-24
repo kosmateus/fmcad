@@ -7,6 +7,10 @@ import {
   createControlledLifecycleLease,
   type ControlledLifecyclePorts,
 } from "../packages/node-adapters/src/execution/controlled-lifecycle-lease";
+import {
+  createControlledIngressWindow,
+  type ControlledIngressIdentity,
+} from "../packages/node-adapters/src/execution/controlled-ingress-window";
 
 function fixture(t: test.TestContext) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "controlled-lease-"));
@@ -158,4 +162,101 @@ test("asynchronous owner rejection is denied before any marker or lifecycle acti
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(fs.existsSync(f.file), false);
   assert.equal(f.events.includes("supported-stop"), false);
+});
+
+function newBroker(ports: ControlledLifecyclePorts) {
+  const identity: ControlledIngressIdentity = {
+    owner: { ...ports.operator, nonce: "new-broker" },
+    pins: {
+      buildHash: "b".repeat(64),
+      configHash: "c".repeat(64),
+      generation: "d".repeat(64),
+    },
+    native: {
+      pid: ports.old.pid + 1,
+      birth: "999",
+      source: "e".repeat(40),
+      build: "f".repeat(64),
+      instance: "new-instance",
+      epoch: "new-epoch",
+    },
+  };
+  const producer = createControlledIngressWindow(() => identity, {
+    // Phase doubles only. Actual serve checks its real paused/running gate.
+    assertTransferClosed() {},
+    assertActivatedIdle() {},
+  });
+  return { identity, producer, window: producer.sealForTransfer() };
+}
+
+test("Linux operator birth and original inode survive explicit transfer to the new broker witness", async (t) => {
+  const f = fixture(t);
+  const ports = {
+    ...f.ports,
+    operator: { pid: process.pid, birth: "linux-boot-id:123456" },
+  };
+  const lifecycle = createControlledLifecycleLease(ports);
+  const lease = await lifecycle.acquireExclusiveLifecycleLease();
+  await lease.retireOldNormally(ports.old);
+  const originalBytes = fs.readFileSync(f.file);
+  const originalStat = fs.statSync(f.file, { bigint: true });
+  const broker = newBroker(ports);
+  const archived = lifecycle.transferToBroker(broker.window, broker.identity);
+  assert.equal(fs.existsSync(f.file), false);
+  assert.deepEqual(fs.readFileSync(archived.originalBarrier), originalBytes);
+  assert.equal(
+    fs.statSync(archived.originalBarrier, { bigint: true }).ino,
+    originalStat.ino,
+  );
+  assert.equal(
+    fs.statSync(archived.originalBarrier, { bigint: true }).nlink,
+    1n,
+  );
+  await lease.assertCurrent();
+  broker.producer.open();
+  lease.fence();
+  broker.producer.observe({ id: "unqualified-physical-send" });
+  assert.throws(lease.fence, /Original current/);
+  assert.ok(fs.existsSync(archived.originalBarrier));
+  assert.equal(fs.existsSync(f.file), false);
+});
+
+test("serialized window cannot remove the original reset marker", async (t) => {
+  const f = fixture(t);
+  const lifecycle = createControlledLifecycleLease(f.ports);
+  const lease = await lifecycle.acquireExclusiveLifecycleLease();
+  await lease.retireOldNormally(f.ports.old);
+  const broker = newBroker(f.ports);
+  const before = fs.readFileSync(f.file);
+  assert.throws(
+    () =>
+      lifecycle.transferToBroker(
+        structuredClone(broker.window),
+        broker.identity,
+      ),
+    /Original current/,
+  );
+  assert.deepEqual(fs.readFileSync(f.file), before);
+  lease.fence();
+});
+
+test("an existing unrelated transfer journal is retained and the reset marker remains closed", async (t) => {
+  const f = fixture(t);
+  const lifecycle = createControlledLifecycleLease(f.ports);
+  const lease = await lifecycle.acquireExclusiveLifecycleLease();
+  await lease.retireOldNormally(f.ports.old);
+  const broker = newBroker(f.ports);
+  const marker = JSON.parse(fs.readFileSync(f.file, "utf8"));
+  const archive = path.join(
+    f.ports.directory,
+    `controlled-bootstrap-barrier-${marker.nonce}.json`,
+  );
+  fs.writeFileSync(archive, "unrelated original");
+  assert.throws(
+    () => lifecycle.transferToBroker(broker.window, broker.identity),
+    { code: "EEXIST" },
+  );
+  assert.equal(fs.readFileSync(archive, "utf8"), "unrelated original");
+  assert.ok(fs.existsSync(f.file));
+  assert.throws(lease.fence, /not held/);
 });

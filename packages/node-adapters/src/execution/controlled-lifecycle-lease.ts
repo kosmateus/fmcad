@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ControlledProcess } from "./controlled-fusion-launch-types";
+import {
+  assertControlledIngressTransition,
+  type ControlledIngressIdentity,
+  type ControlledIngressWindow,
+} from "./controlled-ingress-window";
 
 /**
  * Private operator composition only. These are live ports, not assertions
@@ -51,10 +56,15 @@ export function createControlledLifecycleLease(
       Object.keys(value).sort().join() !== "birth,pid" ||
       !Number.isSafeInteger(value.pid) ||
       value.pid <= 0 ||
-      !/^[0-9]+$/.test(value.birth)
+      typeof value.birth !== "string" ||
+      !value.birth ||
+      value.birth.length > 256 ||
+      value.birth.includes("\0")
     )
       throw new Error("Exact lifecycle process identity required");
   }
+  if (!/^[0-9]+$/.test(old.birth))
+    throw new Error("Exact native process birth required");
   const buildHash = ports.buildHash;
   if (!/^[a-f0-9]{64}$/.test(buildHash))
     throw new Error("Pinned broker build required");
@@ -67,12 +77,21 @@ export function createControlledLifecycleLease(
     retireOldNormally,
   } = ports;
   const file = path.join(directory, "fusion-reset.lock");
+  let currentFile = file;
+  let nonce: string | undefined;
   let invoked = false;
   let revoked = false;
   let descriptor: number | undefined;
   let original: fs.BigIntStats | undefined;
   let expected: Buffer | undefined;
   let retirementStarted = false;
+  let retirementCompleted = false;
+  let transferred:
+    | {
+        window: ControlledIngressWindow;
+        identity: ControlledIngressIdentity;
+      }
+    | undefined;
 
   function fence(): void {
     try {
@@ -80,7 +99,7 @@ export function createControlledLifecycleLease(
         throw new Error("Controlled lifecycle lease is not held");
       sync(operatorFence);
       const held = fs.fstatSync(descriptor, { bigint: true });
-      const named = fs.lstatSync(file, { bigint: true });
+      const named = fs.lstatSync(currentFile, { bigint: true });
       for (const current of [held, named]) {
         if (
           !current.isFile() ||
@@ -110,6 +129,11 @@ export function createControlledLifecycleLease(
       )
         throw new Error("Original lifecycle barrier bytes changed");
       sync(operatorFence);
+      if (transferred)
+        assertControlledIngressTransition(
+          transferred.window,
+          transferred.identity,
+        );
     } catch (error) {
       revoked = true;
       throw error;
@@ -118,7 +142,12 @@ export function createControlledLifecycleLease(
   async function assertCurrent(): Promise<void> {
     fence();
     try {
-      await assertIngressHeld();
+      if (transferred)
+        assertControlledIngressTransition(
+          transferred.window,
+          transferred.identity,
+        );
+      else await assertIngressHeld();
       fence();
     } catch (error) {
       revoked = true;
@@ -126,16 +155,92 @@ export function createControlledLifecycleLease(
     }
   }
   return Object.freeze({
+    /**
+     * Transfer only to the actual new paused broker's private live witness.
+     * Link+unlink is synchronous, never overwrites an existing journal, retains
+     * the exact original inode/bytes, and keeps the old barrier on failure before
+     * unlink. No controller, native activation or dispatch authority is minted.
+     */
+    transferToBroker(
+      window: ControlledIngressWindow,
+      identity: ControlledIngressIdentity,
+    ) {
+      fence();
+      if (
+        transferred ||
+        !retirementCompleted ||
+        !nonce ||
+        identity.owner.pid !== owner.pid ||
+        identity.owner.birth !== owner.birth ||
+        (identity.native.pid === old.pid && identity.native.birth === old.birth)
+      )
+        throw new Error(
+          "Original completed retirement and new broker owner required",
+        );
+      assertControlledIngressTransition(window, identity);
+      const archive = path.join(
+        directory,
+        `controlled-bootstrap-barrier-${nonce}.json`,
+      );
+      try {
+        // Hardlink creation is exclusive: an unrelated journal is never replaced.
+        fs.linkSync(file, archive);
+        const held = fs.fstatSync(descriptor!, { bigint: true });
+        const named = fs.lstatSync(file, { bigint: true });
+        const journal = fs.lstatSync(archive, { bigint: true });
+        for (const current of [held, named, journal]) {
+          if (
+            !current.isFile() ||
+            current.nlink !== 2n ||
+            ["dev", "ino", "mode", "uid", "gid", "size", "mtimeNs"].some(
+              (key) =>
+                current[key as keyof fs.BigIntStats] !==
+                original![key as keyof fs.BigIntStats],
+            ) ||
+            current.ctimeNs !== held.ctimeNs
+          )
+            throw new Error("Original barrier changed during ingress transfer");
+        }
+        assertControlledIngressTransition(window, identity);
+        sync(operatorFence);
+        // No await or user callback between the final identity check and unlink.
+        const final = fs.lstatSync(file, { bigint: true });
+        if (
+          final.dev !== held.dev ||
+          final.ino !== held.ino ||
+          final.nlink !== 2n ||
+          final.ctimeNs !== held.ctimeNs
+        )
+          throw new Error("Original reset path changed before transfer");
+        fs.unlinkSync(file);
+        currentFile = archive;
+        original = fs.fstatSync(descriptor!, { bigint: true });
+        transferred = { window, identity: structuredClone(identity) };
+        const parent = fs.openSync(directory, fs.constants.O_RDONLY);
+        try {
+          fs.fsyncSync(parent);
+        } finally {
+          fs.closeSync(parent);
+        }
+        fence();
+        return Object.freeze({ originalBarrier: archive });
+      } catch (error) {
+        revoked = true;
+        // Both original references and any partially created journal survive.
+        throw error;
+      }
+    },
     async acquireExclusiveLifecycleLease() {
       if (invoked) throw new Error("Lifecycle acquisition is single-use");
       invoked = true;
       sync(operatorFence);
+      nonce = randomUUID();
       const bytes = Buffer.from(
         JSON.stringify({
           protocol: 1,
           pid: owner.pid,
           birth: owner.birth,
-          nonce: randomUUID(),
+          nonce,
           buildHash,
           fusion: old,
           resetPause: null,
@@ -184,6 +289,7 @@ export function createControlledLifecycleLease(
             try {
               await retireOldNormally(old);
               await assertCurrent();
+              retirementCompleted = true;
             } catch (error) {
               revoked = true;
               throw error;
