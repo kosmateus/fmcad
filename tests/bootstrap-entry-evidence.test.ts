@@ -4,9 +4,11 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   bindBootstrapEntryEvidence,
+  bindOwnedBootstrapEntryEvidence,
   bootstrapInstalledFilesDigest,
   type BootstrapEntryIntent,
   type BootstrapEntryIntentV2,
+  type BootstrapOwnedEntryIntentV3,
   type BootstrapStartupAudit,
 } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import { controlledStartupAuditFixture } from "./controlled-fusion-bootstrap-fixture";
@@ -119,6 +121,125 @@ function fixture() {
   const originals = { intent, profile, entry, returned };
   return { expected, originals, fork };
 }
+
+function ownedFixture() {
+  const f = fixture();
+  const profile = JSON.parse(f.originals.profile.bytes.toString());
+  profile.loadedScripts[0].runOnStartup = true;
+  f.originals.profile.bytes = encode(profile);
+  const generation = { instance: "owned-instance", epoch: "owned-epoch" };
+  const provision = {
+    nativePath: "C:\\private\\provision.json",
+    bytes: encode({
+      ...f.expected.process,
+      ...generation,
+      source: f.expected.installed.source,
+    }),
+  };
+  const expected: BootstrapOwnedEntryIntentV3 = {
+    ...f.expected,
+    version: 3,
+    mode: "owned-autoload-v1",
+    generation,
+    provision: { path: provision.nativePath, sha256: sha(provision.bytes) },
+    profile: {
+      path: f.originals.profile.nativePath,
+      sha256: sha(f.originals.profile.bytes),
+    },
+  };
+  f.originals.intent.bytes = encode(expected);
+  const base = {
+    ...JSON.parse(f.originals.returned.bytes.toString()),
+    version: 3,
+    mode: expected.mode,
+    generation,
+    provision: expected.provision,
+    intent: {
+      path: f.originals.intent.nativePath,
+      sha256: sha(f.originals.intent.bytes),
+    },
+    profile: expected.profile,
+  };
+  const { phase: unusedPhase, entry: unusedEntry, ...common } = base;
+  void unusedPhase;
+  void unusedEntry;
+  const startupAudit = controlledStartupAuditFixture();
+  f.originals.entry.bytes = encode({
+    ...common,
+    phase: "entry-audited-before-addon-import",
+    startupAudit,
+  });
+  f.originals.returned.bytes = encode({
+    ...common,
+    phase: "run-returned",
+    entry: {
+      path: f.originals.entry.nativePath,
+      sha256: sha(f.originals.entry.bytes),
+    },
+  });
+  return { expected, originals: { ...f.originals, provision }, fork: f.fork };
+}
+
+test("owned v3 binds original provision and cannot qualify as manual v2", () => {
+  const f = ownedFixture();
+  const result = bindOwnedBootstrapEntryEvidence(
+    f.expected,
+    f.originals,
+    f.fork,
+  );
+  assert.equal(result?.authority, "NONE");
+  assert.equal(result?.references.length, 5);
+  // Exercise runtime refusal without weakening the public v2 type.
+  assert.equal(
+    Reflect.apply(bindBootstrapEntryEvidence, undefined, [
+      f.expected,
+      f.originals,
+      f.fork,
+    ]),
+    null,
+  );
+  const old = fixture();
+  assert.equal(
+    Reflect.apply(bindOwnedBootstrapEntryEvidence, undefined, [
+      old.expected,
+      old.originals,
+      old.fork,
+    ]),
+    null,
+  );
+});
+
+for (const fault of [
+  "provision-hash",
+  "provision-generation",
+  "receipt-generation",
+  "manual-profile",
+] as const)
+  test(`owned v3 refuses ${fault}`, () => {
+    const f = ownedFixture();
+    if (fault === "provision-hash") f.originals.provision.bytes = encode({});
+    if (fault === "provision-generation") {
+      const value = JSON.parse(f.originals.provision.bytes.toString());
+      value.epoch = "foreign";
+      f.originals.provision.bytes = encode(value);
+      f.expected.provision.sha256 = sha(f.originals.provision.bytes);
+      f.originals.intent.bytes = encode(f.expected);
+    }
+    if (fault === "receipt-generation") {
+      const value = JSON.parse(f.originals.returned.bytes.toString());
+      value.generation.epoch = "foreign";
+      f.originals.returned.bytes = encode(value);
+    }
+    if (fault === "manual-profile") {
+      const value = JSON.parse(f.originals.profile.bytes.toString());
+      value.loadedScripts[0].runOnStartup = false;
+      f.originals.profile.bytes = encode(value);
+    }
+    assert.equal(
+      bindOwnedBootstrapEntryEvidence(f.expected, f.originals, f.fork),
+      null,
+    );
+  });
 
 function rewriteEntry(
   f: ReturnType<typeof fixture>,

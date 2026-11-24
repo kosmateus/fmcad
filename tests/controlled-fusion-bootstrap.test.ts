@@ -178,6 +178,7 @@ test("normal staged controller imports and runs without workspace packages or te
   for (const name of [
     "controlled-fusion-launch",
     "controlled-fusion-launch-native",
+    "owned-autoload-launch-native",
     "bootstrap-entry-evidence",
     "fusion-bootstrap-autoload",
     "admission-json",

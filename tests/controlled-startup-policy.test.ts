@@ -9,6 +9,7 @@ import {
 } from "../packages/node-adapters/src/execution/controlled-startup-inputs";
 import {
   assertControlledStartupData,
+  assertOwnedBootstrapStartupData,
   type StartupPolicyAudit,
   type StartupPolicyExpected,
 } from "../packages/node-adapters/src/execution/controlled-startup-policy";
@@ -70,6 +71,48 @@ test("complete disabled startup data passes without returning any authority", ()
     assertControlledStartupData(f.audit, f.expected, f.autorun),
     undefined,
   );
+});
+test("owned bootstrap data policy cannot be substituted for manual startup evidence", () => {
+  const f = fixture();
+  assert.throws(() =>
+    assertOwnedBootstrapStartupData(f.audit, f.expected, f.autorun),
+  );
+  const rows = f.audit.scripts.items.map((row) => ({ ...row }));
+  rows[0]!.isRunOnStartup = true;
+  const audit = { ...f.audit, scripts: { ...f.audit.scripts, items: rows } };
+  assert.equal(
+    assertOwnedBootstrapStartupData(audit, f.expected, f.autorun),
+    undefined,
+  );
+  assert.throws(() =>
+    assertControlledStartupData(audit, f.expected, f.autorun),
+  );
+  for (const fault of [
+    "foreign-running",
+    "foreign-startup",
+    "wrong-manifest",
+    "own-not-running",
+    "missing-autorun",
+  ] as const) {
+    const altered = structuredClone(audit);
+    if (fault === "foreign-running") altered.scripts.items[1]!.isRunning = true;
+    if (fault === "foreign-startup")
+      Object.assign(altered.scripts.items[1]!, {
+        isAddIn: true,
+        isRunOnStartup: true,
+      });
+    if (fault === "wrong-manifest")
+      altered.scripts.items[0]!.manifest = { sha256: "c".repeat(64) };
+    if (fault === "own-not-running")
+      altered.scripts.items[0]!.isRunning = false;
+    assert.throws(() =>
+      assertOwnedBootstrapStartupData(
+        altered,
+        f.expected,
+        fault === "missing-autorun" ? [] : f.autorun,
+      ),
+    );
+  }
 });
 for (const fault of [
   "parent",

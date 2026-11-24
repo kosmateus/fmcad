@@ -16,6 +16,26 @@ import type {
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import type { NativeRuntimeRebaselineReaderPorts } from "../packages/node-adapters/src/execution/runtime-rebaseline-reader";
 import type { ControlledStartupInputs } from "../packages/node-adapters/src/execution/controlled-startup-inputs";
+import type {
+  BootstrapEntryOriginals,
+  BootstrapOwnedEntryIntentV3,
+  BootstrapOwnedEntryOriginals,
+} from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+
+function ownedOriginals(
+  originals: BootstrapEntryOriginals,
+): originals is BootstrapOwnedEntryOriginals {
+  if (!("provision" in originals)) return false;
+  const value = originals.provision;
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "nativePath" in value &&
+    typeof value.nativePath === "string" &&
+    "bytes" in value &&
+    value.bytes instanceof Uint8Array
+  );
+}
 
 function startupInputsApi() {
   return createRequire(__filename)(
@@ -246,6 +266,24 @@ export interface ControlledHostProofPorts extends Omit<
   readonly startupInputs?: ControlledStartupInputs;
 }
 
+/** Private owned-launch controller ports, not a caller-supplied mode flag. */
+export interface OwnedControlledHostProofPorts extends Omit<
+  ControlledHostProofPorts,
+  "controller"
+> {
+  controller: Omit<
+    ControlledHostProofPorts["controller"],
+    "readOriginalIntent" | "readOriginalEvidence"
+  > & {
+    readOriginalIntent(
+      transcript: ControlledFusionBootstrapTranscript,
+    ): Promise<BootstrapOwnedEntryIntentV3>;
+    readOriginalEvidence(
+      transcript: ControlledFusionBootstrapTranscript,
+    ): Promise<BootstrapOwnedEntryOriginals>;
+  };
+}
+
 /**
  * Compose the controlled OS/bootstrap origin with the existing authenticated
  * native activation. This is private broker composition, not an invocation API.
@@ -259,6 +297,37 @@ export function createControlledHostProofFactory(
   publication: NativeRuntimeActivationPublication,
   completion: NativeRuntimeActivationCompletion,
 ) {
+  return controlledHostProofFactory(
+    ports,
+    expectedContext,
+    publication,
+    completion,
+    false,
+  );
+}
+
+export function createOwnedControlledHostProofFactory(
+  ports: OwnedControlledHostProofPorts,
+  expectedContext: ControlledHostPreparationContext,
+  publication: NativeRuntimeActivationPublication,
+  completion: NativeRuntimeActivationCompletion,
+) {
+  return controlledHostProofFactory(
+    ports,
+    expectedContext,
+    publication,
+    completion,
+    true,
+  );
+}
+
+function controlledHostProofFactory(
+  ports: ControlledHostProofPorts | OwnedControlledHostProofPorts,
+  expectedContext: ControlledHostPreparationContext,
+  publication: NativeRuntimeActivationPublication,
+  completion: NativeRuntimeActivationCompletion,
+  owned: boolean,
+) {
   const expected = structuredClone(expectedContext);
   const originalPublication = structuredClone(publication);
   const originalCompletion = structuredClone(completion);
@@ -267,10 +336,14 @@ export function createControlledHostProofFactory(
   const originalStartupInputs = ports.startupInputs;
   const load = createRequire(__filename);
   const startup = startupInputsApi();
-  const { assertControlledStartupData } = load(
+  const { assertControlledStartupData, assertOwnedBootstrapStartupData } = load(
     "./dist/node-adapters/execution/controlled-startup-policy",
   ) as typeof import("../packages/node-adapters/src/execution/controlled-startup-policy");
-  const { bindBootstrapEntryEvidence, bootstrapInstalledFilesDigest } = load(
+  const {
+    bindBootstrapEntryEvidence,
+    bindOwnedBootstrapEntryEvidence,
+    bootstrapInstalledFilesDigest,
+  } = load(
     "./dist/node-adapters/execution/bootstrap-entry-evidence",
   ) as typeof import("../packages/node-adapters/src/execution/bootstrap-entry-evidence");
   let revoked = false;
@@ -362,7 +435,15 @@ export function createControlledHostProofFactory(
         const forkEntry = /^[A-Za-z]:[\\/]/.test(c.installedDirectory)
           ? path.win32.join(c.installedDirectory, "AutodeskFusionMCP.py")
           : path.posix.join(c.installedDirectory, "AutodeskFusionMCP.py");
-        const bound = bindBootstrapEntryEvidence(intent, originals, forkEntry);
+        const bound = owned
+          ? intent.version === 3 &&
+            ownedOriginals(originals) &&
+            same(intent.generation, expected.descriptor.generation)
+            ? bindOwnedBootstrapEntryEvidence(intent, originals, forkEntry)
+            : null
+          : intent.version !== 3
+            ? bindBootstrapEntryEvidence(intent, originals, forkEntry)
+            : null;
         if (!bound) return reject();
         const startupData = startup.readControlledStartupInputs(
           originalStartupInputs!,
@@ -398,7 +479,7 @@ export function createControlledHostProofFactory(
           startupData.expected.installedManifestHash !== manifestHash
         )
           reject();
-        assertControlledStartupData(
+        (owned ? assertOwnedBootstrapStartupData : assertControlledStartupData)(
           bound.startupAudit,
           startupData.expected,
           startupData.files,
