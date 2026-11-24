@@ -7,6 +7,7 @@ import os from "node:os";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import type { ControlledFusionBootstrapPorts } from "../src/controlled-fusion-bootstrap";
+import type { OwnedFusionBootstrapPorts } from "../src/owned-fusion-bootstrap";
 import {
   createControlledFusionNativeHandoff,
   type ControlledNativeHandoffOptions,
@@ -703,6 +704,9 @@ test("normal staged helper loads without workspace packages and structurally sup
     Object.keys(staged.createOwnedNativeReboundObserver(ownedPins())),
     ["observeNativeRebound", "assertOriginalOwnedReboundWitness"],
   );
+  const readonlyPorts: Pick<OwnedFusionBootstrapPorts, "observeNativeRebound"> =
+    staged.createOwnedNativeReboundObserver(ownedPins());
+  assert.equal(typeof readonlyPorts.observeNativeRebound, "function");
   const ports: Pick<
     ControlledFusionBootstrapPorts,
     "qualifyNativeInstallationAfterDeath" | "rebindNative"
