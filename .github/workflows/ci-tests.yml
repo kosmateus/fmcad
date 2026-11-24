@@ -141,6 +141,7 @@ jobs:
       - run: node --test dist/tests/fusion-bootstrap-autoload.test.js
       - run: node --test dist/tests/bootstrap-entry-evidence.test.js
       - run: node --test dist/tests/controlled-fusion-bootstrap.test.js dist/tests/controlled-fusion-launch.windows.test.js
+      - run: node --test dist/tests/normal-observer-launch.test.js dist/tests/normal-observer-launch.windows.test.js
       - run: node --test dist/tests/controlled-host-ui.test.js dist/tests/controlled-host-ui.windows.test.js
       - run: node --test dist/tests/controlled-legacy-ui.test.js dist/tests/controlled-legacy-ui.windows.test.js
       - run: node --test dist/tests/controlled-lifecycle-lease.test.js

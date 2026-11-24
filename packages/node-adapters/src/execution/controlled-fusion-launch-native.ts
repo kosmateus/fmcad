@@ -1,7 +1,10 @@
+import { createRequire } from "node:module";
+
 /**
  * Pinned Windows-Python stdlib operator. Only private local composition invokes
  * this program. It never imports Fusion/SDK, discovers a Fusion process, kills a
- * process, updates provision or starts an add-in. No result is host authority.
+ * process or starts an add-in. NORMAL alone binds provision while suspended;
+ * no result is host authority.
  */
 export const controlledFusionLaunchNative = String.raw`
 import base64, ctypes, hashlib, json, math, os, stat, subprocess, sys, time
@@ -25,13 +28,15 @@ def strict(raw):
         return result
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant, parse_float=number)
 
-raw = sys.stdin.buffer.read(4194305)
+raw = sys.stdin.buffer.readline(4194305)
 if len(raw) > 4194304:
     raise ValueError("Envelope too large")
 e = strict(raw)
 if set(e) != {"pins", "action", "request", "expectedSource"}:
     raise ValueError("Closed native envelope required")
 p, action, request = e["pins"], e["action"], e["request"]
+if action != "normal-launch" and sys.stdin.buffer.read(1):
+    raise ValueError("Trailing native input")
 if sys.platform != "win32":
     raise RuntimeError("Native Windows required")
 sys.dont_write_bytecode = True
@@ -130,7 +135,7 @@ def file_bytes(name, private=False, retain=True):
         if handle is not None:
             k.CloseHandle(handle)
 
-def inventory(directory, private=False):
+def inventory(directory, private=False, expected_files=None):
     root = canonical(directory)
     files, directories = {}, {}
     for current, dirs, names in os.walk(root, followlinks=False):
@@ -147,7 +152,8 @@ def inventory(directory, private=False):
             relative = (current/name).relative_to(root).as_posix()
             raw, ident = file_bytes(current/name, private)
             files[relative] = {"sha256": digest(raw), "identity": ident}
-    if {name: value["sha256"] for name, value in files.items()} != p["installedFiles"]:
+    if {name: value["sha256"] for name, value in files.items()} != (
+            p["installedFiles"] if expected_files is None else expected_files):
         raise ValueError("Full installed manifest differs")
     return {"files": files, "directories": directories}
 
@@ -236,6 +242,15 @@ def alive(value):
         k.CloseHandle(h)
 
 def normal_close(value):
+    if p.get("normal") is not None:
+        if os.path.lexists(p["normal"]["retiredProcessPath"]):
+            raise ValueError("Original normal retirement output already exists")
+        provision, _ = file_bytes(p["paths"]["provision"], True)
+        body = strict(provision)
+        if (digest(provision) != p["normal"]["provisionSha256"] or
+                {"pid": body["pid"], "birth": body["birth"]} != value or
+                body["source"] != p["normal"]["source"] or body["build"] != p["normal"]["build"]):
+            raise ValueError("Normal close original process/provision/source differs")
     h = process_handle(value)
     try:
         if k.WaitForSingleObject(h, 0) != 258 or image(h).casefold() != p["executable"].casefold():
@@ -245,6 +260,8 @@ def normal_close(value):
         u.EnumThreadWindows.argtypes = [w.DWORD, callback_type, w.LPARAM]
         u.GetWindowThreadProcessId.argtypes = [w.HWND, ctypes.POINTER(w.DWORD)]
         u.GetClassNameW.argtypes = [w.HWND, w.LPWSTR, ctypes.c_int]
+        u.IsWindowVisible.argtypes = [w.HWND]
+        u.IsWindowVisible.restype = w.BOOL
         u.PostMessageW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
         windows = []
         def inspect(hwnd, _):
@@ -252,7 +269,8 @@ def normal_close(value):
             u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             if pid.value == value["pid"]:
                 name = ctypes.create_unicode_buffer(512)
-                if u.GetClassNameW(hwnd, name, len(name)) and name.value == p["mainWindowClass"]:
+                if (u.GetClassNameW(hwnd, name, len(name)) and name.value == p["mainWindowClass"]
+                        and (p.get("normal") is None or u.IsWindowVisible(hwnd))):
                     windows.append(hwnd)
             return True
         # Enumerate GUI windows ONLY on the exact process's native threads,
@@ -285,8 +303,13 @@ def normal_close(value):
             raise ValueError("Unique exact vendor main window required")
         pid = w.DWORD()
         u.GetWindowThreadProcessId(windows[0], ctypes.byref(pid))
+        current_class = ctypes.create_unicode_buffer(512)
         if (pid.value != value["pid"] or process_birth(h) != value["birth"]
-                or k.WaitForSingleObject(h, 0) != 258):
+                or k.WaitForSingleObject(h, 0) != 258
+                or (p.get("normal") is not None and (
+                    not u.IsWindowVisible(windows[0]) or
+                    not u.GetClassNameW(windows[0], current_class, len(current_class)) or
+                    current_class.value != p["mainWindowClass"]))):
             raise ValueError("Exact original window/process changed")
         # ONE ordinary window-close request, never TerminateProcess/taskkill.
         if not u.PostMessageW(windows[0], 0x0010, 0, 0):
@@ -295,6 +318,16 @@ def normal_close(value):
             raise TimeoutError("Normal close not terminal; no force/replay")
         if process_birth(h) != value["birth"]:
             raise ValueError("Original process birth changed")
+        if p.get("normal") is not None:
+            facts = {"exited": True, "oldPidPresent": False, "forceUsed": False,
+                     "oldPid": value["pid"], "oldBirth": process_birth(h),
+                     "observation": "exact-original-process-signaled-after-one-WM_CLOSE",
+                     "windowHandle": windows[0], "windowVisibleAtInput": True,
+                     "windowClass": p["mainWindowClass"],
+                     "oldExe": p["executable"], "oldExeSha256": p["executableSha256"]}
+            print(json.dumps({"normalDeathObserved": facts}), file=sys.stderr, flush=True)
+            return publish(p["normal"]["retiredProcessPath"],
+                           json.dumps(facts, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     finally:
         k.CloseHandle(h)
 
@@ -354,17 +387,24 @@ def require_profile(ref):
 def launch(source):
     global mutated
     dead(request["old"])
-    require_profile(request["profile"])
+    normal = action == "normal-launch"
+    profile_result = normal_prepare(source) if normal else None
+    profile = profile_result["profile"] if normal else request["profile"]
+    require_profile(profile)
     paths = p["paths"]
-    for name in ("intent", "entry", "returned", "launchAttempt", "launchJournal", "sourceClosure", "transcript"):
+    fresh = (("launchAttempt", "launchJournal", "sourceClosure", "transcript") if normal else
+             ("intent", "entry", "returned", "launchAttempt", "launchJournal", "sourceClosure", "transcript"))
+    for name in fresh:
         private_directory(str(Path(paths[name]).parent))
-        if Path(paths[name]).exists() or Path(paths[name]).is_symlink():
+        if Path(paths[name]).exists() or Path(paths[name]).is_symlink() or (normal and os.path.lexists(paths[name])):
             raise ValueError("Fresh launch paths required")
     closure = publish(paths["sourceClosure"], json.dumps(source, sort_keys=True, separators=(",", ":")).encode())
     attempt = publish(paths["launchAttempt"], json.dumps({
-        "kind": "controlled-launch-attempt-v1", "nonce": request["nonce"],
+        "kind": "normal-observer-launch-attempt-v1" if normal else "controlled-launch-attempt-v1",
+        **({"isolation": "NOT_PROVEN"} if normal else {}),
+        "nonce": request["nonce"],
         "old": request["old"], "executable": p["executable"],
-        "executableSha256": p["executableSha256"], "profile": request["profile"],
+        "executableSha256": p["executableSha256"], "profile": profile,
         "sourceClosure": {key: closure[key] for key in ("nativePath", "sha256", "identity")},
     }, sort_keys=True, separators=(",", ":")).encode())
     class Startup(ctypes.Structure):
@@ -383,8 +423,11 @@ def launch(source):
     k.ResumeThread.restype = w.DWORD
     environment = dict(os.environ)
     environment.update({"PYTHONDONTWRITEBYTECODE": "1",
-                        "FUSION_MCP_BOOTSTRAP_INTENT": paths["intent"],
                         "FUSION_MCP_ADMISSION_PROVISION": paths["provision"]})
+    if normal:
+        environment.pop("FUSION_MCP_BOOTSTRAP_INTENT", None)
+    else:
+        environment["FUSION_MCP_BOOTSTRAP_INTENT"] = paths["intent"]
     block = ctypes.create_unicode_buffer("\0".join(key + "=" + value for key, value in sorted(environment.items(), key=lambda item: item[0].upper())) + "\0\0")
     command = ctypes.create_unicode_buffer(subprocess.list2cmdline([p["executable"], *p["arguments"]]))
     startup, created = Startup(), ProcessInfo()
@@ -398,6 +441,10 @@ def launch(source):
     startup.stderr = None
     mutated = True
     canonical(p["workingDirectory"])
+    if normal:
+        normal_checkpoint("ready-before-create")
+        normal_fence(source)
+        require_profile(profile)
     if not k.CreateProcessW(p["executable"], command, None, None, False,
                             0x00000004 | 0x00000400, block, p["workingDirectory"],
                             ctypes.byref(startup), ctypes.byref(created)):
@@ -412,19 +459,37 @@ def launch(source):
                 or image(created.process).casefold() != p["executable"].casefold()):
             raise ValueError("CreateProcess origin differs")
         journal = publish(paths["launchJournal"], json.dumps({
-            "kind": "controlled-created-process-v1", "nonce": request["nonce"],
+            "kind": "normal-observer-created-process-v1" if normal else "controlled-created-process-v1",
+            "nonce": request["nonce"],
             "process": value, "executable": p["executable"],
+            **({"threadId": created.tid, "phase": "created-suspended", "isolation": "NOT_PROVEN"} if normal else {}),
             "executableSha256": p["executableSha256"],
             "attempt": {key: attempt[key] for key in ("nativePath", "sha256", "identity")},
         }, sort_keys=True, separators=(",", ":")).encode())
-        if k.ResumeThread(created.thread) == 0xffffffff:
+        cold = publish(p["normal"]["coldProcessPath"], json.dumps({
+            "pid": created.pid, "birth": process_birth(created.process), "exe": image(created.process),
+            "executableSha256": p["executableSha256"], "nonce": request["nonce"],
+            "phase": "created-suspended", "isolation": "NOT_PROVEN",
+        }, sort_keys=True, separators=(",", ":")).encode()) if normal else None
+        bound = normal_bind(created, source, profile) if normal else None
+        if normal:
+            normal_release_database()
+        resumed = k.ResumeThread(created.thread)
+        if resumed == 0xffffffff or (normal and resumed != 1):
             raise OSError("Controlled process resume unknown")
         # Never rediscover another PID, retry, force-resume or terminate on error.
         alive(value)
-        return {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}
+        result = {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}
+        if normal:
+            result.update({"profile": profile_result["profile"], "profileBackup": profile_result["backup"],
+                           "provisionBackup": bound["backup"], "provision": bound["provision"],
+                           "provisionReceipt": bound["receipt"], "coldProcess": cold})
+        return result
     finally:
         k.CloseHandle(created.thread)
         k.CloseHandle(created.process)
+
+# NORMAL_OBSERVER_PRIVATE_EXTENSION
 
 try:
     if str(Path(sys.executable).resolve()).casefold() != p["nativePython"].casefold():
@@ -442,8 +507,10 @@ try:
     if expected is not None and expected["helper"] != helper:
         raise ValueError("Qualified helper identities changed")
     installed = None
-    if action not in ("dead", "normal-close") or expected is not None and expected["installed"] is not None:
-        installed = inventory(p["installedDirectory"], True)
+    if (p.get("normal") is not None or action not in ("dead", "normal-close")
+            or expected is not None and expected["installed"] is not None):
+        installed = inventory(p["installedDirectory"], True,
+                              p["normal"]["installedFiles"] if p.get("normal") is not None else None)
         if expected is not None and expected["installed"] is not None and expected["installed"] != installed:
             raise ValueError("Installed source identities changed")
     source = {"helper": helper, "installed": installed}
@@ -457,8 +524,7 @@ try:
         dead(request["process"])
         result = None
     elif action == "normal-close":
-        normal_close(request["process"])
-        result = None
+        result = normal_close(request["process"])
     elif action == "assert-process":
         alive(request["process"])
         result = None
@@ -481,7 +547,7 @@ try:
                 if Path(p["paths"][key]).exists():
                     raise ValueError("Unexpected entry before private intent")
         result = publish(name, base64.b64decode(request["base64"], validate=True))
-    elif action == "launch":
+    elif action in ("launch", "normal-launch"):
         result = launch(source)
     elif action == "receipts":
         deadline = time.monotonic() + p["receiptTimeoutMs"] / 1000
@@ -498,7 +564,9 @@ try:
     else:
         raise ValueError("Unknown native action")
     after = {"helper": inventory(p["sourceDirectory"], True),
-             "installed": inventory(p["installedDirectory"], True) if installed is not None else None}
+             "installed": inventory(p["installedDirectory"], True,
+                                    p["normal"]["installedFiles"] if p.get("normal") is not None else None)
+                          if installed is not None else None}
     if source != after:
         raise ValueError("Full source after-fence differs")
     print(json.dumps({"kind": "controlled-fusion-native-v1", "action": action,
@@ -509,4 +577,34 @@ finally:
             os.close(handle)
         else:
             k.CloseHandle(handle)
+`;
+
+export function normalObserverFusionLaunchNative() {
+  const {
+    normalObserverLaunchNative,
+  }: typeof import("./normal-observer-launch-native") = createRequire(
+    __filename,
+  )("./normal-observer-launch-native");
+  return controlledFusionLaunchNative.replace(
+    "# NORMAL_OBSERVER_PRIVATE_EXTENSION",
+    normalObserverLaunchNative,
+  );
+}
+
+/** Keep the closed, build-pinned program off Windows' 32K command-line limit.
+ * Only private composition sends this length-framed source; the invocation
+ * envelope and continuation decisions remain separate stdin records.
+ */
+export const normalObserverNativeBootstrap = String.raw`
+import sys
+length=sys.stdin.buffer.readline(16)
+if not length.endswith(b"\n") or not length[:-1].isdigit():
+    raise ValueError("Private native program frame required")
+size=int(length)
+if not 1 <= size <= 262144:
+    raise ValueError("Private native program budget exceeded")
+program=sys.stdin.buffer.read(size)
+if len(program)!=size:
+    raise ValueError("Incomplete private native program")
+exec(compile(program,"<fmcad-private-normal-launch>","exec"))
 `;

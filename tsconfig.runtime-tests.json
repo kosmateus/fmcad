@@ -23,6 +23,8 @@
     "tests/bootstrap-entry-evidence.test.ts",
     "tests/controlled-fusion-bootstrap.test.ts",
     "tests/controlled-fusion-launch.windows.test.ts",
+    "tests/normal-observer-launch.test.ts",
+    "tests/normal-observer-launch.windows.test.ts",
     "tests/controlled-native-handoff.test.ts",
     "tests/controlled-native-handoff.windows.test.ts",
     "tests/library-native-root.test.ts",

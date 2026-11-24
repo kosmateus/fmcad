@@ -4,8 +4,13 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
-import { controlledFusionLaunchNative } from "./controlled-fusion-launch-native";
+import {
+  controlledFusionLaunchNative,
+  normalObserverFusionLaunchNative,
+  normalObserverNativeBootstrap,
+} from "./controlled-fusion-launch-native";
 import { bootstrapInstalledFilesDigest } from "./bootstrap-entry-evidence";
+import { planNormalObserverAutoload } from "./fusion-bootstrap-autoload";
 import type {
   ControlledNativeAdapter,
   ControlledFile,
@@ -40,6 +45,48 @@ export interface ControlledFusionLaunchPins {
   readonly normalCloseTimeoutMs: number;
   readonly mainWindowClass: string;
 }
+export interface NormalObserverLaunchOriginals {
+  readonly database: { readonly nativePath: string; readonly identity: string };
+  readonly provisionSha256: string;
+  readonly handoffRequest: {
+    readonly nativePath: string;
+    readonly sha256: string;
+  };
+  /** Original native mailbox completion, NOT a fabricated committed JSON copy. */
+  readonly handoffReceipt: {
+    readonly nativePath: string;
+    readonly sha256: string;
+  };
+  readonly provisionBackupPath: string;
+  readonly provisionReceiptPath: string;
+  readonly retiredProcessPath: string;
+  readonly coldProcessPath: string;
+  /** Complete actual inventory, including existing bytecode; helper stays clean. */
+  readonly installedFiles: Readonly<Record<string, string>>;
+}
+export interface NormalObserverLaunch extends ControlledLaunch {
+  readonly profile: ControlledFile;
+  readonly profileBackup: ControlledFile;
+  readonly provision: ControlledFile;
+  readonly provisionBackup: ControlledFile;
+  readonly provisionReceipt: ControlledFile;
+  readonly coldProcess: ControlledFile;
+  readonly isolation: "NOT_PROVEN";
+}
+export interface NormalObserverLaunchPins extends ControlledFusionLaunchPins {
+  readonly normal: NormalObserverLaunchOriginals;
+  /** Trusted synchronous held lifecycle boundary, never JSON or a public flag. */
+  assertHeld(): void;
+}
+type PrivateLaunchAdapter = ControlledNativeAdapter & {
+  closeNormal(old: ControlledProcess): Promise<ControlledFile>;
+  launchNormal(
+    old: ControlledProcess,
+    original: ControlledFile,
+    bytes: Uint8Array,
+    nonce: string,
+  ): Promise<NormalObserverLaunch>;
+};
 export class ControlledFusionNativeError extends Error {
   readonly outcome = "UNKNOWN";
   constructor(
@@ -94,19 +141,21 @@ function identity(value: unknown): value is string {
 function validateSource(
   value: unknown,
   files: Readonly<Record<string, string>>,
+  installedFiles: Readonly<Record<string, string>> = files,
 ) {
   const source = closed(value, ["helper", "installed"]);
   for (const key of ["helper", "installed"]) {
+    const expectedFiles = key === "installed" ? installedFiles : files;
     const snapshot = source[key];
     if (snapshot === null && key === "installed") continue;
     const inventory = closed(snapshot, ["files", "directories"]);
     const actual = object(inventory["files"]);
     if (
       Object.keys(actual).sort().join("\0") !==
-      Object.keys(files).sort().join("\0")
+      Object.keys(expectedFiles).sort().join("\0")
     )
       throw new Error("Full source inventory differs");
-    for (const [name, hash] of Object.entries(files)) {
+    for (const [name, hash] of Object.entries(expectedFiles)) {
       const file = closed(actual[name], ["sha256", "identity"]);
       if (file["sha256"] !== hash || !identity(file["identity"]))
         throw new Error("Source bytes/identity unavailable");
@@ -131,7 +180,77 @@ function validateSource(
 export function createControlledFusionLaunchAdapter(
   options: ControlledFusionLaunchPins,
 ): ControlledNativeAdapter {
+  const { launchNormal, closeNormal, ...controlled } =
+    createLaunchAdapter(options);
+  void launchNormal;
+  void closeNormal;
+  return Object.freeze(controlled);
+}
+
+/** NORMAL only: no bootstrap intent, manual add-in start or isolation witness. */
+export function createNormalObserverLaunchAdapter(
+  options: NormalObserverLaunchPins,
+) {
+  const { normal, assertHeld, ...base } = options;
+  if (typeof assertHeld !== "function")
+    throw new Error("Private held normal lifecycle boundary required");
+  const adapter = createLaunchAdapter(base, normal, assertHeld);
+  let attempted = false,
+    closeAttempted = false,
+    closeFailed = false;
+  return Object.freeze({
+    /** Existing exact OS/image/birth/source normal-close primitive, NORMAL pins. */
+    async requestNormalCloseAndWait(old: ControlledProcess) {
+      if (closeAttempted || attempted)
+        throw new Error("Normal close cannot be replayed or follow launch");
+      closeAttempted = true;
+      try {
+        return await adapter.closeNormal(old);
+      } catch (error) {
+        closeFailed = true;
+        throw error;
+      }
+    },
+    async launchAfterDeath(old: ControlledProcess, nonce: string) {
+      if (attempted || closeFailed)
+        throw new Error(
+          "Normal observer launch cannot be replayed after an attempted launch or unknown close",
+        );
+      attempted = true;
+      await adapter.confirmDead(old);
+      const original = await adapter.readProfileAfterDeath(old);
+      const plan = planNormalObserverAutoload(
+        original.bytes,
+        path.win32.join(base.installedDirectory, "AutodeskFusionMCP.py"),
+      );
+      return adapter.launchNormal(
+        old,
+        original,
+        plan.registrationBytes(),
+        nonce,
+      );
+    },
+  });
+}
+
+function createLaunchAdapter(
+  options: ControlledFusionLaunchPins,
+  normalOptions?: NormalObserverLaunchOriginals,
+  heldBoundary?: () => void,
+): PrivateLaunchAdapter {
   const pins = structuredClone(options);
+  const normal = normalOptions && structuredClone(normalOptions);
+  const normalProgram = normal
+    ? Buffer.from(normalObserverFusionLaunchNative(), "utf8")
+    : null;
+  function assertHeld() {
+    if (!heldBoundary) return;
+    const result: unknown = heldBoundary();
+    if (result !== undefined) {
+      void Promise.resolve(result).catch(() => {});
+      throw new Error("Synchronous held normal lifecycle boundary required");
+    }
+  }
   for (const value of [
     pins.nativePython,
     pins.sourceDirectory,
@@ -162,15 +281,24 @@ export function createControlledFusionLaunchAdapter(
     throw new Error("Qualified native launch pins required");
   const names = Object.keys(pins.installedFiles);
   if (
-    pins.installedBuild !== bootstrapInstalledFilesDigest(pins.installedFiles)
+    normal
+      ? !sha(pins.installedBuild)
+      : pins.installedBuild !==
+        bootstrapInstalledFilesDigest(pins.installedFiles)
   )
     throw new Error("Qualified native build/full-manifest digest differs");
   if (
-    ![
-      "AutodeskFusionMCP.py",
-      "addon_runtime.py",
-      "lib/bootstrap_entry.py",
-    ].every((name) => names.includes(name)) ||
+    !(
+      normal
+        ? [
+            "AutodeskFusionMCP.py",
+            "addon_runtime.py",
+            "lib/physical_authority.py",
+            "lib/request_admission.py",
+            "lib/rebaseline_fence.py",
+          ]
+        : ["AutodeskFusionMCP.py", "addon_runtime.py", "lib/bootstrap_entry.py"]
+    ).every((name) => names.includes(name)) ||
     names.some(
       (name) =>
         !name ||
@@ -212,6 +340,79 @@ export function createControlledFusionLaunchAdapter(
     ...Object.values(pins.paths),
     ...pins.originalPaths,
   ]);
+  if (normal) {
+    for (const value of [
+      normal.database.nativePath,
+      normal.handoffRequest.nativePath,
+      normal.handoffReceipt.nativePath,
+      normal.provisionBackupPath,
+      normal.provisionReceiptPath,
+      normal.retiredProcessPath,
+      normal.coldProcessPath,
+    ]) {
+      windowsPath(value);
+      if (!allowed.has(value))
+        throw new Error("Pinned normal original/output mapping required");
+    }
+    if (
+      !identity(normal.database.identity) ||
+      !sha(normal.provisionSha256) ||
+      !sha(normal.handoffRequest.sha256) ||
+      !sha(normal.handoffReceipt.sha256) ||
+      new Set(
+        [
+          ...filePaths,
+          normal.database.nativePath,
+          normal.handoffRequest.nativePath,
+          normal.handoffReceipt.nativePath,
+          normal.provisionBackupPath,
+          normal.provisionReceiptPath,
+          normal.retiredProcessPath,
+          normal.coldProcessPath,
+        ].map(windowsPath),
+      ).size !==
+        filePaths.length + 7
+    )
+      throw new Error("Disjoint original normal paths and pins required");
+    const actualNames = Object.keys(normal.installedFiles);
+    if (
+      !actualNames.length ||
+      new Set(actualNames.map((name) => name.toLowerCase())).size !==
+        actualNames.length ||
+      actualNames.some(
+        (name) =>
+          !name ||
+          name.includes("\\") ||
+          name.includes(":") ||
+          path.posix.normalize(name) !== name ||
+          name.startsWith("/") ||
+          name
+            .split("/")
+            .some((part) => !part || part === "." || part === "..") ||
+          !sha(normal.installedFiles[name]),
+      ) ||
+      names.some(
+        (name) => normal.installedFiles[name] !== pins.installedFiles[name],
+      )
+    )
+      throw new Error("Full normal installed/source inventory differs");
+    for (const output of [
+      normal.provisionBackupPath,
+      normal.provisionReceiptPath,
+      normal.retiredProcessPath,
+      normal.coldProcessPath,
+    ]) {
+      for (const root of [pins.sourceDirectory, pins.installedDirectory]) {
+        const relative = path.win32.relative(root, output);
+        if (
+          !relative.startsWith("..\\") &&
+          relative !== ".." &&
+          !path.win32.isAbsolute(relative)
+        )
+          throw new Error("Normal outputs must not alias source");
+      }
+    }
+  }
   for (const nativePath of allowed) {
     if (
       nativePath !== pins.paths.receiptDirectory &&
@@ -340,6 +541,7 @@ export function createControlledFusionLaunchAdapter(
     };
   }
   async function invoke(action: string, request: unknown): Promise<unknown> {
+    assertHeld();
     if (
       digest(fs.readFileSync(pins.mappedNativePython)) !==
         pins.nativePythonSha256 ||
@@ -365,12 +567,29 @@ export function createControlledFusionLaunchAdapter(
       receiptTimeoutMs: pins.receiptTimeoutMs,
       normalCloseTimeoutMs: pins.normalCloseTimeoutMs,
       mainWindowClass: pins.mainWindowClass,
+      ...(normal
+        ? {
+            normal: {
+              ...normal,
+              source: pins.installedSource,
+              build: pins.installedBuild,
+            },
+          }
+        : {}),
     };
     const raw = await new Promise<{ stdout: string; stderr: string }>(
       (resolve, reject) => {
         const child = spawn(
           pins.mappedNativePython,
-          ["-I", "-S", "-B", "-c", controlledFusionLaunchNative],
+          [
+            "-I",
+            "-S",
+            "-B",
+            "-c",
+            normal
+              ? normalObserverNativeBootstrap
+              : controlledFusionLaunchNative,
+          ],
           {
             cwd: pins.mappedSourceDirectory,
             stdio: ["pipe", "pipe", "pipe"],
@@ -378,13 +597,73 @@ export function createControlledFusionLaunchAdapter(
           },
         );
         let stdout = "",
+          finalOutput = "",
+          pending = "",
+          checkpointIndex = 0,
           stderr = "",
           overflow = false;
+        const expectedPhases = [
+          "ready-before-create",
+          "created-before-bind",
+          "bound-before-resume",
+        ];
+        let created: ControlledProcess | undefined;
+        const input = object(request);
         child.stdout.setEncoding("utf8");
         child.stderr.setEncoding("utf8");
         child.stdout.on("data", (text: string) => {
           if (stdout.length + text.length <= 32 * 1024 * 1024) stdout += text;
           else overflow = true;
+          if (action !== "normal-launch") return;
+          pending += text;
+          while (pending.includes("\n")) {
+            const end = pending.indexOf("\n"),
+              line = pending.slice(0, end);
+            pending = pending.slice(end + 1);
+            try {
+              const value = object(decodeAdmissionJson(line));
+              if (value["kind"] !== "normal-observer-checkpoint-v1") {
+                finalOutput += line + "\n";
+                continue;
+              }
+              closed(value, ["kind", "phase", "nonce", "process", "provision"]);
+              if (
+                value["phase"] !== expectedPhases[checkpointIndex] ||
+                value["nonce"] !== input["nonce"] ||
+                checkpointIndex > 2
+              )
+                throw new Error("Wrong normal native checkpoint");
+              if (checkpointIndex === 0) {
+                if (value["process"] !== null || value["provision"] !== null)
+                  throw new Error("Unexpected early normal process");
+              } else {
+                const current = process(value["process"]);
+                if (created && !isDeepStrictEqual(created, current))
+                  throw new Error("Normal checkpoint process changed");
+                created = current;
+                if (
+                  checkpointIndex === 1
+                    ? value["provision"] !== null
+                    : !sha(value["provision"])
+                )
+                  throw new Error("Normal checkpoint provision differs");
+              }
+              assertHeld();
+              checkpointIndex++;
+              child.stdin.write(
+                JSON.stringify({
+                  kind: "normal-observer-continue-v1",
+                  phase: value["phase"],
+                  nonce: value["nonce"],
+                  process: value["process"],
+                  provision: value["provision"],
+                }) + "\n",
+              );
+            } catch {
+              overflow = true;
+              child.stdin.end(); // Refuse continuation, never kill/replay/resume.
+            }
+          }
         });
         child.stderr.on("data", (text: string) => {
           if (stderr.length + text.length <= 1024 * 1024) stderr += text;
@@ -399,11 +678,25 @@ export function createControlledFusionLaunchAdapter(
         child.on("close", (code) =>
           code !== 0 || overflow
             ? reject(new ControlledFusionNativeError(action, stdout, stderr))
-            : resolve({ stdout, stderr }),
+            : resolve({
+                stdout: action === "normal-launch" ? finalOutput : stdout,
+                stderr,
+              }),
         );
-        child.stdin.end(
-          JSON.stringify({ pins: nativePins, action, request, expectedSource }),
-        );
+        const envelope = JSON.stringify({
+          pins: nativePins,
+          action,
+          request,
+          expectedSource,
+        });
+        const program = normalProgram;
+        const prefix = program
+          ? Buffer.concat([Buffer.from(`${program.length}\n`), program])
+          : Buffer.alloc(0);
+        if (action === "normal-launch") {
+          child.stdin.write(prefix);
+          child.stdin.write(envelope + "\n");
+        } else child.stdin.end(Buffer.concat([prefix, Buffer.from(envelope)]));
       },
     );
     try {
@@ -418,7 +711,12 @@ export function createControlledFusionLaunchAdapter(
         envelope["action"] !== action
       )
         throw new Error("Wrong original native response");
-      const source = validateSource(envelope["source"], pins.installedFiles);
+      assertHeld();
+      const source = validateSource(
+        envelope["source"],
+        pins.installedFiles,
+        normal?.installedFiles,
+      );
       if (
         action !== "dead" &&
         action !== "normal-close" &&
@@ -507,6 +805,62 @@ export function createControlledFusionLaunchAdapter(
         attempt: file(result["attempt"], pins.paths.launchAttempt),
         sourceClosure: file(result["sourceClosure"], pins.paths.sourceClosure),
       });
+    },
+    async launchNormal(
+      old,
+      original,
+      bytes,
+      nonce,
+    ): Promise<NormalObserverLaunch> {
+      if (!normal || launchAttempted || !/^[a-f0-9]{32}$/.test(nonce))
+        throw new Error("Fresh private normal launch required");
+      launchAttempted = true;
+      const result = closed(
+        await invoke("normal-launch", {
+          old: inputProcess(old),
+          original: reference(original),
+          base64: Buffer.from(bytes).toString("base64"),
+          nonce,
+        }),
+        [
+          "process",
+          "journal",
+          "attempt",
+          "sourceClosure",
+          "profile",
+          "profileBackup",
+          "provisionBackup",
+          "provision",
+          "provisionReceipt",
+          "coldProcess",
+        ],
+      );
+      return Object.freeze({
+        process: process(result["process"]),
+        journal: file(result["journal"], pins.paths.launchJournal),
+        attempt: file(result["attempt"], pins.paths.launchAttempt),
+        sourceClosure: file(result["sourceClosure"], pins.paths.sourceClosure),
+        profile: file(result["profile"], pins.paths.profile),
+        profileBackup: file(result["profileBackup"], pins.paths.profileBackup),
+        provisionBackup: file(
+          result["provisionBackup"],
+          normal.provisionBackupPath,
+        ),
+        provision: file(result["provision"], pins.paths.provision),
+        provisionReceipt: file(
+          result["provisionReceipt"],
+          normal.provisionReceiptPath,
+        ),
+        coldProcess: file(result["coldProcess"], normal.coldProcessPath),
+        isolation: "NOT_PROVEN",
+      });
+    },
+    async closeNormal(old) {
+      if (!normal) throw new Error("Private normal close role required");
+      return file(
+        await invoke("normal-close", { process: inputProcess(old) }),
+        normal.retiredProcessPath,
+      );
     },
     assertProcess: (value) =>
       nothing("assert-process", { process: inputProcess(value) }),
@@ -613,7 +967,7 @@ export function createControlledFusionLaunchAdapter(
         returned: file(result["returned"], pins.paths.returned),
       };
     },
-  } satisfies ControlledNativeAdapter);
+  } satisfies PrivateLaunchAdapter);
 }
 
 // Keep the local helper named process(...) separate from Node's environment.
