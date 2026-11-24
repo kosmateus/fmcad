@@ -334,6 +334,13 @@ function controlledHostProofFactory(
   const controller = ports.controller;
   const originalTranscript = ports.transcript;
   const originalStartupInputs = ports.startupInputs;
+  const hostAssurance = owned
+    ? Object.freeze({
+        kind: "controlled-native-runtime-v1" as const,
+        authority: "NONE" as const,
+        globalCleanHost: "NOT_PROVEN" as const,
+      })
+    : undefined;
   const load = createRequire(__filename);
   const startup = startupInputsApi();
   const { assertControlledStartupData, assertOwnedBootstrapStartupData } = load(
@@ -385,6 +392,7 @@ function controlledHostProofFactory(
     ports.reader.invalidate();
   }
   return Object.freeze({
+    ...(hostAssurance ? { hostAssurance } : {}),
     revoke,
     async prepare() {
       let verification:
@@ -567,7 +575,12 @@ function controlledHostProofFactory(
           reject();
         const proofHash = createHash("sha256")
           .update(
-            JSON.stringify({ expected, references: required, activation }),
+            JSON.stringify({
+              expected,
+              references: required,
+              activation,
+              ...(hostAssurance ? { hostAssurance } : {}),
+            }),
           )
           .digest("hex");
         const recheck = () => {

@@ -86,7 +86,8 @@ export interface OwnedBootstrapLifecycle {
 export interface PreparedOwnedLaunch {
   readonly startupInputs: ControlledStartupInputs;
   readonly discoveryOriginals: readonly ControlledFile[];
-  /** Original discovery-completeness and OS-input witness, not a JSON claim. */
+  /** Original observed source-scope and OS-input witness. This does not assert
+   * completeness of every Fusion loader root or a globally clean process. */
   fence(): void;
   assertCurrent(): Promise<void>;
   launchAfterDeath(
@@ -444,7 +445,7 @@ export function createOwnedFusionBootstrap(
         for (const file of [...startup.files, ...prepared.discoveryOriginals])
           keep(file);
         await fence();
-        phases.push("original-startup-discovery-fences-held");
+        phases.push("original-startup-source-observations-held");
         const launch = await prepared.launchAfterDeath(oldProcess, nonce);
         process = Object.freeze({ ...launch.process });
         for (const key of [

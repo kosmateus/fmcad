@@ -602,6 +602,11 @@ async function ownedControlledFixture(
 
 test("owned v3 host proof requires MAC-authenticated provision and preserves held compiler fences", async () => {
   const f = await ownedControlledFixture();
+  assert.deepEqual(f.factory.hostAssurance, {
+    kind: "controlled-native-runtime-v1",
+    authority: "NONE",
+    globalCleanHost: "NOT_PROVEN",
+  });
   const prepared = await f.factory.prepare();
   assert.equal(
     prepared.verifyHostBindings(f.compilerPins).profileVersion,
