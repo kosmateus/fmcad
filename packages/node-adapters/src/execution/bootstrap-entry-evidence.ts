@@ -5,7 +5,10 @@ import {
   decodeAdmissionJson,
   validateOpaqueJsonObject,
 } from "./admission-json";
-import { matchesControlledFusionAutoload } from "./fusion-bootstrap-autoload";
+import {
+  matchesControlledFusionAutoload,
+  matchesOwnedBootstrapAutoload,
+} from "./fusion-bootstrap-autoload";
 
 export interface BootstrapEntryExecutableReference {
   path: string;
@@ -105,6 +108,16 @@ export interface BootstrapEntryIntentV2 {
   receipts: { directory: string; entry: string; returned: string };
 }
 
+export interface BootstrapOwnedEntryIntentV3 extends Omit<
+  BootstrapEntryIntentV2,
+  "version"
+> {
+  version: 3;
+  mode: "owned-autoload-v1";
+  provision: { path: string; sha256: string };
+  generation: { instance: string; epoch: string };
+}
+
 /** Only v2 can bind controlled stdout; v1 forms remain refusal inputs. */
 export type BootstrapEntryIntent =
   | BootstrapEntryDataIntentV1
@@ -121,6 +134,9 @@ export interface BootstrapEntryOriginals {
   profile: OriginalBootstrapBytes;
   entry: OriginalBootstrapBytes;
   returned: OriginalBootstrapBytes;
+}
+export interface BootstrapOwnedEntryOriginals extends BootstrapEntryOriginals {
+  provision: OriginalBootstrapBytes;
 }
 export interface BoundBootstrapEntryData {
   readonly kind: "bound-bootstrap-entry-data";
@@ -361,15 +377,35 @@ export function bindBootstrapEntryEvidence(
   originals: BootstrapEntryOriginals,
   installedForkEntry: string,
 ): BoundBootstrapEntryData | null {
+  return bindEntryEvidence(expected, originals, installedForkEntry, false);
+}
+
+/** Separate v3 data binder. Manual v2 never accepts these startup bytes. */
+export function bindOwnedBootstrapEntryEvidence(
+  expected: BootstrapOwnedEntryIntentV3,
+  originals: BootstrapOwnedEntryOriginals,
+  installedForkEntry: string,
+): BoundBootstrapEntryData | null {
+  return bindEntryEvidence(expected, originals, installedForkEntry, true);
+}
+
+function bindEntryEvidence(
+  expected: BootstrapEntryIntent | BootstrapOwnedEntryIntentV3,
+  originals: BootstrapEntryOriginals | BootstrapOwnedEntryOriginals,
+  installedForkEntry: string,
+  owned: boolean,
+): BoundBootstrapEntryData | null {
   try {
     expected = structuredClone(expected);
     if (
       !keys(
         expected,
-        "engineVersion,executable,installed,kind,nonce,process,profile,purpose,receipts,version",
+        owned
+          ? "engineVersion,executable,generation,installed,kind,mode,nonce,process,profile,provision,purpose,receipts,version"
+          : "engineVersion,executable,installed,kind,nonce,process,profile,purpose,receipts,version",
       ) ||
       expected.kind !== "fmcad-bootstrap-entry-intent" ||
-      expected.version !== 2 ||
+      expected.version !== (owned ? 3 : 2) ||
       expected.purpose !== "isolated-stdout-v1" ||
       expected.engineVersion !== 2 ||
       !keys(expected.process, "birth,pid") ||
@@ -377,7 +413,12 @@ export function bindBootstrapEntryEvidence(
       !keys(expected.installed, "directory,files,source") ||
       !keys(expected.profile, "path,sha256") ||
       !keys(expected.receipts, "directory,entry,returned") ||
-      !keys(originals, "entry,intent,profile,returned") ||
+      !keys(
+        originals,
+        owned
+          ? "entry,intent,profile,provision,returned"
+          : "entry,intent,profile,returned",
+      ) ||
       !/^[a-f0-9]{32}$/.test(expected.nonce) ||
       !Number.isSafeInteger(expected.process.pid) ||
       expected.process.pid <= 0 ||
@@ -399,6 +440,18 @@ export function bindBootstrapEntryEvidence(
       )
     )
       return null;
+    const ownedIntent = expected.version === 3 ? expected : undefined;
+    if (
+      owned &&
+      (!ownedIntent ||
+        ownedIntent.mode !== "owned-autoload-v1" ||
+        !keys(ownedIntent.provision, "path,sha256") ||
+        !/^[a-f0-9]{64}$/.test(ownedIntent.provision.sha256) ||
+        !keys(ownedIntent.generation, "epoch,instance") ||
+        !utf8(ownedIntent.generation.instance, 65536) ||
+        !utf8(ownedIntent.generation.epoch, 65536))
+    )
+      return null;
     canonicalNativePath(expected.executable.path);
     const copy = (original: OriginalBootstrapBytes) => ({
       nativePath: original.nativePath,
@@ -409,12 +462,15 @@ export function bindBootstrapEntryEvidence(
       profile: copy(originals.profile),
       entry: copy(originals.entry),
       returned: copy(originals.returned),
+      ...(owned && "provision" in originals
+        ? { provision: copy(originals.provision) }
+        : {}),
     };
     if (
       new Set([
         ...Object.values(input).map((file) => nativePath(file.nativePath)),
         canonicalNativePath(expected.executable.path),
-      ]).size !== 5
+      ]).size !== (owned ? 6 : 5)
     )
       return null;
     const reference = (original: OriginalBootstrapBytes) => ({
@@ -425,15 +481,32 @@ export function bindBootstrapEntryEvidence(
       decodeAdmissionJson(
         new TextDecoder("utf-8", { fatal: true }).decode(bytes),
       );
+    if (ownedIntent) {
+      if (
+        !input.provision ||
+        nativePath(input.provision.nativePath) !==
+          nativePath(ownedIntent.provision.path) ||
+        sha(input.provision.bytes) !== ownedIntent.provision.sha256
+      )
+        return null;
+      const provision = decode(input.provision.bytes);
+      if (
+        !record(provision) ||
+        provision["pid"] !== ownedIntent.process.pid ||
+        provision["birth"] !== ownedIntent.process.birth ||
+        provision["instance"] !== ownedIntent.generation.instance ||
+        provision["epoch"] !== ownedIntent.generation.epoch
+      )
+        return null;
+    }
     if (
       !same(decode(input.intent.bytes), expected) ||
       nativePath(input.profile.nativePath) !==
         nativePath(expected.profile.path) ||
       sha(input.profile.bytes) !== expected.profile.sha256 ||
-      !matchesControlledFusionAutoload(
-        input.profile.bytes,
-        installedForkEntry,
-      ) ||
+      !(
+        owned ? matchesOwnedBootstrapAutoload : matchesControlledFusionAutoload
+      )(input.profile.bytes, installedForkEntry) ||
       nativePath(input.entry.nativePath) !==
         nativePath(
           joinNative(expected.receipts.directory, expected.receipts.entry),
@@ -446,7 +519,14 @@ export function bindBootstrapEntryEvidence(
       return null;
     const base = {
       kind: "fmcad-bootstrap-entry-receipt",
-      version: 2,
+      version: owned ? 3 : 2,
+      ...(ownedIntent
+        ? {
+            mode: ownedIntent.mode,
+            provision: ownedIntent.provision,
+            generation: ownedIntent.generation,
+          }
+        : {}),
       nonce: expected.nonce,
       process: expected.process,
       purpose: expected.purpose,

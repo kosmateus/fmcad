@@ -5,6 +5,8 @@ import {
   planControlledFusionAutoload,
   matchesControlledFusionAutoload,
   planNormalObserverAutoload,
+  planOwnedBootstrapAutoload,
+  matchesOwnedBootstrapAutoload,
 } from "../packages/node-adapters/src/execution/fusion-bootstrap-autoload";
 
 const fork = "C:/Users/operator/AddIns/AutodeskFusionMCP/AutodeskFusionMCP.py";
@@ -37,6 +39,56 @@ const fixture = () => ({
   ],
 });
 const bytes = (value: unknown) => Buffer.from(JSON.stringify(value));
+test("owned bootstrap disables foreign startup without qualifying isolation or manual ALL-OFF", () => {
+  const value = fixture();
+  const original = bytes(value);
+  const plan = planOwnedBootstrapAutoload(original, fork);
+  assert.equal(plan.authority, "NONE");
+  assert.equal(plan.isolation, "NOT_PROVEN");
+  assert.equal(plan.forkStart, "owned-startup-after-native-rebind");
+  assert.deepEqual(JSON.parse(plan.registrationBytes().toString()), {
+    loadedScripts: value.loadedScripts.map((row) => ({
+      ...row,
+      runOnStartup: row.path === fork,
+    })),
+  });
+  assert.equal(
+    matchesControlledFusionAutoload(plan.registrationBytes(), fork),
+    false,
+  );
+  assert.equal(
+    matchesOwnedBootstrapAutoload(plan.registrationBytes(), fork),
+    true,
+  );
+  assert.equal(matchesOwnedBootstrapAutoload(original, fork), false);
+  assert.equal(
+    matchesOwnedBootstrapAutoload(
+      planControlledFusionAutoload(original, fork).registrationBytes(),
+      fork,
+    ),
+    false,
+  );
+  assert.equal(
+    matchesOwnedBootstrapAutoload(
+      planNormalObserverAutoload(original, fork).registrationBytes(),
+      fork,
+    ),
+    false,
+  );
+  const copy = plan.registrationBytes();
+  copy.fill(0);
+  assert.equal(
+    createHash("sha256").update(plan.registrationBytes()).digest("hex"),
+    plan.plannedSha256,
+  );
+  assert.deepEqual(JSON.parse(original.toString()), value);
+  const removed = fixture();
+  removed.loadedScripts[2]!.isRemoved = true;
+  assert.throws(() => planOwnedBootstrapAutoload(bytes(removed), fork));
+  const ambiguous = fixture();
+  ambiguous.loadedScripts.push({ ...ambiguous.loadedScripts[2]! });
+  assert.throws(() => planOwnedBootstrapAutoload(bytes(ambiguous), fork));
+});
 test("controlled autoload changes only startup flags and binds exact original bytes", () => {
   const value = fixture(),
     original = bytes(value);

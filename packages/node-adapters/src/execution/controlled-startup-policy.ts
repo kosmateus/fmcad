@@ -69,6 +69,25 @@ export function assertControlledStartupData(
   expected: StartupPolicyExpected,
   autorun: readonly StartupAutorunOriginal[],
 ): void {
+  assertStartupData(audit, expected, autorun, "manual");
+}
+
+/** Separate byte/data policy for the owned pre-resume producer. This does not
+ * grant authority or make manual v2 evidence valid for autoload. */
+export function assertOwnedBootstrapStartupData(
+  audit: StartupPolicyAudit,
+  expected: StartupPolicyExpected,
+  autorun: readonly StartupAutorunOriginal[],
+): void {
+  assertStartupData(audit, expected, autorun, "owned-autoload");
+}
+
+function assertStartupData(
+  audit: StartupPolicyAudit,
+  expected: StartupPolicyExpected,
+  autorun: readonly StartupAutorunOriginal[],
+  mode: "manual" | "owned-autoload",
+): void {
   try {
     if (!/^[a-f0-9]{64}$/.test(expected.installedManifestHash)) deny();
     if (
@@ -94,16 +113,18 @@ export function assertControlledStartupData(
         folders.has(folder) ||
         typeof row.isRunning !== "boolean" ||
         typeof row.isAddIn !== "boolean" ||
-        row.isRunOnStartup !== (row.isAddIn ? false : null)
+        row.isRunOnStartup !==
+          (row.isAddIn ? mode === "owned-autoload" && folder === self : null)
       )
         deny();
       folders.add(folder);
       if (folder === self) {
         ownRows++;
-        // The manually invoked entry may be marked running by the SDK before
-        // addon_runtime is imported. It must never be a startup-enabled entry.
+        // SDK may mark the entry running before addon_runtime is imported.
+        // Only the separate owned-autoload policy permits its startup flag.
         if (
           !row.isAddIn ||
+          (mode === "owned-autoload" && !row.isRunning) ||
           row.manifest.sha256 !== expected.installedManifestHash
         )
           deny();

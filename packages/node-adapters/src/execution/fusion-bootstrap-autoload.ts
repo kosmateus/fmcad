@@ -167,3 +167,67 @@ export function planNormalObserverAutoload(
     },
   });
 }
+
+/**
+ * Separate controlled-bootstrap proposal. Unlike NORMAL, every foreign entry
+ * is disabled; unlike manual ALL-OFF, the exact owned entry is enabled.
+ * This supplies bytes only. It does not qualify a process or authorize launch:
+ * original pre-resume provisioning, discovery fences and native entry/MAC
+ * evidence are still required by the controlled producer.
+ */
+export function planOwnedBootstrapAutoload(
+  original: Uint8Array,
+  installedForkEntry: string,
+) {
+  const expected = entryPath(installedForkEntry);
+  const rows = registration(original);
+  const matches = rows.filter(
+    (row) =>
+      path.win32.isAbsolute(row.path) && entryPath(row.path) === expected,
+  );
+  const own = matches[0];
+  if (matches.length !== 1 || !own || own.isRemoved) refuse();
+  const bytes = Buffer.from(
+    JSON.stringify(
+      {
+        loadedScripts: rows.map((row) => ({
+          ...row,
+          runOnStartup: row === own,
+        })),
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  return Object.freeze({
+    kind: "owned-bootstrap-autoload-plan-v1" as const,
+    authority: "NONE" as const,
+    isolation: "NOT_PROVEN" as const,
+    forkStart: "owned-startup-after-native-rebind" as const,
+    originalSha256: digest(original),
+    plannedSha256: digest(bytes),
+    installedForkEntry: own.path,
+    registrationBytes() {
+      return Buffer.from(bytes);
+    },
+  });
+}
+
+/** Byte-policy only, never a substitute for original pre-resume evidence. */
+export function matchesOwnedBootstrapAutoload(
+  actual: Uint8Array,
+  installedForkEntry: string,
+): boolean {
+  const expected = entryPath(installedForkEntry);
+  const rows = registration(actual);
+  let found = 0;
+  for (const row of rows) {
+    const own =
+      path.win32.isAbsolute(row.path) && entryPath(row.path) === expected;
+    if (own) {
+      if (row.isRemoved || !row.runOnStartup) return false;
+      found++;
+    } else if (row.runOnStartup) return false;
+  }
+  return found === 1;
+}

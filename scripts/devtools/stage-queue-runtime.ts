@@ -18,6 +18,7 @@ export const queueRuntimeModules = [
   "python-diagnostic-broker",
   "fresh-host-proof",
   "controlled-fusion-bootstrap",
+  "owned-fusion-bootstrap",
   "controlled-stdout-provider",
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",

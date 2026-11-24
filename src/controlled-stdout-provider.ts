@@ -4,9 +4,11 @@ import { isDeepStrictEqual as same } from "node:util";
 import type { QueueRequest } from "@fmcad/core";
 import {
   createControlledHostProofFactory,
+  createOwnedControlledHostProofFactory,
   FreshHostProofError,
   type ControlledHostPreparationContext,
   type ControlledHostProofPorts,
+  type OwnedControlledHostProofPorts,
 } from "./fresh-host-proof";
 import {
   pythonStdoutInputDigests,
@@ -39,6 +41,22 @@ export interface ControlledStdoutProviderPorts {
     | ControlledHostProofPorts["reader"]
     | Promise<ControlledHostProofPorts["reader"]>;
 }
+export interface OwnedControlledStdoutProviderPorts extends Omit<
+  ControlledStdoutProviderPorts,
+  "controller"
+> {
+  controller: OwnedControlledHostProofPorts["controller"];
+}
+type CommonProviderPorts = Omit<
+  ControlledStdoutProviderPorts,
+  "controller" | "transcript"
+>;
+type FactoryInput = {
+  reader: ControlledHostProofPorts["reader"];
+  context: ControlledHostPreparationContext;
+  readCurrent(): ControlledHostPreparationContext;
+  readCompilerPins(): ProtocolMetadataPins;
+};
 
 /** Compose only the original controlled host with the actual bounded kernel.
  * Returns the private broker Options port, never an RPC-supplied capability.
@@ -58,6 +76,62 @@ export function createControlledStdoutProvider(
   const controller = ports.controller;
   const transcript = ports.transcript;
   const startupInputs = ports.startupInputs;
+  return createProvider(ports, (input) =>
+    createControlledHostProofFactory(
+      {
+        reader: input.reader,
+        controller,
+        transcript,
+        ...(startupInputs ? { startupInputs } : {}),
+        assertBootstrapHeld: () => ports.assertBootstrapHeld(),
+        readCurrent: input.readCurrent,
+        readCompilerPins: input.readCompilerPins,
+      },
+      input.context,
+      originalPublication,
+      originalCompletion,
+    ),
+  );
+}
+
+/** Private owned-controller composition; the public/manual provider is unchanged. */
+export function createOwnedControlledStdoutProvider(
+  ports: OwnedControlledStdoutProviderPorts,
+  publication: NativeRuntimeActivationPublication,
+  completion: NativeRuntimeActivationCompletion,
+) {
+  const originalPublication = structuredClone(publication);
+  const originalCompletion = structuredClone(completion);
+  const controller = ports.controller;
+  const transcript = ports.transcript;
+  const startupInputs = ports.startupInputs;
+  return createProvider(ports, (input) =>
+    createOwnedControlledHostProofFactory(
+      {
+        reader: input.reader,
+        controller,
+        transcript,
+        ...(startupInputs ? { startupInputs } : {}),
+        assertBootstrapHeld: () => ports.assertBootstrapHeld(),
+        readCurrent: input.readCurrent,
+        readCompilerPins: input.readCompilerPins,
+      },
+      input.context,
+      originalPublication,
+      originalCompletion,
+    ),
+  );
+}
+
+function createProvider(
+  ports: CommonProviderPorts,
+  buildFactory: (
+    input: FactoryInput,
+  ) => ReturnType<typeof createControlledHostProofFactory>,
+): (
+  input: QueueRequest,
+  pins: ProtocolMetadataPins,
+) => Promise<StdoutCompilationPorts> {
   return async (input, pins) => {
     const request = structuredClone(input);
     const expectedInput = pythonStdoutInputDigests(request);
@@ -69,23 +143,15 @@ export function createControlledStdoutProvider(
     )
       throw new FreshHostProofError("FRESH_HOST_CONTEXT_CHANGED");
     const reader = await ports.createReader();
-    const factory = createControlledHostProofFactory(
-      {
-        reader,
-        controller,
-        transcript,
-        ...(startupInputs ? { startupInputs } : {}),
-        assertBootstrapHeld: () => ports.assertBootstrapHeld(),
-        readCurrent: () => ({
-          ...ports.readCurrentHost(),
-          ...pythonStdoutInputDigests(request),
-        }),
-        readCompilerPins: () => ({ ...originalPins }),
-      },
-      { ...host, ...expectedInput },
-      originalPublication,
-      originalCompletion,
-    );
+    const factory = buildFactory({
+      reader,
+      context: { ...host, ...expectedInput },
+      readCurrent: () => ({
+        ...ports.readCurrentHost(),
+        ...pythonStdoutInputDigests(request),
+      }),
+      readCompilerPins: () => ({ ...originalPins }),
+    });
     const prepared = await factory.prepare();
     const recheck = () => {
       prepared.recheck();

@@ -110,6 +110,7 @@
     "src/python-diagnostic-broker.ts",
     "src/fresh-host-proof.ts",
     "src/controlled-fusion-bootstrap.ts",
+    "src/owned-fusion-bootstrap.ts",
     "src/controlled-stdout-provider.ts",
     "src/document-creation-broker.ts"
   ],

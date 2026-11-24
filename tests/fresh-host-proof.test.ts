@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 import {
   createFreshHostProofFactory,
   createControlledHostProofFactory,
+  createOwnedControlledHostProofFactory,
+  type OwnedControlledHostProofPorts,
   type FreshHostContext,
   type ControlledHostProofPorts,
   type ControlledHostPreparationContext,
@@ -13,10 +15,14 @@ import {
 import {
   bootstrapInstalledFilesDigest,
   type BootstrapEntryIntentV2,
+  type BootstrapOwnedEntryIntentV3,
 } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import { controlledStartupAuditFixture } from "./controlled-fusion-bootstrap-fixture";
 import type { ControlledFusionBootstrapTranscript } from "../src/controlled-fusion-bootstrap";
-import { createControlledStdoutProvider } from "../src/controlled-stdout-provider";
+import {
+  createControlledStdoutProvider,
+  createOwnedControlledStdoutProvider,
+} from "../src/controlled-stdout-provider";
 import {
   compilePythonStdout,
   pythonStdoutInputDigests,
@@ -490,6 +496,162 @@ async function controlledFixture(options: { autorunRoot?: string } = {}) {
   };
 }
 
+async function ownedControlledFixture(
+  options: { runtimeSource?: string; runtimeBuild?: string } = {},
+) {
+  const f = await controlledFixture();
+  const original = await f.ports.controller.readOriginalIntent(
+    f.ports.transcript,
+  );
+  const evidence = await f.ports.controller.readOriginalEvidence(
+    f.ports.transcript,
+  );
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
+  const hash = (bytes: Uint8Array) =>
+    createHash("sha256").update(bytes).digest("hex");
+  const profile = JSON.parse(Buffer.from(evidence.profile.bytes).toString());
+  profile.loadedScripts[0].runOnStartup = true;
+  evidence.profile.bytes = encode(profile);
+  const generation = structuredClone(
+    f.preparationContext.descriptor.generation,
+  );
+  const provision = {
+    nativePath: "C:\\private\\provision.json",
+    bytes: encode({
+      ...original.process,
+      ...generation,
+      source: "7".repeat(40),
+      build: "8".repeat(64),
+    }),
+  };
+  const intent: BootstrapOwnedEntryIntentV3 = {
+    ...original,
+    version: 3,
+    mode: "owned-autoload-v1",
+    generation,
+    provision: { path: provision.nativePath, sha256: hash(provision.bytes) },
+    profile: { ...original.profile, sha256: hash(evidence.profile.bytes) },
+  };
+  evidence.intent.bytes = encode(intent);
+  const extra = {
+    version: 3,
+    mode: intent.mode,
+    generation,
+    provision: intent.provision,
+    profile: intent.profile,
+    intent: {
+      path: evidence.intent.nativePath,
+      sha256: hash(evidence.intent.bytes),
+    },
+  };
+  const entry = JSON.parse(Buffer.from(evidence.entry.bytes).toString());
+  entry.startupAudit.scripts.items[0].isRunOnStartup = true;
+  entry.startupAudit.scripts.items[0].isRunning = true;
+  evidence.entry.bytes = encode({ ...entry, ...extra });
+  const returned = JSON.parse(Buffer.from(evidence.returned.bytes).toString());
+  evidence.returned.bytes = encode({
+    ...returned,
+    ...extra,
+    entry: {
+      path: evidence.entry.nativePath,
+      sha256: hash(evidence.entry.bytes),
+    },
+  });
+  for (const file of Object.values(evidence)) {
+    const digest = hash(file.bytes);
+    f.context.originalRefs.find(
+      (ref) => ref.nativePath === file.nativePath,
+    )!.sha256 = digest;
+    f.signed.find(
+      (ref) => ref.path === f.context.nativePathMappings[file.nativePath],
+    )!.sha256 = digest;
+  }
+  f.context.nativePathMappings[provision.nativePath] = "/original/provision";
+  f.context.originalRefs.push({
+    nativePath: provision.nativePath,
+    sha256: hash(provision.bytes),
+    identity: "original-provision",
+  });
+  f.signed.push({ path: "/original/provision", sha256: hash(provision.bytes) });
+  const runtimeSource = options.runtimeSource ?? "7".repeat(40);
+  const runtimeBuild = options.runtimeBuild ?? "8".repeat(64);
+  f.preparationContext.descriptor.physicalRuntime.source = runtimeSource;
+  f.preparationContext.descriptor.physicalRuntime.build = runtimeBuild;
+  f.ports.reader.pins.source = runtimeSource;
+  f.ports.reader.pins.build = runtimeBuild;
+  const ports: OwnedControlledHostProofPorts = {
+    ...f.ports,
+    controller: {
+      ...f.ports.controller,
+      async readOriginalIntent() {
+        return structuredClone(intent);
+      },
+      async readOriginalEvidence() {
+        return structuredClone({ ...evidence, provision });
+      },
+    },
+  };
+  const factory = createOwnedControlledHostProofFactory(
+    ports,
+    f.preparationContext,
+    f.publication,
+    f.completion,
+  );
+  return { ...f, factory, ownedPorts: ports, intent };
+}
+
+test("owned v3 host proof requires MAC-authenticated provision and preserves held compiler fences", async () => {
+  const f = await ownedControlledFixture();
+  const prepared = await f.factory.prepare();
+  assert.equal(
+    prepared.verifyHostBindings(f.compilerPins).profileVersion,
+    "isolated-stdout-v1",
+  );
+  f.loseWindow();
+  assert.throws(prepared.recheck, /CONTROLLED_WINDOW_REVOKED/);
+});
+
+test("owned v3 host proof rejects an unsigned original provision", async () => {
+  const f = await ownedControlledFixture();
+  f.signed.splice(
+    f.signed.findIndex((ref) => ref.path === "/original/provision"),
+    1,
+  );
+  await assert.rejects(f.factory.prepare(), {
+    code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+  });
+});
+
+for (const fault of ["source", "build"] as const)
+  test(`owned v3 requires runtime ${fault} from original provision, not installed identity`, async () => {
+    const f = await ownedControlledFixture(
+      fault === "source"
+        ? { runtimeSource: "9".repeat(40) }
+        : { runtimeBuild: "9".repeat(64) },
+    );
+    await assert.rejects(f.factory.prepare(), {
+      code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+    });
+    assert.equal(
+      f.calls(),
+      0,
+      "do not consult activation for mismatched original admission pins",
+    );
+  });
+
+test("manual host proof cannot accept the owned v3 controller", async () => {
+  const f = await ownedControlledFixture();
+  const manual = Reflect.apply(createControlledHostProofFactory, undefined, [
+    f.ownedPorts,
+    f.preparationContext,
+    f.publication,
+    f.completion,
+  ]);
+  await assert.rejects(manual.prepare(), {
+    code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+  });
+});
+
 test("controlled origin and MAC-authenticated original references yield a held compiler port, not a serialized grant", async () => {
   const f = await controlledFixture();
   const prepared = await f.factory.prepare();
@@ -531,16 +693,17 @@ test("bootstrap MAC reference port preserves original native paths and private c
   assert.throws(port.readCurrentReferences, /CONTROLLED_WINDOW_REVOKED/);
 });
 
-test("private provider uses the actual kernel, original input and a new native reader for each preparation", async () => {
-  const f = await controlledFixture();
-  const sha = (value: string) =>
-    createHash("sha256").update(value).digest("hex");
-  f.preparationContext.brokerBuild = f.compilerPins.buildHash = sha("broker");
-  f.preparationContext.brokerConfig = f.compilerPins.configHash = sha("config");
-  let readers = 0;
-  const provider = createControlledStdoutProvider(
-    {
-      controller: f.ports.controller,
+for (const owned of [false, true])
+  test(`private ${owned ? "owned v3" : "manual v2"} provider uses the actual kernel, original input and a new native reader for each preparation`, async () => {
+    const ownedFixture = owned ? await ownedControlledFixture() : undefined;
+    const f = ownedFixture ?? (await controlledFixture());
+    const sha = (value: string) =>
+      createHash("sha256").update(value).digest("hex");
+    f.preparationContext.brokerBuild = f.compilerPins.buildHash = sha("broker");
+    f.preparationContext.brokerConfig = f.compilerPins.configHash =
+      sha("config");
+    let readers = 0;
+    const common = {
       transcript: f.ports.transcript,
       startupInputs: f.startupInputs,
       assertBootstrapHeld: f.ports.assertBootstrapHeld,
@@ -564,55 +727,66 @@ test("private provider uses the actual kernel, original input and a new native r
         readers++;
         return { ...f.ports.reader };
       },
-    },
-    f.publication,
-    f.completion,
-  );
-  const request = {
-    kind: "rpc" as const,
-    backend: "addin",
-    clientId: "provider-client",
-    requestId: "provider-request",
-    timeoutMs: 45000,
-    ownerToken: "a".repeat(64),
-    payload: {
-      jsonrpc: "2.0",
-      id: "original-id",
-      method: "tools/call",
-      params: {
-        name: "execute_python",
-        arguments: { code: "print('provider output')", persistent: false },
+    };
+    const provider = ownedFixture
+      ? createOwnedControlledStdoutProvider(
+          { ...common, controller: ownedFixture.ownedPorts.controller },
+          f.publication,
+          f.completion,
+        )
+      : createControlledStdoutProvider(
+          { ...common, controller: f.ports.controller },
+          f.publication,
+          f.completion,
+        );
+    const request = {
+      kind: "rpc" as const,
+      backend: "addin",
+      clientId: "provider-client",
+      requestId: "provider-request",
+      timeoutMs: 45000,
+      ownerToken: "a".repeat(64),
+      payload: {
+        jsonrpc: "2.0",
+        id: "original-id",
+        method: "tools/call",
+        params: {
+          name: "execute_python",
+          arguments: { code: "print('provider output')", persistent: false },
+        },
       },
-    },
-  };
-  const ports = await provider(request, f.compilerPins);
-  const compiled = await compilePythonStdout(request, ports);
-  assert.ok(compiled);
-  assert.equal(
-    compiled.descriptor.sourceHash,
-    pythonStdoutInputDigests(request).sourceDigest,
-  );
-  const rpc = compiled.rpc();
-  const params = rpc["params"];
-  assert.ok(params && typeof params === "object" && "arguments" in params);
-  const args = params.arguments;
-  assert.ok(args && typeof args === "object" && "code" in args);
-  assert.notEqual(
-    args.code,
-    request.payload.params.arguments.code,
-    "the real kernel must be generated, not the original script forwarded",
-  );
-  compiled.assertWire(
-    request,
-    { ...rpc, id: "fmcad:owned-turn" },
-    "owned-turn",
-  );
-  await provider(request, f.compilerPins);
-  assert.equal(readers, 2);
-  assert.equal(f.calls(), 2);
-  f.loseWindow();
-  assert.throws(() => compiled.reverify(request), /CONTROLLED_WINDOW_REVOKED/);
-});
+    };
+    const ports = await provider(request, f.compilerPins);
+    const compiled = await compilePythonStdout(request, ports);
+    assert.ok(compiled);
+    assert.equal(
+      compiled.descriptor.sourceHash,
+      pythonStdoutInputDigests(request).sourceDigest,
+    );
+    const rpc = compiled.rpc();
+    const params = rpc["params"];
+    assert.ok(params && typeof params === "object" && "arguments" in params);
+    const args = params.arguments;
+    assert.ok(args && typeof args === "object" && "code" in args);
+    assert.notEqual(
+      args.code,
+      request.payload.params.arguments.code,
+      "the real kernel must be generated, not the original script forwarded",
+    );
+    compiled.assertWire(
+      request,
+      { ...rpc, id: "fmcad:owned-turn" },
+      "owned-turn",
+    );
+    await provider(request, f.compilerPins);
+    assert.equal(readers, 2);
+    assert.equal(f.calls(), 2);
+    f.loseWindow();
+    assert.throws(
+      () => compiled.reverify(request),
+      /CONTROLLED_WINDOW_REVOKED/,
+    );
+  });
 
 test("missing or mismatched authenticated original references permanently deny the window", async () => {
   for (const alter of [
