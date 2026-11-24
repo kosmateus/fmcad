@@ -142,13 +142,18 @@ function Require-Entry($v){
  if(-not $startup.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern,[ref]$toggle) -or $toggle.Current.ToggleState.ToString() -cne 'Off'){throw 'Startup must remain OFF'}
  return Unique $v {$_.id -ceq ($base+'.QToolButton') -and $_.class -ceq 'QToolButton' -and $_.name -ceq 'Uruchom' -and $_.type -ceq 'ControlType.Button'}
 }
+function Require-PreparedManager($v){
+ $pin=$r.preparedManager
+ if($null -eq $pin -or $v.capture.mode -cne 'manager' -or $v.capture.mainHwnd -cne $pin.mainHwnd -or $v.capture.dialogHwnd -cne $pin.dialogHwnd -or $v.capture.controls[0].runtimeId -cne $pin.runtimeId){throw 'Original prepared manager HWND/context changed'}
+}
 $before=Capture
 if($r.action -cne 'capture'){
  if($r.action -notin @('openPreferences','selectApi','toggleLegacy','applyLegacy','cancelPreferences','openManager','addinsTab','details','selectEntry','closeManager','start')){throw 'Unknown UI action'}
  if((Fingerprint $before.capture) -cne (Fingerprint $r.expected)){throw 'Fresh original UI changed before dispatch'}
  if($null -eq $r.attempt -or $r.dispatchPath -cne ($r.attempt.nativePath+'.dispatch')){throw 'Durable original action required'}
  Lock-Original $r.attempt
- if($r.action -ceq 'start'){
+  if($r.action -ceq 'start'){
+   Require-PreparedManager $before
   if($null -eq $r.intent -or $null -eq $r.profile -or $r.attempt.nativePath -cne ($r.intent.nativePath+'.legacy-start-attempt.json')){throw 'Original isolated stdout intent/profile required'}
   Lock-Original $r.intent;Lock-Original $r.profile
   $null=Require-Entry $before
@@ -179,7 +184,7 @@ if($r.action -cne 'capture'){
   'details' {$element=Unique $before {$_.name -ceq 'Szczegóły' -and $_.class -ceq 'QPushButton'}}
   'selectEntry' {$element=Unique $before {$_.id -ceq $treeId -and $_.name -ceq 'AutodeskFusionMCP' -and $_.type -ceq 'ControlType.TreeItem'}}
   'closeManager' {if($before.capture.mode -cne 'manager'){throw 'Only own legacy manager may close'}}
-  'start' {$element=Require-Entry $before}
+   'start' {Require-PreparedManager $before;$element=Require-Entry $before}
  }
  $null=Process-Guard
  if($r.action -in @('openPreferences','openManager')){

@@ -270,6 +270,19 @@ export function createControlledLegacyHostUi(
   let originalSetting: "On" | "Off" | undefined;
   let originalApiValues: ReturnType<typeof apiValues> | undefined;
   let ownManager: string | undefined, ownPreferences: string | undefined;
+  let preparedManager:
+    { mainHwnd: string; dialogHwnd: string; runtimeId: string } | undefined;
+  function requirePreparedManager(c: LegacyUiCapture) {
+    if (
+      !preparedManager ||
+      c.mode !== "manager" ||
+      c.mainHwnd !== preparedManager.mainHwnd ||
+      c.dialogHwnd !== preparedManager.dialogHwnd ||
+      c.dialogHwnd !== ownManager ||
+      c.controls[0]?.runtimeId !== preparedManager.runtimeId
+    )
+      throw new Error("Original prepared manager HWND/context changed");
+  }
   let captures = 0,
     attempts = 0;
   const originals: ControlledFile[] = [];
@@ -392,6 +405,7 @@ export function createControlledLegacyHostUi(
             process,
             action,
             expected: expected ?? null,
+            preparedManager: action === "start" ? preparedManager : null,
             entry,
             originals: sourceFiles.map(ref),
             attempt: attempt ? ref(attempt) : null,
@@ -422,6 +436,7 @@ export function createControlledLegacyHostUi(
     )
       throw new Error("Partial original legacy OS response");
     const c = readLegacyUiCapture(JSON.stringify(response.capture), process!);
+    if (prepared && !restoring) requirePreparedManager(c);
     if (mainHwnd !== undefined && c.mainHwnd !== mainHwnd)
       throw new Error("Original HWND changed");
     mainHwnd ??= c.mainHwnd;
@@ -449,6 +464,7 @@ export function createControlledLegacyHostUi(
     profile?: ControlledFile,
   ) {
     if (attempts >= 32) throw new Error("Bounded legacy input exhausted");
+    if (action === "start") requirePreparedManager(before);
     await current();
     const nativePath =
       action === "start"
@@ -647,6 +663,13 @@ export function createControlledLegacyHostUi(
           manager = await act("details", manager.capture);
         manager = await act("selectEntry", manager.capture);
         requireLegacyEntry(manager.capture, entry);
+        if (manager.capture.dialogHwnd !== ownManager)
+          throw new Error("Owned manager HWND changed during preparation");
+        preparedManager = {
+          mainHwnd: manager.capture.mainHwnd,
+          dialogHwnd: ownManager,
+          runtimeId: manager.capture.controls[0]!.runtimeId,
+        };
         const reference = await publish("prepared.json", {
           kind: "legacy-ui-prepared-v1",
           authority: "NONE",
@@ -720,6 +743,7 @@ export function createControlledLegacyHostUi(
         )
           throw new Error("Fresh original ALL-OFF profile required");
         const view = await observe();
+        requirePreparedManager(view.capture);
         requireLegacyEntry(view.capture, entry);
         await native.assertOriginal(intent);
         fence();
@@ -747,6 +771,7 @@ export function createControlledLegacyHostUi(
         if (!process) throw new Error("No original UI process");
         let view = await observe();
         if (ownManager && view.capture.mode === "manager") {
+          if (preparedManager) requirePreparedManager(view.capture);
           if (view.capture.dialogHwnd !== ownManager)
             throw new Error("Owned manager HWND changed");
           view = await act("closeManager", view.capture);

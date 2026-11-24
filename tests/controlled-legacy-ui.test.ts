@@ -338,7 +338,12 @@ process.stdin.on('end',()=>{
   c.controls.find(x=>x.runtimeId==='apply').enabled=state.pending;
   c.controls.find(x=>x.runtimeId==='debug-port').value=state.externalPreference?'9001':'9000';
  }
- if(c.mode==='manager'){
+  if(c.mode==='manager'){
+   if(state.replacementHwnd)c.dialogHwnd=state.replacementHwnd;
+   if(state.replacementRuntimeId){
+    const old=c.controls[0].runtimeId;c.controls[0].runtimeId=state.replacementRuntimeId;
+    for(const x of c.controls)if(x.parent===old)x.parent=state.replacementRuntimeId;
+   }
   if(cfg.scenario==='stale') {
    c.controls.push({...c.controls.find(x=>x.runtimeId==='entry'),runtimeId:'previous',name:'Moje dodatki',selected:false});
    c.treeSelection.rows=['previous'];
@@ -353,7 +358,10 @@ process.stdin.on('end',()=>{
   if(cfg.scenario==='duplicate') c.controls.push({...c.controls.find(x=>x.runtimeId==='run'),runtimeId:'run-copy'});
   if(cfg.scenario==='stalePath') c.controls.find(x=>x.runtimeId==='path').value='C:\\other\\AutodeskFusionMCP.py';
  }
- if(r.action!=='capture'){
+  if(r.action!=='capture'){
+   if(r.action==='start' && (!r.preparedManager || c.dialogHwnd!==r.preparedManager.dialogHwnd ||
+      c.mainHwnd!==r.preparedManager.mainHwnd || c.controls[0].runtimeId!==r.preparedManager.runtimeId))
+     throw Error('Original prepared manager HWND/context changed');
   if(r.action==='start' && cfg.scenario==='lateProfileIdentity'){
    const p=cfg.mappings[r.profile.nativePath];fs.writeFileSync(p+'.replacement',fs.readFileSync(p));fs.renameSync(p+'.replacement',p);
   }
@@ -794,3 +802,56 @@ test("restoration preserves an unrelated external preference and refuses a false
   );
   assert.equal(f.events().length, count);
 });
+for (const boundary of [
+  "before Start",
+  "during await",
+  "during final journal await",
+  "same HWND new runtime",
+] as const) {
+  test(`prepared manager replacement ${boundary} refuses before input and never closes the replacement`, async (t) => {
+    const f = portFixture(t);
+    await f.ui.prepareExactHost({ process, entry });
+    const intent = f.intent();
+    const replace = () => {
+      const state = JSON.parse(fs.readFileSync(f.statePath, "utf8"));
+      if (boundary === "same HWND new runtime")
+        state.replacementRuntimeId = "replacement-manager-root";
+      else state.replacementHwnd = "999999";
+      fs.writeFileSync(f.statePath, JSON.stringify(state));
+    };
+    if (boundary === "before Start" || boundary === "same HWND new runtime")
+      replace();
+    else if (boundary === "during await") {
+      const original = f.native.assertOriginal;
+      f.native.assertOriginal = async (file) => {
+        await original(file);
+        if (file.nativePath === intent.nativePath) replace();
+      };
+    } else {
+      const original = f.native.publishOriginal;
+      f.native.publishOriginal = async (name, bytes) => {
+        const published = await original(name, bytes);
+        if (name === `${intent.nativePath}.legacy-start-attempt.json`)
+          replace();
+        return published;
+      };
+    }
+    await assert.rejects(
+      f.ui.startReviewedFork({ process, entry, intent }),
+      /manager|HWND|changed|UNKNOWN/,
+    );
+    assert.equal(f.events().filter((x) => x.action === "start").length, 0);
+    await assert.rejects(
+      f.ui.restorePresentation(),
+      /manager HWND(?:\/context)? changed/,
+    );
+    assert.equal(
+      f.events().filter((x) => x.action === "closeManager").length,
+      0,
+    );
+    assert.equal(
+      JSON.parse(fs.readFileSync(f.statePath, "utf8")).mode,
+      "manager",
+    );
+  });
+}
