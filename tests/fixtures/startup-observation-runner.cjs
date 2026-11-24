@@ -13,17 +13,24 @@ function runStartupProbe(input, scenario = "valid", reference) {
     if (!nested) throw Error("Actual bound probe wrapper absent");
     script = JSON.parse(nested[1]);
   }
-  const executed = spawnSync("python3", [
-    "-I", "-S", "-B", path.join(__dirname, "startup-observation-sdk.py"),
-  ], {
-    input: JSON.stringify({ script, scenario, reference }),
-    encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
-  });
+  const executed = spawnSync(
+    "python3",
+    ["-I", "-S", "-B", path.join(__dirname, "startup-observation-sdk.py")],
+    {
+      input: JSON.stringify({ script, scenario, reference }),
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
   if (executed.error) throw executed.error;
-  const report = executed.stdout.split(/\r?\n/).find(line => line.startsWith("FAKE_STARTUP_REPORT "));
+  const report = executed.stdout
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("FAKE_STARTUP_REPORT "));
   if (!report) throw Error(executed.stderr || "Fake SDK report absent");
   return {
-    failed: executed.status !== 0, text: executed.stdout, stderr: executed.stderr,
+    failed: executed.status !== 0,
+    text: executed.stdout,
+    stderr: executed.stderr,
     report: JSON.parse(report.slice("FAKE_STARTUP_REPORT ".length)),
   };
 }

@@ -6483,21 +6483,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   if (options.captureControlledIngress || startupCapture) {
     try {
       if (options.captureControlledIngress) {
-      const ingress = required(controlledIngress);
-      const window = ingress.sealForTransfer();
-      const { readControlledIngressIdentity } = runtimeRequire(
-        "./dist/node-adapters/execution/controlled-ingress-window",
-      ) as typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window");
-      const ready = Object.freeze({
-        window,
-        identity: readControlledIngressIdentity(window),
-        activate() { ingress.open(); },
-      });
-      const result: unknown = options.captureControlledIngress(ready);
-      if (result !== undefined) {
-        void Promise.resolve(result).catch(() => {});
-        fail("CONTROLLED_INGRESS_UNPROVEN", "Private ingress capture must be synchronous");
-      }
+        const ingress = required(controlledIngress);
+        const window = ingress.sealForTransfer();
+        const { readControlledIngressIdentity } = runtimeRequire(
+          "./dist/node-adapters/execution/controlled-ingress-window",
+        ) as typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window");
+        const ready = Object.freeze({
+          window,
+          identity: readControlledIngressIdentity(window),
+          activate() { ingress.open(); },
+        });
+        const result: unknown = options.captureControlledIngress(ready);
+        if (result !== undefined) {
+          void Promise.resolve(result).catch(() => {});
+          fail("CONTROLLED_INGRESS_UNPROVEN", "Private ingress capture must be synchronous");
+        }
       }
       if (startupCapture) {
         const captured = required(startupObservation);

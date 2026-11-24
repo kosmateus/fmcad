@@ -17,7 +17,11 @@ import {
   MAX_JSON_RECORD_BYTES,
 } from "../persistence/records";
 import type { PythonArtifactManifest } from "../../../core/src/domain/python-artifact";
-import { decodeAdmissionJson } from "./admission-json";
+import {
+  decodeAdmissionJson,
+  validateOpaqueJsonObject,
+} from "./admission-json";
+import type { BootstrapStartupAudit } from "./bootstrap-entry-evidence";
 
 const PROBE_OBSERVATION_SCHEMA = "fmcad-instance-probe-v1";
 const PUBLIC_PYTHON_RESULT_SCHEMA = "fmcad-public-python-result-v1";
@@ -33,30 +37,7 @@ export interface FusionIdentity extends ProcessIdentity {
   /** Observation data only, never process/startup qualification or authority. */
   startupAudit?: StartupSdkAudit;
 }
-export interface StartupSdkAudit {
-  readonly kind: "fmcad-startup-sdk-audit";
-  readonly version: 1;
-  readonly applicationVersion: string;
-  readonly preferences: { readonly defaultPathForScriptsAndAddIns: string };
-  readonly scripts: {
-    readonly countBefore: number;
-    readonly countAfter: number;
-    readonly items: readonly {
-      readonly index: number;
-      readonly folder: string;
-      readonly location: { readonly name: string; readonly value: number };
-      readonly isAddIn: boolean;
-      readonly isRunOnStartup: boolean | null;
-      readonly isRunning: boolean;
-      readonly isVisible: boolean;
-      readonly manifest: {
-        readonly content: string;
-        readonly sha256: string;
-        readonly parseStatus: "json-object";
-      };
-    }[];
-  };
-}
+export type StartupSdkAudit = BootstrapStartupAudit;
 export interface BrokerPhysicalConfig {
   backend?: unknown;
   url?: unknown;
@@ -141,7 +122,10 @@ export interface ProbeOptions {
   receiptPath?: string;
   binding?: unknown;
   requireIdle?: boolean;
-  onObservation?: (identity: FusionIdentity, receipt?: ProbeReceiptObservation) => unknown;
+  onObservation?: (
+    identity: FusionIdentity,
+    receipt?: ProbeReceiptObservation,
+  ) => unknown;
   diagnosticPath?: string;
   documentSelector?: unknown;
   mapPath?: (file: string) => string;
@@ -521,7 +505,7 @@ def _qs_fail(_code: str, _field: str) -> None:
 def _qs_text(_raw: object, _field: str, _limit: int, _path: bool = False) -> str:
     if type(_raw) is not str:
         raise TypeError('BOOTSTRAP_STARTUP_AUDIT_VALUE_UNVERIFIED: ' + _field)
-    if not _raw or len(_raw.encode('utf-8')) > _limit or '\0' in _raw or (_path and not _qs_Path(_raw).is_absolute()):
+    if not _raw or len(_raw) > _limit or len(_raw.encode('utf-8')) > _limit or '\0' in _raw or (_path and not _qs_Path(_raw).is_absolute()):
         _qs_fail('VALUE_UNVERIFIED', _field)
     return _raw
 def _qs_bool(_raw: object, _field: str) -> bool:
@@ -622,7 +606,10 @@ def _qs_audit(_app: _qi_core.Application) -> dict[str, object]:
         _qs_fail('BYTE_BUDGET_EXCEEDED', 'audit')
     return _audit
 `;
-  const probeScript = (metadata: boolean, startupAudit = false) => `${identityPython}
+  const probeScript = (
+    metadata: boolean,
+    startupAudit = false,
+  ) => `${identityPython}
 import json as _qi_json
 ${startupAudit ? startupAuditPython : ""}
 def run(_context: str) -> dict[str, object]:
@@ -639,7 +626,7 @@ def run(_context: str) -> dict[str, object]:
         if _error:
             _row['dataFileError'] = _error
         _documents.append(_row)${startupAudit ? "\n    _value['startupAudit'] = _qs_audit(_app)" : ""}
-    print('FMCAD_QUEUE_INSTANCE ' + _qi_json.dumps(_value))
+${startupAudit ? "    # Optional startup data stays in the original bound receipt, not console stdout." : "    print('FMCAD_QUEUE_INSTANCE ' + _qi_json.dumps(_value))"}
     return _value
 `;
 
@@ -660,94 +647,124 @@ def run(_context: str) -> dict[str, object]:
     return !!value && typeof value === "object" && !Array.isArray(value);
   }
   function isStartupAudit(value: unknown): value is StartupSdkAudit {
-    const manifestObject = (raw: string): boolean => {
-      try {
-        if (!isRecord(JSON.parse(raw))) return false;
-        // JSON.parse checks grammar, but discards duplicate keys and permits
-        // overflow to Infinity. Scan complete lexical tokens to retain native
-        // object_pairs_hook/finite-float semantics without executing metadata.
-        const containers: Array<Set<string> | null> = [];
-        for (const match of raw.matchAll(/"(?:\\[\s\S]|[^"\\])*"|[{}\[\]]|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g)) {
-          const token = match[0];
-          if (token === "{") containers.push(new Set());
-          else if (token === "[") containers.push(null);
-          else if (token === "}" || token === "]") containers.pop();
-          else if (token.startsWith('"')) {
-            let cursor = match.index + token.length;
-            while (" \t\r\n".includes(raw[cursor] ?? "\0")) cursor++;
-            if (raw[cursor] === ":") {
-              const keys = containers.at(-1);
-              const key = JSON.parse(token) as string;
-              if (!keys || keys.has(key)) return false;
-              keys.add(key);
-            }
-          } else if (/[.eE]/.test(token) && !Number.isFinite(Number(token)))
-            return false;
-        }
-        return true;
-      } catch { return false; }
-    };
-    const exact = (row: unknown, keys: readonly string[]): row is Record<string, unknown> =>
+    const exact = (
+      row: unknown,
+      keys: readonly string[],
+    ): row is Record<string, unknown> =>
       isRecord(row) &&
       isDeepStrictEqual(Object.keys(row).sort(), [...keys].sort());
-    const text = (raw: unknown, limit: number, absolute = false): raw is string =>
-      typeof raw === "string" && !!raw && !raw.includes("\0") &&
+    const text = (
+      raw: unknown,
+      limit: number,
+      absolute = false,
+    ): raw is string =>
+      typeof raw === "string" &&
+      !!raw &&
+      !raw.includes("\0") &&
       Buffer.byteLength(raw, "utf8") <= limit &&
       Buffer.from(raw, "utf8").toString("utf8") === raw &&
-      (!absolute || path.posix.isAbsolute(raw) ||
-        /^[a-z]:[\\/]/i.test(raw) || raw.startsWith("\\\\"));
-    const size = (raw: unknown) => Buffer.byteLength(
-      JSON.stringify(raw).replace(/[\u007f-\uffff]/g,
-        (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0")),
-      "utf8",
-    );
-    if (!exact(value, ["kind", "version", "applicationVersion", "preferences", "scripts"]) ||
-        value["kind"] !== "fmcad-startup-sdk-audit" || value["version"] !== 1 ||
-        !text(value["applicationVersion"], 65536) ||
-        !exact(value["preferences"], ["defaultPathForScriptsAndAddIns"]) ||
-        !text(value["preferences"]["defaultPathForScriptsAndAddIns"], 65536, true) ||
-        !exact(value["scripts"], ["countBefore", "countAfter", "items"]))
+      (!absolute ||
+        path.posix.isAbsolute(raw) ||
+        /^[a-z]:[\\/]/i.test(raw) ||
+        raw.startsWith("\\\\"));
+    const size = (raw: unknown) =>
+      Buffer.byteLength(
+        JSON.stringify(raw).replace(
+          /[\u007f-\uffff]/g,
+          (character) =>
+            "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
+        ),
+        "utf8",
+      );
+    if (
+      !exact(value, [
+        "kind",
+        "version",
+        "applicationVersion",
+        "preferences",
+        "scripts",
+      ]) ||
+      value["kind"] !== "fmcad-startup-sdk-audit" ||
+      value["version"] !== 1 ||
+      !text(value["applicationVersion"], 65536) ||
+      !exact(value["preferences"], ["defaultPathForScriptsAndAddIns"]) ||
+      !text(
+        value["preferences"]["defaultPathForScriptsAndAddIns"],
+        65536,
+        true,
+      ) ||
+      !exact(value["scripts"], ["countBefore", "countAfter", "items"])
+    )
       return false;
     const scripts = value["scripts"];
-    if (!Number.isSafeInteger(scripts["countBefore"]) ||
-        (scripts["countBefore"] as number) < 0 ||
-        (scripts["countBefore"] as number) > 1024 ||
-        scripts["countAfter"] !== scripts["countBefore"] ||
-        !Array.isArray(scripts["items"]) ||
-        scripts["items"].length !== scripts["countBefore"])
+    if (
+      !Number.isSafeInteger(scripts["countBefore"]) ||
+      (scripts["countBefore"] as number) < 0 ||
+      (scripts["countBefore"] as number) > 1024 ||
+      scripts["countAfter"] !== scripts["countBefore"] ||
+      !Array.isArray(scripts["items"]) ||
+      scripts["items"].length !== scripts["countBefore"]
+    )
       return false;
     const names = new Set([
-      "AppStoreScriptSourceLocation", "OtherInstalledScriptSourceLocation",
-      "UserDefinedScriptSourceLocation", "InternalScriptSourceLocation",
-      "SamplesScriptSourceLocation", "LinkedScriptSourceLocation",
+      "AppStoreScriptSourceLocation",
+      "OtherInstalledScriptSourceLocation",
+      "UserDefinedScriptSourceLocation",
+      "InternalScriptSourceLocation",
+      "SamplesScriptSourceLocation",
+      "LinkedScriptSourceLocation",
     ]);
     const locations = new Map<string, number>();
     const values = new Map<number, string>();
     for (const [index, row] of scripts["items"].entries()) {
-      if (!exact(row, ["index", "folder", "location", "isAddIn", "isRunOnStartup",
-        "isRunning", "isVisible", "manifest"]) || row["index"] !== index ||
-          !text(row["folder"], 65536, true) ||
-          typeof row["isAddIn"] !== "boolean" ||
-          (row["isAddIn"] ? typeof row["isRunOnStartup"] !== "boolean" : row["isRunOnStartup"] !== null) ||
-          typeof row["isRunning"] !== "boolean" || typeof row["isVisible"] !== "boolean" ||
-          !exact(row["location"], ["name", "value"]) ||
-          typeof row["location"]["name"] !== "string" ||
-          !names.has(row["location"]["name"]) ||
-          !Number.isSafeInteger(row["location"]["value"]) ||
-          !exact(row["manifest"], ["content", "sha256", "parseStatus"]))
+      if (
+        !exact(row, [
+          "index",
+          "folder",
+          "location",
+          "isAddIn",
+          "isRunOnStartup",
+          "isRunning",
+          "isVisible",
+          "manifest",
+        ]) ||
+        row["index"] !== index ||
+        !text(row["folder"], 65536, true) ||
+        typeof row["isAddIn"] !== "boolean" ||
+        (row["isAddIn"]
+          ? typeof row["isRunOnStartup"] !== "boolean"
+          : row["isRunOnStartup"] !== null) ||
+        typeof row["isRunning"] !== "boolean" ||
+        typeof row["isVisible"] !== "boolean" ||
+        !exact(row["location"], ["name", "value"]) ||
+        typeof row["location"]["name"] !== "string" ||
+        !names.has(row["location"]["name"]) ||
+        !Number.isSafeInteger(row["location"]["value"]) ||
+        !exact(row["manifest"], ["content", "sha256", "parseStatus"])
+      )
         return false;
       const location = row["location"];
-      const name = location["name"] as string, number = location["value"] as number;
-      if ((locations.has(name) && locations.get(name) !== number) ||
-          (values.has(number) && values.get(number) !== name))
+      const name = location["name"] as string,
+        number = location["value"] as number;
+      if (
+        (locations.has(name) && locations.get(name) !== number) ||
+        (values.has(number) && values.get(number) !== name)
+      )
         return false;
-      locations.set(name, number); values.set(number, name);
+      locations.set(name, number);
+      values.set(number, name);
       const manifest = row["manifest"];
-      if (!text(manifest["content"], 256 * 1024) ||
-          manifest["parseStatus"] !== "json-object" ||
-          manifest["sha256"] !== hash(manifest["content"]))
+      if (
+        !text(manifest["content"], 256 * 1024) ||
+        manifest["parseStatus"] !== "json-object" ||
+        manifest["sha256"] !== hash(manifest["content"])
+      )
         return false;
-      if (!manifestObject(manifest["content"])) return false;
+      try {
+        validateOpaqueJsonObject(manifest["content"]);
+      } catch {
+        return false;
+      }
     }
     return size(value) <= 4 * 1024 * 1024;
   }
@@ -903,9 +920,15 @@ def run(_context: str) -> dict[str, object]:
     let output: ProbeOutput;
     try {
       if (startupAudit !== undefined && startupAudit !== true)
-        fail("INSTANCE_UNAVAILABLE", "Closed startup audit option must be true or absent");
+        fail(
+          "INSTANCE_UNAVAILABLE",
+          "Closed startup audit option must be true or absent",
+        );
       if (startupAudit && (!receiptPath || !client.prepareCallTool))
-        fail("INSTANCE_UNAVAILABLE", "Startup audit requires the original bound receipt and prepared fixed probe");
+        fail(
+          "INSTANCE_UNAVAILABLE",
+          "Startup audit requires the original bound receipt and prepared fixed probe",
+        );
       if (receiptPath) {
         if (!isRecord(binding) || Object.keys(binding).length === 0)
           fail(
@@ -937,11 +960,14 @@ def run(_context: str) -> dict[str, object]:
           documentSelector["kind"] === "saved-document-metadata",
         startupAudit,
       );
+      const snapshotAnchor = startupAudit
+        ? "    return _value"
+        : "    print('FMCAD_QUEUE_INSTANCE '";
       const wrapper =
         documentSelector !== undefined
           ? identitySource.replace(
-              "    print('FMCAD_QUEUE_INSTANCE '",
-              `    _value['documentState'] = _qd_capture(_app, _qi_cast(dict[str, object] | None, _qi_json.loads(${JSON.stringify(JSON.stringify(documentSelector))})))\n    print('FMCAD_QUEUE_INSTANCE '`,
+              snapshotAnchor,
+              `    _value['documentState'] = _qd_capture(_app, _qi_cast(dict[str, object] | None, _qi_json.loads(${JSON.stringify(JSON.stringify(documentSelector))})))\n${snapshotAnchor}`,
             )
           : identitySource;
       const code = documentCode + "\n" + wrapper;
@@ -1057,7 +1083,14 @@ def run(_context: str) -> dict[str, object]:
         let originalBytes: Buffer | undefined;
         try {
           const value: unknown = startupAudit
-            ? decodeAdmissionJson((originalBytes = readBytes(receiptPath, MAX_JSON_RECORD_BYTES)).toString("utf8"))
+            ? decodeAdmissionJson(
+                new TextDecoder("utf-8", { fatal: true }).decode(
+                  (originalBytes = readBytes(
+                    receiptPath,
+                    MAX_JSON_RECORD_BYTES,
+                  )),
+                ),
+              )
             : readJson(receiptPath);
           if (!isRecord(value)) throw new Error("Receipt is not an object");
           receipt = value;
@@ -1136,8 +1169,11 @@ def run(_context: str) -> dict[str, object]:
           );
         receiptObservation = identity as FusionIdentity;
         if (originalBytes)
-          receiptOriginal = Object.freeze({ path: receiptPath,
-            sha256: hash(originalBytes), bytes: Uint8Array.from(originalBytes) });
+          receiptOriginal = Object.freeze({
+            path: receiptPath,
+            sha256: hash(originalBytes),
+            bytes: Uint8Array.from(originalBytes),
+          });
       }
       if (!lines.length && !receiptObservation)
         fail(
@@ -1190,13 +1226,28 @@ def run(_context: str) -> dict[str, object]:
         );
       }
       const result = receiptObservation ?? results[0]!;
-      if (startupAudit && (!receiptObservation ||
-          !isDeepStrictEqual(Object.keys(result).sort(),
-            ["pid", "birth", "version", "activeCommand", "documents", "startupAudit",
-              ...(documentSelector !== undefined ? ["documentState"] : [])].sort()) ||
+      if (
+        startupAudit &&
+        (!receiptObservation ||
+          !isDeepStrictEqual(
+            Object.keys(result).sort(),
+            [
+              "pid",
+              "birth",
+              "version",
+              "activeCommand",
+              "documents",
+              "startupAudit",
+              ...(documentSelector !== undefined ? ["documentState"] : []),
+            ].sort(),
+          ) ||
           !isStartupAudit(result.startupAudit) ||
-          result.startupAudit.applicationVersion !== result.version))
-        fail("INSTANCE_UNAVAILABLE", "Original bound startup SDK audit is missing or malformed");
+          result.startupAudit.applicationVersion !== result.version)
+      )
+        fail(
+          "INSTANCE_UNAVAILABLE",
+          "Original bound startup SDK audit is missing or malformed",
+        );
       if (diagnosticPath)
         durable(diagnosticPath, {
           ...diagnostic,

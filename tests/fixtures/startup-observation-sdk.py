@@ -45,7 +45,7 @@ class Script:
 
     @property
     def location(self):
-        return 999 if scenario == "unknown-enum" else 30
+        return 999 if scenario == "unknown-enum" else 2
 
     @property
     def isAddIn(self):
@@ -145,7 +145,7 @@ app = App()
 core = types.ModuleType("adsk.core")
 core.Application = types.SimpleNamespace(get=lambda: app)
 core.ScriptSourceLocations = types.SimpleNamespace(**{
-    name: 10 * (index + 1) for index, name in enumerate((
+    name: index for index, name in enumerate((
         "AppStoreScriptSourceLocation", "OtherInstalledScriptSourceLocation",
         "UserDefinedScriptSourceLocation", "InternalScriptSourceLocation",
         "SamplesScriptSourceLocation", "LinkedScriptSourceLocation"))})
