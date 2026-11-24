@@ -6,11 +6,16 @@ import { isDeepStrictEqual as same } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
 import { bootstrapInstalledFilesDigest } from "./bootstrap-entry-evidence";
 import { ControlledFusionNativeError } from "./controlled-fusion-launch";
-import { controlledNativeHandoffProgram } from "./controlled-native-handoff-program";
+import {
+  controlledNativeHandoffProgram,
+  ownedNativeReboundProgram,
+} from "./controlled-native-handoff-program";
+import { normalObserverNativeBootstrap } from "./controlled-fusion-launch-native";
 import type {
   ControlledFile,
   ControlledLaunch,
   ControlledProcess,
+  OwnedAutoloadLaunch,
 } from "./controlled-fusion-launch-types";
 
 export interface QualifiedHandoffPackage {
@@ -66,6 +71,21 @@ export interface NativeRebindWitness {
   readonly reference: ControlledFile;
   assertCurrent(): Promise<void>;
   fence(): void;
+}
+export interface OwnedNativeReboundOriginals {
+  readonly database: { readonly nativePath: string; readonly identity: string };
+  /** Full original File IDs, not a copied completion's path/hash pair. */
+  readonly handoffRequest: ControlledFile;
+  readonly handoffReceipt: ControlledFile;
+  readonly installReceipt: ControlledFile;
+  readonly installClosure: ControlledFile;
+  readonly entry: ControlledFile;
+  readonly returned: ControlledFile;
+  /** Also allowlist this path in ROOT's native reader/transcript mappings. */
+  readonly auditPath: string;
+}
+export interface OwnedNativeReboundOptions extends ControlledNativeHandoffOptions {
+  readonly owned: OwnedNativeReboundOriginals;
 }
 const hash = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -145,8 +165,43 @@ function sync(fence: () => void) {
 export function createControlledFusionNativeHandoff(
   options: ControlledNativeHandoffOptions,
 ) {
-  const { heldLease, ...data } = options;
+  if ("owned" in options)
+    throw new Error("Separate owned readonly factory required");
+  const { observeNativeRebound, assertOriginalOwnedReboundWitness, ...manual } =
+    createHandoff(options);
+  void observeNativeRebound;
+  void assertOriginalOwnedReboundWitness;
+  return Object.freeze(manual);
+}
+/**
+ * Readonly original observer, after ROOT's original entry/audit/return binder.
+ * No install/rebind/lifecycle methods. heldLease must capture the genuine
+ * lifecycle + prepared startup/discovery window, not a serialized assertion.
+ * The audit remains evidence-only; only this instance's live witness is valid.
+ */
+export function createOwnedNativeReboundObserver(
+  options: OwnedNativeReboundOptions,
+) {
+  const { owned, ...base } = options;
+  const ports = createHandoff(base, owned);
+  return Object.freeze({
+    observeNativeRebound: ports.observeNativeRebound,
+    assertOriginalOwnedReboundWitness: ports.assertOriginalOwnedReboundWitness,
+  });
+}
+function createHandoff(
+  options: ControlledNativeHandoffOptions,
+  ownedOptions?: OwnedNativeReboundOriginals,
+) {
+  const { heldLease: suppliedLease, ...data } = options;
+  const heldLease = ownedOptions
+    ? Object.freeze({
+        fence: suppliedLease.fence.bind(suppliedLease),
+        assertCurrent: suppliedLease.assertCurrent.bind(suppliedLease),
+      })
+    : suppliedLease;
   const pins = structuredClone(data);
+  const owned = ownedOptions && structuredClone(ownedOptions);
   processTuple(pins.old);
   for (const name of [
     pins.nativePython,
@@ -256,6 +311,63 @@ export function createControlledFusionNativeHandoff(
   ])
     if (!path.isAbsolute(pins.mappedPaths[original] ?? ""))
       throw new Error("Trusted original native/mapped path required");
+  if (owned) {
+    const staticFiles = [
+      owned.installReceipt,
+      owned.installClosure,
+      owned.entry,
+      owned.returned,
+      owned.handoffRequest,
+      owned.handoffReceipt,
+    ];
+    if (
+      owned.installReceipt.nativePath !== pins.paths.installReceipt ||
+      owned.installClosure.nativePath !== pins.paths.installClosure ||
+      owned.database.nativePath !== pins.paths.database ||
+      !owned.database.identity ||
+      !digest(owned.handoffRequest.sha256) ||
+      !digest(owned.handoffReceipt.sha256)
+    )
+      throw new Error(
+        "Original owned installation/database/handoff refs required",
+      );
+    const paths = [
+      ...staticFiles.map((file) => file.nativePath),
+      owned.auditPath,
+    ];
+    if (new Set(paths.map(nativePath)).size !== paths.length)
+      throw new Error("Distinct owned original paths required");
+    for (const file of staticFiles) reference(file);
+    for (const value of [
+      owned.database.identity,
+      ...staticFiles.map((file) => file.identity),
+    ]) {
+      const parts = decodeAdmissionJson(value);
+      if (
+        !Array.isArray(parts) ||
+        parts.length !== 11 ||
+        parts.some((n) => !Number.isSafeInteger(n) || n < 0 || n > 0xffffffff)
+      )
+        throw new Error("Original exact native owned identity required");
+    }
+    for (const name of paths) {
+      if (!path.isAbsolute(pins.mappedPaths[name] ?? ""))
+        throw new Error("Allowlisted exact owned mapping required");
+    }
+    for (const root of [
+      ...pins.allDiscoveryRoots,
+      pins.helperDirectory,
+      pins.qualified.directory,
+    ])
+      if (below(root, owned.auditPath))
+        throw new Error("Owned audit must be outside discovery/source roots");
+    if (
+      Object.values(pins.paths)
+        .map(nativePath)
+        .includes(nativePath(owned.auditPath))
+    )
+      throw new Error("Owned audit must not alias lifecycle originals");
+  }
   const snapshot = (value: unknown): ControlledFile => {
     const row = record(value, ["nativePath", "sha256", "identity", "base64"]);
     if (
@@ -280,7 +392,10 @@ export function createControlledFusionNativeHandoff(
     });
   };
   async function invoke(action: string, input: unknown): Promise<unknown> {
-    await heldLease.assertCurrent();
+    if (owned) sync(() => heldLease.fence());
+    const beforeLease: unknown = await heldLease.assertCurrent();
+    if (owned && beforeLease !== undefined)
+      throw new Error("Original void owned lease assertion required");
     sync(() => heldLease.fence());
     if (
       hash(fs.readFileSync(pins.mappedNativePython)) !==
@@ -296,9 +411,20 @@ export function createControlledFusionNativeHandoff(
       );
     const raw = await new Promise<{ stdout: string; stderr: string }>(
       (resolve, reject) => {
+        const program = owned
+          ? Buffer.from(ownedNativeReboundProgram(), "utf8")
+          : undefined;
         const child = spawn(
           pins.mappedNativePython,
-          ["-I", "-S", "-B", "-c", controlledNativeHandoffProgram],
+          [
+            "-I",
+            "-S",
+            "-B",
+            "-c",
+            owned
+              ? normalObserverNativeBootstrap
+              : controlledNativeHandoffProgram,
+          ],
           {
             cwd: pins.mappedHelperDirectory,
             env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
@@ -306,6 +432,9 @@ export function createControlledFusionNativeHandoff(
           },
         );
         let stdout = "",
+          finalOutput = "",
+          pending = "",
+          checkpointCount = 0,
           stderr = "",
           overflow = false;
         child.stdout.setEncoding("utf8");
@@ -313,6 +442,48 @@ export function createControlledFusionNativeHandoff(
         child.stdout.on("data", (text: string) => {
           if (stdout.length + text.length > 16 * 1024 * 1024) overflow = true;
           else stdout += text;
+          if (!owned) return;
+          pending += text;
+          while (pending.includes("\n")) {
+            const end = pending.indexOf("\n"),
+              line = pending.slice(0, end);
+            pending = pending.slice(end + 1);
+            try {
+              const message = record(decodeAdmissionJson(line));
+              if (message["kind"] === "controlled-native-handoff-v1") {
+                finalOutput += line + "\n";
+                continue;
+              }
+              record(message, [
+                "kind",
+                "nonce",
+                "process",
+                "observationSha256",
+                "action",
+              ]);
+              const request = record(input);
+              const launch = record(request["launch"]);
+              if (
+                message["kind"] !== "owned-native-rebound-checkpoint-v1" ||
+                message["action"] !== action ||
+                !same(message["process"], launch["process"]) ||
+                !digest(message["observationSha256"]) ||
+                message["nonce"] !== request["nonce"] ||
+                ++checkpointCount !== 1
+              )
+                throw new Error("Foreign owned observation checkpoint");
+              sync(() => heldLease.fence());
+              child.stdin.write(
+                JSON.stringify({
+                  ...message,
+                  kind: "owned-native-rebound-continue-v1",
+                }) + "\n",
+              );
+            } catch {
+              overflow = true;
+              child.stdin.end();
+            }
+          }
         });
         child.stderr.on("data", (text: string) => {
           if (stderr.length + text.length > 1024 * 1024) overflow = true;
@@ -325,14 +496,39 @@ export function createControlledFusionNativeHandoff(
           /* terminal close owns outcome, never resend */
         });
         child.on("close", (code) =>
-          code === 0 && !overflow
-            ? resolve({ stdout, stderr })
+          code === 0 && !overflow && (!owned || checkpointCount === 1)
+            ? resolve({ stdout: owned ? finalOutput : stdout, stderr })
             : reject(new ControlledFusionNativeError(action, stdout, stderr)),
         );
-        child.stdin.end(JSON.stringify({ pins, action, input }));
+        const nativePins = owned
+          ? {
+              ...pins,
+              owned: {
+                ...owned,
+                installReceipt: reference(owned.installReceipt),
+                installClosure: reference(owned.installClosure),
+                entry: reference(owned.entry),
+                returned: reference(owned.returned),
+                handoffRequest: reference(owned.handoffRequest),
+                handoffReceipt: reference(owned.handoffReceipt),
+              },
+            }
+          : pins;
+        const envelope = JSON.stringify({ pins: nativePins, action, input });
+        if (program) {
+          child.stdin.write(
+            Buffer.concat([
+              Buffer.from(`${program.length}\n`),
+              program,
+              Buffer.from(envelope + "\n"),
+            ]),
+          );
+        } else child.stdin.end(envelope);
       },
     );
-    await heldLease.assertCurrent();
+    const afterLease: unknown = await heldLease.assertCurrent();
+    if (owned && afterLease !== undefined)
+      throw new Error("Original void owned lease assertion required");
     sync(() => heldLease.fence());
     try {
       const envelope = record(decodeAdmissionJson(raw.stdout), [
@@ -351,7 +547,8 @@ export function createControlledFusionNativeHandoff(
     }
   }
   let installAttempted = false,
-    rebindAttempted = false;
+    rebindAttempted = false,
+    ownedAttempted = false;
   let installation:
     { receipt: ControlledFile; closure: ControlledFile } | undefined;
   const witnesses = new WeakMap<
@@ -361,6 +558,15 @@ export function createControlledFusionNativeHandoff(
       receipt: ControlledFile;
       backup: ControlledFile;
       provision: ControlledFile;
+      revoked: boolean;
+    }
+  >();
+  const ownedWitnesses = new WeakMap<
+    NativeRebindWitness,
+    {
+      launch: OwnedAutoloadLaunch;
+      audit: ControlledFile;
+      fence: () => void;
       revoked: boolean;
     }
   >();
@@ -494,7 +700,183 @@ export function createControlledFusionNativeHandoff(
       throw error;
     }
   }
+  const ownedFiles = (launch: OwnedAutoloadLaunch) => [
+    launch.journal,
+    launch.attempt,
+    launch.coldProcess,
+    launch.sourceClosure,
+    launch.profile,
+    launch.profileBackup,
+    launch.provision,
+    launch.provisionBackup,
+    launch.provisionReceipt,
+    launch.intent,
+    owned!.installReceipt,
+    owned!.installClosure,
+    owned!.entry,
+    owned!.returned,
+    owned!.handoffRequest,
+    owned!.handoffReceipt,
+  ];
+  function ownedCapture(files: readonly ControlledFile[]) {
+    const check = capture(files);
+    return () => {
+      for (const file of files) {
+        const mapped = pins.mappedPaths[file.nativePath]!;
+        if (
+          fs.realpathSync(mapped) !== path.resolve(mapped) ||
+          fs.lstatSync(mapped, { bigint: true }).nlink !== 1n
+        )
+          throw new Error("Mapped owned original alias refused");
+      }
+      check();
+    };
+  }
+  const ownedLaunchRefs = (launch: OwnedAutoloadLaunch) => ({
+    process: launch.process,
+    startupProven: launch.startupProven,
+    ...Object.fromEntries(
+      [
+        "journal",
+        "attempt",
+        "coldProcess",
+        "sourceClosure",
+        "profile",
+        "profileBackup",
+        "provision",
+        "provisionBackup",
+        "provisionReceipt",
+        "intent",
+      ].map((key) => [
+        key,
+        reference(launch[key as keyof OwnedAutoloadLaunch] as ControlledFile),
+      ]),
+    ),
+  });
+  const ownedNonce = (launch: OwnedAutoloadLaunch) => {
+    const value = record(
+      decodeAdmissionJson(Buffer.from(launch.intent.bytes).toString("utf8")),
+    );
+    if (
+      typeof value["nonce"] !== "string" ||
+      !/^[a-f0-9]{32}$/.test(value["nonce"])
+    )
+      throw new Error("Original owned nonce required");
+    return value["nonce"];
+  };
+  async function assertOriginalOwnedReboundWitness(
+    witness: NativeRebindWitness,
+  ) {
+    const original = ownedWitnesses.get(witness);
+    if (!owned || !original || original.revoked)
+      throw new Error("Original private owned rebound witness required");
+    try {
+      sync(() => heldLease.fence());
+      sync(original.fence);
+      if (
+        (await invoke("assert-owned-rebound", {
+          nonce: ownedNonce(original.launch),
+          launch: ownedLaunchRefs(original.launch),
+          audit: reference(original.audit),
+        })) !== null
+      )
+        throw new Error("Readonly native assertion malformed");
+      sync(original.fence);
+      sync(() => heldLease.fence());
+    } catch (error) {
+      original.revoked = true;
+      throw error;
+    }
+  }
   return Object.freeze({
+    assertOriginalOwnedReboundWitness,
+    async observeNativeRebound(input: {
+      old: ControlledProcess;
+      launch: OwnedAutoloadLaunch;
+      qualifiedPackagePins: QualifiedHandoffPackage;
+    }): Promise<NativeRebindWitness> {
+      if (!owned || ownedAttempted)
+        throw new Error("One original owned observation required; no retry");
+      ownedAttempted = true;
+      checkInput(input);
+      const launch = {
+        ...input.launch,
+        process: processTuple(input.launch.process),
+      };
+      for (const key of [
+        "journal",
+        "attempt",
+        "coldProcess",
+        "sourceClosure",
+        "profile",
+        "profileBackup",
+        "provision",
+        "provisionBackup",
+        "provisionReceipt",
+        "intent",
+      ] as const)
+        Object.assign(launch, { [key]: detached(input.launch[key]) });
+      if (
+        launch.startupProven !== false ||
+        launch.journal.nativePath !== pins.paths.launchJournal ||
+        launch.attempt.nativePath !== pins.paths.launchAttempt ||
+        launch.provision.nativePath !== pins.paths.provision
+      )
+        throw new Error("Original owned launch references required");
+      const before = ownedCapture(ownedFiles(launch));
+      sync(before);
+      const result = record(
+        await invoke("observe-owned-rebound", {
+          nonce: ownedNonce(launch),
+          launch: ownedLaunchRefs(launch),
+        }),
+        ["audit"],
+      );
+      const audit = snapshot(result["audit"]);
+      if (audit.nativePath !== owned.auditPath)
+        throw new Error("Original owned audit path differs");
+      const body = record(
+        decodeAdmissionJson(Buffer.from(audit.bytes).toString("utf8")),
+      );
+      if (
+        body["kind"] !== "owned-native-rebound-observation-v1" ||
+        body["authority"] !== "NONE" ||
+        !same(body["process"], launch.process) ||
+        !same(body["old"], pins.old) ||
+        !same(body["qualified"], pins.qualified) ||
+        !same(body["launch"], ownedLaunchRefs(launch))
+      )
+        throw new Error("Original owned observation body differs");
+      const state = {
+        launch,
+        audit,
+        fence: ownedCapture([...ownedFiles(launch), audit]),
+        revoked: false,
+      };
+      const witness: NativeRebindWitness = Object.freeze({
+        process: Object.freeze({ ...launch.process }),
+        get reference() {
+          return detached(audit);
+        },
+        assertCurrent: () => assertOriginalOwnedReboundWitness(witness),
+        fence() {
+          if (ownedWitnesses.get(witness) !== state || state.revoked)
+            throw new Error("Owned rebound witness revoked");
+          try {
+            sync(() => heldLease.fence());
+            sync(state.fence);
+            sync(() => heldLease.fence());
+          } catch (error) {
+            state.revoked = true;
+            throw error;
+          }
+        },
+      });
+      ownedWitnesses.set(witness, state);
+      await assertOriginalOwnedReboundWitness(witness);
+      witness.fence();
+      return witness;
+    },
     assertOriginalRebindWitness,
     async qualifyNativeInstallationAfterDeath(input: {
       old: ControlledProcess;

@@ -7,11 +7,21 @@ import { createHash } from "node:crypto";
 import {
   createControlledFusionNativeHandoff,
   type ControlledNativeHandoffOptions,
+  createOwnedNativeReboundObserver,
+  type OwnedNativeReboundOptions,
 } from "../packages/node-adapters/src/execution/controlled-native-handoff";
 import { createControlledFusionLaunchAdapter } from "../packages/node-adapters/src/execution/controlled-fusion-launch";
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
-import { controlledNativeHandoffProgram } from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
-import type { ControlledProcess } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
+import {
+  controlledNativeHandoffProgram,
+  ownedNativeReboundProgram,
+} from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
+import { normalObserverNativeBootstrap } from "../packages/node-adapters/src/execution/controlled-fusion-launch-native";
+import type {
+  ControlledProcess,
+  ControlledFile,
+  OwnedAutoloadLaunch,
+} from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
 
 const fixturePinsPath = process.env["FMCAD_CONTROLLED_WINDOWS_FIXTURE_PINS"];
 const hash = (value: Uint8Array) =>
@@ -110,6 +120,124 @@ elif action=="wait":
 else:raise ValueError("Unknown owned fixture control")
 print(json.dumps({"ownedFixtureOperation":action,"authority":"NONE"}))
 `;
+const ownedLifecycleFixture = String.raw`
+import json,sys
+from pathlib import Path
+r=json.load(sys.stdin);sys.path.insert(0,r["helper"])
+from lib.request_admission import AdmissionStore
+provision=Path(r["provision"]);value=json.loads(provision.read_bytes());value.pop("preserveExtra")
+provision.write_bytes((json.dumps(value)+"\n").encode())
+old={"instance":"previous","epoch":"old"};next={"instance":"committed-next","epoch":"next"}
+with AdmissionStore(Path(r["database"]),**old) as store:
+ store._turn_schema()
+ store._db.execute("CREATE TABLE IF NOT EXISTS physical_owners(generation TEXT PRIMARY KEY,binding TEXT NOT NULL)")
+ store.register_physical_runtime({"generation":old,"physicalRuntime":{**r["old"],"version":"owned-fixture",
+   "source":value["source"],"build":value["build"]},"endpointURL":"http://127.0.0.1:8765/mcp"})
+ result=store.advance_generation(**next,handoff_id="owned-original-handoff")
+request={"handoffId":"owned-original-handoff","generation":old,"nextGeneration":next}
+base=Path(r["private"]);(base/"handoff.json").write_text(json.dumps(request),encoding="utf-8")
+(base/"completed.json").write_text(json.dumps({**result,"state":"completed"}),encoding="utf-8")
+print(json.dumps({"done":True}))
+`;
+const ownedChildFixture = String.raw`
+import hashlib,json,os,sys,time
+from pathlib import Path
+intent_path=Path(os.environ["FUSION_MCP_BOOTSTRAP_INTENT"])
+intent=json.loads(intent_path.read_bytes())
+provision=json.loads(Path(os.environ["FUSION_MCP_ADMISSION_PROVISION"]).read_bytes())
+assert intent["process"]["pid"]==os.getpid()==provision["pid"]
+sys.path.insert(0,sys.argv[3])
+from lib.request_admission import AdmissionStore
+with AdmissionStore(Path(provision["database"]),instance=provision["instance"],epoch=provision["epoch"]) as store:
+ store.register_physical_runtime({"generation":intent["generation"],"physicalRuntime":{
+  "pid":os.getpid(),"birth":provision["birth"],"version":"owned-fixture","source":provision["source"],"build":provision["build"]},
+  "endpointURL":"http://127.0.0.1:8765/mcp"})
+base={key:intent[key]for key in ("version","mode","nonce","process","purpose","engineVersion","executable","profile","provision","generation")}
+base.update({"kind":"fmcad-bootstrap-entry-receipt","intent":{"path":str(intent_path),"sha256":hashlib.sha256(intent_path.read_bytes()).hexdigest()},
+ "installed":{"directory":intent["installed"]["directory"],"source":intent["installed"]["source"],"filesDigest":sys.argv[4]}})
+entry=Path(intent["receipts"]["directory"])/intent["receipts"]["entry"]
+returned=Path(intent["receipts"]["directory"])/intent["receipts"]["returned"]
+# Fixture receipt bytes test native identity/binding, NOT a real SDK audit.
+entry.write_text(json.dumps({**base,"phase":"entry-audited-before-addon-import","startupAudit":{"fixture":"NO_SDK_DATA_ONLY"}}),encoding="utf-8")
+returned.write_text(json.dumps({**base,"phase":"run-returned","entry":{"path":str(entry),"sha256":hashlib.sha256(entry.read_bytes()).hexdigest()}}),encoding="utf-8")
+Path(sys.argv[1]).write_text(json.dumps({"pid":os.getpid(),"sdkModules":[m for m in sys.modules if m=="adsk"or m.startswith("adsk.")]}))
+deadline=time.monotonic()+90
+while not Path(sys.argv[2]).exists() and time.monotonic()<deadline:time.sleep(.025)
+`;
+const ownedStartFixture =
+  controlledNativeHandoffProgram.split(
+    '\ntry:\n    exe,unused=read(p["nativePython"]',
+  )[0] +
+  String.raw`
+sys.path.insert(0,p["helperDirectory"])
+from lib.physical_authority import _check_windows_acl as check_acl
+from lib.request_admission import _encode
+helper=tree(p["helperDirectory"]);source={"helper":helper,"installed":tree(q["directory"])}
+paths=v["paths"];nonce="a"*32
+old_raw=read(p["paths"]["provision"])[0];old_provision=decode(old_raw)
+db=open_handle(p["paths"]["database"],read=False,share=7);database={"nativePath":p["paths"]["database"],"identity":ident(db)};k.CloseHandle(db)
+profile=decode(read(paths["profile"])[0]);profile_backup=publish(paths["profileBackup"],read(paths["profile"])[0])
+for row in profile["loadedScripts"]:row["runOnStartup"]=True
+with open(paths["profile"],"wb")as f:f.write(_encode(profile).encode());f.flush();os.fsync(f.fileno())
+profile=snap(paths["profile"])
+closure=publish_json(paths["sourceClosure"],source)
+attempt=publish_json(p["paths"]["launchAttempt"],{"kind":"owned-autoload-launch-attempt-v1","isolation":"NOT_PROVEN",
+ "nonce":nonce,"old":p["old"],"executable":p["executable"],"executableSha256":p["executableSha256"],
+ "profile":profile,"sourceClosure":ref(closure)})
+class Startup(ctypes.Structure):
+ _fields_=[("cb",w.DWORD),("reserved",w.LPWSTR),("desktop",w.LPWSTR),("title",w.LPWSTR),
+ ("x",w.DWORD),("y",w.DWORD),("xSize",w.DWORD),("ySize",w.DWORD),("xChars",w.DWORD),("yChars",w.DWORD),
+ ("fill",w.DWORD),("flags",w.DWORD),("show",w.WORD),("reservedSize",w.WORD),("reserved2",ctypes.c_void_p),
+ ("stdin",w.HANDLE),("stdout",w.HANDLE),("stderr",w.HANDLE)]
+class Created(ctypes.Structure):
+ _fields_=[("process",w.HANDLE),("thread",w.HANDLE),("pid",w.DWORD),("tid",w.DWORD)]
+import subprocess
+command=ctypes.create_unicode_buffer(subprocess.list2cmdline([p["executable"],"-I","-S","-B","-c",v["child"],paths["ready"],paths["stop"],p["helperDirectory"],q["build"]]))
+env=dict(os.environ,PYTHONDONTWRITEBYTECODE="1",FUSION_MCP_BOOTSTRAP_INTENT=paths["intent"],FUSION_MCP_ADMISSION_PROVISION=p["paths"]["provision"])
+block=ctypes.create_unicode_buffer("\0".join(key+"="+value for key,value in sorted(env.items(),key=lambda x:x[0].upper()))+"\0\0")
+k.CreateProcessW.argtypes=[w.LPCWSTR,w.LPWSTR,ctypes.c_void_p,ctypes.c_void_p,w.BOOL,w.DWORD,ctypes.c_void_p,w.LPCWSTR,ctypes.POINTER(Startup),ctypes.POINTER(Created)]
+k.ResumeThread.argtypes=[w.HANDLE];k.ResumeThread.restype=w.DWORD
+startup=Startup();startup.cb=ctypes.sizeof(startup);startup.flags=0x100;created=Created()
+assert k.CreateProcessW(p["executable"],command,None,None,False,0x4|0x400,block,str(Path(paths["ready"]).parent),ctypes.byref(startup),ctypes.byref(created))
+try:
+ times=[w.FILETIME()for _ in range(4)];assert k.GetProcessTimes(created.process,*(ctypes.byref(t)for t in times))
+ process={"pid":created.pid,"birth":str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)}
+ journal=publish_json(p["paths"]["launchJournal"],{"kind":"owned-autoload-created-process-v1","nonce":nonce,"process":process,
+  "executable":p["executable"],"executableSha256":p["executableSha256"],"attempt":ref(attempt),
+  "threadId":created.tid,"phase":"created-suspended","isolation":"NOT_PROVEN"})
+ cold=publish_json(paths["coldProcess"],{**process,"exe":p["executable"],"executableSha256":p["executableSha256"],
+  "nonce":nonce,"phase":"created-suspended","isolation":"NOT_PROVEN"})
+ backup=publish(p["paths"]["provisionBackup"],old_raw)
+ updated={**old_provision,**process,**p["nextGeneration"]}
+ with open(p["paths"]["provision"],"wb")as f:f.write(_encode(updated).encode());f.flush();os.fsync(f.fileno())
+ provision=snap(p["paths"]["provision"])
+ request=snap(paths["handoffRequest"]);completion=snap(paths["handoffReceipt"])
+ receipt=publish_json(paths["provisionReceipt"],{"kind":"owned-autoload-provision-bound-v1","isolation":"NOT_PROVEN",
+  "nonce":nonce,"old":p["old"],"process":process,"handoffId":"owned-original-handoff","generation":p["nextGeneration"],
+  "database":database,"beforeSha256":p["expectedProvisionSha256"],"backup":ref(backup),"after":ref(provision),
+  "handoffRequest":{"nativePath":request["nativePath"],"sha256":request["sha256"]},
+  "handoffReceipt":{"nativePath":completion["nativePath"],"sha256":completion["sha256"]}})
+ intent=publish_json(paths["intent"],{"kind":"fmcad-bootstrap-entry-intent","version":3,"mode":"owned-autoload-v1",
+  "nonce":nonce,"process":process,"purpose":"isolated-stdout-v1","engineVersion":2,
+  "executable":{"path":p["executable"],"sha256":p["executableSha256"]},
+  "installed":{"directory":q["directory"],"source":q["source"],"files":q["files"]},
+  "profile":{"path":profile["nativePath"],"sha256":profile["sha256"]},
+  "provision":{"path":provision["nativePath"],"sha256":provision["sha256"]},"generation":p["nextGeneration"],
+  "receipts":{"directory":paths["receiptDirectory"],"entry":"owned-entry.json","returned":"owned-returned.json"}})
+ assert k.ResumeThread(created.thread)==1
+ import time
+ deadline=time.monotonic()+20
+ while not Path(paths["ready"]).exists():
+  if time.monotonic()>deadline:raise TimeoutError("Benign owned child did not publish receipts")
+  time.sleep(.025)
+ result={"process":process,"startupProven":False,"journal":journal,"attempt":attempt,"coldProcess":cold,
+  "sourceClosure":closure,"profile":profile,"profileBackup":profile_backup,"provision":provision,"provisionBackup":backup,
+  "provisionReceipt":receipt,"intent":intent}
+ print(_encode({"launch":result,"entry":snap(str(Path(paths["receiptDirectory"])/"owned-entry.json")),
+  "returned":snap(str(Path(paths["receiptDirectory"])/"owned-returned.json")),"database":database,
+  "handoffRequest":ref(request),"handoffReceipt":ref(completion)}))
+finally:k.CloseHandle(created.thread);k.CloseHandle(created.process)
+`;
 function native(config: FixturePins, program: string, input: unknown) {
   assert.equal(
     hash(fs.readFileSync(config.mappedNativePython)),
@@ -144,6 +272,457 @@ interface Owned {
   provisionSha256: string;
   pythonVersion: string;
 }
+
+function framedNative(config: FixturePins, program: string, input: unknown) {
+  const body = Buffer.from(program, "utf8");
+  const result = spawnSync(
+    config.mappedNativePython,
+    ["-I", "-S", "-B", "-c", normalObserverNativeBootstrap],
+    {
+      input: Buffer.concat([
+        Buffer.from(`${body.length}\n`),
+        body,
+        Buffer.from(JSON.stringify(input)),
+      ]),
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout) as Record<string, unknown>;
+}
+
+test(
+  "owned readonly original rebound Windows fixtures (NO Fusion/SDK, no observer DB/provision writes)",
+  {
+    skip:
+      !fixturePinsPath &&
+      "NOTRUN: explicit qualified SDK-free Windows fixture pins required",
+  },
+  async (t) => {
+    assert.ok(fixturePinsPath);
+    const config = JSON.parse(
+      fs.readFileSync(fixturePinsPath, "utf8"),
+    ) as FixturePins;
+    const manifest = fs.readFileSync(config.mappedManifest);
+    assert.equal(hash(manifest), config.manifestSha256);
+    const files = JSON.parse(manifest.toString("utf8")) as Record<
+      string,
+      string
+    >;
+    const build = bootstrapInstalledFilesDigest(files);
+    const asFile = (value: unknown): ControlledFile => {
+      const f = value as {
+        nativePath: string;
+        sha256: string;
+        identity: string;
+        base64: string;
+      };
+      const bytes = Buffer.from(f.base64, "base64");
+      assert.equal(hash(bytes), f.sha256);
+      return {
+        nativePath: f.nativePath,
+        sha256: f.sha256,
+        identity: f.identity,
+        bytes,
+      };
+    };
+    async function make() {
+      const ownedSetup = setup.replace(
+        'with AdmissionStore(database,instance="committed-next",epoch="next"):pass',
+        'with AdmissionStore(database,instance="previous",epoch="old"):pass',
+      );
+      assert.notEqual(ownedSetup, setup);
+      const f = native(config, ownedSetup, config) as unknown as Owned;
+      native(config, ownedLifecycleFixture, f);
+      f.provisionSha256 = hash(fs.readFileSync(mapped(f.provision)));
+      const paths: ControlledNativeHandoffOptions["paths"] = {
+        stage: `${f.private}\\staged-qualified`,
+        backup: `${f.private}\\backup`,
+        installReceipt: `${f.private}\\installation.json`,
+        installClosure: `${f.private}\\installation-originals.json`,
+        provision: f.provision,
+        provisionBackup: `${f.private}\\provision-before.json`,
+        rebindReceipt: `${f.private}\\UNUSED-rebind.json`,
+        database: f.database,
+        launchJournal: `${f.private}\\created.json`,
+        launchAttempt: `${f.private}\\attempt.json`,
+      };
+      const extra = {
+        profile: f.profile,
+        profileBackup: `${f.private}\\profile-before.json`,
+        intent: `${f.private}\\intent.json`,
+        coldProcess: `${f.private}\\cold.json`,
+        sourceClosure: `${f.private}\\source.json`,
+        provisionReceipt: `${f.private}\\provision-bound.json`,
+        handoffRequest: `${f.private}\\handoff.json`,
+        handoffReceipt: `${f.private}\\completed.json`,
+        ready: `${f.private}\\ready.json`,
+        stop: `${f.private}\\stop`,
+        receiptDirectory: f.receipts,
+        entry: `${f.receipts}\\owned-entry.json`,
+        returned: `${f.receipts}\\owned-returned.json`,
+        audit: `${f.private}\\owned-observation.json`,
+      };
+      const base: ControlledNativeHandoffOptions = {
+        nativePython: config.nativePython,
+        mappedNativePython: config.mappedNativePython,
+        nativePythonSha256: config.nativePythonSha256,
+        helperDirectory: f.helper,
+        mappedHelperDirectory: mapped(f.helper),
+        mappedInstalledDirectory: mapped(f.target),
+        manifest: {
+          nativePath: f.manifest,
+          mappedPath: mapped(f.manifest),
+          sha256: config.manifestSha256,
+        },
+        qualified: { directory: f.target, source: config.source, build, files },
+        allDiscoveryRoots: [f.discovery, f.other],
+        old: f.old,
+        nextGeneration: { instance: "committed-next", epoch: "next" },
+        expectedProvisionSha256: f.provisionSha256,
+        executable: config.nativePython,
+        executableSha256: config.nativePythonSha256,
+        paths,
+        mappedPaths: Object.fromEntries(
+          [
+            ...Object.values(paths),
+            ...Object.values(extra),
+            f.manifest,
+            config.nativePython,
+          ].map((name) => [name, mapped(name)]),
+        ),
+        heldLease: { async assertCurrent() {}, fence() {} },
+      };
+      const installed = await createControlledFusionNativeHandoff(
+        base,
+      ).qualifyNativeInstallationAfterDeath({
+        old: f.old,
+        qualifiedPackagePins: base.qualified,
+      });
+      const result = framedNative(config, ownedStartFixture, {
+        pins: base,
+        action: "fixture-start",
+        input: { paths: extra, child: ownedChildFixture },
+      });
+      const raw = result["launch"] as Record<string, unknown>;
+      const launch = {
+        process: raw["process"] as ControlledProcess,
+        startupProven: false,
+        ...Object.fromEntries(
+          [
+            "journal",
+            "attempt",
+            "coldProcess",
+            "sourceClosure",
+            "profile",
+            "profileBackup",
+            "provision",
+            "provisionBackup",
+            "provisionReceipt",
+            "intent",
+          ].map((name) => [name, asFile(raw[name])]),
+        ),
+      } as OwnedAutoloadLaunch;
+      t.after(() => {
+        fs.writeFileSync(mapped(extra.stop), "normal own fixture self-exit");
+        native(config, control, { action: "wait", pid: launch.process.pid });
+      });
+      const originalFile = (name: string) =>
+        asFile(
+          framedNative(
+            config,
+            controlledNativeHandoffProgram.split(
+              '\ntry:\n    exe,unused=read(p["nativePython"]',
+            )[0] +
+              String.raw`
+sys.path.insert(0,p["helperDirectory"])
+from lib.physical_authority import _check_windows_acl as check_acl
+from lib.request_admission import _encode
+print(_encode(snap(v["path"])))
+`,
+            { pins: base, action: "fixture-read", input: { path: name } },
+          ),
+        );
+      const request = originalFile(extra.handoffRequest),
+        completion = originalFile(extra.handoffReceipt);
+      const options: OwnedNativeReboundOptions = {
+        ...base,
+        owned: {
+          database: result["database"] as {
+            nativePath: string;
+            identity: string;
+          },
+          handoffRequest: request,
+          handoffReceipt: completion,
+          installReceipt: installed,
+          installClosure: originalFile(paths.installClosure),
+          entry: asFile(result["entry"]),
+          returned: asFile(result["returned"]),
+          auditPath: extra.audit,
+        },
+      };
+      const input = {
+        old: f.old,
+        launch,
+        qualifiedPackagePins: base.qualified,
+      };
+      t.diagnostic(
+        `Owned rebound fixture ${f.root}; native${config.source}/${build}; logical sourceb40/buildc64`,
+      );
+      return { f, options, input, extra, launch };
+    }
+    const fileState = (names: string[]) =>
+      Object.fromEntries(
+        names.map((name) => {
+          const p = mapped(name),
+            s = fs.statSync(p, { bigint: true });
+          return [
+            name,
+            {
+              sha256: hash(fs.readFileSync(p)),
+              stamp: [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].join(":"),
+            },
+          ];
+        }),
+      );
+    await t.test(
+      "separate readonly program denies mutating roles before helper import",
+      () => {
+        for (const action of [
+          "install",
+          "prepare-rebind",
+          "commit-rebind",
+          "assert-current",
+        ]) {
+          const body = Buffer.from(ownedNativeReboundProgram(), "utf8");
+          const result = spawnSync(
+            config.mappedNativePython,
+            ["-I", "-S", "-B", "-c", normalObserverNativeBootstrap],
+            {
+              input: Buffer.concat([
+                Buffer.from(`${body.length}\n`),
+                body,
+                Buffer.from(
+                  JSON.stringify({
+                    pins: {
+                      qualified: {
+                        directory: "C:\\fixture",
+                        source: config.source,
+                        build,
+                        files,
+                      },
+                    },
+                    action,
+                    input: {},
+                  }) + "\n",
+                ),
+              ]),
+              encoding: "utf8",
+            },
+          );
+          assert.notEqual(result.status, 0);
+          assert.match(result.stderr, /Readonly owned role refuses/);
+        }
+      },
+    );
+    await t.test(
+      "different logical/native source succeeds; original reads are no-write and witness rechecks without TTL",
+      async () => {
+        const { f, options, input, extra } = await make();
+        const observedFiles = [
+          f.database,
+          f.provision,
+          options.owned.entry.nativePath,
+          options.owned.returned.nativePath,
+          input.launch.intent.nativePath,
+          input.launch.journal.nativePath,
+        ];
+        const before = fileState(observedFiles),
+          listing = fs.readdirSync(mapped(f.private)).sort();
+        let live = true;
+        Object.assign(options.heldLease, {
+          fence() {
+            if (!live) throw new Error("ORIGINAL_HELD_WINDOW_LOST");
+          },
+        });
+        const port = createOwnedNativeReboundObserver(options);
+        const witness = await port.observeNativeRebound(input);
+        await witness.assertCurrent();
+        witness.fence();
+        assert.deepEqual(fileState(observedFiles), before);
+        assert.deepEqual(
+          fs
+            .readdirSync(mapped(f.private))
+            .filter((name) => name !== "owned-observation.json")
+            .sort(),
+          listing,
+        );
+        const data = JSON.parse(
+          Buffer.from(witness.reference.bytes).toString("utf8"),
+        );
+        assert.equal(
+          data.database.binding.physicalRuntime.source,
+          "b".repeat(40),
+        );
+        assert.equal(
+          data.database.binding.physicalRuntime.build,
+          "c".repeat(64),
+        );
+        assert.notEqual(
+          data.database.binding.physicalRuntime.source,
+          options.qualified.source,
+        );
+        assert.notEqual(
+          data.database.binding.physicalRuntime.build,
+          options.qualified.build,
+        );
+        assert.equal(data.authority, "NONE");
+        assert.deepEqual(witness.process, input.launch.process);
+        await assert.rejects(
+          port.assertOriginalOwnedReboundWitness({ ...witness }),
+          /Original private owned/,
+        );
+        native(
+          config,
+          String.raw`
+import json,sqlite3,sys
+r=json.load(sys.stdin)
+with sqlite3.connect(r["database"])as c:c.execute("CREATE TABLE legitimate_fixture_write(value TEXT)")
+print(json.dumps({"done":True}))
+`,
+          { database: f.database },
+        );
+        await witness.assertCurrent();
+        witness.fence();
+        const written = fileState([f.database, f.provision]);
+        await witness.assertCurrent();
+        assert.deepEqual(fileState([f.database, f.provision]), written);
+        assert.equal(fs.existsSync(mapped(options.paths.rebindReceipt)), false);
+        assert.equal(fs.existsSync(mapped(extra.ready)), true);
+        assert.deepEqual(
+          JSON.parse(fs.readFileSync(mapped(extra.ready), "utf8")).sdkModules,
+          [],
+        );
+        await assert.rejects(port.observeNativeRebound(input), /no retry/);
+        live = false;
+        Object.assign(options.heldLease, { fence() {} });
+        assert.throws(() => witness.fence(), /ORIGINAL_HELD_WINDOW_LOST/);
+        await assert.rejects(witness.assertCurrent(), /Original private owned/);
+      },
+    );
+    await t.test(
+      "wrong current tuple/generation/logical source/provision/sourcefile/receipt identity refuse before audit",
+      async () => {
+        for (const failure of [
+          "tuple",
+          "generation",
+          "logical-source",
+          "logical-build",
+          "database-identity",
+          "provision",
+          "source",
+          "receipt-identity",
+        ]) {
+          const { f, options, input } = await make();
+          if (failure === "tuple")
+            Object.assign(input.launch.process, { birth: "1" });
+          if (failure === "generation")
+            native(config, control, {
+              action: "wrong-generation",
+              database: f.database,
+            });
+          if (failure === "logical-source" || failure === "logical-build")
+            native(
+              config,
+              String.raw`
+import json,sqlite3,sys
+r=json.load(sys.stdin)
+with sqlite3.connect(r["database"])as c:
+ b=json.loads(c.execute("SELECT binding FROM physical_runtime_binding WHERE singleton=1").fetchone()[0])
+ b["physicalRuntime"][r["field"]]="WRONG-LOGICAL-VALUE"
+ c.execute("UPDATE physical_runtime_binding SET binding=? WHERE singleton=1",(json.dumps(b),))
+print(json.dumps({"done":True}))
+`,
+              {
+                database: f.database,
+                field: failure === "logical-source" ? "source" : "build",
+              },
+            );
+          if (failure === "database-identity") {
+            const name = mapped(f.database);
+            fs.writeFileSync(name + ".replacement", fs.readFileSync(name));
+            fs.renameSync(name + ".replacement", name);
+          }
+          if (failure === "provision")
+            fs.appendFileSync(mapped(f.provision), " ");
+          if (failure === "source")
+            fs.appendFileSync(
+              path.join(mapped(f.target), "README.md"),
+              "changed source",
+            );
+          if (failure === "receipt-identity") {
+            const name = mapped(options.owned.entry.nativePath);
+            fs.writeFileSync(name + ".replacement", fs.readFileSync(name));
+            fs.renameSync(name + ".replacement", name);
+          }
+          const before = fileState([f.database, f.provision]);
+          const port = createOwnedNativeReboundObserver(options);
+          await assert.rejects(port.observeNativeRebound(input));
+          assert.deepEqual(fileState([f.database, f.provision]), before);
+          assert.equal(fs.existsSync(mapped(options.owned.auditPath)), false);
+          await assert.rejects(port.observeNativeRebound(input), /no retry/);
+        }
+      },
+    );
+    await t.test(
+      "held original loss at native continuation produces no audit and never retries",
+      async () => {
+        const { f, options, input } = await make();
+        let fences = 0;
+        Object.assign(options.heldLease, {
+          fence() {
+            if (++fences >= 3) throw new Error("REAL_FIXTURE_LEASE_REVOKED");
+          },
+        });
+        const port = createOwnedNativeReboundObserver(options),
+          before = fileState([f.database, f.provision]);
+        await assert.rejects(port.observeNativeRebound(input));
+        assert.deepEqual(fileState([f.database, f.provision]), before);
+        assert.equal(fs.existsSync(mapped(options.owned.auditPath)), false);
+        await assert.rejects(port.observeNativeRebound(input), /no retry/);
+      },
+    );
+    await t.test(
+      "current witness is permanently revoked by native generation drift even if bytes are later restored",
+      async () => {
+        const { f, options, input } = await make();
+        const witness =
+          await createOwnedNativeReboundObserver(options).observeNativeRebound(
+            input,
+          );
+        native(config, control, {
+          action: "wrong-generation",
+          database: f.database,
+        });
+        await assert.rejects(witness.assertCurrent());
+        assert.throws(() => witness.fence(), /revoked/);
+        native(
+          config,
+          String.raw`
+import json,sqlite3,sys
+r=json.load(sys.stdin)
+with sqlite3.connect(r["database"])as c:c.execute("UPDATE generation SET epoch='next'")
+print(json.dumps({"done":True}))
+`,
+          { database: f.database },
+        );
+        await assert.rejects(witness.assertCurrent(), /Original private owned/);
+        assert.throws(() => witness.fence(), /revoked/);
+      },
+    );
+  },
+);
 
 test(
   "Windows superscript devices refuse before helper import or filesystem effects",

@@ -5,13 +5,106 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import type { ControlledFusionBootstrapPorts } from "../src/controlled-fusion-bootstrap";
 import {
   createControlledFusionNativeHandoff,
   type ControlledNativeHandoffOptions,
+  createOwnedNativeReboundObserver,
+  type OwnedNativeReboundOptions,
 } from "../packages/node-adapters/src/execution/controlled-native-handoff";
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
-import { controlledNativeHandoffProgram } from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
+import {
+  controlledNativeHandoffProgram,
+  ownedNativeReboundProgram,
+} from "../packages/node-adapters/src/execution/controlled-native-handoff-program";
+
+function ownedPins(): OwnedNativeReboundOptions {
+  const base = pins();
+  const file = (nativePath: string) => {
+    const bytes = Buffer.from("{}");
+    return {
+      nativePath,
+      bytes,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      identity: "[1,2,3,4,5,6,7,8,9,1,0]",
+    };
+  };
+  const owned = {
+    database: {
+      nativePath: base.paths.database,
+      identity: "[1,2,3,4,5,6,7,8,9,1,0]",
+    },
+    handoffRequest: file("C:\\owned\\private\\handoff.json"),
+    handoffReceipt: file("C:\\owned\\private\\completed.json"),
+    installReceipt: file(base.paths.installReceipt),
+    installClosure: file(base.paths.installClosure),
+    entry: file("C:\\owned\\private\\entry.json"),
+    returned: file("C:\\owned\\private\\returned.json"),
+    auditPath: "C:\\owned\\private\\owned-observation.json",
+  };
+  const names = [
+    owned.handoffRequest.nativePath,
+    owned.handoffReceipt.nativePath,
+    owned.entry.nativePath,
+    owned.returned.nativePath,
+    owned.auditPath,
+  ];
+  return {
+    ...base,
+    owned,
+    mappedPaths: {
+      ...base.mappedPaths,
+      ...Object.fromEntries(
+        names.map((name, i) => [name, `/owned/static-${i}`]),
+      ),
+    },
+  };
+}
+test("owned readonly port exposes no mutating operations and requires exact distinct original mappings", () => {
+  assert.throws(
+    () => createControlledFusionNativeHandoff(ownedPins()),
+    /Separate owned readonly factory/,
+  );
+  assert.deepEqual(Object.keys(createOwnedNativeReboundObserver(ownedPins())), [
+    "observeNativeRebound",
+    "assertOriginalOwnedReboundWitness",
+  ]);
+  for (const change of [
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p.owned, { auditPath: p.paths.provision }),
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p.owned, {
+        auditPath: p.qualified.directory + "\\audit.json",
+      }),
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p.owned.entry, { nativePath: p.owned.returned.nativePath }),
+    (p: OwnedNativeReboundOptions) =>
+      Object.assign(p.owned.installClosure, { sha256: "0".repeat(64) }),
+  ]) {
+    const p = ownedPins();
+    change(p);
+    assert.throws(() => createOwnedNativeReboundObserver(p));
+  }
+});
+test("separate owned program compiles and foreign copied witness has no lifetime authority", async () => {
+  const compiled = spawnSync(
+    "python3",
+    ["-I", "-B", "-c", "import ast,sys;ast.parse(sys.stdin.read())"],
+    { input: ownedNativeReboundProgram(), encoding: "utf8" },
+  );
+  assert.equal(compiled.status, 0, compiled.stderr);
+  const port = createOwnedNativeReboundObserver(ownedPins());
+  await assert.rejects(
+    port.assertOriginalOwnedReboundWitness({
+      process: { pid: 1, birth: "1" },
+      reference: ownedPins().owned.entry,
+      async assertCurrent() {},
+      fence() {},
+    }),
+    /Original private owned rebound witness/,
+  );
+});
 
 function pins(): ControlledNativeHandoffOptions {
   const files = Object.fromEntries(
@@ -592,6 +685,8 @@ test("normal staged helper loads without workspace packages and structurally sup
     "controlled-native-handoff-program",
     "controlled-fusion-launch",
     "controlled-fusion-launch-native",
+    "owned-autoload-launch-native",
+    "normal-observer-launch-native",
     "bootstrap-entry-evidence",
     "fusion-bootstrap-autoload",
     "admission-json",
@@ -604,6 +699,10 @@ test("normal staged helper loads without workspace packages and structurally sup
     "./execution/controlled-native-handoff.js",
   ) as typeof import("../packages/node-adapters/src/execution/controlled-native-handoff");
   const factory = staged.createControlledFusionNativeHandoff(pins());
+  assert.deepEqual(
+    Object.keys(staged.createOwnedNativeReboundObserver(ownedPins())),
+    ["observeNativeRebound", "assertOriginalOwnedReboundWitness"],
+  );
   const ports: Pick<
     ControlledFusionBootstrapPorts,
     "qualifyNativeInstallationAfterDeath" | "rebindNative"

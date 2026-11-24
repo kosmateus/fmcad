@@ -379,3 +379,224 @@ try:
     print(_encode({"kind":"controlled-native-handoff-v1","action":action,"result":result}))
 finally:close(held)
 `;
+
+/** Separate length-framed readonly role; all original manual operations deny. */
+export function ownedNativeReboundProgram() {
+  const input = "raw=sys.stdin.buffer.read(4194305)";
+  const marker = '\ntry:\n    exe,unused=read(p["nativePython"]';
+  const dispatch = '    if action=="install":result=install()';
+  if (
+    controlledNativeHandoffProgram.split(input).length !== 2 ||
+    controlledNativeHandoffProgram.split(marker).length !== 2 ||
+    controlledNativeHandoffProgram.split(dispatch).length !== 2
+  )
+    throw new Error("Pinned owned observation extension boundary changed");
+  return controlledNativeHandoffProgram
+    .replace(input, "raw=sys.stdin.buffer.readline(4194305)")
+    .replace(marker, ownedReboundExtension + marker)
+    .replace(
+      dispatch,
+      '    if action=="observe-owned-rebound":result=owned_observe()\n    elif action=="assert-owned-rebound":result=owned_assert()\n    elif action=="install":result=install()',
+    );
+}
+
+const ownedReboundExtension = String.raw`
+# Readonly role: mutating functions above are deliberately unreachable.
+if action not in ("observe-owned-rebound","assert-owned-rebound"):
+    raise ValueError("Readonly owned role refuses install/rebind/lifecycle operations")
+o=p["owned"]
+def owned_match(reference):
+    if type(reference) is not dict or set(reference)!={"nativePath","sha256","identity"}:
+        raise ValueError("Exact original owned native ref required")
+    raw,identity=read(reference["nativePath"],locks=held)
+    actual={"nativePath":reference["nativePath"],"sha256":sha(raw),"identity":identity,
+            "base64":base64.b64encode(raw).decode("ascii")}
+    if ref(actual)!=reference:raise ValueError("Original owned bytes/native identity changed")
+    return actual,decode(raw.decode("utf-8","strict"))
+def owned_pair(reference):
+    actual,value=owned_match(reference)
+    return ref(actual),value
+def owned_process(value):
+    if value["pid"]==p["old"]["pid"] or value["birth"]==p["old"]["birth"]:
+        raise ValueError("Owned old/new tuple differs")
+    h=k.OpenProcess(0x1000|0x100000,False,value["pid"])
+    if not h:raise OSError("Original current owned process unavailable")
+    held.append(("handle",h))
+    times=[w.FILETIME()for _ in range(4)]
+    if (not k.GetProcessTimes(h,*(ctypes.byref(t)for t in times))
+        or str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)!=value["birth"]
+        or k.WaitForSingleObject(h,0)!=258):
+        raise ValueError("Original owned process birth/liveness differs")
+    k.QueryFullProcessImageNameW.argtypes=[w.HANDLE,w.DWORD,w.LPWSTR,ctypes.POINTER(w.DWORD)]
+    size=w.DWORD(32768);image=ctypes.create_unicode_buffer(size.value)
+    if not k.QueryFullProcessImageNameW(h,0,image,ctypes.byref(size)) or image.value.casefold()!=p["executable"].casefold():
+        raise ValueError("Original owned process executable differs")
+def owned_database(process,handoff,completion,provision_value):
+    name=canonical(p["paths"]["database"])
+    h=open_handle(name,share=7,read=False);held.append(("handle",h));check_acl(None,handle=h)
+    identity=ident(h)
+    if (o["database"]["nativePath"]!=str(name) or
+        json.loads(identity)[:5]!=json.loads(o["database"]["identity"])[:5]):
+        raise ValueError("Original owned native database identity differs")
+    c=sqlite3.connect(name.as_uri()+"?mode=ro",uri=True,timeout=5)
+    try:
+        c.execute("PRAGMA query_only=ON");c.execute("BEGIN")
+        if c.execute("SELECT instance,epoch FROM generation WHERE singleton=1").fetchone()!=(p["nextGeneration"]["instance"],p["nextGeneration"]["epoch"]):
+            raise ValueError("Current owned generation differs")
+        row=c.execute("SELECT result FROM physical_handoffs WHERE id=?",(handoff["handoffId"],)).fetchone()
+        if row is None or row[0]!=_encode({**completion,"state":"committed"}):
+            raise ValueError("Original committed owned handoff differs")
+        row=c.execute("SELECT binding FROM physical_runtime_binding WHERE singleton=1").fetchone()
+        binding=decode(row[0]) if row is not None else None
+        info=name.stat()
+        if (type(binding) is not dict or set(binding)!={"protocol","database","generation","physicalRuntime","endpointURL"}
+            or binding["protocol"]!="fmcad-provision-fence-v1"
+            or binding["database"]!={"path":str(name),"device":info.st_dev,"inode":info.st_ino}
+            or binding["generation"]!=p["nextGeneration"]
+            or type(binding["physicalRuntime"]) is not dict
+            or set(binding["physicalRuntime"])!={"pid","birth","source","build","version"}
+            or any(binding["physicalRuntime"][key]!=process[key] for key in ("pid","birth"))
+            # Logical broker identity is the original provision's identity,
+            # independently of the complete installed native package below.
+            or binding["physicalRuntime"]["source"]!=provision_value["source"]
+            or binding["physicalRuntime"]["build"]!=provision_value["build"]
+            or type(binding["physicalRuntime"]["version"]) is not str or not binding["physicalRuntime"]["version"]
+            or binding["endpointURL"]!="http://127.0.0.1:8765/mcp"):
+            raise ValueError("Current registered native runtime/source/build/database binding differs")
+        # Native integers are compared natively, never rounded through a JS DTO.
+        binding={**binding,"database":{**binding["database"],"device":str(info.st_dev),"inode":str(info.st_ino)}}
+        result={"nativePath":str(name),"stableIdentity":json.loads(identity)[:5],"binding":binding}
+    finally:c.close()
+    current=open_handle(name,share=7,read=False);held.append(("handle",current))
+    check_acl(None,handle=current)
+    if json.loads(ident(current))[:5]!=json.loads(identity)[:5]:
+        raise ValueError("Owned database path identity changed across readonly query")
+    return result
+def owned_view():
+    old_dead(p["old"])
+    launch=v["launch"]
+    if set(launch)!={"process","startupProven","journal","attempt","coldProcess","sourceClosure","profile","profileBackup","provision","provisionBackup","provisionReceipt","intent"} or launch["startupProven"] is not False:
+        raise ValueError("Original separate owned launch required")
+    owned_process(launch["process"])
+    files={};data={}
+    for key in ("journal","attempt","coldProcess","sourceClosure","profile","profileBackup","provision","provisionBackup","provisionReceipt","intent"):
+        files[key],data[key]=owned_match(launch[key])
+    for key in ("installReceipt","installClosure","entry","returned"):
+        files[key],data[key]=owned_match(o[key])
+    request_ref,handoff=owned_pair(o["handoffRequest"]);receipt_ref,completion=owned_pair(o["handoffReceipt"])
+    if (set(handoff)!={"handoffId","generation","nextGeneration"} or handoff["nextGeneration"]!=p["nextGeneration"]
+        or completion!={**handoff,"state":"completed"}):
+        raise ValueError("Original owned lifecycle handoff differs")
+    intent=data["intent"];process=launch["process"];nonce=v["nonce"]
+    if (type(nonce) is not str or re.fullmatch("[a-f0-9]{32}",nonce) is None
+        or type(intent) is not dict or set(intent)!={"kind","version","mode","nonce","process","executable","purpose","engineVersion","installed","profile","receipts","provision","generation"}
+        or intent["kind"]!="fmcad-bootstrap-entry-intent" or type(intent["version"]) is not int or intent["version"]!=3
+        or intent["mode"]!="owned-autoload-v1" or intent["purpose"]!="isolated-stdout-v1"
+        or type(intent["engineVersion"]) is not int or intent["engineVersion"]!=2
+        or intent["nonce"]!=nonce or intent["process"]!=process
+        or intent["executable"]!={"path":p["executable"],"sha256":p["executableSha256"]}
+        or intent["installed"]!={"directory":q["directory"],"source":q["source"],"files":q["files"]}
+        or intent["generation"]!=p["nextGeneration"]
+        or intent["provision"]!={"path":p["paths"]["provision"],"sha256":files["provision"]["sha256"]}
+        or intent["profile"]!={"path":files["profile"]["nativePath"],"sha256":files["profile"]["sha256"]}):
+        raise ValueError("Original owned v3 intent differs")
+    if (launch["journal"]["nativePath"]!=p["paths"]["launchJournal"] or launch["attempt"]["nativePath"]!=p["paths"]["launchAttempt"]
+        or launch["provision"]["nativePath"]!=p["paths"]["provision"]):
+        raise ValueError("Owned launch original path differs")
+    journal=data["journal"];attempt=data["attempt"];cold=data["coldProcess"]
+    if (type(journal.get("threadId")) is not int or journal["threadId"]<1
+        or journal!={"kind":"owned-autoload-created-process-v1","nonce":nonce,"process":process,
+          "executable":p["executable"],"executableSha256":p["executableSha256"],"attempt":ref(files["attempt"]),
+          "threadId":journal["threadId"],"phase":"created-suspended","isolation":"NOT_PROVEN"}
+        or attempt!={"kind":"owned-autoload-launch-attempt-v1","isolation":"NOT_PROVEN","nonce":nonce,"old":p["old"],
+          "executable":p["executable"],"executableSha256":p["executableSha256"],"profile":files["profile"],"sourceClosure":ref(files["sourceClosure"])}
+        or cold!={**process,"exe":p["executable"],"executableSha256":p["executableSha256"],"nonce":nonce,
+          "phase":"created-suspended","isolation":"NOT_PROVEN"}):
+        raise ValueError("Original owned created process journals differ")
+    before=data["provisionBackup"];current=data["provision"]
+    if (set(before)!={"database","pid","birth","instance","epoch","source","build","credentials"}
+        or current!={**before,**process,**p["nextGeneration"]}
+        or (before["pid"],before["birth"])!=(p["old"]["pid"],p["old"]["birth"])
+        or {"instance":before["instance"],"epoch":before["epoch"]}!=handoff["generation"]
+        or type(before["source"]) is not str or not before["source"]
+        or type(before["build"]) is not str or not before["build"]
+        or current["database"]!=p["paths"]["database"] or sha(base64.b64decode(files["provisionBackup"]["base64"]))!=p["expectedProvisionSha256"]
+        or data["provisionReceipt"]!={"kind":"owned-autoload-provision-bound-v1","isolation":"NOT_PROVEN",
+          "nonce":nonce,"old":p["old"],"process":process,"handoffId":handoff["handoffId"],"generation":p["nextGeneration"],
+          "database":o["database"],"beforeSha256":files["provisionBackup"]["sha256"],
+          "backup":ref(files["provisionBackup"]),"after":ref(files["provision"]),
+          "handoffRequest":{key:o["handoffRequest"][key]for key in ("nativePath","sha256")},
+          "handoffReceipt":{key:o["handoffReceipt"][key]for key in ("nativePath","sha256")}}):
+        raise ValueError("Original pre-resume provision binding differs")
+    profile=data["profile"]
+    if type(profile) is not dict or set(profile)!={"loadedScripts"} or type(profile["loadedScripts"]) is not list:
+        raise ValueError("Owned profile absent")
+    import ntpath
+    target=ntpath.normcase(ntpath.join(q["directory"],"AutodeskFusionMCP.py"));count=0
+    for row in profile["loadedScripts"]:
+        own=ntpath.isabs(row["path"]) and ntpath.normcase(ntpath.normpath(row["path"]))==target
+        if type(row["runOnStartup"]) is not bool or row["runOnStartup"]!=own or own and row["isRemoved"]:
+            raise ValueError("Owned-only startup profile differs")
+        count+=int(own)
+    if count!=1:raise ValueError("Exactly one owned startup row required")
+    receipts=intent["receipts"]
+    if type(receipts) is not dict or set(receipts)!={"directory","entry","returned"}:
+        raise ValueError("Original owned receipt paths required")
+    for key in ("entry","returned"):
+        if (type(receipts[key]) is not str or re.fullmatch(r"[a-z0-9_-]+\.json",receipts[key]) is None
+            or re.fullmatch(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])\.json",receipts[key]) is not None):
+            raise ValueError("Original owned receipt basename required")
+        if str(Path(receipts["directory"])/receipts[key]).casefold()!=files[key]["nativePath"].casefold():
+            raise ValueError("Original owned receipt path differs")
+    base={"kind":"fmcad-bootstrap-entry-receipt","version":3,"mode":intent["mode"],
+      "nonce":nonce,"process":process,"purpose":intent["purpose"],"engineVersion":2,"executable":intent["executable"],
+      "provision":intent["provision"],"generation":intent["generation"],
+      "intent":{"path":files["intent"]["nativePath"],"sha256":files["intent"]["sha256"]},"profile":intent["profile"],
+      "installed":{"directory":q["directory"],"source":q["source"],"filesDigest":q["build"]}}
+    audit=data["entry"].get("startupAudit")
+    if (type(audit) is not dict or data["entry"]!={**base,"phase":"entry-audited-before-addon-import","startupAudit":audit}
+        or data["returned"]!={**base,"phase":"run-returned","entry":{"path":files["entry"]["nativePath"],"sha256":files["entry"]["sha256"]}}):
+        raise ValueError("Original owned entry/returned receipts differ")
+    source=installed()
+    if (data["installReceipt"].get("kind")!="controlled-native-install-receipt-v1"
+        or data["installReceipt"].get("authority")!="NONE" or data["installReceipt"].get("qualified")!=q
+        or data["installReceipt"].get("oldProcess")!=p["old"]
+        or data["installReceipt"].get("originals")!=ref(files["installClosure"])
+        or data["installReceipt"].get("installed")!=source
+        or data["installClosure"].get("kind")!="controlled-native-install-originals-v1"
+        or data["installClosure"].get("qualified")!=q or data["installClosure"].get("oldProcess")!=p["old"]
+        or data["installClosure"].get("authority")!="NONE" or data["installClosure"].get("target")!=q["directory"]
+        or data["installClosure"].get("originalManifest")!=ref(manifest)
+        or data["installClosure"].get("helper")!=helper
+        or data["sourceClosure"].get("installed",{}).get("files")!=source["files"]
+        or data["sourceClosure"].get("helper",{}).get("files")!=helper["files"]):
+        raise ValueError("Original qualified owned installation/source closure differs")
+    db=owned_database(process,handoff,completion,current)
+    return {"process":process,"old":p["old"],"qualified":q,"launch":launch,
+      "originals":{key:ref(value)for key,value in files.items()},
+      "handoffRequest":request_ref,"handoffReceipt":receipt_ref,
+      "database":db,"installed":source}
+def owned_checkpoint(view):
+    message={"kind":"owned-native-rebound-checkpoint-v1","action":action,"nonce":v["nonce"],
+      "process":v["launch"]["process"],"observationSha256":sha(_encode(view).encode("utf-8"))}
+    print(_encode(message),flush=True)
+    raw=sys.stdin.buffer.readline(65537)
+    if len(raw)>65536 or decode(raw)!={**message,"kind":"owned-native-rebound-continue-v1"}:
+        raise ValueError("Original owned parent boundary refused")
+def owned_observe():
+    absent(o["auditPath"])
+    view=owned_view();owned_checkpoint(view)
+    if owned_view()!=view:raise ValueError("Owned current native observation changed across parent boundary")
+    audit=publish_json(o["auditPath"],{"kind":"owned-native-rebound-observation-v1","authority":"NONE",**view})
+    if owned_view()!=view:raise ValueError("Owned current native observation changed after audit")
+    return {"audit":audit}
+def owned_assert():
+    audit,data=owned_match(v["audit"])
+    if audit["nativePath"]!=o["auditPath"]:raise ValueError("Original owned audit path differs")
+    expected={"kind":"owned-native-rebound-observation-v1","authority":"NONE",**owned_view()}
+    if data!=expected:raise ValueError("Current owned native binding differs from original observation")
+    owned_checkpoint(expected)
+    if {"kind":"owned-native-rebound-observation-v1","authority":"NONE",**owned_view()}!=expected:
+        raise ValueError("Current owned native binding changed after continuation")
+    return None
+`;
