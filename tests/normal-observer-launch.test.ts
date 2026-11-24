@@ -136,6 +136,7 @@ function ownedPins(): OwnedAutoloadLaunchPins {
   });
   return {
     ...base,
+    installedBuild: bootstrapInstalledFilesDigest(base.installedFiles),
     originalPaths: [
       ...base.originalPaths,
       ...originals.map((x) => x.nativePath),
@@ -148,6 +149,7 @@ function ownedPins(): OwnedAutoloadLaunchPins {
     },
     owned: {
       ...normal,
+      admissionPins: { source: "7".repeat(40), build: "8".repeat(64) },
       autorunOriginals: [originals[0]!, originals[1]!],
       discoveryOriginals: [originals[2]!],
     },
@@ -159,6 +161,12 @@ test("owned producer exposes only its disjoint one-shot launch API and requires 
     "launchAfterDeath",
   ]);
   for (const change of [
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.admissionPins, { source: "" }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.admissionPins, { extra: true }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p, { installedBuild: "f".repeat(64) }),
     (p: OwnedAutoloadLaunchPins) =>
       Object.assign(p.owned, { discoveryOriginals: [] }),
     (p: OwnedAutoloadLaunchPins) =>

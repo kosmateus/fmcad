@@ -45,6 +45,9 @@ const ownedExtension = String.raw`
 # OWNED_AUTOLOAD_ONLY_PRIVATE_EXTENSION: separate policy/wire, not NORMAL proof.
 if action not in ("preflight", "dead", "read-profile", "owned-autoload-launch"):
     raise ValueError("Separate owned native role refuses manual/NORMAL actions")
+if (type(p.get("installedSource")) is not str or len(p["installedSource"]) != 40
+        or any(c not in "0123456789abcdef" for c in p["installedSource"])):
+    raise ValueError("Pinned native installed source required")
 owned_inputs = []
 owned_intent = None
 owned_binding_source = None
@@ -148,7 +151,7 @@ def owned_checkpoint(phase, process=None, provision=None):
             "mode": "owned-autoload-v1", "nonce": request["nonce"],
             "process": process, "purpose": "isolated-stdout-v1", "engineVersion": 2,
             "executable": {"path": p["executable"], "sha256": p["executableSha256"]},
-            "installed": {"directory": p["installedDirectory"], "source": p["owned"]["source"],
+            "installed": {"directory": p["installedDirectory"], "source": p["installedSource"],
                           "files": p["installedFiles"]},
             "profile": {"path": p["paths"]["profile"], "sha256": profile["sha256"]},
             "provision": {"path": p["paths"]["provision"], "sha256": provision_file["sha256"]},
