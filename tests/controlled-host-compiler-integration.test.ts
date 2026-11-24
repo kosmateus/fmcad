@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import path, { resolve } from "node:path";
 import {
   prepareControlledBootstrapOriginals,
@@ -187,14 +188,19 @@ async function controlledIntegrationFixture(
     readonly tag?: string;
   } = {},
 ) {
-  const bootstrap = controlledFusionBootstrapFixture();
+  const bootstrap = controlledFusionBootstrapFixture({
+    captureStartupInputs: true,
+  });
   const transcript = await bootstrap.controller.run();
   assert.equal(transcript.state, "COMPLETED", transcript.error ?? "");
   const originWitness =
     await bootstrap.controller.prepareOriginalWitness(transcript);
+  const startupInputs = bootstrap.startupInputs;
+  assert.ok(startupInputs);
   const bootstrapOriginals = await prepareControlledBootstrapOriginals(
     bootstrap.controller,
     transcript,
+    startupInputs,
   );
   const request = overrides.request ?? diagnosticRequest();
   const tag = overrides.tag ?? "default";
@@ -287,6 +293,7 @@ async function controlledIntegrationFixture(
   const providerPorts: ControlledStdoutProviderPorts = {
     controller: overrides.controller ?? bootstrap.controller,
     transcript: overrides.transcript ?? transcript,
+    startupInputs,
     assertBootstrapHeld() {
       // This is the real bootstrap's synchronous witness fence, not a stub.
       bootstrap.controller.assertPreparedWitness(originWitness);
@@ -315,6 +322,7 @@ async function controlledIntegrationFixture(
     transcript,
     originWitness,
     bootstrapOriginals,
+    startupInputs,
     providerPorts,
     prepareControlledStdout,
     hostIdentity,
@@ -413,9 +421,13 @@ test("offline native boundary plus same-process controlled origin compiles exact
     fixture.bootstrap.controller,
   );
   assert.strictEqual(fixture.providerPorts.transcript, fixture.transcript);
+  const { readControlledStartupInputs } = createRequire(__filename)(
+    "../src/dist/node-adapters/execution/controlled-startup-inputs",
+  ) as typeof import("../packages/node-adapters/src/execution/controlled-startup-inputs");
+  const startupFiles = readControlledStartupInputs(fixture.startupInputs).files;
   assert.deepEqual(
     fixture.offlineReaderReferences,
-    fixture.originWitness.context.originalRefs.map(
+    [...fixture.originWitness.context.originalRefs, ...startupFiles].map(
       ({ nativePath, sha256 }) => ({
         path: nativePath,
         sha256,
@@ -423,6 +435,11 @@ test("offline native boundary plus same-process controlled origin compiles exact
     ),
   );
   fixture.bootstrapOriginals.assertCurrent();
+  assert.ok(
+    fixture.bootstrap.events.indexOf(
+      "original-startup-inputs-held-before-launch",
+    ) < fixture.bootstrap.events.indexOf("launch"),
+  );
   const signedPaths = new Set(
     fixture.offlineReaderReferences.map((reference) => reference.path),
   );
@@ -796,7 +813,7 @@ test("a rejecting asynchronous controller fence denies provider preparation with
 const { controlledFusionBootstrapFixture } = require(${JSON.stringify(fixturePath)});
 const { createControlledStdoutProvider } = require(${JSON.stringify(providerPath)});
 (async () => {
-  const fixture = controlledFusionBootstrapFixture();
+  const fixture = controlledFusionBootstrapFixture({ captureStartupInputs: true });
   const transcript = await fixture.controller.run();
   fixture.rejectNextLeaseFence();
   const request = {
@@ -851,6 +868,7 @@ const { createControlledStdoutProvider } = require(${JSON.stringify(providerPath
   const provider = createControlledStdoutProvider({
     controller: fixture.controller,
     transcript,
+    startupInputs: fixture.startupInputs,
     assertBootstrapHeld() {},
     readCurrentHost: () => host,
     createReader() {

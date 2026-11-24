@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import type { ControlledStartupInputs } from "../packages/node-adapters/src/execution/controlled-startup-inputs";
 import {
   createControlledFusionBootstrap,
   type ControlledFusionBootstrapPorts,
@@ -74,11 +76,13 @@ export function controlledFusionBootstrapFixture(
     tamperExecutableJournal?: boolean;
     vendorNormalize?: boolean;
     cancelAfterLaunch?: AbortController;
+    captureStartupInputs?: boolean;
   } = {},
   create = createControlledFusionBootstrap,
 ) {
   const events: string[] = [];
   const files = new Map<string, ControlledFile>();
+  let startupInputs: ControlledStartupInputs | undefined;
   let serial = 1,
     dead = false,
     started = false,
@@ -103,6 +107,7 @@ export function controlledFusionBootstrapFixture(
   ) as unknown as ControlledNativeAdapter["paths"];
   const actualPaths = {
     ...paths,
+    profile: "C:\\fixture\\user\\JSLoadedScriptsinfo",
     receiptDirectory: "C:\\fixture",
     entry: "C:\\fixture\\entry.json",
     returned: "C:\\fixture\\returned.json",
@@ -114,6 +119,8 @@ export function controlledFusionBootstrapFixture(
       (name) => [name, hash(Buffer.from(name))],
     ),
   );
+  installedFiles["AutodeskFusionMCP.manifest"] =
+    controlledStartupAuditFixture().scripts.items[0]!.manifest.sha256;
   const file = (nativePath: string, bytes = encode({ nativePath })) => {
     const result = {
       nativePath,
@@ -356,6 +363,41 @@ export function controlledFusionBootstrapFixture(
       assert.equal(value.qualifiedPackagePins.build, native.installedBuild);
       assert.equal(dead, true);
       events.push("qualified-install");
+      if (options.captureStartupInputs) {
+        const autorunPaths = [
+          "C:\\fixture\\PythonAutorunModuleinfo",
+          "C:\\fixture\\user\\PythonAutorunModuleinfo",
+        ] as const;
+        for (const name of autorunPaths)
+          file(name, encode({ enabledModules: [], lastAppInstallTime: 0 }));
+        const manifestHash =
+          native.installedFiles["AutodeskFusionMCP.manifest"];
+        assert.ok(manifestHash);
+        const { prepareControlledStartupInputs } = createRequire(__filename)(
+          "../src/dist/node-adapters/execution/controlled-startup-inputs",
+        ) as typeof import("../packages/node-adapters/src/execution/controlled-startup-inputs");
+        startupInputs = await prepareControlledStartupInputs({
+          native,
+          expected: {
+            installedDirectory,
+            installedManifestHash: manifestHash,
+            defaultApiParent:
+              controlledStartupAuditFixture().preferences
+                .defaultPathForScriptsAndAddIns,
+            autorunPaths,
+          },
+          assertBeforeLaunch() {
+            assert.ok(dead && !started, "original prelaunch phase");
+          },
+          assertHeld() {
+            if (!leaseCurrent) throw new Error("lease revoked");
+          },
+          async assertHeldCurrent() {
+            if (!leaseCurrent) throw new Error("lease revoked");
+          },
+        });
+        events.push("original-startup-inputs-held-before-launch");
+      }
       return file("C:\\fixture\\qualified-install.json");
     },
     async rebindNative(input) {
@@ -412,6 +454,9 @@ export function controlledFusionBootstrapFixture(
     files,
     file,
     events,
+    get startupInputs() {
+      return startupInputs;
+    },
     revoke: () => {
       leaseCurrent = false;
     },

@@ -15,6 +15,13 @@ import type {
   NativeRuntimeBootstrapOriginals,
 } from "../packages/node-adapters/src/execution/runtime-rebaseline-native";
 import type { NativeRuntimeRebaselineReaderPorts } from "../packages/node-adapters/src/execution/runtime-rebaseline-reader";
+import type { ControlledStartupInputs } from "../packages/node-adapters/src/execution/controlled-startup-inputs";
+
+function startupInputsApi() {
+  return createRequire(__filename)(
+    "./dist/node-adapters/execution/controlled-startup-inputs",
+  ) as typeof import("../packages/node-adapters/src/execution/controlled-startup-inputs");
+}
 
 export interface FreshHostContext {
   descriptor: PhysicalGenerationDescriptor;
@@ -178,13 +185,22 @@ export async function prepareControlledBootstrapOriginals(
     "prepareOriginalWitness" | "assertPreparedWitness"
   >,
   transcript: ControlledFusionBootstrapTranscript,
+  startupInputs?: ControlledStartupInputs,
 ): Promise<NativeRuntimeBootstrapOriginals> {
+  const startup = startupInputsApi();
+  if (startupInputs) await startup.verifyControlledStartupInputs(startupInputs);
   const witness = await controller.prepareOriginalWitness(transcript);
-  const assertCurrent = () => controller.assertPreparedWitness(witness);
+  const assertCurrent = () => {
+    controller.assertPreparedWitness(witness);
+    if (startupInputs) startup.assertControlledStartupInputs(startupInputs);
+  };
   assertCurrent();
-  const references = witness.context.originalRefs.map((ref) =>
-    Object.freeze({ path: ref.nativePath, sha256: ref.sha256 }),
-  );
+  const references = [
+    ...witness.context.originalRefs,
+    ...(startupInputs
+      ? startup.readControlledStartupInputs(startupInputs).files
+      : []),
+  ].map((ref) => Object.freeze({ path: ref.nativePath, sha256: ref.sha256 }));
   return Object.freeze({
     assertCurrent,
     readCurrentReferences() {
@@ -225,6 +241,9 @@ export interface ControlledHostProofPorts extends Omit<
   >;
   transcript: ControlledFusionBootstrapTranscript;
   readCompilerPins(): ProtocolMetadataPins;
+  /** Original separately held OS autorun inputs, never an invocation field.
+   * Missing data refuses the current profile; optional only for type migration. */
+  readonly startupInputs?: ControlledStartupInputs;
 }
 
 /**
@@ -245,7 +264,12 @@ export function createControlledHostProofFactory(
   const originalCompletion = structuredClone(completion);
   const controller = ports.controller;
   const originalTranscript = ports.transcript;
+  const originalStartupInputs = ports.startupInputs;
   const load = createRequire(__filename);
+  const startup = startupInputsApi();
+  const { assertControlledStartupData } = load(
+    "./dist/node-adapters/execution/controlled-startup-policy",
+  ) as typeof import("../packages/node-adapters/src/execution/controlled-startup-policy");
   const { bindBootstrapEntryEvidence, bootstrapInstalledFilesDigest } = load(
     "./dist/node-adapters/execution/bootstrap-entry-evidence",
   ) as typeof import("../packages/node-adapters/src/execution/bootstrap-entry-evidence");
@@ -263,6 +287,9 @@ export function createControlledHostProofFactory(
   function current() {
     if (revoked) throw new FreshHostProofError("FRESH_HOST_REVOKED");
     synchronous(() => ports.assertBootstrapHeld());
+    if (!originalStartupInputs || ports.startupInputs !== originalStartupInputs)
+      return reject();
+    startup.assertControlledStartupInputs(originalStartupInputs);
     if (
       expected.purpose !== "isolated-stdout-v1" ||
       expected.engineVersion !== 2 ||
@@ -290,6 +317,8 @@ export function createControlledHostProofFactory(
           >
         | undefined;
       try {
+        current();
+        await startup.verifyControlledStartupInputs(originalStartupInputs!);
         current();
         const compilerPins = structuredClone(ports.readCompilerPins());
         if (
@@ -335,6 +364,45 @@ export function createControlledHostProofFactory(
           : path.posix.join(c.installedDirectory, "AutodeskFusionMCP.py");
         const bound = bindBootstrapEntryEvidence(intent, originals, forkEntry);
         if (!bound) return reject();
+        const startupData = startup.readControlledStartupInputs(
+          originalStartupInputs!,
+        );
+        const nativePaths = /^[A-Za-z]:[\\/]/.test(intent.profile.path)
+          ? path.win32
+          : path.posix;
+        const userDirectory = nativePaths.dirname(intent.profile.path);
+        const requiredAutorunPaths = [
+          nativePaths.join(
+            nativePaths.dirname(userDirectory),
+            "PythonAutorunModuleinfo",
+          ),
+          nativePaths.join(userDirectory, "PythonAutorunModuleinfo"),
+        ];
+        const canonical = (file: string) => {
+          const normalized = nativePaths.normalize(file);
+          return nativePaths === path.win32
+            ? normalized.toLowerCase()
+            : normalized;
+        };
+        const manifestHash =
+          intent.installed.files["AutodeskFusionMCP.manifest"];
+        if (
+          !manifestHash ||
+          nativePaths.basename(intent.profile.path).toLowerCase() !==
+            "jsloadedscriptsinfo" ||
+          !same(
+            startupData.expected.autorunPaths.map(canonical),
+            requiredAutorunPaths.map(canonical),
+          ) ||
+          startupData.expected.installedDirectory !== c.installedDirectory ||
+          startupData.expected.installedManifestHash !== manifestHash
+        )
+          reject();
+        assertControlledStartupData(
+          bound.startupAudit,
+          startupData.expected,
+          startupData.files,
+        );
         verification = await ports.reader.verifyConsumed(
           structuredClone(originalPublication),
           structuredClone(originalCompletion),
@@ -361,6 +429,10 @@ export function createControlledHostProofFactory(
             sha256: ref.sha256,
           })),
           transcript,
+          ...startupData.files.map((file) => ({
+            nativePath: file.nativePath,
+            sha256: file.sha256,
+          })),
         ];
         if (
           !signed ||

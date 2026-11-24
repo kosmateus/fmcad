@@ -30,6 +30,7 @@ type HostIdentity = Pick<
 export interface ControlledStdoutProviderPorts {
   controller: ControlledHostProofPorts["controller"];
   transcript: ControlledHostProofPorts["transcript"];
+  readonly startupInputs?: ControlledHostProofPorts["startupInputs"];
   assertBootstrapHeld(): void;
   /** Current trusted descriptor/owner/build, not an invocation or JSON proof. */
   readCurrentHost(): HostIdentity;
@@ -56,6 +57,7 @@ export function createControlledStdoutProvider(
   const originalCompletion = structuredClone(completion);
   const controller = ports.controller;
   const transcript = ports.transcript;
+  const startupInputs = ports.startupInputs;
   return async (input, pins) => {
     const request = structuredClone(input);
     const expectedInput = pythonStdoutInputDigests(request);
@@ -72,6 +74,7 @@ export function createControlledStdoutProvider(
         reader,
         controller,
         transcript,
+        ...(startupInputs ? { startupInputs } : {}),
         assertBootstrapHeld: () => ports.assertBootstrapHeld(),
         readCurrent: () => ({
           ...ports.readCurrentHost(),

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import {
   createFreshHostProofFactory,
   createControlledHostProofFactory,
@@ -153,7 +154,7 @@ function fixture() {
   };
 }
 
-function controlledFixture() {
+async function controlledFixture(options: { autorunRoot?: string } = {}) {
   const f = fixture();
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
   const file = (nativePath: string, value: unknown) => {
@@ -166,7 +167,7 @@ function controlledFixture() {
     };
   };
   const fork = "C:\\private\\addin\\AutodeskFusionMCP.py";
-  const profile = file("C:\\private\\profile.json", {
+  const profile = file("C:\\private\\profile\\JSLoadedScriptsinfo", {
     loadedScripts: [
       {
         name: "AutodeskFusionMCP",
@@ -182,6 +183,8 @@ function controlledFixture() {
     path: "C:\\Program Files\\Autodesk\\Fusion\\Fusion.exe",
     sha256: "f".repeat(64),
   };
+  const startupAudit = controlledStartupAuditFixture();
+  startupAudit.scripts.items[0]!.folder = "C:\\private\\addin";
   const expected: BootstrapEntryIntentV2 = {
     kind: "fmcad-bootstrap-entry-intent",
     version: 2,
@@ -197,6 +200,8 @@ function controlledFixture() {
         "AutodeskFusionMCP.py": "c".repeat(64),
         "addon_runtime.py": "d".repeat(64),
         "lib/bootstrap_entry.py": "e".repeat(64),
+        "AutodeskFusionMCP.manifest":
+          startupAudit.scripts.items[0]!.manifest.sha256,
       },
     },
     profile: { path: profile.nativePath, sha256: profile.sha256 },
@@ -230,7 +235,7 @@ function controlledFixture() {
   const entry = file("C:\\private\\receipts\\entry.json", {
     ...base,
     phase: "entry-audited-before-addon-import",
-    startupAudit: controlledStartupAuditFixture(),
+    startupAudit,
   });
   const returned = file("C:\\private\\receipts\\returned.json", {
     ...base,
@@ -289,6 +294,17 @@ function controlledFixture() {
     launchJournal,
     transcriptFile,
   ];
+  const autorunRoot = options.autorunRoot ?? "C:\\private";
+  const autorunFiles = [
+    file(`${autorunRoot}\\PythonAutorunModuleinfo`, {
+      enabledModules: [],
+      lastAppInstallTime: 0,
+    }),
+    file(`${autorunRoot}\\profile\\PythonAutorunModuleinfo`, {
+      enabledModules: [],
+      lastAppInstallTime: 0,
+    }),
+  ];
   const context = {
     nonce: expected.nonce,
     process: expected.process,
@@ -296,7 +312,10 @@ function controlledFixture() {
     installedSource: expected.installed.source,
     installedBuild: base.installed.filesDigest,
     nativePathMappings: Object.fromEntries(
-      files.map((file, i) => [file.nativePath, `/original/${i}`]),
+      [...files, ...autorunFiles].map((file, i) => [
+        file.nativePath,
+        `/original/${i}`,
+      ]),
     ),
     originalRefs: files.map(({ nativePath, sha256, identity }) => ({
       nativePath,
@@ -309,13 +328,65 @@ function controlledFixture() {
   f.ports.reader.pins.source = context.installedSource;
   f.ports.reader.pins.build = context.installedBuild;
   let windowHeld = true;
+  let startupChanged = false;
+  const assertStartupOriginal = (original: {
+    nativePath: string;
+    sha256: string;
+    identity: string;
+  }) => {
+    assert.ok(!startupChanged, "STARTUP_INPUT_REPLACED");
+    const actual = autorunFiles.find(
+      (value) => value.nativePath === original.nativePath,
+    );
+    assert.ok(actual);
+    assert.equal(actual.sha256, original.sha256);
+    assert.equal(actual.identity, original.identity);
+  };
+  const { prepareControlledStartupInputs } = createRequire(__filename)(
+    "../src/dist/node-adapters/execution/controlled-startup-inputs",
+  ) as typeof import("../packages/node-adapters/src/execution/controlled-startup-inputs");
+  const startupInputs = await prepareControlledStartupInputs({
+    expected: {
+      defaultApiParent: startupAudit.preferences.defaultPathForScriptsAndAddIns,
+      installedDirectory: expected.installed.directory,
+      installedManifestHash: startupAudit.scripts.items[0]!.manifest.sha256,
+      autorunPaths: [autorunFiles[0]!.nativePath, autorunFiles[1]!.nativePath],
+    },
+    assertBeforeLaunch() {},
+    assertHeld() {
+      assert.ok(windowHeld, "CONTROLLED_WINDOW_REVOKED");
+    },
+    async assertHeldCurrent() {
+      assert.ok(windowHeld, "CONTROLLED_WINDOW_REVOKED");
+    },
+    native: {
+      async preflight() {
+        assert.ok(!startupChanged, "STARTUP_INPUT_REPLACED");
+      },
+      async readOriginal(name) {
+        const original = autorunFiles.find(
+          (value) => value.nativePath === name,
+        );
+        assert.ok(original);
+        return original;
+      },
+      async assertOriginal(original) {
+        assertStartupOriginal(original);
+      },
+      captureSynchronousFence(originals) {
+        return () => {
+          for (const original of originals) assertStartupOriginal(original);
+        };
+      },
+    },
+  });
   const witness = {
     context,
     fence() {
       assert.ok(windowHeld, "CONTROLLED_WINDOW_REVOKED");
     },
   };
-  const signed = files.map((file) => ({
+  const signed = [...files, ...autorunFiles].map((file) => ({
     path: context.nativePathMappings[file.nativePath]!,
     sha256: file.sha256,
   }));
@@ -341,6 +412,7 @@ function controlledFixture() {
   };
   const ports: ControlledHostProofPorts = {
     ...f.ports,
+    startupInputs,
     readCurrent: () => structuredClone(preparationContext),
     transcript,
     readCompilerPins: () => ({ ...compilerPins }),
@@ -379,12 +451,47 @@ function controlledFixture() {
     ports,
     compilerPins,
     preparationContext,
+    startupInputs,
+    autorunFiles,
+    changeStartupInputs: (changed = true) => {
+      startupChanged = changed;
+    },
+    changeAuditedPolicy(
+      alter: (audit: ReturnType<typeof controlledStartupAuditFixture>) => void,
+    ) {
+      const updated = controlledStartupAuditFixture();
+      updated.scripts.items[0]!.folder = expected.installed.directory;
+      alter(updated);
+      entry.bytes = encode({
+        ...base,
+        phase: "entry-audited-before-addon-import",
+        startupAudit: updated,
+      });
+      entry.sha256 = createHash("sha256").update(entry.bytes).digest("hex");
+      returned.bytes = encode({
+        ...base,
+        phase: "run-returned",
+        entry: reference(entry),
+      });
+      returned.sha256 = createHash("sha256")
+        .update(returned.bytes)
+        .digest("hex");
+      for (const updatedFile of [entry, returned]) {
+        context.originalRefs.find(
+          (ref) => ref.nativePath === updatedFile.nativePath,
+        )!.sha256 = updatedFile.sha256;
+        signed.find(
+          (ref) =>
+            ref.path === context.nativePathMappings[updatedFile.nativePath],
+        )!.sha256 = updatedFile.sha256;
+      }
+    },
     loseWindow: () => (windowHeld = false),
   };
 }
 
 test("controlled origin and MAC-authenticated original references yield a held compiler port, not a serialized grant", async () => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   const prepared = await f.factory.prepare();
   assert.deepEqual(prepared.verifyHostBindings(f.compilerPins), {
     proofHash: prepared.verifyHostBindings(f.compilerPins).proofHash,
@@ -403,7 +510,7 @@ test("controlled origin and MAC-authenticated original references yield a held c
 });
 
 test("bootstrap MAC reference port preserves original native paths and private controller fences without copying authority", async () => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   const port = await prepareControlledBootstrapOriginals(
     f.ports.controller,
     f.ports.transcript,
@@ -425,7 +532,7 @@ test("bootstrap MAC reference port preserves original native paths and private c
 });
 
 test("private provider uses the actual kernel, original input and a new native reader for each preparation", async () => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   const sha = (value: string) =>
     createHash("sha256").update(value).digest("hex");
   f.preparationContext.brokerBuild = f.compilerPins.buildHash = sha("broker");
@@ -435,6 +542,7 @@ test("private provider uses the actual kernel, original input and a new native r
     {
       controller: f.ports.controller,
       transcript: f.ports.transcript,
+      startupInputs: f.startupInputs,
       assertBootstrapHeld: f.ports.assertBootstrapHeld,
       readCurrentHost: () => {
         const {
@@ -508,15 +616,15 @@ test("private provider uses the actual kernel, original input and a new native r
 
 test("missing or mismatched authenticated original references permanently deny the window", async () => {
   for (const alter of [
-    (f: ReturnType<typeof controlledFixture>) => f.signed.pop(),
-    (f: ReturnType<typeof controlledFixture>) => {
+    (f: Awaited<ReturnType<typeof controlledFixture>>) => f.signed.pop(),
+    (f: Awaited<ReturnType<typeof controlledFixture>>) => {
       f.signed[0]!.sha256 = "f".repeat(64);
     },
-    (f: ReturnType<typeof controlledFixture>) => {
+    (f: Awaited<ReturnType<typeof controlledFixture>>) => {
       f.signed[0]!.path = "/copied/not-original";
     },
   ]) {
-    const f = controlledFixture();
+    const f = await controlledFixture();
     alter(f);
     await assert.rejects(f.factory.prepare(), {
       code: "BOOTSTRAP_CLOSURE_UNPROVEN",
@@ -526,14 +634,14 @@ test("missing or mismatched authenticated original references permanently deny t
 });
 
 test("native or compiler context changes during or after preparation revoke the held port", async () => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   f.duringVerify(
     () => (f.current.descriptor.physicalRuntime.birth = "changed"),
   );
   await assert.rejects(f.factory.prepare(), {
     code: "FRESH_HOST_CONTEXT_CHANGED",
   });
-  const g = controlledFixture();
+  const g = await controlledFixture();
   const prepared = await g.factory.prepare();
   g.compilerPins.generation = "changed";
   assert.throws(prepared.recheck, { code: "FRESH_HOST_CONTEXT_CHANGED" });
@@ -546,7 +654,7 @@ for (const field of [
   "sourceDigest",
 ] as const)
   test(`controlled preparation rechecks original ${field} across native awaits`, async () => {
-    const f = controlledFixture();
+    const f = await controlledFixture();
     f.duringVerify(() => (f.preparationContext[field] = "f".repeat(64)));
     await assert.rejects(f.factory.prepare(), {
       code: "FRESH_HOST_CONTEXT_CHANGED",
@@ -554,7 +662,7 @@ for (const field of [
   });
 
 test("old readers without authenticated references and native verification errors cannot prepare a controlled port", async () => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   f.ports.reader.verifyConsumed = async () => ({
     authenticatedCurrentPins: structuredClone(f.ports.reader.pins),
     finalize() {
@@ -565,7 +673,7 @@ test("old readers without authenticated references and native verification error
   await assert.rejects(f.factory.prepare(), {
     code: "BOOTSTRAP_CLOSURE_UNPROVEN",
   });
-  const g = controlledFixture();
+  const g = await controlledFixture();
   const error = new Error("NATIVE_MAC_CHANGED");
   g.failNative(error);
   await assert.rejects(g.factory.prepare(), (actual) => actual === error);
@@ -573,12 +681,12 @@ test("old readers without authenticated references and native verification error
 });
 
 test("replacing the controlled origin with a JSON transcript or changing source bindings is refused", async () => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   f.ports.transcript = structuredClone(f.ports.transcript);
   await assert.rejects(f.factory.prepare(), {
     code: "FRESH_HOST_CONTEXT_CHANGED",
   });
-  const g = controlledFixture();
+  const g = await controlledFixture();
   g.context.installedBuild = "0".repeat(64);
   await assert.rejects(g.factory.prepare(), {
     code: "BOOTSTRAP_CLOSURE_UNPROVEN",
@@ -586,7 +694,7 @@ test("replacing the controlled origin with a JSON transcript or changing source 
 });
 
 test("unsupported bootstrap evidence and a mismatched compiler call revoke instead of falling back", async (t) => {
-  const f = controlledFixture();
+  const f = await controlledFixture();
   const read = f.ports.controller.readOriginalIntent;
   t.mock.method(
     f.ports.controller,
@@ -600,7 +708,7 @@ test("unsupported bootstrap evidence and a mismatched compiler call revoke inste
   await assert.rejects(f.factory.prepare(), {
     code: "BOOTSTRAP_CLOSURE_UNPROVEN",
   });
-  const g = controlledFixture();
+  const g = await controlledFixture();
   const prepared = await g.factory.prepare();
   assert.throws(
     () =>
@@ -611,6 +719,112 @@ test("unsupported bootstrap evidence and a mismatched compiler call revoke inste
     { code: "FRESH_HOST_CONTEXT_CHANGED" },
   );
   assert.throws(prepared.recheck, { code: "FRESH_HOST_REVOKED" });
+});
+
+test("bootstrap MAC producer includes both original OS autorun inputs and retains their private fence", async () => {
+  const f = await controlledFixture();
+  const port = await prepareControlledBootstrapOriginals(
+    f.ports.controller,
+    f.ports.transcript,
+    f.startupInputs,
+  );
+  for (const file of f.autorunFiles)
+    assert.ok(
+      port
+        .readCurrentReferences()
+        .some(
+          (ref) => ref.path === file.nativePath && ref.sha256 === file.sha256,
+        ),
+    );
+  f.changeStartupInputs();
+  assert.throws(port.assertCurrent, /STARTUP_INPUT_REPLACED/);
+  f.changeStartupInputs(false);
+  assert.throws(port.readCurrentReferences, /Original held/);
+});
+
+test("missing and serialized OS-input witnesses never qualify the controlled host", async () => {
+  const f = await controlledFixture();
+  const missing = { ...f.ports };
+  Object.defineProperty(missing, "startupInputs", { value: undefined });
+  await assert.rejects(
+    createControlledHostProofFactory(
+      missing,
+      f.preparationContext,
+      f.publication,
+      f.completion,
+    ).prepare(),
+    { code: "BOOTSTRAP_CLOSURE_UNPROVEN" },
+  );
+  await assert.rejects(
+    createControlledHostProofFactory(
+      {
+        ...f.ports,
+        startupInputs: structuredClone(f.startupInputs),
+      },
+      f.preparationContext,
+      f.publication,
+      f.completion,
+    ).prepare(),
+    /Original held/,
+  );
+  assert.equal(f.calls(), 0);
+});
+test("authentic OS input witnesses must refer to global and user files adjacent to the original profile", async () => {
+  const f = await controlledFixture({ autorunRoot: "C:\\unrelated" });
+  await assert.rejects(f.factory.prepare(), {
+    code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+  });
+  assert.equal(f.calls(), 0);
+});
+
+for (const fault of [
+  "foreign-running",
+  "foreign-startup",
+  "self-manifest",
+  "api-parent",
+  "missing-self",
+] as const)
+  test(`authenticated original audit still refuses ${fault} before preparing a compiler port`, async () => {
+    const f = await controlledFixture();
+    f.changeAuditedPolicy((audit) => {
+      if (fault === "foreign-running") audit.scripts.items[1]!.isRunning = true;
+      if (fault === "foreign-startup")
+        Object.assign(audit.scripts.items[1]!, {
+          isAddIn: true,
+          isRunOnStartup: true,
+        });
+      if (fault === "self-manifest") {
+        const content = '{"id":"not-the-pinned-fork"}';
+        audit.scripts.items[0]!.manifest.content = content;
+        audit.scripts.items[0]!.manifest.sha256 = createHash("sha256")
+          .update(content)
+          .digest("hex");
+      }
+      if (fault === "api-parent")
+        audit.preferences.defaultPathForScriptsAndAddIns = "C:\\Other\\API";
+      if (fault === "missing-self")
+        Object.assign(audit.scripts.items[0]!, {
+          folder: "C:\\Other\\Fork",
+          isRunning: false,
+        });
+    });
+    await assert.rejects(f.factory.prepare(), {
+      code: "CONTROLLED_STARTUP_UNPROVEN",
+    });
+    assert.equal(
+      f.calls(),
+      0,
+      "invalid startup data is not an authenticated SDK grant",
+    );
+    await assert.rejects(f.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
+  });
+
+test("original OS-input loss across native verification cannot be restored into a host grant", async () => {
+  const f = await controlledFixture();
+  f.duringVerify(() => f.changeStartupInputs());
+  await assert.rejects(f.factory.prepare(), /STARTUP_INPUT_REPLACED/);
+  f.changeStartupInputs(false);
+  await assert.rejects(f.factory.prepare(), { code: "FRESH_HOST_REVOKED" });
 });
 
 test("authenticated native evidence remains NOT_AUTHORITY; every use rechecks", async () => {
