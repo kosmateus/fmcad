@@ -185,6 +185,43 @@ async function fixture(
     changeNativeSource() {
       source = "b".repeat(40);
     },
+    seedPausedPredecessor() {
+      const instance = load("./queue-instance") as {
+        buildHash(): string;
+        brokerConfigHash(value: unknown): string;
+      };
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(
+        path.join(dir, "instance.json"),
+        JSON.stringify({
+          buildHash: instance.buildHash(),
+          configHash: instance.brokerConfigHash(cfg),
+          instance: {
+            pid: 2147480000,
+            birth: "dead-fixture:1",
+            version: "fake-startup-sdk-1",
+            documents: [],
+          },
+        }),
+        { mode: 0o600 },
+      );
+      fs.writeFileSync(
+        path.join(dir, "queue-state.json"),
+        JSON.stringify({
+          version: 1,
+          paused: true,
+          pauseStartedAt: 100,
+          revision: 0,
+          epoch: 0,
+          active: null,
+          blocked: null,
+          lease: null,
+          jobs: {},
+          lastClient: null,
+        }),
+        { mode: 0o600 },
+      );
+    },
     async start() {
       try {
         broker = await serve(cfg, options);
@@ -199,6 +236,49 @@ async function fixture(
     },
   };
 }
+
+test("paused observer starts after a dead predecessor changes identity without resuming the queue", async (t) => {
+  let captured: P.StartupObservation | undefined;
+  const f = await fixture(t, (value) => {
+    captured = value;
+  });
+  f.seedPausedPredecessor();
+  const broker = await f.start();
+  assert.equal(broker.status().paused, true);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8"))
+      .pauseStartedAt,
+    100,
+  );
+  assert.ok(
+    captured,
+    "original bound startup receipt reaches the private capture",
+  );
+  assert.equal(fs.existsSync(f.socket), true);
+  assert.equal(f.counts().posts, 1);
+  const { request } = load(
+    "./queue-connection",
+  ) as typeof import("../src/entrypoints/queue-connection");
+  const auth = {
+    clientId: "paused-observer",
+    clientToken: "offline-private-observer",
+  };
+  await request(f.dir, { action: "register", ...auth });
+  const control = (await request(f.dir, {
+    action: "control-status",
+    auth,
+  })) as { phase: string };
+  assert.equal(
+    control.phase,
+    "PAUSED",
+    "owned control plane starts without resume authority",
+  );
+  assert.equal(
+    f.counts().posts,
+    1,
+    "control observation sends no additional SDK work",
+  );
+});
 
 test("actual compiled broker exports original fixed startup receipt/physical/source data, not authority", async (t) => {
   let captured: P.StartupObservation | undefined;

@@ -71,6 +71,7 @@ function port(
       if (!epoch) assert.fail("No epoch");
     },
     advanceInstanceEpoch: (id) => state.advanceInstanceEpoch(id),
+    observePausedInstanceEpoch: (id) => state.observePausedInstanceEpoch(id),
     writerStatus: () => state.writerStatus(),
   };
 }
@@ -265,6 +266,60 @@ test("original durable identity is rechecked after the startup await, without ad
       .some((name) => name.startsWith("instance-transition-")),
     false,
   );
+});
+
+test("paused same-version startup observes a cold identity without resuming or weakening cold-process guards", async (t) => {
+  for (const mode of ["valid", "live", "dirty", "busy"] as const) {
+    const f = fixture(t);
+    const previous = {
+      ...f.identity,
+      instance: { ...observed, pid: 2147483645, birth: "dead:fixture" },
+    };
+    instance.durable(path.join(f.dir, "instance.json"), previous);
+    f.state.pause(true, "operator-pause");
+    const before = structuredClone(f.state.data);
+    const authority = await openBrokerRuntimeAuthority(
+      f.options,
+      mode === "live"
+        ? {
+            ...readers,
+            instance: { ...readers.instance, priorProcessAlive: () => true },
+          }
+        : readers,
+    );
+    authority.bindQueue(port(f.state), { owner: f.owner });
+    const result = authority.identifyStartup(f.probe, async () => ({
+      ...observed,
+      documents: mode === "dirty" ? [{ isModified: true }] : [],
+      activeCommand: mode === "busy" ? "SketchLine" : "SelectCommand",
+    }));
+    if (mode !== "valid") {
+      await assert.rejects(result, { code: "INSTANCE_CHANGED" });
+      assert.deepEqual(f.state.data, before);
+      assert.deepEqual(
+        instance.readJson(path.join(f.dir, "instance.json")),
+        previous,
+      );
+      continue;
+    }
+    await result;
+    assert.equal(f.state.data.paused, true);
+    assert.equal(f.state.data.pauseStartedAt, before.pauseStartedAt);
+    assert.equal(f.state.data.controlGeneration, before.controlGeneration);
+    assert.equal(f.state.data.contextEpoch, before.contextEpoch);
+    assert.equal(f.state.data.epoch, before.epoch + 1);
+    assert.deepEqual(f.state.data.jobs, before.jobs);
+    assert.equal(authority.current().instance?.birth, observed.birth);
+    const record = fs
+      .readdirSync(f.dir)
+      .find((file) => file.startsWith("instance-transition-"))!;
+    assert.equal(
+      instance.readJson<Record<string, unknown>>(path.join(f.dir, record))[
+        "source"
+      ],
+      "paused-startup-instance-observation",
+    );
+  }
 });
 
 test("legacy process and version changes retain the original quiescent restart guards and record format", async (t) => {

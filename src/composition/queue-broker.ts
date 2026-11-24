@@ -1054,6 +1054,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     assertEpoch: (normal) => state.assertEpoch(normal),
     writerStatus: () => state.writerStatus(),
     advanceInstanceEpoch: (transitionId) => state.advanceInstanceEpoch(transitionId),
+    observePausedInstanceEpoch: (transitionId) => state.observePausedInstanceEpoch(transitionId),
   }, {
     owner: marker,
     ...(successorRuntime?.authorityEntry
