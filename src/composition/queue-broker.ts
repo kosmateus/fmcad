@@ -1130,7 +1130,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "INVALID_BACKEND",
       "Backend must expose server and the physical McpClient _post/_parse boundary",
     );
-  const originalPost = client._post.bind(client);
+  let controlledIngress: ReturnType<
+    typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window").createControlledIngressWindow
+  > | undefined;
+  // Only the private fixed queue-instance probe producer enters this scope.
+  // A certificate or caller-supplied readOnly/metadata flag cannot create it.
+  const fixedReadiness = new AsyncLocalStorage<() => void>();
+  const underlyingPost = client._post.bind(client);
+  const originalPost: typeof client._post = (payload, sessionId, requestOptions) => {
+    // One boundary for product sends, observations and lifecycle/readiness
+    // traffic alike. An ordinary send revokes the diagnostic window, not its
+    // own existing authority; a claimed controlled wire must retain its origin.
+    controlledIngress?.observe(payload);
+    return underlyingPost(payload, sessionId, requestOptions);
+  };
   const runtime = resolveRuntimePaths({ anchor: runtimeAnchor }).runtime;
   const queueAdmission = createProductionQueueAdmission(runtime);
   const pythonAdmission = queueAdmission.admission;
@@ -1562,7 +1575,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           probe.start();
         else probe.assertCurrent();
       }
-      return originalPost(outgoing, sessionId, requestOptions);
+      const send = () => originalPost(outgoing, sessionId, requestOptions);
+      const readiness = fixedReadiness.getStore();
+      return controlledIngress && (probe || readiness)
+        ? controlledIngress.withClosedServiceWire(outgoing, () => {
+            certificate.fence(outgoing);
+            probe?.assertCurrent();
+            readiness?.();
+          }, send)
+        : send();
     });
   }
   client._post = unownedPost;
@@ -1653,7 +1674,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           { fence: () => send.fence() },
         );
       };
-    return probe(port, { ...options, ...nativePaths });
+    if (!controlledIngress)
+      return probe(port, { ...options, ...nativePaths });
+    // Capture the actual private native binding before starting this fixed
+    // readiness program, and retain it across preparation and transport awaits.
+    assertCheckpointIdentity();
+    const generation = checkpointGeneration(checkpointPhysicalBindingAfterOwnerCheck());
+    const assertOriginalReadiness = () => {
+      assertCheckpointIdentity();
+      if (buildHash() !== codeHash ||
+          checkpointGeneration(checkpointPhysicalBindingAfterOwnerCheck()) !== generation)
+        fail("CONTROLLED_INGRESS_UNPROVEN", "Original fixed readiness owner/source/native binding changed");
+      options.assertCurrent?.();
+    };
+    return fixedReadiness.run(assertOriginalReadiness,
+      () => probe(port, { ...options, ...nativePaths }));
   };
   async function prepareJobFlights(
     job: Pick<P.Job, "id" | "request" | "kind"> &
@@ -1846,13 +1881,31 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     transport: {
       client,
       originalPost,
+      withControlledStdoutWire(wire, assertOriginal, send) {
+        return controlledIngress
+          ? controlledIngress.withStdoutWire(wire, assertOriginal, send)
+          : send();
+      },
+      withControlledServiceWire(wire, assertOriginal, send) {
+        return controlledIngress
+          ? controlledIngress.withClosedServiceWire(wire, assertOriginal, send)
+          : send();
+      },
       observe: instanceProbe,
       metadataAdmission: metadataAdmission ?? undefined,
       physicalIsolation,
       bindPhysicalTurn: options.bindPhysicalTurn,
       withPhysicalTurn: options.withPhysicalTurn,
       pinPhysicalTurn,
-      brokerPhysical: { fencePreparedWire, postAddinAdmission },
+      brokerPhysical: {
+        fencePreparedWire,
+        postAddinAdmission: (...args) => {
+          // The fixed native metadata endpoint is a physical path too; it does
+          // not pass through McpClient._post.
+          controlledIngress?.observe(args[1]);
+          return postAddinAdmission(...args);
+        },
+      },
       metadata: { isAddinMetadata, addinMetadataSelector, matchMetadataEvidence },
       decodeAdmissionJson,
     },
@@ -1929,9 +1982,68 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     identifyForStartup,
   );
   initializing = false;
+  if (options.captureControlledIngress) {
+    if (!physicalIsolation)
+      fail("PHYSICAL_CAPABILITY_REQUIRED", "Controlled ingress needs the actual private native generation");
+    controlledIngress = (
+      runtimeRequire("./dist/node-adapters/execution/controlled-ingress-window") as
+        typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window")
+    ).createControlledIngressWindow(
+      () => {
+        assertCheckpointIdentity();
+        // Eligibility's fingerprint suppression must never cover this witness.
+        if (buildHash() !== codeHash)
+          fail("BUILD_CHANGED", "Controlled ingress executable bytes changed");
+        const binding = checkpointPhysicalBindingAfterOwnerCheck();
+        const runtime = binding.physicalRuntime;
+        return {
+          owner: { pid: marker.pid, birth: marker.birth, nonce: marker.nonce },
+          pins: {
+            buildHash: codeHash,
+            configHash,
+            generation: checkpointGeneration(binding),
+          },
+          native: {
+            pid: runtime.pid, birth: runtime.birth,
+            source: runtime.source, build: runtime.build,
+            instance: binding.generation.instance, epoch: binding.generation.epoch,
+          },
+        };
+      },
+      {
+        assertTransferClosed() {
+          assertCheckpointIdentity();
+          const snapshot = gate.snapshot();
+          const summary = state.summary();
+          if (!state.data.paused || snapshot.phase !== "PAUSED" ||
+              !snapshot.gateClosed || snapshot.activeOperations ||
+              snapshot.unresolved || summary.active || summary.blocked ||
+              summary.lease || activeContext() || busy() || rawPreparations ||
+              gate.resuming || lifetime.stopping)
+            fail("CONTROLLED_INGRESS_UNPROVEN", "Transfer requires the original idle paused broker gate");
+        },
+        assertActivatedIdle() {
+          assertCheckpointIdentity();
+          const snapshot = gate.snapshot();
+          const summary = state.summary();
+          if (state.data.paused || snapshot.phase !== "RUNNING" ||
+              snapshot.gateClosed || snapshot.activeOperations ||
+              snapshot.unresolved || summary.active || summary.blocked ||
+              summary.lease || activeContext() || busy() || rawPreparations ||
+              gate.resuming || lifetime.stopping)
+            fail("CONTROLLED_INGRESS_UNPROVEN", "Supported resume must finish before opening the diagnostic window");
+        },
+      },
+    );
+  }
 
   function assertCheckpointOwner() {
     resetFence();
+    assertCheckpointIdentity();
+  }
+  /** Owner/source check without reopening reset submissions. Private lifecycle
+   * handoff needs to inspect its new broker while the original marker is held. */
+  function assertCheckpointIdentity() {
     if (lifetime.stopping ||
         (!metadataEligibilityChecks && buildHash() !== codeHash) ||
         !same(readJson(lock), marker))
@@ -1960,7 +2072,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   /** Pure local binding read; callers must synchronously check the owner first.
    * The metadata compiler's pins() calls recheck() immediately before this port,
    * so repeating the entire installation fingerprint here adds no send fence. */
-  function checkpointGenerationAfterOwnerCheck() {
+  function checkpointPhysicalBindingAfterOwnerCheck() {
     if (!physicalIsolation)
       fail("SDK_QUIESCENCE_UNPROVEN", "Checkpoint reads require native physical capabilities");
     const id = randomUUID();
@@ -1973,7 +2085,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     // Binding validates the actual current private grant. This deliberately
     // creates no physical intent and submits no SDK request.
     const binding = pinPhysicalTurn(required(options.bindPhysicalTurn)(request)!, request, currentInstance());
-    const generation = checkpointGeneration(binding);
+    return binding;
+  }
+  function checkpointGenerationAfterOwnerCheck() {
+    const generation = checkpointGeneration(checkpointPhysicalBindingAfterOwnerCheck());
     return checkpointReads.pinGeneration(generation);
   }
   const checkpointAdmission = createDocumentUnlockAdmission(() => ({
@@ -6298,6 +6413,24 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
     pollMs: options.pollMs || 100,
   });
+  if (options.captureControlledIngress) {
+    const ingress = required(controlledIngress);
+    const window = ingress.sealForTransfer();
+    const { readControlledIngressIdentity } = runtimeRequire(
+      "./dist/node-adapters/execution/controlled-ingress-window",
+    ) as typeof import("../../packages/node-adapters/src/execution/controlled-ingress-window");
+    const ready = Object.freeze({
+      window,
+      identity: readControlledIngressIdentity(window),
+      activate() { ingress.open(); },
+    });
+    const result: unknown = options.captureControlledIngress(ready);
+    if (result !== undefined) {
+      void Promise.resolve(result).catch(() => {});
+      ingress.revoke();
+      fail("CONTROLLED_INGRESS_UNPROVEN", "Private ingress capture must be synchronous");
+    }
+  }
   diagnostics();
   return {
     close,

@@ -185,6 +185,12 @@ export interface BrokerTurnServices {
       sessionId?: string,
       options?: unknown,
     ): Promise<P.Response>;
+    withControlledStdoutWire?<T>(
+      wire: P.Rpc, assertOriginal: () => void, send: () => Promise<T>,
+    ): Promise<T>;
+    withControlledServiceWire?<T>(
+      wire: P.Rpc, assertOriginal: () => void, send: () => Promise<T>,
+    ): Promise<T>;
     observe(options: P.ProbeOptions): Promise<P.Instance>;
     metadataAdmission?: Admission | undefined;
     physicalIsolation: boolean;
@@ -1095,12 +1101,41 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
               "PHYSICAL_BINDING_MISSING",
               "Every physical product dispatch requires its complete original intent",
             );
-          const response = transport.physicalIsolation
-            ? await required(transport.withPhysicalTurn)(
+          const sendBound = () => transport.physicalIsolation
+            ? required(transport.withPhysicalTurn)(
                 required(bound),
                 sendPhysical,
               )
-            : await sendPhysical();
+            : sendPhysical();
+          const assertOriginal = () => {
+            // These functions check the original private domain authority,
+            // exact closed compiler scope and final Python/non-Python wire
+            // certificate. A job flag or metadataOnly alone is never enough.
+            assertMetadataPrepared(context.job, prepared, prepared.rpcId);
+            assertCreationPrepared(context.job, prepared, prepared.rpcId);
+            assertProtocolPrepared(context.job, prepared, prepared.rpcId);
+            assertStdoutPrepared(context.job, prepared, prepared.rpcId);
+            if (prepared.metadataProof) {
+              prepared.metadataProof.fence(prepared.outgoing);
+              guards.assertFrozenMetadataObservation(
+                context.job.request, prepared.metadataProof.wire,
+                required(ready?.metadataObservation),
+              );
+            }
+          };
+          const closedService = !!(context.job.documentMetadataRead ||
+            context.job.documentCreation || context.job.protocolMetadata ||
+            prepared.metadataProof);
+          const response = context.job.pythonStdout && transport.withControlledStdoutWire
+            ? await transport.withControlledStdoutWire(
+                prepared.outgoing, assertOriginal, sendBound,
+              )
+              : closedService && transport.withControlledServiceWire
+                ? await transport.withControlledServiceWire(
+                  prepared.metadataProof?.wire ?? prepared.outgoing,
+                  assertOriginal, sendBound,
+                )
+              : await sendBound();
           if (prepared.metadataProof) receivedAdmission = response;
           trace(context, {
             stage: "sdk-dispatch",
