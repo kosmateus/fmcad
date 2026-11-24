@@ -137,6 +137,21 @@ function rewriteEntry(
   f.originals.returned.bytes = encode(returned);
 }
 
+function rewriteFirstManifest(f: ReturnType<typeof fixture>, content: string) {
+  rewriteEntry(f, (entry) => {
+    setPath(
+      entry,
+      ["startupAudit", "scripts", "items", "0", "manifest", "content"],
+      content,
+    );
+    setPath(
+      entry,
+      ["startupAudit", "scripts", "items", "0", "manifest", "sha256"],
+      sha(Buffer.from(content, "utf8")),
+    );
+  });
+}
+
 function audit(f: ReturnType<typeof fixture>): BootstrapStartupAudit {
   return getPath(JSON.parse(f.originals.entry.bytes.toString()), [
     "startupAudit",
@@ -344,6 +359,77 @@ test("audit schema requires complete contiguous counts, exact fields and SDK enu
   );
 });
 
+test("startup SDK paths require valid UTF-8 and match native 65,536-byte bounds", () => {
+  const pathAtLimit = `C:\\${"é".repeat(32766)}a`;
+  const pathOverLimit = `C:\\${"é".repeat(32767)}`;
+  assert.equal(Buffer.byteLength(pathAtLimit, "utf8"), 65536);
+  assert.equal(Buffer.byteLength(pathOverLimit, "utf8"), 65537);
+
+  const valid = fixture();
+  rewriteEntry(valid, (entry) => {
+    setPath(
+      entry,
+      ["startupAudit", "preferences", "defaultPathForScriptsAndAddIns"],
+      pathAtLimit,
+    );
+    setPath(
+      entry,
+      ["startupAudit", "scripts", "items", "0", "folder"],
+      pathAtLimit,
+    );
+  });
+  const bound = bindBootstrapEntryEvidence(
+    valid.expected,
+    valid.originals,
+    valid.fork,
+  );
+  assert.ok(bound, "exact UTF-8 byte limit with legal Unicode remains valid");
+  assert.equal(
+    bound.startupAudit.preferences.defaultPathForScriptsAndAddIns,
+    pathAtLimit,
+  );
+  assert.equal(bound.startupAudit.scripts.items[0]?.folder, pathAtLimit);
+
+  for (const field of [
+    ["preferences", "defaultPathForScriptsAndAddIns"],
+    ["scripts", "items", "0", "folder"],
+  ]) {
+    const tooLong = fixture();
+    rewriteEntry(tooLong, (entry) => {
+      setPath(entry, ["startupAudit", ...field], pathOverLimit);
+    });
+    assert.equal(
+      bindBootstrapEntryEvidence(
+        tooLong.expected,
+        tooLong.originals,
+        tooLong.fork,
+      ),
+      null,
+      `${field.join(".")} over the native UTF-8 byte limit`,
+    );
+
+    for (const surrogate of [0xd800, 0xdc00]) {
+      const loneSurrogate = fixture();
+      rewriteEntry(loneSurrogate, (entry) => {
+        setPath(
+          entry,
+          ["startupAudit", ...field],
+          `C:\\fixture\\${String.fromCharCode(surrogate)}`,
+        );
+      });
+      assert.equal(
+        bindBootstrapEntryEvidence(
+          loneSurrogate.expected,
+          loneSurrogate.originals,
+          loneSurrogate.fork,
+        ),
+        null,
+        `${field.join(".")} with an unpaired surrogate`,
+      );
+    }
+  }
+});
+
 test("manifest raw bytes require exact UTF-8 hash, strict JSON object and per-manifest budget", () => {
   const invalid: Array<(entry: MutableRecord) => void> = [
     (entry) => {
@@ -427,6 +513,151 @@ test("manifest raw bytes require exact UTF-8 hash, strict JSON object and per-ma
       null,
     );
   }
+});
+
+test("manifest strict JSON follows native arbitrary-integer and finite-float semantics without rewriting raw bytes", () => {
+  const hugeInteger = "9".repeat(400);
+  const validContent =
+    `{"name":"café","id":9007199254740993,"huge":${hugeInteger},` +
+    '"finite":1e308,"underflow":1e-400,"enabled":true,"empty":null}';
+  const invalidContents = [
+    '{"n":1e999}',
+    '{"id":1,"id":2}',
+    '{"text":"\\x"}',
+    '{"text":"\\uZZZZ"}',
+    '{"n":NaN}',
+    '{"n":Infinity}',
+    '{"n":-Infinity}',
+  ];
+  const nativeCheck = spawnSync(
+    "python3",
+    [
+      "-I",
+      "-B",
+      "-c",
+      [
+        "import json, math, sys",
+        "def reject(value): raise ValueError('non-finite constant')",
+        "def finite_float(value):",
+        "    number = float(value)",
+        "    if not math.isfinite(number): raise ValueError('non-finite float')",
+        "    return number",
+        "def unique_object(pairs):",
+        "    result = {}",
+        "    for key, value in pairs:",
+        "        if key in result: raise ValueError('duplicate key')",
+        "        result[key] = value",
+        "    return result",
+        "def valid(text):",
+        "    try:",
+        "        value = json.loads(text, parse_constant=reject, parse_float=finite_float, object_pairs_hook=unique_object)",
+        "        return type(value) is dict",
+        "    except (ValueError, RecursionError):",
+        "        return False",
+        "print(json.dumps([valid(text) for text in json.load(sys.stdin)]))",
+      ].join("\n"),
+    ],
+    {
+      input: JSON.stringify([validContent, ...invalidContents]),
+      encoding: "utf8",
+    },
+  );
+  assert.equal(nativeCheck.status, 0, nativeCheck.stderr);
+  assert.deepEqual(JSON.parse(nativeCheck.stdout), [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
+
+  const valid = fixture();
+  rewriteFirstManifest(valid, validContent);
+  const bound = bindBootstrapEntryEvidence(
+    valid.expected,
+    valid.originals,
+    valid.fork,
+  );
+  assert.ok(
+    bound,
+    "native-valid large integers and finite floats are accepted",
+  );
+  assert.equal(
+    bound.startupAudit.scripts.items[0]?.manifest.content,
+    validContent,
+    "the exact manifest text and its original hash input remain unchanged",
+  );
+  assert.equal(
+    bound.startupAudit.scripts.items[0]?.manifest.sha256,
+    sha(Buffer.from(validContent, "utf8")),
+  );
+
+  const depthAtLimit = fixture();
+  const nestedAtLimit = `{"value":${"[".repeat(127)}0${"]".repeat(127)}}`;
+  rewriteFirstManifest(depthAtLimit, nestedAtLimit);
+  assert.ok(
+    bindBootstrapEntryEvidence(
+      depthAtLimit.expected,
+      depthAtLimit.originals,
+      depthAtLimit.fork,
+    ),
+    "the existing 128-level JSON nesting budget remains accepted",
+  );
+  const tooDeep = fixture();
+  rewriteFirstManifest(
+    tooDeep,
+    `{"value":${"[".repeat(128)}0${"]".repeat(128)}}`,
+  );
+  assert.equal(
+    bindBootstrapEntryEvidence(
+      tooDeep.expected,
+      tooDeep.originals,
+      tooDeep.fork,
+    ),
+    null,
+    "opaque validation retains the existing nesting limit",
+  );
+
+  for (const content of invalidContents) {
+    const invalid = fixture();
+    rewriteFirstManifest(invalid, content);
+    assert.equal(
+      bindBootstrapEntryEvidence(
+        invalid.expected,
+        invalid.originals,
+        invalid.fork,
+      ),
+      null,
+      content,
+    );
+  }
+
+  const unsafeOuterInteger = fixture();
+  const entryText = unsafeOuterInteger.originals.entry.bytes
+    .toString()
+    .replace('"version":2', '"version":2,"outer":9007199254740993');
+  unsafeOuterInteger.originals.entry.bytes = Buffer.from(entryText, "utf8");
+  const returned = JSON.parse(
+    unsafeOuterInteger.originals.returned.bytes.toString(),
+  ) as MutableRecord;
+  setPath(
+    returned,
+    ["entry", "sha256"],
+    sha(unsafeOuterInteger.originals.entry.bytes),
+  );
+  unsafeOuterInteger.originals.returned.bytes = encode(returned);
+  assert.equal(
+    bindBootstrapEntryEvidence(
+      unsafeOuterInteger.expected,
+      unsafeOuterInteger.originals,
+      unsafeOuterInteger.fork,
+    ),
+    null,
+    "the outer receipt stays protocol-safe-integer strict",
+  );
 });
 
 test("audit budget rejects oversized complete audit and does not truncate rows", () => {
