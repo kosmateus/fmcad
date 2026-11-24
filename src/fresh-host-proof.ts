@@ -346,6 +346,9 @@ function controlledHostProofFactory(
   } = load(
     "./dist/node-adapters/execution/bootstrap-entry-evidence",
   ) as typeof import("../packages/node-adapters/src/execution/bootstrap-entry-evidence");
+  const { decodeAdmissionJson } = load(
+    "./dist/node-adapters/execution/admission-json",
+  ) as typeof import("../packages/node-adapters/src/execution/admission-json");
   let revoked = false;
   const reject = (): never => {
     throw new FreshHostProofError("BOOTSTRAP_CLOSURE_UNPROVEN");
@@ -422,8 +425,9 @@ function controlledHostProofFactory(
         const runtime = expected.descriptor.physicalRuntime;
         if (
           !same(c.process, { pid: runtime.pid, birth: runtime.birth }) ||
-          c.installedSource !== runtime.source ||
-          c.installedBuild !== runtime.build ||
+          (!owned &&
+            (c.installedSource !== runtime.source ||
+              c.installedBuild !== runtime.build)) ||
           intent.nonce !== c.nonce ||
           !same(intent.process, c.process) ||
           intent.installed.source !== c.installedSource ||
@@ -445,6 +449,27 @@ function controlledHostProofFactory(
             ? bindBootstrapEntryEvidence(intent, originals, forkEntry)
             : null;
         if (!bound) return reject();
+        if (owned) {
+          if (!ownedOriginals(originals)) return reject();
+          // PhysicalAuthority/AdmissionReceiver identify their protocol from
+          // the exact provision. Installed native code is separately bound by
+          // the original controller, full manifest and audited intent above.
+          const admission = decodeAdmissionJson(
+            new TextDecoder("utf-8", { fatal: true }).decode(
+              originals.provision.bytes,
+            ),
+          );
+          if (
+            !admission ||
+            typeof admission !== "object" ||
+            Array.isArray(admission) ||
+            !("source" in admission) ||
+            admission.source !== runtime.source ||
+            !("build" in admission) ||
+            admission.build !== runtime.build
+          )
+            return reject();
+        }
         const startupData = startup.readControlledStartupInputs(
           originalStartupInputs!,
         );

@@ -202,7 +202,8 @@ function fixture(
               ...old,
               instance: "old-instance",
               epoch: "old-epoch",
-              source: "broker-not-addon",
+              source: "7".repeat(40),
+              build: "8".repeat(64),
             }),
           );
           const provision = f.file(
@@ -210,7 +211,8 @@ function fixture(
             encode({
               ...f.fresh,
               ...lifecycle.generation,
-              source: "broker-not-addon",
+              source: "7".repeat(40),
+              build: "8".repeat(64),
             }),
           );
           const provisionReceipt = f.file(
@@ -328,8 +330,8 @@ test("owned original controller composes through MAC-reference port and provider
     physicalRuntime: {
       ...f.fresh,
       version: "2.0.0 fixture",
-      source: f.native.installedSource,
-      build: f.native.installedBuild,
+      source: "7".repeat(40),
+      build: "8".repeat(64),
     },
   };
   const publication: NativeRuntimeActivationPublication = {

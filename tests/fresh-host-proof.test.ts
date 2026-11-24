@@ -496,7 +496,9 @@ async function controlledFixture(options: { autorunRoot?: string } = {}) {
   };
 }
 
-async function ownedControlledFixture() {
+async function ownedControlledFixture(
+  options: { runtimeSource?: string; runtimeBuild?: string } = {},
+) {
   const f = await controlledFixture();
   const original = await f.ports.controller.readOriginalIntent(
     f.ports.transcript,
@@ -518,7 +520,8 @@ async function ownedControlledFixture() {
     bytes: encode({
       ...original.process,
       ...generation,
-      source: "broker-source-not-native",
+      source: "7".repeat(40),
+      build: "8".repeat(64),
     }),
   };
   const intent: BootstrapOwnedEntryIntentV3 = {
@@ -570,6 +573,12 @@ async function ownedControlledFixture() {
     identity: "original-provision",
   });
   f.signed.push({ path: "/original/provision", sha256: hash(provision.bytes) });
+  const runtimeSource = options.runtimeSource ?? "7".repeat(40);
+  const runtimeBuild = options.runtimeBuild ?? "8".repeat(64);
+  f.preparationContext.descriptor.physicalRuntime.source = runtimeSource;
+  f.preparationContext.descriptor.physicalRuntime.build = runtimeBuild;
+  f.ports.reader.pins.source = runtimeSource;
+  f.ports.reader.pins.build = runtimeBuild;
   const ports: OwnedControlledHostProofPorts = {
     ...f.ports,
     controller: {
@@ -612,6 +621,23 @@ test("owned v3 host proof rejects an unsigned original provision", async () => {
     code: "BOOTSTRAP_CLOSURE_UNPROVEN",
   });
 });
+
+for (const fault of ["source", "build"] as const)
+  test(`owned v3 requires runtime ${fault} from original provision, not installed identity`, async () => {
+    const f = await ownedControlledFixture(
+      fault === "source"
+        ? { runtimeSource: "9".repeat(40) }
+        : { runtimeBuild: "9".repeat(64) },
+    );
+    await assert.rejects(f.factory.prepare(), {
+      code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+    });
+    assert.equal(
+      f.calls(),
+      0,
+      "do not consult activation for mismatched original admission pins",
+    );
+  });
 
 test("manual host proof cannot accept the owned v3 controller", async () => {
   const f = await ownedControlledFixture();
