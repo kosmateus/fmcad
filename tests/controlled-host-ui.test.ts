@@ -220,7 +220,7 @@ test("a rejected asynchronous lease fence fails closed without an unhandled reje
   await setImmediate();
   await assert.rejects(ui.prepareExactHost(input), /retry|replay/);
 });
-test("normal staged adapter imports and decodes without workspace packages", () => {
+test("normal staged UI adapters import and decode without workspace packages", () => {
   const root = path.resolve(__dirname, "../..");
   const staged = path.join(root, "dist/src/dist/node-adapters/execution");
   assert.ok(
@@ -239,6 +239,8 @@ test("normal staged adapter imports and decodes without workspace packages", () 
         "-e",
         `
       const {readControlledHostUiCapture}=require(${JSON.stringify(loaded)});
+      const legacy=require(${JSON.stringify(path.join(temp, "execution", "controlled-legacy-ui.js"))});
+      if(typeof legacy.createControlledLegacyHostUi!=="function") process.exit(4);
       const v=${JSON.stringify(fixture())};
       if(readControlledHostUiCapture(JSON.stringify(v),v.view.process,false).view.hwnd!=="555") process.exit(3);
     `,

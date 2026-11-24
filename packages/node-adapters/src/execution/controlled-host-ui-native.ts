@@ -3,7 +3,7 @@
  * freshly re-read exact host. No keyboard, global focus, coordinates or SDK.
  * Trusted OS/vendor accessibility and operator exclusivity are assumptions.
  */
-export const controlledHostUiNative = String.raw`
+export const controlledHostUiNativeFiles = String.raw`
 $ErrorActionPreference = "Stop"
 [Console]::InputEncoding = New-Object Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -88,6 +88,10 @@ function Lock-Original($reference, $private=$true) {
  }
  if ($private) { [ControlledHostWindow]::Private($file) }
 }
+`;
+export const controlledHostUiNative =
+  controlledHostUiNativeFiles +
+  String.raw`
 $self = Get-Process -Id $PID
 if ($self.Path -ine $r.powershell) {
  throw "Pinned UI helper executable bytes/path differ"

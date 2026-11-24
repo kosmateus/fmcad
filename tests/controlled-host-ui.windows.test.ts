@@ -494,7 +494,11 @@ test(
         Buffer.from(
           JSON.stringify({
             kind: "fmcad-bootstrap-entry-intent",
-            version: 1,
+            version: 2,
+            executable: {
+              path: value.meta.executable,
+              sha256: sha(fs.readFileSync(mapped(value.meta.executable))),
+            },
             nonce: "1".repeat(32),
             purpose: "isolated-stdout-v1",
             engineVersion: 2,
