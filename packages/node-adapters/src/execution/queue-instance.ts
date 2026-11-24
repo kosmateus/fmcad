@@ -230,7 +230,19 @@ export function createQueueInstance(
     recoverCurrent?: () => void,
     /** Administrative admission only; runs under recovery.lock, never recovery. */
     assertReclaimable?: (owner: unknown) => void,
+    /** A separately admitted administrative owner was never an SDK owner.
+     * Archive its lock without replacing the last actual SDK owner reference. */
+    options: { readonly preserveSdkOwnerHead?: true } = {},
   ) {
+    const preserveSdkOwnerHead = options.preserveSdkOwnerHead === true;
+    if (
+      preserveSdkOwnerHead &&
+      (typeof assertReclaimable !== "function" || recoverCurrent !== undefined)
+    )
+      fail(
+        "INVALID_RECLAIM_GUARD",
+        "Administrative head preservation requires a live guard and no recovery",
+      );
     const directoryFd = assertReclaimable
       ? fs.openSync(
           dir,
@@ -399,12 +411,15 @@ export function createQueueInstance(
         const lifecycle = isRecord(lifecycleValue) ? lifecycleValue : {};
         // A bounded local rejection never replaces the last actual SDK owner.
         assertGuarded();
-        if (!(
-          lifecycle["stage"] === "rejected" &&
-          lifecycle["code"] === "NORMAL_RESTART_UNPROVEN" &&
-          lifecycle["probeNotSubmitted"] === true &&
-          lifecycle["safeToRecover"] === true
-        ))
+        if (
+          !preserveSdkOwnerHead &&
+          !(
+            lifecycle["stage"] === "rejected" &&
+            lifecycle["code"] === "NORMAL_RESTART_UNPROVEN" &&
+            lifecycle["probeNotSubmitted"] === true &&
+            lifecycle["safeToRecover"] === true
+          )
+        )
           durable(path.join(operationDir, "broker-reclaimed-head.json"), {
             ownerReference: {
               path: reclaimedFile,
