@@ -7,6 +7,20 @@ The result explicitly carries `startupProven: false`.
 
 ## Original inputs and held boundary
 
+### Controlled native runtime trust
+
+The owned path uses the explicit `controlled-native-runtime-v1` trust model:
+Autodesk Fusion and the fully pinned owned native add-in are trusted. It retains
+process/executable/source, admission/owner/generation, queue, original receipt,
+MAC and compiler/wire fences. `execute_python` still executes inside Fusion.
+
+Observed startup/source roots and their original held witnesses are not proof
+of every possible cold loader root. The host assurance is bound into the proof
+hash and reports `globalCleanHost: NOT_PROVEN`; it is data, not a grant or a claim
+of a globally clean process. The bounded stdout compiler still rejects imports,
+SDK/file access and unsupported source. Legacy manual/all-roots contracts are
+separate and do not become fallbacks for this path.
+
 Supply the existing `ControlledFusionLaunchPins` and `owned` lifecycle originals:
 the exact database identity, original committed handoff request/completion,
 old provision SHA, complete installed inventory, and fresh original output paths.
@@ -32,7 +46,7 @@ canonical paths, ACLs, file identity, SHA and retained original handles are
 checked independently, including immediately before resume.
 
 The original references alone do **not** prove discovery completeness. ROOT
-supplies its real startup-input witness and complete discovery-closure fence via
+supplies its real startup-input witness and observed source-scope fence via
 the synchronous, void-returning `assertBeforeResumeOriginals()` callback. It also
 supplies `assertHeld()` for the genuine lifecycle window. Both callbacks run at
 the parent continuation boundaries and other native-operation fences. A promise,
