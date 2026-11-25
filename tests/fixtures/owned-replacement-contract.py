@@ -223,7 +223,10 @@ def scenario(case):
                "json": json, "held": [], "owned_state": None, "owned_replacement": None,
                "owned_database_handles": [], "open_file": open_file,
                "identity": identity, "check_acl": lambda *a, **k: None,
-               "digest": sha, "dead": dead, "inventory": inventory, "private_directory": lambda _: None,
+                # OS absence is this fixture's fake boundary. Real historical
+                # policy/kernel-inventory behavior has separate integration cases.
+                "digest": sha, "dead": dead, "owned_historical_dead": dead,
+                "inventory": inventory, "private_directory": lambda _: None,
                "file_bytes": lambda file, *args: (Path(file).read_bytes(), native_identity),
                "publish": publish, "process_birth": lambda _: "40",
                "owned_checkpoint": lambda *args: None, "require_profile": lambda _: None,

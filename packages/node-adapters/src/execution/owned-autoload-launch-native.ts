@@ -1,5 +1,6 @@
 import { normalObserverFusionLaunchNative } from "./controlled-fusion-launch-native";
 import { ownedIdentityPreparationNative } from "./owned-identity-preparation-native";
+import { ownedHistoricalProcessNative } from "./owned-historical-process-native";
 
 /**
  * Separate private program, reusing the reviewed original native DB/handoff/CAS
@@ -24,7 +25,12 @@ export function ownedAutoloadLaunchNative() {
     throw new Error("Pinned native extension boundary changed");
   const program = base.replace(
     marker,
-    ownedIdentityPreparationNative + "\n" + ownedExtension + marker,
+    ownedIdentityPreparationNative +
+      "\n" +
+      ownedHistoricalProcessNative +
+      "\n" +
+      ownedExtension +
+      marker,
   );
   const beforeResume =
     "        if normal:\n            owned_release_database()\n";
@@ -198,8 +204,8 @@ def owned_replacement_chain(n, steps):
                 or prior["source"] != n["source"] or prior["build"] != n["build"]
                 or not owned_retirement_matches(retired, process)):
             raise ValueError("Original owned replacement chain differs")
-        dead(before_process)
-        dead(process)
+        owned_historical_dead(before_process)
+        owned_historical_dead(process)
         seen_nonces.add(receipt["nonce"])
         seen_processes.add((process["pid"], process["birth"]))
         previous, previous_ref = after, receipt["after"]
@@ -254,8 +260,8 @@ def owned_replacement_before(n):
         raise ValueError("Original owned replacement chain differs")
     # Neither a retired registry entry nor the unregistered created process may
     # still be alive. No registration, handoff or UNKNOWN settlement is written.
-    dead({"pid": prior["pid"], "birth": prior["birth"]})
-    dead(process)
+    owned_historical_dead({"pid": prior["pid"], "birth": prior["birth"]})
+    owned_historical_dead(process)
     return {"registeredBefore": prior, "provisionIdentity": current_identity}
 
 def owned_profile(raw, planned):
