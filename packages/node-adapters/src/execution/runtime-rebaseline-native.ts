@@ -472,6 +472,43 @@ function bootstrapReferences(
   return refs;
 }
 
+function verifiedRetirement(retired: Record<string, unknown>): boolean {
+  const keys = Object.keys(retired).sort().join();
+  // Keep the historical compact normal-close receipt as a distinct schema.
+  // Current observations cannot acquire that claim by adding forceUsed:false.
+  if (keys === "exited,forceUsed,oldBirth,oldPid,oldPidPresent")
+    return retired["forceUsed"] === false;
+  const image =
+    typeof retired["oldExe"] === "string" &&
+    retired["oldExe"].length > 0 &&
+    typeof retired["oldExeSha256"] === "string" &&
+    /^[a-f0-9]{64}$/.test(retired["oldExeSha256"]);
+  if (
+    keys ===
+    "exited,forceUsed,observation,oldBirth,oldExe,oldExeSha256,oldPid,oldPidPresent,windowClass,windowHandle,windowVisibleAtInput"
+  )
+    return (
+      image &&
+      retired["forceUsed"] === false &&
+      retired["observation"] ===
+        "exact-original-process-signaled-after-one-WM_CLOSE" &&
+      retired["windowVisibleAtInput"] === true &&
+      typeof retired["windowClass"] === "string" &&
+      retired["windowClass"].length > 0 &&
+      Number.isSafeInteger(retired["windowHandle"]) &&
+      Number(retired["windowHandle"]) > 0
+    );
+  return (
+    keys ===
+      "exited,observation,oldBirth,oldExe,oldExeSha256,oldPid,oldPidPresent,originalTerminationOutcome,processControl" &&
+    image &&
+    retired["observation"] ===
+      "exact-original-provision-process-verified-dead" &&
+    retired["processControl"] === 0 &&
+    retired["originalTerminationOutcome"] === "UNKNOWN_UNCHANGED"
+  );
+}
+
 function originalFacts(
   options: NativeRuntimeRebaselineOptions,
   expectedBootstrap?: readonly NativeRebaselineReference[],
@@ -495,7 +532,7 @@ function originalFacts(
   if (
     retired["exited"] !== true ||
     retired["oldPidPresent"] !== false ||
-    retired["forceUsed"] !== false ||
+    !verifiedRetirement(retired) ||
     !Number.isSafeInteger(retired["oldPid"]) ||
     Number(retired["oldPid"]) <= 0 ||
     typeof retired["oldBirth"] !== "string" ||

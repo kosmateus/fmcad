@@ -274,6 +274,132 @@ test("native fence barrier binds immutable source refs and compiles exact transm
   }
 });
 
+test("current death observation enters the real authority barrier without inventing a normal-close result", async () => {
+  const f = fixture();
+  const bytes = Buffer.from(
+    JSON.stringify({
+      exited: true,
+      oldPidPresent: false,
+      oldPid: 11,
+      oldBirth: "old-birth",
+      oldExe: "C:\\Fusion.exe",
+      oldExeSha256: "e".repeat(64),
+      observation: "exact-original-provision-process-verified-dead",
+      processControl: 0,
+      originalTerminationOutcome: "UNKNOWN_UNCHANGED",
+    }),
+  );
+  fs.writeFileSync(f.options.originalEvidence.retiredProcess.path, bytes);
+  f.options.originalEvidence.retiredProcess.sha256 = sha(bytes);
+  try {
+    const ports = createNativeRuntimeRebaselineAuthorityPorts(f.options);
+    await ports.withExclusiveBarrier(
+      f.request,
+      "publish-or-resume",
+      async (lease) => {
+        await lease.verifyCurrentBarrier();
+        const original = fs.readFileSync(
+          f.options.originalEvidence.retiredProcess.path,
+        );
+        assert.deepEqual(original, bytes);
+        assert.equal(
+          JSON.parse(original.toString()).originalTerminationOutcome,
+          "UNKNOWN_UNCHANGED",
+        );
+        assert.equal("forceUsed" in JSON.parse(original.toString()), false);
+        const native = JSON.parse(fs.readFileSync(f.state, "utf8"));
+        assert(
+          native.binding.intentReferences.some(
+            (ref: { path: string; sha256: string }) =>
+              ref.path === f.options.originalEvidence.retiredProcess.path &&
+              ref.sha256 === sha(bytes),
+          ),
+        );
+      },
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("current normal-close schema remains accepted separately from death-only observation", async () => {
+  const f = fixture();
+  const bytes = Buffer.from(
+    JSON.stringify({
+      exited: true,
+      oldPidPresent: false,
+      oldPid: 11,
+      oldBirth: "old-birth",
+      forceUsed: false,
+      oldExe: "C:\\Fusion.exe",
+      oldExeSha256: "e".repeat(64),
+      observation: "exact-original-process-signaled-after-one-WM_CLOSE",
+      windowVisibleAtInput: true,
+      windowClass: "Qt-fixture",
+      windowHandle: 123,
+    }),
+  );
+  fs.writeFileSync(f.options.originalEvidence.retiredProcess.path, bytes);
+  f.options.originalEvidence.retiredProcess.sha256 = sha(bytes);
+  try {
+    const ports = createNativeRuntimeRebaselineAuthorityPorts(f.options);
+    await ports.withExclusiveBarrier(
+      f.request,
+      "publish-or-resume",
+      async (lease) => {
+        await lease.verifyCurrentBarrier();
+        assert.deepEqual(
+          fs.readFileSync(f.options.originalEvidence.retiredProcess.path),
+          bytes,
+        );
+      },
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("malformed or mixed death observations refuse before native BEGIN", () => {
+  const invalid: Record<string, unknown>[] = [
+    { forceUsed: false },
+    { windowHandle: 123 },
+    { processControl: false },
+    { originalTerminationOutcome: "SUCCESS" },
+    { observation: "invented" },
+    { oldExe: "" },
+    { oldExeSha256: "wrong" },
+    { oldPidPresent: true },
+  ];
+  for (const change of invalid) {
+    const f = fixture();
+    const bytes = Buffer.from(
+      JSON.stringify({
+        exited: true,
+        oldPidPresent: false,
+        oldPid: 11,
+        oldBirth: "old-birth",
+        oldExe: "C:\\Fusion.exe",
+        oldExeSha256: "e".repeat(64),
+        observation: "exact-original-provision-process-verified-dead",
+        processControl: 0,
+        originalTerminationOutcome: "UNKNOWN_UNCHANGED",
+        ...change,
+      }),
+    );
+    fs.writeFileSync(f.options.originalEvidence.retiredProcess.path, bytes);
+    f.options.originalEvidence.retiredProcess.sha256 = sha(bytes);
+    try {
+      assert.throws(() =>
+        createNativeRuntimeRebaselineAuthorityPorts(f.options),
+      );
+      assert.equal(fs.existsSync(f.trace), false);
+      assert.equal(fs.existsSync(f.state), false);
+    } finally {
+      f.cleanup();
+    }
+  }
+});
+
 test("changed original evidence refuses before any native process/fence", () => {
   const f = fixture();
   try {
