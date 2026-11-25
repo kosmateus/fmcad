@@ -24,6 +24,7 @@
     "tests/controlled-fusion-bootstrap.test.ts",
     "tests/owned-fusion-bootstrap.test.ts",
     "tests/owned-identity-window.test.ts",
+    "tests/owned-bootstrap-intent.test.ts",
     "tests/owned-historical-process.test.ts",
     "tests/controlled-fusion-launch.windows.test.ts",
     "tests/normal-observer-launch.test.ts",

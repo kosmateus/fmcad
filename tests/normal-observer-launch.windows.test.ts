@@ -234,6 +234,11 @@ assert intent["profile"]["sha256"]==hashlib.sha256(profile_path.read_bytes()).he
 assert intent["provision"]["sha256"]==hashlib.sha256(raw).hexdigest()
 assert intent["provision"]["path"]==os.environ["FUSION_MCP_ADMISSION_PROVISION"]
 assert intent["generation"]=={"instance":provision["instance"],"epoch":provision["epoch"]}
+assert set(intent["receipts"])=={"directory","entry","returned"}
+assert Path(intent["receipts"]["directory"]).is_dir()
+assert intent["receipts"]["entry"]!=intent["receipts"]["returned"]
+for receipt_name in (intent["receipts"]["entry"],intent["receipts"]["returned"]):
+ assert receipt_name==Path(receipt_name).name and receipt_name==receipt_name.lower() and receipt_name.endswith(".json")
 assert [r["runOnStartup"] for r in profile["loadedScripts"]]==[False,True]
 correct=(intent["process"]=={"pid":os.getpid(),"birth":birth} and provision["pid"]`,
   )
@@ -414,8 +419,8 @@ test(
         profile: f.profile,
         profileBackup: `${f.private}\\profile-before.json`,
         intent: `${f.private}\\UNUSED-intent.json`,
-        entry: `${f.receipts}\\UNUSED-entry.json`,
-        returned: `${f.receipts}\\UNUSED-return.json`,
+        entry: `${f.receipts}\\unused-entry.json`,
+        returned: `${f.receipts}\\unused-return.json`,
         receiptDirectory: f.receipts,
         launchAttempt: `${f.private}\\attempt.json`,
         launchJournal: `${f.private}\\journal.json`,

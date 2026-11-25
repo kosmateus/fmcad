@@ -371,7 +371,8 @@ def owned_checkpoint(phase, process=None, provision=None):
             "provision": {"path": p["paths"]["provision"], "sha256": provision_file["sha256"]},
             "generation": owned_state["next"],
             "receipts": {"directory": p["paths"]["receiptDirectory"],
-                         "entry": p["paths"]["entry"], "returned": p["paths"]["returned"]},
+                         "entry": Path(p["paths"]["entry"]).name,
+                         "returned": Path(p["paths"]["returned"]).name},
         }
         owned_intent = publish(p["paths"]["intent"], json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8"))
         if snapshot(p["paths"]["intent"]) != owned_intent:
