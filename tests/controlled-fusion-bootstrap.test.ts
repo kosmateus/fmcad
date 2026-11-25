@@ -175,19 +175,9 @@ test("normal staged controller imports and runs without workspace packages or te
     path.resolve("src/controlled-fusion-bootstrap.js"),
     path.join(destination, "controlled-fusion-bootstrap.js"),
   );
-  for (const name of [
-    "controlled-fusion-launch",
-    "controlled-fusion-launch-native",
-    "owned-autoload-launch-native",
-    "owned-identity-preparation-native",
-    "bootstrap-entry-evidence",
-    "fusion-bootstrap-autoload",
-    "admission-json",
-  ])
-    fs.copyFileSync(
-      path.resolve(`src/dist/node-adapters/execution/${name}.js`),
-      path.join(adapters, `${name}.js`),
-    );
+  fs.cpSync(path.resolve("src/dist/node-adapters/execution"), adapters, {
+    recursive: true,
+  });
   assert.equal(fs.existsSync(path.join(root, "packages")), false);
   const isolated = createRequire(path.join(root, "entry.cjs"))(
     "./src/controlled-fusion-bootstrap.js",
