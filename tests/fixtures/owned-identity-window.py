@@ -99,7 +99,7 @@ def run(binding_seconds, fault=None):
         "owned_identity_attempt": prepare, "process_handle": process_handle,
         "owned_identity_state": None, "owned_identity_check_image": lambda: None,
         "owned_identity_log_snapshot": lambda *args: (b"ready", 0, "log"),
-        "owned_identity_log_event": lambda *args: "ready",
+        "owned_identity_log_event": lambda *args: "changed" if fault == "log" else "ready",
         "snapshot": lambda name: refs[name], "canonical": lambda *args: None,
         "process_birth": birth,
         "image": lambda handle: "Identity.exe" if handle == 3 else "Fusion.exe",
@@ -116,7 +116,7 @@ def run(binding_seconds, fault=None):
             "error": error, "trace": trace}
 
 results = [run(delay) for delay in (0, 35, 90)]
-results += [run(35, fault) for fault in ("identity", "binding", "process", "source")]
+results += [run(35, fault) for fault in ("identity", "binding", "process", "source", "log")]
 for result in results:
     if result["fault"] is None:
         assert result["error"] is None and result["resume"] == 1, result

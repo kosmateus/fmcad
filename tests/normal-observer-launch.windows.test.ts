@@ -208,6 +208,14 @@ time.sleep(0.1)
 `;
 const ownedChildProgram = childProgram
   .replace(
+    'raw=Path(os.environ["FUSION_MCP_ADMISSION_PROVISION"]).read_bytes()',
+    'first_read_unix_ns=time.time_ns()\nraw=Path(os.environ["FUSION_MCP_ADMISSION_PROVISION"]).read_bytes()',
+  )
+  .replace(
+    '"correctFirstRead":correct,',
+    '"correctFirstRead":correct,"firstReadUnixNs":str(first_read_unix_ns),',
+  )
+  .replace(
     "import ctypes,json,os,sqlite3,sys,time",
     "import ctypes,hashlib,json,os,sqlite3,sys,time",
   )
@@ -561,6 +569,39 @@ print(json.dumps({"refs":out}))
         assertBeforeResumeOriginals() {},
       };
       return { f, pins: ownedPins, report, identityFixture };
+    }
+    function preserveSuspendedUnknown(
+      fixture: ReturnType<typeof ownedFixture>,
+      nonce: string,
+    ) {
+      const { f, pins, report } = fixture;
+      const journal = fs.readFileSync(mapped(pins.paths.launchJournal));
+      const original = JSON.parse(journal.toString("utf8"));
+      assert.equal(original.phase, "created-suspended");
+      assert.equal(original.nonce, nonce);
+      assert.equal(original.isolation, "NOT_PROVEN");
+      assert.equal(fs.existsSync(mapped(report)), false);
+      fs.writeFileSync(
+        mapped(`${f.private}\\identity-negative-evidence.json`),
+        JSON.stringify({
+          productionOutcome: "UNKNOWN",
+          productionResume: false,
+          reportAbsentBeforeCleanup: true,
+          journalSha256: sha(journal),
+          process: original.process,
+        }),
+        { flag: "wx" },
+      );
+      const cleanup = native(config, cleanupSuspendedFixture, {
+        root: f.root,
+        journal: pins.paths.launchJournal,
+        journalSha256: sha(journal),
+        executable: config.nativePython,
+        executableSha256: config.nativePythonSha256,
+        nonce,
+        report,
+      });
+      assert.equal(cleanup["productionOutcome"], "UNKNOWN-preserved");
     }
     await t.test(
       "owned Identity events in one millisecond retain PID binding and byte order before launch",
@@ -1155,8 +1196,13 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
             10000n +
           116444736000000000n;
         assert.ok(
-          eventFileTime < BigInt(result.process.birth),
-          "Identity preparation event must precede Fusion CreateProcess/ResumeThread",
+          eventFileTime >= BigInt(result.process.birth),
+          "Identity is prepared after suspended creation, not before slow binding",
+        );
+        assert.ok(
+          BigInt(first["firstReadUnixNs"] as string) / 1_000_000n >=
+            BigInt(Date.parse(result.identityPreparation.logEvent.timestamp)),
+          "Identity preparation must precede the resumed child's first read",
         );
         assert.equal(first["correctFirstRead"], true);
         assert.equal(first["pid"], result.process.pid);
@@ -1258,10 +1304,11 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
       },
     );
     await t.test(
-      "owned launch refuses Identity PID and pre-birth log-event drift without creating Fusion",
+      "owned launch refuses Identity PID and pre-birth log-event drift without resuming its suspended fixture",
       async () => {
         for (const [index, mode] of ["wrong-pid", "pre-birth"].entries()) {
-          const { f, pins, report, identityFixture } = ownedFixture();
+          const fixture = ownedFixture();
+          const { f, pins, report, identityFixture } = fixture;
           Object.assign(pins.identity, { preparationTimeoutMs: 3000 });
           fs.writeFileSync(identityFixture.mappedModeFile, mode, "utf8");
           await assert.rejects(
@@ -1283,51 +1330,47 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
           assert.equal(unknown.state, "UNKNOWN");
           assert.equal(fs.existsSync(mapped(pins.paths.identityAttempt)), true);
           assert.equal(fs.existsSync(mapped(pins.paths.identityJournal)), true);
-          assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
           assert.equal(fs.existsSync(mapped(report)), false);
+          preserveSuspendedUnknown(
+            fixture,
+            String(index + 3)
+              .repeat(32)
+              .slice(0, 32),
+          );
         }
       },
     );
     await t.test(
-      "owned launch rechecks Identity log evidence at the pre-create fence",
+      "owned launch performs the bound parent checkpoint before preparing Identity",
       async () => {
         const { f, pins, report, identityFixture } = ownedFixture();
-        let changed = false;
+        let observedBound = false;
         const adapter = createOwnedAutoloadLaunchAdapter({
           ...pins,
           assertBeforeResumeOriginals() {
-            if (changed || !fs.existsSync(identityFixture.mappedLogFile))
-              return;
-            const current = fs.readFileSync(
-              identityFixture.mappedLogFile,
-              "utf8",
+            if (observedBound) return;
+            if (!fs.existsSync(mapped(pins.paths.intent))) return;
+            assert.equal(
+              fs.existsSync(mapped(pins.paths.identityAttempt)),
+              false,
             );
-            if (!current.includes("SSO Server is ready")) return;
-            fs.writeFileSync(
-              identityFixture.mappedLogFile,
-              current.replace(
-                "SSO Server is ready",
-                "SSO Server readiness evidence drifted",
-              ),
-              "utf8",
+            assert.equal(
+              fs.existsSync(mapped(pins.paths.identityJournal)),
+              false,
             );
-            changed = true;
+            assert.equal(fs.existsSync(identityFixture.mappedLogFile), false);
+            observedBound = true;
           },
         });
-        await assert.rejects(
-          adapter.launchAfterDeath(f.old, "4".repeat(32)),
-          (error: unknown) =>
-            error instanceof ControlledFusionNativeError &&
-            error.action === "owned-autoload-launch" &&
-            error.outcome === "UNKNOWN",
-        );
-        assert.equal(changed, true);
+        const result = await adapter.launchAfterDeath(f.old, "4".repeat(32));
+        assert.equal(observedBound, true);
         const preparation = JSON.parse(
           fs.readFileSync(mapped(pins.paths.identityPreparation), "utf8"),
         );
         assert.equal(preparation.state, "PREPARATION_ONLY_NOT_SERVICE_READY");
-        assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
-        assert.equal(fs.existsSync(mapped(report)), false);
+        const first = native(config, waitReport, { report });
+        assert.equal(first["correctFirstRead"], true);
+        assert.equal(first["pid"], result.process.pid);
       },
     );
     await t.test(
@@ -1415,7 +1458,6 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
           1,
         );
         for (const pins of [firstFixture.pins, retryPins]) {
-          assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
           assert.equal(fs.existsSync(mapped(pins.paths.identityAttempt)), true);
           assert.equal(fs.existsSync(mapped(pins.paths.identityJournal)), true);
           assert.equal(
@@ -1423,6 +1465,11 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
             true,
           );
         }
+        preserveSuspendedUnknown(firstFixture, "6".repeat(32));
+        preserveSuspendedUnknown(
+          { ...secondFixture, pins: retryPins },
+          "7".repeat(32),
+        );
       },
     );
     await t.test(
