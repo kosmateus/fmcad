@@ -26,47 +26,22 @@ export function ownedAutoloadLaunchNative() {
     marker,
     ownedIdentityPreparationNative + "\n" + ownedExtension + marker,
   );
-  const createMarker = "    class Startup(ctypes.Structure):";
-  if (program.split(createMarker).length !== 2)
-    throw new Error("Pinned native owned CreateProcess boundary changed");
-  const beforeFusionCreate =
-    '    identity_preparation = owned_identity_attempt(source, request["old"], profile, request["nonce"], paths, attempt, closure)\n';
-  const withIdentity = program.replace(
-    createMarker,
-    beforeFusionCreate + createMarker,
-  );
   const beforeResume =
     "        if normal:\n            owned_release_database()\n";
-  if (withIdentity.split(beforeResume).length !== 2)
+  if (program.split(beforeResume).length !== 2)
     throw new Error("Pinned native resume boundary changed");
   const result =
     '        result = {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}';
-  if (withIdentity.split(result).length !== 2)
+  if (program.split(result).length !== 2)
     throw new Error("Pinned native owned result boundary changed");
-  const finalResumeFence =
-    "    owned_inputs_fence()\n    require_profile(profile)\n";
-  if (withIdentity.split(finalResumeFence).length !== 2)
-    throw new Error("Pinned native owned final-resume fence changed");
-  const beforeCreateFence =
-    '        owned_checkpoint("ready-before-create")\n        owned_fence(source)\n        require_profile(profile)\n';
-  if (withIdentity.split(beforeCreateFence).length !== 2)
-    throw new Error("Pinned native owned pre-create fence changed");
-  return withIdentity
+  return program
     .replace(
       beforeResume,
-      "        if normal:\n            owned_final_resume(created, source, profile, bound)\n            owned_release_database()\n",
+      "        if normal:\n            identity_preparation = owned_final_resume(created, source, profile, bound, attempt, closure)\n            owned_release_database()\n",
     )
     .replace(
       result,
       '        result = {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}\n        if normal:\n            result.update({"identityAttempt": identity_preparation["attempt"],\n                           "identityJournal": identity_preparation["journal"],\n                           "identityPreparationFile": identity_preparation["terminal"],\n                           "identityPreparation": {key: identity_preparation["preparation"][key]\n                               for key in ("state", "origin", "process", "executable", "sha256",\n                                           "version", "arguments", "commandLine", "inputIdleCode", "logEvent")}})\n            result["intent"] = owned_intent',
-    )
-    .replace(
-      finalResumeFence,
-      "    owned_inputs_fence()\n    owned_identity_assert_current()\n    require_profile(profile)\n",
-    )
-    .replace(
-      beforeCreateFence,
-      '        owned_checkpoint("ready-before-create")\n        owned_fence(source)\n        owned_identity_assert_current()\n        require_profile(profile)\n',
     );
 }
 
@@ -408,7 +383,7 @@ def owned_checkpoint(phase, process=None, provision=None):
         raise ValueError("Original parent owned boundary refused; no resume")
     owned_inputs_fence()
 
-def owned_final_resume(created, source, profile, bound):
+def owned_final_resume(created, source, profile, bound, launch_attempt, closure):
     value = {"pid": created.pid, "birth": process_birth(created.process)}
     if (image(created.process).casefold() != p["executable"].casefold()
             or k.WaitForSingleObject(created.process, 0) != 0x102):
@@ -422,4 +397,20 @@ def owned_final_resume(created, source, profile, bound):
     intent_value = strict(base64.b64decode(owned_intent["base64"]))
     if intent_value["process"] != value:
         raise ValueError("Original owned intent process differs")
+    # Identity exits after about 31 idle seconds without a product connection.
+    # Prepare it once, after the potentially slow parent/source/binding fences,
+    # while Fusion is still suspended. Never restart an expired attempt.
+    identity_preparation = owned_identity_attempt(
+        source, request["old"], profile, request["nonce"],
+        p["paths"], launch_attempt, closure,
+    )
+    owned_identity_assert_current()
+    require_profile(profile)
+    if (snapshot(p["paths"]["provision"]) != bound["provision"]
+            or snapshot(p["paths"]["intent"]) != owned_intent
+            or process_birth(created.process) != value["birth"]
+            or image(created.process).casefold() != p["executable"].casefold()
+            or k.WaitForSingleObject(created.process, 0) != 0x102):
+        raise ValueError("Original owned binding/process changed during Identity preparation")
+    return identity_preparation
 `;

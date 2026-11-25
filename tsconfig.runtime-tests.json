@@ -23,6 +23,7 @@
     "tests/bootstrap-entry-evidence.test.ts",
     "tests/controlled-fusion-bootstrap.test.ts",
     "tests/owned-fusion-bootstrap.test.ts",
+    "tests/owned-identity-window.test.ts",
     "tests/controlled-fusion-launch.windows.test.ts",
     "tests/normal-observer-launch.test.ts",
     "tests/normal-observer-launch.windows.test.ts",
