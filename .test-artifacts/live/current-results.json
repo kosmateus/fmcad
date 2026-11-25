@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-25T16:16:04Z",
+  "generatedAt": "2026-11-25T20:48:36Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -35897,5 +35897,120 @@
       "physicalBackend27182": "EXCLUDED",
       "actualCadResult": "NOTRUN"
     }
-  ]
+  ],
+  "eighthOwnedStartupControllerUnknown": {
+    "reportedAt": "2026-11-25T20:48:36Z",
+    "terminalObservedAt": null,
+    "terminalTimeNote": "Exact terminal wall-clock time was not preserved in the available result; reportedAt is the report update time.",
+    "recordType": "eighth-controlled-owned-startup-controller-unknown",
+    "model": "openai/gpt-6-luna",
+    "variant": "default",
+    "attempt": {
+      "runId": "4b340aa2-dfb1-4a13-bc39-f985f964991c",
+      "operatorId": "root-parallel-live-4b340aa2-dfb1-4a13-bc39-f985f964991c",
+      "commandId": "sh_2145aec06001E33k2l97JGhQcO",
+      "commandExitCode": 1,
+      "watcher": "failure confirmed",
+      "phase": "owned-cold-bootstrap",
+      "error": "ERR_ASSERTION",
+      "outcome": "UNKNOWN",
+      "authority": "NONE"
+    },
+    "bootstrapSummary": {
+      "state": "UNKNOWN",
+      "process": null,
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held"
+      ],
+      "meaning": "The final bootstrap summary has process=null. Its original embedded stdout independently records checkpoints proving that process creation was reached; process=null does not mean Fusion was never created."
+    },
+    "originalCheckpointEvidence": {
+      "checkpointSequence": [
+        "ready-before-create",
+        "created-before-bind",
+        "bound-before-resume"
+      ],
+      "recordedFusionProcess": {
+        "pid": 10676,
+        "birth": "134401126511370060"
+      },
+      "provisionAndIntentReferences": "Present at bound-before-resume; their exact reference hashes and identities remain in the original bootstrap-result.json.",
+      "lastFailureBoundary": "final_resume → owned_identity_assert_current → process_handle",
+      "sanitizedError": "OSError 87: Process identity unavailable",
+      "interpretation": "Creation is recorded in the original checkpoints; successful resume, READY, SDK calls, and the process current state are not established. Actual state of PID/birth 10676/134401126511370060 remains UNKNOWN/unverified; no claim that it is currently alive or dead."
+    },
+    "separateOutcomes": {
+      "brokerHandle": "NOT_CREATED",
+      "sourceWorkers": "JOINED",
+      "nativeOutcome": "UNCHANGED",
+      "meaning": "These broker/source-worker/native results are separate from the Fusion process checkpoint and do not negate its recorded creation."
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 8,
+        "denominator": 8,
+        "meaning": "Seven prior terminal controller UNKNOWN outcomes preserved, plus this eighth terminal UNKNOWN."
+      },
+      "separateHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "meaning": "One distinct earlier harness interruption; excluded from controller attempts."
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "planSha256": "f7fdb19b50574aab203f330c7f25e8d0f74e48b74d7e23c65d834d486dd4b996",
+      "brokerSource": "7b6a67e9a96c55628f06e5334cd860bd58bd109c",
+      "brokerBuild": "05b4bd9f73a7867bb61bf5fbdf5a6d20dfd57b69a54b15d48d388c40377873db",
+      "brokerFullDist": "3bf4685e6e19258177aa42f0613856ef0fe2e8c37438d7ee8547dcaf52ba8846",
+      "physicalNative": "0a5f3b31eb16a8591e77531fb0895cdffcec3ce5 (unchanged per source evidence)",
+      "testedBackend": "autodesk-fusion-mcp; no new SDK qualification claimed"
+    },
+    "evidencePaths": {
+      "bootstrapResult": "/tmp/opencode/root-parallel-owned-operator-20261125/live-qualification-4b340aa2-dfb1-4a13-bc39-f985f964991c/bootstrap-result.json",
+      "failure": "/tmp/opencode/root-parallel-owned-operator-20261125/live-qualification-4b340aa2-dfb1-4a13-bc39-f985f964991c/failure.json",
+      "brokerHandleAbsence": "/tmp/opencode/root-parallel-owned-operator-20261125/live-qualification-4b340aa2-dfb1-4a13-bc39-f985f964991c/broker-handle-absence.json",
+      "sourceWorkersCleanup": "/tmp/opencode/root-parallel-owned-operator-20261125/live-qualification-4b340aa2-dfb1-4a13-bc39-f985f964991c/source-workers-cleanup.json",
+      "directoryResult": "/tmp/opencode/root-parallel-owned-operator-20261125/live-qualification-4b340aa2-dfb1-4a13-bc39-f985f964991c/directory-result.json",
+      "plan": "/tmp/opencode/root-parallel-owned-plan-20261125/operator-plan.LIVE-QUALIFICATION.private.json"
+    },
+    "evidenceSha256": {
+      "bootstrapResult": "abe7e561b4c6c4a1c896b77ed0197420342279ec0e26845833eaa6a280a99fe7",
+      "failure": "e54bd32e0b8076ff4364c2933d2215cbbc0d7ff6eca1c14335bbe37b43da6542",
+      "brokerHandleAbsence": "86269c42541a09f09165898e335289d66aa7fd0a7631646bfc19597b7648974c",
+      "sourceWorkersCleanup": "2705dd5d5c13d26bf89ade03e8717508b7c353775ee82a25c40296d958158e4c",
+      "directoryResult": "33ca0e94d685ff1c7ff3e1537954ba3a1b52829badfcb0fef6e17a95e36eb3aa",
+      "plan": "f7fdb19b50574aab203f330c7f25e8d0f74e48b74d7e23c65d834d486dd4b996"
+    },
+    "scope": {
+      "reportOnly": true,
+      "canonicalResultsJsonAndMarkdownOnly": true,
+      "noSourceOrRuntimeChanges": true,
+      "noSDKOrProbesOrQueueOrNativeProcessControl": true,
+      "noRecoveryOrReplayOrCleanup": true,
+      "noDiscord": true
+    }
+  }
 }
