@@ -34,16 +34,16 @@ static class IdentityFixture {
         string mode = File.Exists(modeFile) ? File.ReadAllText(modeFile).Trim() : "normal";
         DateTime now = DateTime.UtcNow;
         Write(image, pid, now, "Starting Autodesk IDSDK Server process (Version: " + version + " Config: x64-Release Elevated: No File: " + image + ")");
-        Thread.Sleep(10);
-        Write(image, pid, DateTime.UtcNow, "Command line arguments: " + (mode == "wrong-args" ? args + " --unexpected" : args));
-        Thread.Sleep(10);
+        if (mode != "coarse-timestamp") Thread.Sleep(10);
+        Write(image, pid, mode == "coarse-timestamp" ? now : DateTime.UtcNow, "Command line arguments: " + (mode == "wrong-args" ? args + " --unexpected" : args));
+        if (mode != "coarse-timestamp") Thread.Sleep(10);
         if (mode.StartsWith("delayed-ready-", StringComparison.Ordinal)) {
             int delay = Int32.Parse(mode.Substring("delayed-ready-".Length), CultureInfo.InvariantCulture);
             Thread.Sleep(delay);
         }
         if (mode != "missing-event") {
             int readyPid = mode == "wrong-pid" ? pid + 1 : pid;
-            DateTime readyTime = mode == "pre-birth" ? DateTime.UtcNow.AddMinutes(-1) : DateTime.UtcNow;
+            DateTime readyTime = mode == "pre-birth" ? DateTime.UtcNow.AddMinutes(-1) : mode == "coarse-timestamp" ? now : DateTime.UtcNow;
             Write(image, readyPid, readyTime, "SSO Server is ready");
         }
         Form form = new Form();

@@ -562,6 +562,38 @@ print(json.dumps({"refs":out}))
       };
       return { f, pins: ownedPins, report, identityFixture };
     }
+    await t.test(
+      "owned Identity events in one millisecond retain PID binding and byte order before launch",
+      async () => {
+        const { f, pins, report, identityFixture } = ownedFixture();
+        fs.writeFileSync(identityFixture.mappedModeFile, "coarse-timestamp");
+        const result = await createOwnedAutoloadLaunchAdapter(
+          pins,
+        ).launchAfterDeath(f.old, "f".repeat(32));
+        const first = native(config, waitReport, { report });
+        const lines = fs
+          .readFileSync(identityFixture.mappedLogFile, "utf8")
+          .split(/\r?\n/)
+          .filter((line) =>
+            /Starting Autodesk IDSDK Server process |Command line arguments: |SSO Server is ready/.test(
+              line,
+            ),
+          );
+        assert.equal(lines.length, 3);
+        assert.equal(new Set(lines.map((line) => line.slice(0, 24))).size, 1);
+        assert.equal(
+          result.identityPreparation.process.pid,
+          JSON.parse(Buffer.from(result.identityJournal.bytes).toString("utf8"))
+            .process.pid,
+        );
+        assert.equal(first["correctFirstRead"], true);
+        assert.equal(first["pid"], result.process.pid);
+        assert.equal(
+          result.identityPreparation.state,
+          "PREPARATION_ONLY_NOT_SERVICE_READY",
+        );
+      },
+    );
     function originalFiles(paths: string[]): ControlledFile[] {
       const rows = native(
         config,

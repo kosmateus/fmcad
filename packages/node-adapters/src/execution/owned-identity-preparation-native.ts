@@ -140,9 +140,11 @@ def owned_identity_log_event(raw, base_offset, process):
             arguments = event
         elif message == "SSO Server is ready":
             ready = event
+    # Log timestamps have millisecond precision; serialized byte offsets prove
+    # strict event order even when two or all three timestamps share one tick.
     if (start is None or arguments is None or ready is None
             or not start[0] < arguments[0] < ready[0]
-            or not start[1] < arguments[1] < ready[1]):
+            or not start[1] <= arguments[1] <= ready[1]):
         return None
     return {
         "pid": process["pid"], "timestamp": ready[2][:24],
