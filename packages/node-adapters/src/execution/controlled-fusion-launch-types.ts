@@ -23,6 +23,11 @@ export interface ControlledLaunchPaths {
   readonly transcript: string;
   readonly provision: string;
 }
+export interface OwnedAutoloadLaunchPaths extends ControlledLaunchPaths {
+  readonly identityAttempt: string;
+  readonly identityJournal: string;
+  readonly identityPreparation: string;
+}
 export interface ControlledLaunch {
   readonly process: ControlledProcess;
   readonly journal: ControlledFile;
@@ -39,6 +44,30 @@ export interface OwnedAutoloadLaunch extends ControlledLaunch {
   readonly coldProcess: ControlledFile;
   readonly intent: ControlledFile;
   readonly startupProven: false;
+}
+/** Bounded process preparation evidence; it is not Identity service readiness. */
+export interface OwnedIdentityPreparation {
+  readonly state: "PREPARATION_ONLY_NOT_SERVICE_READY";
+  readonly origin: "spawned" | "adopted";
+  readonly process: ControlledProcess;
+  readonly executable: string;
+  readonly sha256: string;
+  readonly version: string;
+  readonly arguments: readonly string[];
+  readonly commandLine: string;
+  readonly inputIdleCode: 0;
+  readonly logEvent: {
+    readonly pid: number;
+    readonly timestamp: string;
+    readonly offset: number;
+    readonly line: string;
+  };
+}
+export interface OwnedIdentityPreparationLaunch extends OwnedAutoloadLaunch {
+  readonly identityAttempt: ControlledFile;
+  readonly identityJournal: ControlledFile;
+  readonly identityPreparationFile: ControlledFile;
+  readonly identityPreparation: OwnedIdentityPreparation;
 }
 export interface ControlledNativeAdapter {
   readonly paths: ControlledLaunchPaths;

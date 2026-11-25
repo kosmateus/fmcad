@@ -15,6 +15,7 @@ import { ownedAutoloadLaunchNative } from "../packages/node-adapters/src/executi
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import { normalObserverNativeBootstrap } from "../packages/node-adapters/src/execution/controlled-fusion-launch-native";
 import type { ControlledFile } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
+import { compileControlledIdentityFixture } from "./fixtures/controlled-identity-fixture";
 
 const sha = (data: Uint8Array) =>
   createHash("sha256").update(data).digest("hex");
@@ -288,6 +289,46 @@ finally:
  if thread:k.CloseHandle(thread)
  k.CloseHandle(h)
 `;
+const stopIdentityFixture = String.raw`
+import ctypes,json,sys
+from ctypes import wintypes as w
+from pathlib import Path
+r=json.load(sys.stdin);image=str(Path(r["executable"]).resolve(strict=True))
+Path(r["stop"]).write_text("fixture requests normal self-exit",encoding="utf-8")
+class Entry(ctypes.Structure):
+ _fields_=[("size",w.DWORD),("usage",w.DWORD),("pid",w.DWORD),("heap",ctypes.c_size_t),
+           ("module",w.DWORD),("threads",w.DWORD),("parent",w.DWORD),("priority",w.LONG),
+           ("flags",w.DWORD),("name",w.WCHAR*260)]
+k=ctypes.WinDLL("kernel32",use_last_error=True)
+k.CreateToolhelp32Snapshot.argtypes=[w.DWORD,w.DWORD];k.CreateToolhelp32Snapshot.restype=w.HANDLE
+k.Process32FirstW.argtypes=[w.HANDLE,ctypes.POINTER(Entry)];k.Process32NextW.argtypes=[w.HANDLE,ctypes.POINTER(Entry)]
+k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+k.QueryFullProcessImageNameW.argtypes=[w.HANDLE,w.DWORD,w.LPWSTR,ctypes.POINTER(w.DWORD)]
+k.WaitForSingleObject.argtypes=[w.HANDLE,w.DWORD];k.CloseHandle.argtypes=[w.HANDLE]
+snap=k.CreateToolhelp32Snapshot(2,0)
+if snap in(None,ctypes.c_void_p(-1).value):raise OSError("Fixture process inventory unavailable")
+found=[]
+try:
+ entry=Entry();entry.size=ctypes.sizeof(entry);ok=k.Process32FirstW(snap,ctypes.byref(entry))
+ while ok:
+  if entry.name.casefold()==Path(image).name.casefold():
+   h=k.OpenProcess(0x1000|0x00100000,False,entry.pid)
+   if h:
+    try:
+     n=w.DWORD(32768);text=ctypes.create_unicode_buffer(n.value)
+     if k.QueryFullProcessImageNameW(h,0,text,ctypes.byref(n)) and text.value.casefold()==image.casefold():
+      found.append((entry.pid,h));h=None
+    finally:
+     if h:k.CloseHandle(h)
+  ok=k.Process32NextW(snap,ctypes.byref(entry))
+finally:k.CloseHandle(snap)
+try:
+ for pid,h in found:
+  if k.WaitForSingleObject(h,15000)!=0:raise TimeoutError("Owned Identity fixture did not exit normally")
+ print(json.dumps({"fixture":"Identity","pids":[pid for pid,_ in found],"forceTermination":False}))
+finally:
+ for _,h in found:k.CloseHandle(h)
+`;
 
 test(
   "normal observer real Windows suspended child (NO Fusion, SDK or live provision writes)",
@@ -308,6 +349,17 @@ test(
         ),
         hash,
       );
+    const identityFixtures: ReturnType<
+      typeof compileControlledIdentityFixture
+    >[] = [];
+    let identityFixtureIndex = 0;
+    t.after(() => {
+      for (const identityFixture of identityFixtures)
+        native(config, stopIdentityFixture, {
+          executable: identityFixture.executable,
+          stop: identityFixture.stopFile,
+        });
+    });
     function fixture(
       withWindow = false,
       admissionSource = config.source,
@@ -411,6 +463,11 @@ test(
         "7".repeat(40),
         "8".repeat(64),
       );
+      const identityFixture = compileControlledIdentityFixture(
+        f.private,
+        `FmcadControlledIdentityFixture-${++identityFixtureIndex}.exe`,
+      );
+      identityFixtures.push(identityFixture);
       const values = native(
         config,
         String.raw`
@@ -447,8 +504,25 @@ print(json.dumps({"refs":out}))
         bytes: fs.readFileSync(mapped(v.nativePath)),
       }));
       const { normal, ...base } = pins;
+      const paths = {
+        ...base.paths,
+        identityAttempt: `${f.private}\\identity-attempt.json`,
+        identityJournal: `${f.private}\\identity-journal.json`,
+        identityPreparation: `${f.private}\\identity-preparation.json`,
+      };
       const ownedPins: OwnedAutoloadLaunchPins = {
         ...base,
+        paths,
+        identity: {
+          executable: identityFixture.executable,
+          mappedExecutable: identityFixture.mappedExecutable,
+          sha256: identityFixture.sha256,
+          version: identityFixture.version,
+          arguments: identityFixture.arguments,
+          logFile: identityFixture.logFile,
+          mappedLogFile: identityFixture.mappedLogFile,
+          preparationTimeoutMs: 5000,
+        },
         installedBuild: bootstrapInstalledFilesDigest(config.installedFiles),
         arguments: ["-I", "-S", "-B", "-c", ownedChildProgram, report],
         originalPaths: [
@@ -457,6 +531,9 @@ print(json.dumps({"refs":out}))
         ],
         mappedOriginalPaths: {
           ...base.mappedOriginalPaths,
+          ...Object.fromEntries(
+            Object.values(paths).map((name) => [name, mapped(name)]),
+          ),
           ...Object.fromEntries(
             refs.map((v) => [v.nativePath, mapped(v.nativePath)]),
           ),
@@ -469,7 +546,7 @@ print(json.dumps({"refs":out}))
         },
         assertBeforeResumeOriginals() {},
       };
-      return { f, pins: ownedPins, report };
+      return { f, pins: ownedPins, report, identityFixture };
     }
     function originalFiles(paths: string[]): ControlledFile[] {
       const rows = native(
@@ -844,6 +921,56 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
         const adapter = createOwnedAutoloadLaunchAdapter(pins);
         const result = await adapter.launchAfterDeath(f.old, "e".repeat(32));
         const first = native(config, waitReport, { report });
+        assert.deepEqual(
+          Object.keys(
+            JSON.parse(Buffer.from(result.journal.bytes).toString("utf8")),
+          ).sort(),
+          [
+            "attempt",
+            "executable",
+            "executableSha256",
+            "isolation",
+            "kind",
+            "nonce",
+            "phase",
+            "process",
+            "threadId",
+          ].sort(),
+          "owned launch journal keeps the existing closed consumer contract",
+        );
+        assert.equal(
+          result.identityPreparation.state,
+          "PREPARATION_ONLY_NOT_SERVICE_READY",
+        );
+        assert.equal(result.identityPreparation.origin, "spawned");
+        assert.equal(
+          result.identityPreparation.process.pid,
+          JSON.parse(Buffer.from(result.identityJournal.bytes).toString("utf8"))
+            .process.pid,
+        );
+        const identityRecord = JSON.parse(
+          Buffer.from(result.identityPreparationFile.bytes).toString("utf8"),
+        );
+        assert.equal(identityRecord.authority, "NONE");
+        assert.equal(
+          identityRecord.state,
+          "PREPARATION_ONLY_NOT_SERVICE_READY",
+        );
+        const identityAttempt = JSON.parse(
+          Buffer.from(result.identityAttempt.bytes).toString("utf8"),
+        );
+        assert.equal(
+          identityAttempt.fusionLaunchAttempt.nativePath,
+          pins.paths.launchAttempt,
+        );
+        const eventFileTime =
+          BigInt(Date.parse(result.identityPreparation.logEvent.timestamp)) *
+            10000n +
+          116444736000000000n;
+        assert.ok(
+          eventFileTime < BigInt(result.process.birth),
+          "Identity preparation event must precede Fusion CreateProcess/ResumeThread",
+        );
         assert.equal(first["correctFirstRead"], true);
         assert.equal(first["pid"], result.process.pid);
         assert.equal(first["birth"], result.process.birth);
@@ -883,6 +1010,232 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
           adapter.launchAfterDeath(f.old, "f".repeat(32)),
           /replayed/,
         );
+      },
+    );
+    await t.test(
+      "two owned launches wait for one delayed pinned Identity process instead of cold-spawning twice",
+      async () => {
+        const firstFixture = ownedFixture();
+        const secondFixture = ownedFixture();
+        fs.writeFileSync(
+          firstFixture.identityFixture.mappedModeFile,
+          "delayed-ready-800",
+          "utf8",
+        );
+        const secondPins: OwnedAutoloadLaunchPins = {
+          ...secondFixture.pins,
+          identity: firstFixture.pins.identity,
+        };
+        const [first, second] = await Promise.all([
+          createOwnedAutoloadLaunchAdapter(firstFixture.pins).launchAfterDeath(
+            firstFixture.f.old,
+            "1".repeat(32),
+          ),
+          createOwnedAutoloadLaunchAdapter(secondPins).launchAfterDeath(
+            secondFixture.f.old,
+            "2".repeat(32),
+          ),
+        ]);
+        assert.deepEqual(
+          first.identityPreparation.process,
+          second.identityPreparation.process,
+        );
+        assert.deepEqual(
+          [
+            first.identityPreparation.origin,
+            second.identityPreparation.origin,
+          ].sort(),
+          ["adopted", "spawned"],
+        );
+        assert.equal(
+          first.identityPreparation.state,
+          "PREPARATION_ONLY_NOT_SERVICE_READY",
+        );
+        const lines = fs
+          .readFileSync(firstFixture.identityFixture.mappedLogFile, "utf8")
+          .trim()
+          .split(/\r?\n/);
+        assert.equal(
+          lines.filter((line) =>
+            line.includes("Starting Autodesk IDSDK Server process"),
+          ).length,
+          1,
+        );
+        const started = Date.parse(lines[0]!.slice(0, 24));
+        const ready = Date.parse(
+          lines
+            .find((line) => line.includes("SSO Server is ready"))!
+            .slice(0, 24),
+        );
+        assert.ok(ready - started >= 500, "fixture readiness was delayed");
+      },
+    );
+    await t.test(
+      "owned launch refuses Identity PID and pre-birth log-event drift without creating Fusion",
+      async () => {
+        for (const [index, mode] of ["wrong-pid", "pre-birth"].entries()) {
+          const { f, pins, report, identityFixture } = ownedFixture();
+          Object.assign(pins.identity, { preparationTimeoutMs: 3000 });
+          fs.writeFileSync(identityFixture.mappedModeFile, mode, "utf8");
+          await assert.rejects(
+            createOwnedAutoloadLaunchAdapter(pins).launchAfterDeath(
+              f.old,
+              String(index + 3)
+                .repeat(32)
+                .slice(0, 32),
+            ),
+            (error: unknown) =>
+              error instanceof ControlledFusionNativeError &&
+              error.action === "owned-autoload-launch" &&
+              error.outcome === "UNKNOWN",
+          );
+          const unknown = JSON.parse(
+            fs.readFileSync(mapped(pins.paths.identityPreparation), "utf8"),
+          );
+          assert.equal(unknown.authority, "NONE");
+          assert.equal(unknown.state, "UNKNOWN");
+          assert.equal(fs.existsSync(mapped(pins.paths.identityAttempt)), true);
+          assert.equal(fs.existsSync(mapped(pins.paths.identityJournal)), true);
+          assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
+          assert.equal(fs.existsSync(mapped(report)), false);
+        }
+      },
+    );
+    await t.test(
+      "owned launch rechecks Identity log evidence at the pre-create fence",
+      async () => {
+        const { f, pins, report, identityFixture } = ownedFixture();
+        let changed = false;
+        const adapter = createOwnedAutoloadLaunchAdapter({
+          ...pins,
+          assertBeforeResumeOriginals() {
+            if (changed || !fs.existsSync(identityFixture.mappedLogFile))
+              return;
+            const current = fs.readFileSync(
+              identityFixture.mappedLogFile,
+              "utf8",
+            );
+            if (!current.includes("SSO Server is ready")) return;
+            fs.writeFileSync(
+              identityFixture.mappedLogFile,
+              current.replace(
+                "SSO Server is ready",
+                "SSO Server readiness evidence drifted",
+              ),
+              "utf8",
+            );
+            changed = true;
+          },
+        });
+        await assert.rejects(
+          adapter.launchAfterDeath(f.old, "4".repeat(32)),
+          (error: unknown) =>
+            error instanceof ControlledFusionNativeError &&
+            error.action === "owned-autoload-launch" &&
+            error.outcome === "UNKNOWN",
+        );
+        assert.equal(changed, true);
+        const preparation = JSON.parse(
+          fs.readFileSync(mapped(pins.paths.identityPreparation), "utf8"),
+        );
+        assert.equal(preparation.state, "PREPARATION_ONLY_NOT_SERVICE_READY");
+        assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
+        assert.equal(fs.existsSync(mapped(report)), false);
+      },
+    );
+    await t.test(
+      "mapped Identity hash drift refuses before owned native dispatch or process creation",
+      async () => {
+        const { f, pins, report, identityFixture } = ownedFixture();
+        const adapter = createOwnedAutoloadLaunchAdapter(pins);
+        fs.appendFileSync(identityFixture.mappedExecutable, "drift");
+        await assert.rejects(
+          adapter.launchAfterDeath(f.old, "5".repeat(32)),
+          (error: unknown) =>
+            error instanceof ControlledFusionNativeError &&
+            /Identity bytes differ before spawn/.test(error.stderr),
+        );
+        assert.equal(fs.existsSync(mapped(pins.paths.identityAttempt)), false);
+        assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
+        assert.equal(fs.existsSync(mapped(report)), false);
+      },
+    );
+    await t.test(
+      "partial Identity UNKNOWN keeps receipts and a fresh owned request adopts instead of respawning",
+      async () => {
+        const firstFixture = ownedFixture();
+        const secondFixture = ownedFixture();
+        Object.assign(firstFixture.pins.identity, {
+          preparationTimeoutMs: 1000,
+        });
+        fs.writeFileSync(
+          firstFixture.identityFixture.mappedModeFile,
+          "missing-event",
+          "utf8",
+        );
+        await assert.rejects(
+          createOwnedAutoloadLaunchAdapter(firstFixture.pins).launchAfterDeath(
+            firstFixture.f.old,
+            "6".repeat(32),
+          ),
+          (error: unknown) =>
+            error instanceof ControlledFusionNativeError &&
+            error.action === "owned-autoload-launch" &&
+            error.outcome === "UNKNOWN",
+        );
+        const firstUnknown = JSON.parse(
+          fs.readFileSync(
+            mapped(firstFixture.pins.paths.identityPreparation),
+            "utf8",
+          ),
+        );
+        assert.equal(firstUnknown.state, "UNKNOWN");
+        assert.equal(
+          fs.existsSync(mapped(firstFixture.pins.paths.identityAttempt)),
+          true,
+        );
+        assert.equal(
+          fs.existsSync(mapped(firstFixture.pins.paths.identityJournal)),
+          true,
+        );
+        const retryPins: OwnedAutoloadLaunchPins = {
+          ...secondFixture.pins,
+          identity: firstFixture.pins.identity,
+        };
+        await assert.rejects(
+          createOwnedAutoloadLaunchAdapter(retryPins).launchAfterDeath(
+            secondFixture.f.old,
+            "7".repeat(32),
+          ),
+          (error: unknown) =>
+            error instanceof ControlledFusionNativeError &&
+            error.action === "owned-autoload-launch" &&
+            error.outcome === "UNKNOWN",
+        );
+        const retryUnknown = JSON.parse(
+          fs.readFileSync(mapped(retryPins.paths.identityPreparation), "utf8"),
+        );
+        const retryJournal = JSON.parse(
+          fs.readFileSync(mapped(retryPins.paths.identityJournal), "utf8"),
+        );
+        assert.equal(retryUnknown.state, "UNKNOWN");
+        assert.equal(retryJournal.origin, "adopted");
+        assert.deepEqual(retryUnknown.process, firstUnknown.process);
+        assert.equal(
+          fs
+            .readFileSync(firstFixture.identityFixture.mappedLogFile, "utf8")
+            .split("Starting Autodesk IDSDK Server process").length - 1,
+          1,
+        );
+        for (const pins of [firstFixture.pins, retryPins]) {
+          assert.equal(fs.existsSync(mapped(pins.paths.launchJournal)), false);
+          assert.equal(fs.existsSync(mapped(pins.paths.identityAttempt)), true);
+          assert.equal(fs.existsSync(mapped(pins.paths.identityJournal)), true);
+          assert.equal(
+            fs.existsSync(mapped(pins.paths.identityPreparation)),
+            true,
+          );
+        }
       },
     );
     await t.test(

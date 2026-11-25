@@ -1,4 +1,5 @@
 import { normalObserverFusionLaunchNative } from "./controlled-fusion-launch-native";
+import { ownedIdentityPreparationNative } from "./owned-identity-preparation-native";
 
 /**
  * Separate private program, reusing the reviewed original native DB/handoff/CAS
@@ -21,23 +22,51 @@ export function ownedAutoloadLaunchNative() {
   const marker = "\ntry:\n    if str(Path(sys.executable)";
   if (base.split(marker).length !== 2)
     throw new Error("Pinned native extension boundary changed");
-  const program = base.replace(marker, ownedExtension + marker);
+  const program = base.replace(
+    marker,
+    ownedIdentityPreparationNative + "\n" + ownedExtension + marker,
+  );
+  const createMarker = "    class Startup(ctypes.Structure):";
+  if (program.split(createMarker).length !== 2)
+    throw new Error("Pinned native owned CreateProcess boundary changed");
+  const beforeFusionCreate =
+    '    identity_preparation = owned_identity_attempt(source, request["old"], profile, request["nonce"], paths, attempt, closure)\n';
+  const withIdentity = program.replace(
+    createMarker,
+    beforeFusionCreate + createMarker,
+  );
   const beforeResume =
     "        if normal:\n            owned_release_database()\n";
-  if (program.split(beforeResume).length !== 2)
+  if (withIdentity.split(beforeResume).length !== 2)
     throw new Error("Pinned native resume boundary changed");
   const result =
     '        result = {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}';
-  if (program.split(result).length !== 2)
+  if (withIdentity.split(result).length !== 2)
     throw new Error("Pinned native owned result boundary changed");
-  return program
+  const finalResumeFence =
+    "    owned_inputs_fence()\n    require_profile(profile)\n";
+  if (withIdentity.split(finalResumeFence).length !== 2)
+    throw new Error("Pinned native owned final-resume fence changed");
+  const beforeCreateFence =
+    '        owned_checkpoint("ready-before-create")\n        owned_fence(source)\n        require_profile(profile)\n';
+  if (withIdentity.split(beforeCreateFence).length !== 2)
+    throw new Error("Pinned native owned pre-create fence changed");
+  return withIdentity
     .replace(
       beforeResume,
       "        if normal:\n            owned_final_resume(created, source, profile, bound)\n            owned_release_database()\n",
     )
     .replace(
       result,
-      '        result = {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}\n        if normal:\n            result["intent"] = owned_intent',
+      '        result = {"process": value, "journal": journal, "attempt": attempt, "sourceClosure": closure}\n        if normal:\n            result.update({"identityAttempt": identity_preparation["attempt"],\n                           "identityJournal": identity_preparation["journal"],\n                           "identityPreparationFile": identity_preparation["terminal"],\n                           "identityPreparation": {key: identity_preparation["preparation"][key]\n                               for key in ("state", "origin", "process", "executable", "sha256",\n                                           "version", "arguments", "commandLine", "inputIdleCode", "logEvent")}})\n            result["intent"] = owned_intent',
+    )
+    .replace(
+      finalResumeFence,
+      "    owned_inputs_fence()\n    owned_identity_assert_current()\n    require_profile(profile)\n",
+    )
+    .replace(
+      beforeCreateFence,
+      '        owned_checkpoint("ready-before-create")\n        owned_fence(source)\n        owned_identity_assert_current()\n        require_profile(profile)\n',
     );
 }
 

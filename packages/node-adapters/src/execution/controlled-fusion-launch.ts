@@ -21,7 +21,9 @@ import type {
   ControlledLaunch,
   ControlledLaunchPaths,
   ControlledProcess,
-  OwnedAutoloadLaunch,
+  OwnedAutoloadLaunchPaths,
+  OwnedIdentityPreparation,
+  OwnedIdentityPreparationLaunch,
 } from "./controlled-fusion-launch-types";
 
 export interface ControlledFusionLaunchPins {
@@ -106,10 +108,27 @@ export interface OwnedAutoloadLaunchOriginals extends NormalObserverLaunchOrigin
   readonly replacement?: OwnedReplacement;
 }
 export interface OwnedAutoloadLaunchPins extends ControlledFusionLaunchPins {
+  readonly paths: OwnedAutoloadLaunchPaths;
+  readonly identity: OwnedIdentityPreparationPins;
   readonly owned: OwnedAutoloadLaunchOriginals;
   assertHeld(): void;
   /** Actual ROOT startup/discovery witness fence; not a serialized grant. */
   assertBeforeResumeOriginals(): void;
+}
+export interface OwnedIdentityPreparationPins {
+  readonly executable: string;
+  readonly mappedExecutable: string;
+  readonly sha256: string;
+  readonly version: string;
+  readonly arguments: readonly [
+    "--process_name",
+    "Autodesk.IDSDK.DefaultProcess-v2",
+    "--server_name",
+    "Autodesk.IDSDK.DefaultServer-v2",
+  ];
+  readonly logFile: string;
+  readonly mappedLogFile: string;
+  readonly preparationTimeoutMs: number;
 }
 type PrivateLaunchAdapter = ControlledNativeAdapter & {
   closeNormal(old: ControlledProcess): Promise<ControlledFile>;
@@ -124,7 +143,7 @@ type PrivateLaunchAdapter = ControlledNativeAdapter & {
     original: ControlledFile,
     bytes: Uint8Array,
     nonce: string,
-  ): Promise<OwnedAutoloadLaunch>;
+  ): Promise<OwnedIdentityPreparationLaunch>;
 };
 export class ControlledFusionNativeError extends Error {
   readonly outcome = "UNKNOWN";
@@ -301,7 +320,8 @@ export function createOwnedAutoloadLaunchAdapter(
 ) {
   if ("normal" in options)
     throw new Error("Disjoint owned constructor; NORMAL options refused");
-  const { owned, assertHeld, assertBeforeResumeOriginals, ...base } = options;
+  const { owned, identity, assertHeld, assertBeforeResumeOriginals, ...base } =
+    options;
   if (
     typeof assertHeld !== "function" ||
     typeof assertBeforeResumeOriginals !== "function"
@@ -315,13 +335,14 @@ export function createOwnedAutoloadLaunchAdapter(
     assertHeld,
     owned,
     assertBeforeResumeOriginals,
+    identity,
   );
   let attempted = false;
   return Object.freeze({
     async launchAfterDeath(
       old: ControlledProcess,
       nonce: string,
-    ): Promise<OwnedAutoloadLaunch> {
+    ): Promise<OwnedIdentityPreparationLaunch> {
       if (attempted)
         throw new Error("Owned autoload launch cannot be replayed");
       attempted = true;
@@ -359,11 +380,13 @@ function createLaunchAdapter(
   heldBoundary?: () => void,
   ownedOptions?: OwnedAutoloadLaunchOriginals,
   originalBoundary?: () => void,
+  identityOptions?: OwnedIdentityPreparationPins,
 ): PrivateLaunchAdapter {
   const pins = structuredClone(options);
   if (normalOptions && ownedOptions)
     throw new Error("Disjoint native launch roles required");
   const owned = ownedOptions && structuredClone(ownedOptions);
+  const identityPins = identityOptions && structuredClone(identityOptions);
   const originalReplacementSteps = owned?.replacement
     ? replacementSteps(owned.replacement)
     : [];
@@ -375,6 +398,20 @@ function createLaunchAdapter(
       })(owned)
     : normalOptions;
   const normal = lifecycle && structuredClone(lifecycle);
+  if (Boolean(owned) !== Boolean(identityPins))
+    throw new Error("Owned launch requires its pinned Identity preparation");
+  const identityPaths = identityPins
+    ? (pins.paths as OwnedAutoloadLaunchPaths)
+    : undefined;
+  if (
+    identityPins &&
+    ![
+      identityPaths?.identityAttempt,
+      identityPaths?.identityJournal,
+      identityPaths?.identityPreparation,
+    ].every((value) => typeof value === "string" && value)
+  )
+    throw new Error("Distinct owned Identity receipt paths required");
   if (owned) {
     const admission = closed(owned.admissionPins, ["source", "build"]);
     for (const key of ["source", "build"]) {
@@ -462,6 +499,44 @@ function createLaunchAdapter(
     )
   )
     throw new Error("Qualified native launch pins required");
+  if (identityPins) {
+    for (const value of [identityPins.executable, identityPins.logFile])
+      windowsPath(value);
+    if (
+      !path.isAbsolute(identityPins.mappedExecutable) ||
+      !path.isAbsolute(identityPins.mappedLogFile) ||
+      !sha(identityPins.sha256) ||
+      !/^[0-9]+(?:\.[0-9]+){1,3}$/.test(identityPins.version) ||
+      identityPins.arguments.length !== 4 ||
+      identityPins.arguments[0] !== "--process_name" ||
+      identityPins.arguments[1] !== "Autodesk.IDSDK.DefaultProcess-v2" ||
+      identityPins.arguments[2] !== "--server_name" ||
+      identityPins.arguments[3] !== "Autodesk.IDSDK.DefaultServer-v2" ||
+      !Number.isSafeInteger(identityPins.preparationTimeoutMs) ||
+      identityPins.preparationTimeoutMs < 100 ||
+      identityPins.preparationTimeoutMs > 30000
+    )
+      throw new Error("Exact bounded Identity preparation pins required");
+    const ownedPaths = [
+      ...Object.values(pins.paths),
+      ...pins.originalPaths,
+      ...[
+        normal!.database.nativePath,
+        normal!.handoffRequest.nativePath,
+        normal!.handoffReceipt.nativePath,
+        normal!.provisionBackupPath,
+        normal!.provisionReceiptPath,
+        normal!.retiredProcessPath,
+        normal!.coldProcessPath,
+      ],
+    ].map(windowsPath);
+    if (
+      ownedPaths.includes(windowsPath(identityPins.executable)) ||
+      ownedPaths.includes(windowsPath(identityPins.logFile)) ||
+      windowsPath(identityPins.executable) === windowsPath(identityPins.logFile)
+    )
+      throw new Error("Identity executable/log must be distinct pinned inputs");
+  }
   const names = Object.keys(pins.installedFiles);
   if (
     normal && !owned
@@ -772,6 +847,82 @@ function createLaunchAdapter(
       birth: result["birth"],
     });
   }
+  function identityPreparation(value: unknown): OwnedIdentityPreparation {
+    if (!identityPins)
+      throw new Error("Owned Identity preparation pins are absent");
+    const result = closed(value, [
+      "state",
+      "origin",
+      "process",
+      "executable",
+      "sha256",
+      "version",
+      "arguments",
+      "commandLine",
+      "inputIdleCode",
+      "logEvent",
+    ]);
+    const preparedProcess = process(result["process"]);
+    const logEvent = closed(result["logEvent"], [
+      "pid",
+      "timestamp",
+      "offset",
+      "line",
+    ]);
+    const timestamp =
+      typeof logEvent["timestamp"] === "string"
+        ? Date.parse(logEvent["timestamp"])
+        : NaN;
+    const timestampFileTime = Number.isFinite(timestamp)
+      ? BigInt(timestamp) * 10000n + 116444736000000000n
+      : -1n;
+    if (
+      result["state"] !== "PREPARATION_ONLY_NOT_SERVICE_READY" ||
+      !["spawned", "adopted"].includes(String(result["origin"])) ||
+      typeof result["executable"] !== "string" ||
+      windowsPath(result["executable"]) !==
+        windowsPath(identityPins.executable) ||
+      result["sha256"] !== identityPins.sha256 ||
+      result["version"] !== identityPins.version ||
+      !Array.isArray(result["arguments"]) ||
+      !isDeepStrictEqual(result["arguments"], identityPins.arguments) ||
+      typeof result["commandLine"] !== "string" ||
+      result["inputIdleCode"] !== 0 ||
+      logEvent["pid"] !== preparedProcess.pid ||
+      typeof logEvent["timestamp"] !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+        logEvent["timestamp"],
+      ) ||
+      !Number.isSafeInteger(logEvent["offset"]) ||
+      (logEvent["offset"] as number) < 0 ||
+      typeof logEvent["line"] !== "string" ||
+      !logEvent["line"].startsWith(
+        `${String(logEvent["timestamp"])} [AdskIdentityManager:${preparedProcess.pid}, `,
+      ) ||
+      !logEvent["line"].endsWith(
+        "] [AdskIdentityManager INFO] SSO Server is ready",
+      ) ||
+      timestampFileTime <= BigInt(preparedProcess.birth)
+    )
+      throw new Error("Bounded Identity preparation evidence differs");
+    return Object.freeze({
+      state: "PREPARATION_ONLY_NOT_SERVICE_READY",
+      origin: result["origin"] as "spawned" | "adopted",
+      process: preparedProcess,
+      executable: identityPins.executable,
+      sha256: identityPins.sha256,
+      version: identityPins.version,
+      arguments: Object.freeze([...identityPins.arguments]),
+      commandLine: result["commandLine"] as string,
+      inputIdleCode: 0,
+      logEvent: Object.freeze({
+        pid: logEvent["pid"] as number,
+        timestamp: logEvent["timestamp"] as string,
+        offset: logEvent["offset"] as number,
+        line: logEvent["line"] as string,
+      }),
+    });
+  }
   function inputProcess(value: ControlledProcess): ControlledProcess {
     return process(value);
   }
@@ -793,12 +944,16 @@ function createLaunchAdapter(
     if (
       digest(fs.readFileSync(pins.mappedNativePython)) !==
         pins.nativePythonSha256 ||
-      digest(fs.readFileSync(pins.mappedExecutable)) !== pins.executableSha256
+      digest(fs.readFileSync(pins.mappedExecutable)) !==
+        pins.executableSha256 ||
+      (identityPins &&
+        digest(fs.readFileSync(identityPins.mappedExecutable)) !==
+          identityPins.sha256)
     )
       throw new ControlledFusionNativeError(
         action,
         "",
-        "Mapped native executable bytes differ before spawn",
+        "Mapped native executable/Identity bytes differ before spawn",
       );
     const nativePins = {
       nativePython: pins.nativePython,
@@ -816,6 +971,18 @@ function createLaunchAdapter(
       receiptTimeoutMs: pins.receiptTimeoutMs,
       normalCloseTimeoutMs: pins.normalCloseTimeoutMs,
       mainWindowClass: pins.mainWindowClass,
+      ...(identityPins
+        ? {
+            identity: {
+              executable: identityPins.executable,
+              sha256: identityPins.sha256,
+              version: identityPins.version,
+              arguments: identityPins.arguments,
+              logFile: identityPins.logFile,
+              preparationTimeoutMs: identityPins.preparationTimeoutMs,
+            },
+          }
+        : {}),
       ...(normal
         ? {
             [owned ? "owned" : "normal"]: {
@@ -1104,6 +1271,12 @@ function createLaunchAdapter(
       [pins.installedDirectory]: pins.mappedInstalledDirectory,
       [pins.nativePython]: pins.mappedNativePython,
       [pins.executable]: pins.mappedExecutable,
+      ...(identityPins
+        ? {
+            [identityPins.executable]: identityPins.mappedExecutable,
+            [identityPins.logFile]: identityPins.mappedLogFile,
+          }
+        : {}),
     }),
     preflight: () => nothing("preflight", {}),
     requestNormalCloseAndWait: (value) =>
@@ -1205,7 +1378,7 @@ function createLaunchAdapter(
       original,
       bytes,
       nonce,
-    ): Promise<OwnedAutoloadLaunch> {
+    ): Promise<OwnedIdentityPreparationLaunch> {
       if (!owned || launchAttempted || !/^[a-f0-9]{32}$/.test(nonce))
         throw new Error("Fresh private owned autoload launch required");
       launchAttempted = true;
@@ -1228,12 +1401,29 @@ function createLaunchAdapter(
           "provisionReceipt",
           "coldProcess",
           "intent",
+          "identityAttempt",
+          "identityJournal",
+          "identityPreparationFile",
+          "identityPreparation",
         ],
       );
       return Object.freeze({
         process: process(result["process"]),
         journal: file(result["journal"], pins.paths.launchJournal),
         attempt: file(result["attempt"], pins.paths.launchAttempt),
+        identityAttempt: file(
+          result["identityAttempt"],
+          identityPaths!.identityAttempt,
+        ),
+        identityJournal: file(
+          result["identityJournal"],
+          identityPaths!.identityJournal,
+        ),
+        identityPreparationFile: file(
+          result["identityPreparationFile"],
+          identityPaths!.identityPreparation,
+        ),
+        identityPreparation: identityPreparation(result["identityPreparation"]),
         sourceClosure: file(result["sourceClosure"], pins.paths.sourceClosure),
         profile: file(result["profile"], pins.paths.profile),
         profileBackup: file(result["profileBackup"], pins.paths.profileBackup),

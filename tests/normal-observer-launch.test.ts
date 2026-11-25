@@ -125,6 +125,12 @@ test("normal native program compiles as complete Python, including suspended bin
 
 function ownedPins(): OwnedAutoloadLaunchPins {
   const { normal, ...base } = pins();
+  const paths = {
+    ...base.paths,
+    identityAttempt: "C:\\fixture\\identity-attempt.json",
+    identityJournal: "C:\\fixture\\identity-journal.json",
+    identityPreparation: "C:\\fixture\\identity-preparation.json",
+  };
   const originals = ["one.xml", "two.xml", "discovery.json"].map((name) => {
     const bytes = Buffer.from("benign fixture " + name);
     return {
@@ -136,6 +142,22 @@ function ownedPins(): OwnedAutoloadLaunchPins {
   });
   return {
     ...base,
+    paths,
+    identity: {
+      executable: "C:\\fixture\\identity\\Identity.exe",
+      mappedExecutable: "/not-an-identity-executable",
+      sha256: "9".repeat(64),
+      version: "1.2.3.4",
+      arguments: [
+        "--process_name",
+        "Autodesk.IDSDK.DefaultProcess-v2",
+        "--server_name",
+        "Autodesk.IDSDK.DefaultServer-v2",
+      ],
+      logFile: "C:\\fixture\\identity\\Identity.log",
+      mappedLogFile: "/not-an-identity-log",
+      preparationTimeoutMs: 1000,
+    },
     installedBuild: bootstrapInstalledFilesDigest(base.installedFiles),
     originalPaths: [
       ...base.originalPaths,
@@ -143,6 +165,12 @@ function ownedPins(): OwnedAutoloadLaunchPins {
     ],
     mappedOriginalPaths: {
       ...base.mappedOriginalPaths,
+      ...Object.fromEntries(
+        Object.values(paths).map((name, i) => [
+          name,
+          `/fixture/owned-path-${i}`,
+        ]),
+      ),
       ...Object.fromEntries(
         originals.map((x, i) => [x.nativePath, `/fixture/owned-${i}`]),
       ),
@@ -370,6 +398,14 @@ test("owned producer exposes only its disjoint one-shot launch API and requires 
       Object.assign(p.owned.autorunOriginals[0], { sha256: "f".repeat(64) }),
     (p: OwnedAutoloadLaunchPins) =>
       Object.assign(p, { assertBeforeResumeOriginals: null }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.identity, { sha256: "g".repeat(64) }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.identity, { preparationTimeoutMs: 30001 }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.identity, { arguments: ["--unexpected"] }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.identity, { logFile: p.paths.identityJournal }),
   ]) {
     const p = ownedPins();
     change(p);
