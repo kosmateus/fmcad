@@ -52,8 +52,82 @@ owned_inputs = []
 owned_intent = None
 owned_binding_source = None
 owned_binding_profile = None
+owned_replacement = None
 owned_base_prepare = owned_prepare
 owned_base_bind = owned_bind
+
+def owned_before_generation(handoff):
+    # NORMAL retains its original-generation contract. Only this private role
+    # can verify an original, already-bound, unregistered process replacement.
+    return handoff["nextGeneration"] if owned_replacement is not None else handoff["generation"]
+
+def owned_registered_before():
+    return owned_replacement if owned_replacement is not None else owned_state["before"]
+
+def owned_replacement_file(ref):
+    if type(ref) is not dict or set(ref) != {"nativePath", "sha256", "identity"}:
+        raise ValueError("Original owned replacement reference required")
+    original = snapshot(ref["nativePath"])
+    if any(original[key] != ref[key] for key in ("nativePath", "sha256", "identity")):
+        raise ValueError("Original owned replacement bytes/identity changed")
+    return strict(base64.b64decode(original["base64"]))
+
+def owned_replacement_before(n):
+    proof = n.get("replacement")
+    if (type(proof) is not dict or set(proof) != {
+            "kind", "priorProvision", "provisionReceipt", "retiredProcess"}
+            or proof["kind"] != "unregistered-created-process-v1"
+            or proof["retiredProcess"]["nativePath"] != n["retiredProcessPath"]):
+        raise ValueError("Explicit original owned replacement contract required")
+    prior = owned_replacement_file(proof["priorProvision"])
+    receipt = owned_replacement_file(proof["provisionReceipt"])
+    retired = owned_replacement_file(proof["retiredProcess"])
+    _, handoff = owned_reference(n["handoffRequest"])
+    current_file = snapshot(p["paths"]["provision"])
+    current = strict(base64.b64decode(current_file["base64"]))
+    process = request["old"]
+    if (set(prior) != {"database", "pid", "birth", "instance", "epoch", "source", "build", "credentials"}
+            or type(prior["pid"]) is not int or type(prior["birth"]) is not str
+            or set(receipt) != {"kind", "isolation", "nonce", "old", "process", "generation",
+                               "handoffId", "handoffRequest", "handoffReceipt", "database",
+                               "beforeSha256", "backup", "after"}
+            or receipt["kind"] != "owned-autoload-provision-bound-v1"
+            or receipt["isolation"] != "NOT_PROVEN"
+            or type(receipt["nonce"]) is not str or len(receipt["nonce"]) != 32
+            or any(c not in "0123456789abcdef" for c in receipt["nonce"])
+            or receipt["old"] != {"pid": prior["pid"], "birth": prior["birth"]}
+            or receipt["process"] != process or receipt["old"] == process
+            or receipt["generation"] != handoff["nextGeneration"]
+            or {"instance": prior["instance"], "epoch": prior["epoch"]} != handoff["generation"]
+            or receipt["handoffId"] != handoff["handoffId"]
+            or receipt["handoffRequest"] != n["handoffRequest"]
+            or receipt["handoffReceipt"] != n["handoffReceipt"]
+            or receipt["backup"] != proof["priorProvision"]
+            or receipt["beforeSha256"] != proof["priorProvision"]["sha256"]
+            or receipt["after"] != {key: current_file[key] for key in ("nativePath", "sha256", "identity")}
+            or current_file["sha256"] != n["provisionSha256"]
+            or receipt["database"]["nativePath"] != n["database"]["nativePath"]
+            or Path(prior["database"]).resolve() != Path(n["database"]["nativePath"]).resolve()
+            or prior["source"] != n["source"] or prior["build"] != n["build"]
+            or current != {**prior, **process, **handoff["nextGeneration"]}
+            or set(retired) != {"exited", "oldPidPresent", "forceUsed", "oldPid", "oldBirth",
+                               "observation", "windowHandle", "windowVisibleAtInput",
+                               "windowClass", "oldExe", "oldExeSha256"}
+            or retired["exited"] is not True or retired["oldPidPresent"] is not False
+            or retired["forceUsed"] is not False
+            or retired["windowVisibleAtInput"] is not True
+            or retired["windowClass"] != p["mainWindowClass"]
+            or type(retired["windowHandle"]) is not int or retired["windowHandle"] <= 0
+            or retired["observation"] != "exact-original-process-signaled-after-one-WM_CLOSE"
+            or {"pid": retired["oldPid"], "birth": retired["oldBirth"]} != process
+            or retired["oldExe"].casefold() != p["executable"].casefold()
+            or retired["oldExeSha256"] != p["executableSha256"]):
+        raise ValueError("Original owned replacement chain differs")
+    # Neither a retired registry entry nor the unregistered created process may
+    # still be alive. No registration, handoff or UNKNOWN settlement is written.
+    dead({"pid": prior["pid"], "birth": prior["birth"]})
+    dead(process)
+    return prior
 
 def owned_profile(raw, planned):
     import ntpath
@@ -101,12 +175,18 @@ def owned_inputs_fence():
             raise ValueError("Original owned autorun/discovery input changed")
 
 def owned_prepare(source):
-    global owned_inputs
+    global owned_inputs, owned_replacement
     n = p["owned"]
     if (type(n.get("autorunOriginals")) is not list or len(n["autorunOriginals"]) != 2
             or type(n.get("discoveryOriginals")) is not list or not n["discoveryOriginals"]):
         raise ValueError("Two original autorun inputs and nonempty discovery refs required")
     owned_inputs = n["autorunOriginals"] + n["discoveryOriginals"]
+    if "replacement" in n:
+        proof = n["replacement"]
+        if (type(proof) is not dict or set(proof) != {
+                "kind", "priorProvision", "provisionReceipt", "retiredProcess"}):
+            raise ValueError("Closed original owned replacement required")
+        owned_inputs += [proof[key] for key in ("priorProvision", "provisionReceipt", "retiredProcess")]
     names = set()
     for ref in owned_inputs:
         if (type(ref) is not dict or set(ref) != {"nativePath", "sha256", "identity"}
@@ -116,13 +196,14 @@ def owned_prepare(source):
             raise ValueError("Distinct allowlisted original owned input required")
         names.add(ref["nativePath"].casefold())
     owned_inputs_fence()
+    owned_replacement = owned_replacement_before(n) if "replacement" in n else None
     for name in ("intent", "entry", "returned"):
         private_directory(str(Path(p["paths"][name]).parent))
         if os.path.lexists(p["paths"][name]):
             raise ValueError("Fresh owned intent/receipt paths required; no replay")
     # Preserve the exact closed shape of the shared lifecycle implementation.
     lifecycle = {key: value for key, value in n.items()
-                 if key not in ("autorunOriginals", "discoveryOriginals")}
+                 if key not in ("autorunOriginals", "discoveryOriginals", "replacement")}
     p["owned"] = lifecycle
     try:
         return owned_base_prepare(source)

@@ -156,6 +156,122 @@ function ownedPins(): OwnedAutoloadLaunchPins {
     assertBeforeResumeOriginals() {},
   };
 }
+function replacementPins(): OwnedAutoloadLaunchPins {
+  const p = ownedPins();
+  const original = (nativePath: string) => {
+    const bytes = Buffer.from("original replacement fixture " + nativePath);
+    return {
+      nativePath,
+      bytes,
+      identity: "[1,2,3,4,5,6,7,8,9,1,0]",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  };
+  const replacement = {
+    kind: "unregistered-created-process-v1" as const,
+    priorProvision: original("C:\\fixture\\original-prior-provision.json"),
+    provisionReceipt: original("C:\\fixture\\original-bound-receipt.json"),
+    retiredProcess: original(p.owned.retiredProcessPath),
+  };
+  const added = [replacement.priorProvision, replacement.provisionReceipt];
+  return {
+    ...p,
+    owned: { ...p.owned, replacement },
+    originalPaths: [
+      ...p.originalPaths,
+      ...added.map((file) => file.nativePath),
+    ],
+    mappedOriginalPaths: {
+      ...p.mappedOriginalPaths,
+      ...Object.fromEntries(
+        added.map((file, i) => [file.nativePath, `/fixture/replacement-${i}`]),
+      ),
+    },
+  };
+}
+test("owned replacement requires distinct pinned originals without exposing another launch surface", () => {
+  assert.deepEqual(
+    Object.keys(createOwnedAutoloadLaunchAdapter(replacementPins())),
+    ["launchAfterDeath"],
+  );
+  for (const change of [
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.replacement!, { kind: "unproved" }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.replacement!, { extra: true }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.replacement!.priorProvision, {
+        sha256: "f".repeat(64),
+      }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.replacement!.retiredProcess, {
+        nativePath: p.owned.replacement!.priorProvision.nativePath,
+      }),
+    (p: OwnedAutoloadLaunchPins) =>
+      Object.assign(p.owned.replacement!.priorProvision, {
+        nativePath: p.paths.profile,
+      }),
+  ]) {
+    const p = replacementPins();
+    change(p);
+    assert.throws(() => createOwnedAutoloadLaunchAdapter(p));
+  }
+});
+test("owned replacement mapped proof drift refuses before native executable access", async (t) => {
+  const root = fs.mkdtempSync("/tmp/opencode/owned-replacement-proof-");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const p = replacementPins(),
+    proof = p.owned.replacement!;
+  const inputs = [
+    ...p.owned.autorunOriginals,
+    ...p.owned.discoveryOriginals,
+    proof.priorProvision,
+    proof.provisionReceipt,
+    proof.retiredProcess,
+  ];
+  const mappedOriginalPaths = { ...p.mappedOriginalPaths };
+  for (const [i, input] of inputs.entries()) {
+    const file = path.join(root, `original-${i}`);
+    fs.writeFileSync(file, input.bytes);
+    mappedOriginalPaths[input.nativePath] = file;
+  }
+  const adapter = createOwnedAutoloadLaunchAdapter({
+    ...p,
+    mappedOriginalPaths,
+  });
+  fs.writeFileSync(
+    mappedOriginalPaths[proof.provisionReceipt.nativePath]!,
+    "changed",
+  );
+  await assert.rejects(
+    adapter.launchAfterDeath({ pid: 38, birth: "38" }, "a".repeat(32)),
+    /Mapped bytes or identity changed/,
+  );
+  await assert.rejects(
+    adapter.launchAfterDeath({ pid: 38, birth: "38" }, "b".repeat(32)),
+    /replayed/,
+  );
+});
+test("owned replacement verifies the original chain and real SQLite guards without replay or writes", () => {
+  const result = spawnSync(
+    "python3",
+    [
+      "-I",
+      "-B",
+      path.join(process.cwd(), "tests/fixtures/owned-replacement-contract.py"),
+    ],
+    { input: ownedAutoloadLaunchNative(), encoding: "utf8", timeout: 15000 },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const evidence = JSON.parse(result.stdout);
+  assert.equal(evidence.count, 8);
+  assert.equal(evidence.actualFusion, "NOTRUN");
+  assert.equal(evidence.cases[0].outcome, "VERIFIED_PRE_MUTATION_FENCE");
+  for (const item of evidence.cases) {
+    assert.equal(item.SDK, 0);
+    assert.equal(item.processOperations, 0);
+  }
+});
 test("owned producer exposes only its disjoint one-shot launch API and requires original nonempty allowlisted inputs", () => {
   assert.deepEqual(Object.keys(createOwnedAutoloadLaunchAdapter(ownedPins())), [
     "launchAfterDeath",

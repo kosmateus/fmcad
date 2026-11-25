@@ -23,6 +23,12 @@ def normal_reference(ref):
         raise ValueError("Original normal input bytes changed")
     return value, strict(base64.b64decode(value["base64"]))
 
+def normal_before_generation(handoff):
+    return handoff["generation"]
+
+def normal_registered_before():
+    return normal_state["before"]
+
 def normal_database():
     import sqlite3
     n = p["normal"]
@@ -46,7 +52,7 @@ def normal_database():
         registered = strict(registered[0]) if registered is not None else None
         database_path = Path(n["database"]["nativePath"]).resolve()
         info = database_path.stat()
-        before = normal_state["before"]
+        before = normal_registered_before()
         if (type(registered) is not dict or registered.get("protocol") != "fmcad-provision-fence-v1"
                 or registered.get("database") != {
                     "path": str(database_path), "device": info.st_dev, "inode": info.st_ino}
@@ -178,7 +184,7 @@ def normal_prepare(source):
         if (set(before) != {"database", "pid", "birth", "instance", "epoch", "source", "build", "credentials"}
                 or type(before["pid"]) is not int
                 or {"pid": before["pid"], "birth": before["birth"]} != request["old"]
-                or {"instance": before["instance"], "epoch": before["epoch"]} != handoff["generation"]
+                or {"instance": before["instance"], "epoch": before["epoch"]} != normal_before_generation(handoff)
                 or before["source"] != n["source"] or before["build"] != n["build"]
                 or Path(before["database"]).resolve() != Path(n["database"]["nativePath"]).resolve()):
             raise ValueError("Original provision process/source/generation/database differs")

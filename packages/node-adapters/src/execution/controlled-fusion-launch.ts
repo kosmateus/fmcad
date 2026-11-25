@@ -88,6 +88,14 @@ export interface OwnedAutoloadLaunchOriginals extends NormalObserverLaunchOrigin
   readonly admissionPins: { readonly source: string; readonly build: string };
   readonly autorunOriginals: readonly [ControlledFile, ControlledFile];
   readonly discoveryOriginals: readonly ControlledFile[];
+  /** Original native chain for a created but unregistered process already dead.
+   * This selects a private verification contract, never a serialized grant. */
+  readonly replacement?: {
+    readonly kind: "unregistered-created-process-v1";
+    readonly priorProvision: ControlledFile;
+    readonly provisionReceipt: ControlledFile;
+    readonly retiredProcess: ControlledFile;
+  };
 }
 export interface OwnedAutoloadLaunchPins extends ControlledFusionLaunchPins {
   readonly owned: OwnedAutoloadLaunchOriginals;
@@ -327,8 +335,9 @@ function createLaunchAdapter(
     throw new Error("Disjoint native launch roles required");
   const owned = ownedOptions && structuredClone(ownedOptions);
   const lifecycle = owned
-    ? (({ admissionPins, ...originals }) => {
+    ? (({ admissionPins, replacement, ...originals }) => {
         void admissionPins;
+        void replacement;
         return originals;
       })(owned)
     : normalOptions;
@@ -374,6 +383,13 @@ function createLaunchAdapter(
       const stamps = [
         ...owned.autorunOriginals,
         ...owned.discoveryOriginals,
+        ...(owned.replacement
+          ? [
+              owned.replacement.priorProvision,
+              owned.replacement.provisionReceipt,
+              owned.replacement.retiredProcess,
+            ]
+          : []),
       ].map((file) => {
         const mapped = pins.mappedOriginalPaths[file.nativePath]!;
         if (fs.realpathSync(mapped) !== path.resolve(mapped))
@@ -582,6 +598,45 @@ function createLaunchAdapter(
         );
       seen.add(name);
     }
+    if (owned.replacement) {
+      const proof = owned.replacement;
+      closed(proof, [
+        "kind",
+        "priorProvision",
+        "provisionReceipt",
+        "retiredProcess",
+      ]);
+      if (proof.kind !== "unregistered-created-process-v1")
+        throw new Error(
+          "Explicit original owned replacement contract required",
+        );
+      const retirement = windowsPath(normal!.retiredProcessPath);
+      for (const [role, input] of [
+        ["priorProvision", proof.priorProvision],
+        ["provisionReceipt", proof.provisionReceipt],
+        ["retiredProcess", proof.retiredProcess],
+      ] as const) {
+        const name = windowsPath(input.nativePath);
+        if (
+          !pins.originalPaths.includes(input.nativePath) ||
+          !allowed.has(input.nativePath) ||
+          seen.has(name) ||
+          reserved.some(
+            (value) =>
+              value === name &&
+              !(role === "retiredProcess" && name === retirement),
+          ) ||
+          (role === "retiredProcess" && name !== retirement) ||
+          !identity(input.identity) ||
+          !sha(input.sha256) ||
+          digest(input.bytes) !== input.sha256
+        )
+          throw new Error(
+            "Distinct pinned original owned replacement bytes/identity required",
+          );
+        seen.add(name);
+      }
+    }
   }
   for (const nativePath of allowed) {
     if (
@@ -746,6 +801,22 @@ function createLaunchAdapter(
                 ? {
                     autorunOriginals: owned.autorunOriginals.map(reference),
                     discoveryOriginals: owned.discoveryOriginals.map(reference),
+                    ...(owned.replacement
+                      ? {
+                          replacement: {
+                            kind: owned.replacement.kind,
+                            priorProvision: reference(
+                              owned.replacement.priorProvision,
+                            ),
+                            provisionReceipt: reference(
+                              owned.replacement.provisionReceipt,
+                            ),
+                            retiredProcess: reference(
+                              owned.replacement.retiredProcess,
+                            ),
+                          },
+                        }
+                      : {}),
                   }
                 : {}),
               source: owned ? owned.admissionPins.source : pins.installedSource,
