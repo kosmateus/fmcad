@@ -35726,8 +35726,8 @@
     }
   },
   "latestDeadStartQualification": {
-    "reportedAt": "2026-11-25T18:04:29Z",
-    "status": "RUNNING",
+    "reportedAt": "2026-11-25T19:31:46Z",
+    "status": "UNKNOWN",
     "source": "2f71816e82798d878ff66f479ab132d5b1ab52ea",
     "runtimeBuild": "bfed5d6e91b452e43423c5cb51ef08839961b1a386f6cf197ace396f0c8385ba",
     "runtimeRoot": "/tmp/opencode/luna-dead-start-broker-artifact-r2-20261125/install/node_modules/fmcad/dist",
@@ -35737,22 +35737,89 @@
     "evidenceDirectory": "/tmp/opencode/root-dead-observation-operator-20261125/live-qualification-472781c2-c4f4-4c18-b6f2-09c0d285c8ba",
     "backend": "autodesk-fusion-mcp via ADDIN 8765 only",
     "sourceApproval": "SOURCE_ONLY_FOR_LIVE_QUALIFICATION_NOT_FINAL_WHOLE_APP",
+    "terminal": {
+      "mainExitCode": 1,
+      "error": "ERR_ASSERTION UNKNOWN",
+      "phase": "owned-cold-bootstrap",
+      "bootstrapState": "UNKNOWN",
+      "process": null,
+      "authority": "NONE",
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held"
+      ],
+      "createdIdentityProcess": {
+        "pid": 38964,
+        "birth": "134401072661118439"
+      },
+      "identityPreparationEvent": "Timed out waiting for PID/birth-bound event; do not infer death time from ROOT logs.",
+      "fusionProcess": "NOT_CREATED",
+      "fusionReady": "NOTRUN",
+      "sdk": "NOTRUN",
+      "replayOrCleanup": "NOT_PERFORMED"
+    },
+    "evidence": {
+      "bootstrapResult": {
+        "path": "/tmp/opencode/root-dead-observation-operator-20261125/live-qualification-472781c2-c4f4-4c18-b6f2-09c0d285c8ba/bootstrap-result.json",
+        "sha256": "c830eb8280343b45d0e7642f97807c22dd33557a373df6d2219338c4c7abb39a"
+      },
+      "failure": {
+        "path": "/tmp/opencode/root-dead-observation-operator-20261125/live-qualification-472781c2-c4f4-4c18-b6f2-09c0d285c8ba/failure.json",
+        "sha256": "e54bd32e0b8076ff4364c2933d2215cbbc0d7ff6eca1c14335bbe37b43da6542"
+      },
+      "stderr": {
+        "path": "/tmp/opencode/root-dead-observation-plan-20261125/live-operator-r2.stderr",
+        "sha256": "e064a2983547f7673e3ccf25183357d8a6c4df781dd11fb3f8e861f8684a05d1"
+      },
+      "sanitizedIdentityDiagnostic": {
+        "path": "/tmp/opencode/root-dead-observation-plan-20261125/identity-event-sanitized-diagnostic.json",
+        "sha256": "e7a26df46de4dbac8b7642f978cdf8f4d227a46f721b6964f5f872f7948172cc7",
+        "events": [
+          {
+            "event": "start",
+            "timestamp": "2026-11-25T19:07:46.143Z",
+            "offset": 104698601
+          },
+          {
+            "event": "arguments",
+            "timestamp": "2026-11-25T19:07:46.143Z",
+            "offset": 104698936
+          },
+          {
+            "event": "ready",
+            "timestamp": "2026-11-25T19:07:46.314Z",
+            "offset": 104713488
+          }
+        ],
+        "meaning": "Identity-service diagnostic only; does not establish Fusion process, Fusion READY or SDK success."
+      }
+    },
     "counts": {
       "currentOperatorExecution": {
-        "PASS": 0, "FAIL": 0, "NOTRUN": 0, "RUNNING": 1, "UNKNOWN": 0,
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 0,
+        "RUNNING": 0,
+        "UNKNOWN": 1,
         "denominator": 1,
-        "meaning": "One accepted fresh operator command; no terminal result, READY or SDK success claimed."
+        "meaning": "One accepted fresh operator execution; terminal UNKNOWN, no Fusion READY or SDK success."
       },
       "historicalControlledStartupControllers": {
-        "UNKNOWN": 6, "denominator": 6,
-        "meaning": "Six prior terminal controller UNKNOWN outcomes remain unchanged; separate from this running operator."
+        "UNKNOWN": 7,
+        "denominator": 7,
+        "meaning": "Seven terminal controller UNKNOWN outcomes; harness interruption is excluded."
       },
       "fullLiveProfiles": {
-        "PASS": 0, "FAIL": 0, "NOTRUN": 11, "RUNNING": 0, "UNKNOWN": 0,
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
         "denominator": 11
       },
       "separateOperatorHarnessInterruption": {
-        "INTERRUPTED": 1, "denominator": 1,
+        "INTERRUPTED": 1,
+        "denominator": 1,
         "meaning": "An initial operator shell was terminated by a mistaken 1000ms background timeout before bootstrap/capture. Not a seventh controller outcome."
       }
     },
@@ -35770,6 +35837,65 @@
     "physicalNativeSource": "0a5f3b31eb16a8591e77531fb0895cdffcec3ce5",
     "physicalNativeDeployment": "UNCHANGED",
     "physicalBackend27182": "EXCLUDED",
-    "actualCadResult": "NOTRUN"
-  }
+    "actualCadResult": "UNKNOWN; Fusion process creation, Fusion READY, and SDK remain NOTRUN."
+  },
+  "deadStartQualificationHistory": [
+    {
+      "reportedAt": "2026-11-25T18:04:29Z",
+      "status": "RUNNING",
+      "source": "2f71816e82798d878ff66f479ab132d5b1ab52ea",
+      "runtimeBuild": "bfed5d6e91b452e43423c5cb51ef08839961b1a386f6cf197ace396f0c8385ba",
+      "runtimeRoot": "/tmp/opencode/luna-dead-start-broker-artifact-r2-20261125/install/node_modules/fmcad/dist",
+      "planSha256": "0a54e0fcbb25c54e8195a5579fd95948c3ed0d35cc27f0c6fe85a0f573aa38eb",
+      "operatorId": "root-dead-observation-live-472781c2-c4f4-4c18-b6f2-09c0d285c8ba",
+      "mainCommand": "sh_213dd7d59001HLv4aFsRSRVUnI",
+      "evidenceDirectory": "/tmp/opencode/root-dead-observation-operator-20261125/live-qualification-472781c2-c4f4-4c18-b6f2-09c0d285c8ba",
+      "backend": "autodesk-fusion-mcp via ADDIN 8765 only",
+      "sourceApproval": "SOURCE_ONLY_FOR_LIVE_QUALIFICATION_NOT_FINAL_WHOLE_APP",
+      "counts": {
+        "currentOperatorExecution": {
+          "PASS": 0,
+          "FAIL": 0,
+          "NOTRUN": 0,
+          "RUNNING": 1,
+          "UNKNOWN": 0,
+          "denominator": 1,
+          "meaning": "One accepted fresh operator command; no terminal result, READY or SDK success claimed."
+        },
+        "historicalControlledStartupControllers": {
+          "UNKNOWN": 6,
+          "denominator": 6,
+          "meaning": "Six prior terminal controller UNKNOWN outcomes remain unchanged; separate from this running operator."
+        },
+        "fullLiveProfiles": {
+          "PASS": 0,
+          "FAIL": 0,
+          "NOTRUN": 11,
+          "RUNNING": 0,
+          "UNKNOWN": 0,
+          "denominator": 11
+        },
+        "separateOperatorHarnessInterruption": {
+          "INTERRUPTED": 1,
+          "denominator": 1,
+          "meaning": "An initial operator shell was terminated by a mistaken 1000ms background timeout before bootstrap/capture. Not a seventh controller outcome."
+        }
+      },
+      "harnessInterruptionEvidence": "/tmp/opencode/root-dead-observation-plan-20261125/harness-interruption.original.json",
+      "harnessInterruptionScope": {
+        "originalOperatorId": "root-dead-observation-live-2a31b174-fc11-487f-abf1-3fd23ea72342",
+        "terminalShellResult": "SIGTERM after 1000ms background timeout",
+        "persistedEvidence": "database-metadata.original.json only",
+        "bootstrapReceipt": "ABSENT",
+        "freshDirectoriesAndCaptureFile": "ABSENT after terminal producer checks",
+        "sdk": "NOTRUN",
+        "newOperatorAndClientIds": true,
+        "historicalUnknownSettlement": false
+      },
+      "physicalNativeSource": "0a5f3b31eb16a8591e77531fb0895cdffcec3ce5",
+      "physicalNativeDeployment": "UNCHANGED",
+      "physicalBackend27182": "EXCLUDED",
+      "actualCadResult": "NOTRUN"
+    }
+  ]
 }
