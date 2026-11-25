@@ -29,6 +29,12 @@ def normal_before_generation(handoff):
 def normal_registered_before():
     return normal_state["before"]
 
+def normal_check_provision_identity(ident):
+    pass
+
+def normal_bind_fields():
+    return {"pid", "birth", "instance", "epoch"}
+
 def normal_database():
     import sqlite3
     n = p["normal"]
@@ -167,6 +173,7 @@ def normal_prepare(source):
     try:
         check_acl(None, handle=h)
         ident = identity(h)
+        normal_check_provision_identity(ident)
         fd = msvcrt.open_osfhandle(h, os.O_RDWR | os.O_BINARY)
         h = None
         held.append(("fd", fd))
@@ -225,10 +232,12 @@ def normal_bind(created, source, profile):
     os.lseek(fd, 0, os.SEEK_SET)
     if os.read(fd, len(s["raw"]) + 1) != s["raw"]:
         raise ValueError("Held provision bytes changed before CAS")
-    backup = publish(n["provisionBackupPath"], s["raw"])
     after = {**s["before"], **value, **s["next"]}
-    if {key for key in after if after[key] != s["before"][key]} != {"pid", "birth", "instance", "epoch"}:
-        raise ValueError("Only four normal provision fields may change")
+    expected_fields = normal_bind_fields()
+    if {key for key in after if after[key] != s["before"][key]} != expected_fields:
+        raise ValueError("Only two replacement provision fields may change" if len(expected_fields) == 2
+                         else "Only four normal provision fields may change")
+    backup = publish(n["provisionBackupPath"], s["raw"])
     raw = json.dumps(after, sort_keys=True, separators=(",", ":")).encode("utf-8")
     os.lseek(fd, 0, os.SEEK_SET)
     view = memoryview(raw)

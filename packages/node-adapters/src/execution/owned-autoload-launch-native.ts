@@ -62,7 +62,14 @@ def owned_before_generation(handoff):
     return handoff["nextGeneration"] if owned_replacement is not None else handoff["generation"]
 
 def owned_registered_before():
-    return owned_replacement if owned_replacement is not None else owned_state["before"]
+    return owned_replacement["registeredBefore"] if owned_replacement is not None else owned_state["before"]
+
+def owned_check_provision_identity(ident):
+    if owned_replacement is not None and ident != owned_replacement["provisionIdentity"]:
+        raise ValueError("Original replacement provision identity changed before write acquire")
+
+def owned_bind_fields():
+    return {"pid", "birth"} if owned_replacement is not None else {"pid", "birth", "instance", "epoch"}
 
 def owned_replacement_file(ref):
     if type(ref) is not dict or set(ref) != {"nativePath", "sha256", "identity"}:
@@ -83,8 +90,12 @@ def owned_replacement_before(n):
     receipt = owned_replacement_file(proof["provisionReceipt"])
     retired = owned_replacement_file(proof["retiredProcess"])
     _, handoff = owned_reference(n["handoffRequest"])
-    current_file = snapshot(p["paths"]["provision"])
-    current = strict(base64.b64decode(current_file["base64"]))
+    # Do not retain a FILE_SHARE_READ-only reader across the upcoming writable
+    # acquisition. Recheck its exact identity on that held writable handle.
+    current_raw, current_identity = file_bytes(p["paths"]["provision"], True, False)
+    current_file = {"nativePath": str(Path(p["paths"]["provision"])),
+                    "sha256": digest(current_raw), "identity": current_identity}
+    current = strict(current_raw)
     process = request["old"]
     if (set(prior) != {"database", "pid", "birth", "instance", "epoch", "source", "build", "credentials"}
             or type(prior["pid"]) is not int or type(prior["birth"]) is not str
@@ -127,7 +138,7 @@ def owned_replacement_before(n):
     # still be alive. No registration, handoff or UNKNOWN settlement is written.
     dead({"pid": prior["pid"], "birth": prior["birth"]})
     dead(process)
-    return prior
+    return {"registeredBefore": prior, "provisionIdentity": current_identity}
 
 def owned_profile(raw, planned):
     import ntpath

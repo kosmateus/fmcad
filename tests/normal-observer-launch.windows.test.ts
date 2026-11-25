@@ -14,6 +14,7 @@ import {
 import { ownedAutoloadLaunchNative } from "../packages/node-adapters/src/execution/owned-autoload-launch-native";
 import { bootstrapInstalledFilesDigest } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
 import { normalObserverNativeBootstrap } from "../packages/node-adapters/src/execution/controlled-fusion-launch-native";
+import type { ControlledFile } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
 
 const sha = (data: Uint8Array) =>
   createHash("sha256").update(data).digest("hex");
@@ -470,6 +471,47 @@ print(json.dumps({"refs":out}))
       };
       return { f, pins: ownedPins, report };
     }
+    function originalFiles(paths: string[]): ControlledFile[] {
+      const rows = native(
+        config,
+        String.raw`
+import ctypes,hashlib,json,sys
+from ctypes import wintypes as w
+from pathlib import Path
+class Info(ctypes.Structure):
+ _fields_=[("attributes",w.DWORD),("creation",w.FILETIME),("access",w.FILETIME),("write",w.FILETIME),
+           ("volume",w.DWORD),("sizeHigh",w.DWORD),("sizeLow",w.DWORD),("links",w.DWORD),
+           ("indexHigh",w.DWORD),("indexLow",w.DWORD)]
+k=ctypes.WinDLL("kernel32",use_last_error=True)
+k.CreateFileW.argtypes=[w.LPCWSTR,w.DWORD,w.DWORD,ctypes.c_void_p,w.DWORD,w.DWORD,w.HANDLE]
+k.CreateFileW.restype=w.HANDLE
+k.GetFileInformationByHandle.argtypes=[w.HANDLE,ctypes.c_void_p]
+k.CloseHandle.argtypes=[w.HANDLE]
+out=[]
+for name in json.load(sys.stdin)["paths"]:
+ h=k.CreateFileW(name,0x80020000,1,None,3,0x00200000,None);a=Info();b=Info()
+ assert h not in(None,ctypes.c_void_p(-1).value)
+ try:
+  assert k.GetFileInformationByHandle(h,ctypes.byref(a))
+  raw=Path(name).read_bytes()
+  assert k.GetFileInformationByHandle(h,ctypes.byref(b))
+  vector=lambda info:[info.volume,info.indexHigh,info.indexLow,
+      info.creation.dwHighDateTime,info.creation.dwLowDateTime,
+      info.write.dwHighDateTime,info.write.dwLowDateTime,info.sizeHigh,info.sizeLow,
+      info.links,info.attributes]
+  assert vector(a)==vector(b) and a.links==1 and not a.attributes&0x410
+  out.append({"nativePath":name,"identity":json.dumps(vector(a),separators=(",",":")),
+              "sha256":hashlib.sha256(raw).hexdigest()})
+ finally:k.CloseHandle(h)
+print(json.dumps({"refs":out}))
+`,
+        { paths },
+      )["refs"] as Omit<ControlledFile, "bytes">[];
+      return rows.map((row) => ({
+        ...row,
+        bytes: fs.readFileSync(mapped(row.nativePath)),
+      }));
+    }
 
     await t.test(
       "owned native program refuses manual/NORMAL actions before any filesystem or process mutation",
@@ -839,6 +881,164 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
         );
         await assert.rejects(
           adapter.launchAfterDeath(f.old, "f".repeat(32)),
+          /replayed/,
+        );
+      },
+    );
+    await t.test(
+      "owned replacement shares current provision correctly and binds only PID/birth before one real resume",
+      async () => {
+        const { f, pins, report } = ownedFixture();
+        const windowProgram = ownWindow.replace(
+          'Path(sys.argv[1]).write_text(json.dumps({"visible":hwnd,"hidden":hidden}))',
+          'Path(sys.argv[1]+".window").write_text(json.dumps({"visible":hwnd,"hidden":hidden}))',
+        );
+        assert.notEqual(windowProgram, ownWindow);
+        Object.assign(pins, {
+          arguments: [
+            "-I",
+            "-S",
+            "-B",
+            "-c",
+            ownedChildProgram + windowProgram,
+            report,
+          ],
+        });
+        const first = await createOwnedAutoloadLaunchAdapter(
+          pins,
+        ).launchAfterDeath(f.old, "1".repeat(32));
+        native(config, waitReport, { report: report + ".window" });
+        native(config, waitReport, { report: report + ".database-write" });
+        const before = fs.readFileSync(mapped(f.provision));
+        const { owned, assertBeforeResumeOriginals, ...normalBase } = pins;
+        const {
+          admissionPins,
+          autorunOriginals,
+          discoveryOriginals,
+          replacement,
+          ...normal
+        } = owned;
+        void assertBeforeResumeOriginals;
+        void autorunOriginals;
+        void discoveryOriginals;
+        void replacement;
+        const retired = await createNormalObserverLaunchAdapter({
+          ...normalBase,
+          installedSource: admissionPins.source,
+          installedBuild: admissionPins.build,
+          normal: { ...normal, provisionSha256: first.provision.sha256 },
+        }).requestNormalCloseAndWait(first.process);
+        assert.equal(
+          JSON.parse(Buffer.from(retired.bytes).toString()).forceUsed,
+          false,
+        );
+        const database = originalFiles([f.database])[0]!;
+        const nextName = (name: string) =>
+          path.win32.join(
+            path.win32.dirname(name),
+            "replacement-" + path.win32.basename(name),
+          );
+        const paths = Object.fromEntries(
+          Object.entries(pins.paths).map(([key, value]) => [
+            key,
+            ["profile", "provision", "receiptDirectory"].includes(key)
+              ? value
+              : nextName(value),
+          ]),
+        ) as typeof pins.paths;
+        const outputs = {
+          provisionBackupPath: nextName(owned.provisionBackupPath),
+          provisionReceiptPath: nextName(owned.provisionReceiptPath),
+          coldProcessPath: nextName(owned.coldProcessPath),
+        };
+        const originals = [
+          ...new Set([
+            ...pins.originalPaths,
+            ...Object.values(outputs),
+            first.provisionBackup.nativePath,
+            first.provisionReceipt.nativePath,
+            retired.nativePath,
+          ]),
+        ];
+        const secondReport = nextName(report);
+        const secondPins: OwnedAutoloadLaunchPins = {
+          ...pins,
+          paths,
+          originalPaths: originals,
+          mappedOriginalPaths: Object.fromEntries(
+            [...Object.values(paths), ...originals].map((name) => [
+              name,
+              mapped(name),
+            ]),
+          ),
+          arguments: [
+            "-I",
+            "-S",
+            "-B",
+            "-c",
+            ownedChildProgram.replace(
+              "CREATE TABLE normal_observer_fixture_started",
+              "CREATE TABLE IF NOT EXISTS normal_observer_fixture_started",
+            ),
+            secondReport,
+          ],
+          owned: {
+            ...owned,
+            ...outputs,
+            database: {
+              nativePath: database.nativePath,
+              identity: database.identity,
+            },
+            provisionSha256: first.provision.sha256,
+            replacement: {
+              kind: "unregistered-created-process-v1",
+              priorProvision: first.provisionBackup,
+              provisionReceipt: first.provisionReceipt,
+              retiredProcess: retired,
+            },
+          },
+        };
+        const adapter = createOwnedAutoloadLaunchAdapter(secondPins);
+        const second = await adapter.launchAfterDeath(
+          first.process,
+          "2".repeat(32),
+        );
+        const observed = native(config, waitReport, { report: secondReport });
+        assert.equal(observed["correctFirstRead"], true);
+        assert.equal(observed["pid"], second.process.pid);
+        assert.equal(observed["bootstrapIntent"], paths.intent);
+        assert.deepEqual(observed["sdkModules"], []);
+        assert.notEqual(second.process.pid, first.process.pid);
+        const prior = JSON.parse(before.toString()),
+          after = JSON.parse(Buffer.from(second.provision.bytes).toString());
+        assert.deepEqual(
+          Object.keys(after)
+            .filter((key) => after[key] !== prior[key] && key !== "credentials")
+            .sort(),
+          ["birth", "pid"],
+        );
+        assert.deepEqual(after.credentials, prior.credentials);
+        assert.deepEqual(
+          fs.readFileSync(mapped(outputs.provisionBackupPath)),
+          before,
+        );
+        for (const original of [
+          first.provisionBackup,
+          first.provisionReceipt,
+          retired,
+        ])
+          assert.deepEqual(
+            fs.readFileSync(mapped(original.nativePath)),
+            Buffer.from(original.bytes),
+          );
+        assert.equal(
+          native(config, waitReport, {
+            report: secondReport + ".database-write",
+          })["databaseWrite"],
+          true,
+        );
+        await assert.rejects(
+          adapter.launchAfterDeath(first.process, "3".repeat(32)),
           /replayed/,
         );
       },

@@ -18,6 +18,7 @@ program = sys.stdin.read()
 tree = ast.parse(program)
 encode = lambda value: json.dumps(value, sort_keys=True, separators=(",", ":"))
 sha = lambda raw: hashlib.sha256(raw).hexdigest()
+native_identity = "[1,2,3,4,5,6,7,8,9,1,32]"
 sys.modules["msvcrt"] = types.SimpleNamespace(open_osfhandle=lambda h, _: h, get_osfhandle=lambda fd: fd)
 sys.modules["lib"] = types.ModuleType("lib")
 sys.modules["lib.request_admission"] = types.SimpleNamespace(_encode=encode)
@@ -64,7 +65,7 @@ def scenario(case):
         prior = {"database": str(database), "pid": 34, "birth": "34", **old,
                  "source": "source", "build": "build", "credentials": {"fixture": "not-real"}}
         current = {**prior, "pid": 38, "birth": "38", **new}
-        handles = []
+        handles, writers = [], set()
 
         def write(file, value):
             file.write_text(encode(value))
@@ -72,7 +73,7 @@ def scenario(case):
 
         def snapshot(file):
             raw = Path(file).read_bytes()
-            return {"nativePath": str(file), "identity": "fixture-native-identity",
+            return {"nativePath": str(file), "identity": native_identity,
                     "sha256": sha(raw), "base64": base64.b64encode(raw).decode("ascii")}
 
         def reference(file, identity=True):
@@ -83,6 +84,8 @@ def scenario(case):
         def open_file(file, write=False):
             fd = os.open(file, os.O_RDWR if write else os.O_RDONLY)
             handles.append(fd)
+            if write:
+                writers.add(fd)
             return fd
 
         provision = write(root / "provision.json", current)
@@ -101,7 +104,7 @@ def scenario(case):
                  "process": {"pid": 38, "birth": "38"}, "generation": new,
                  "handoffId": handoff["handoffId"], "handoffRequest": reference(request_file, False),
                  "handoffReceipt": reference(receipt_file, False),
-                 "database": {"nativePath": str(database), "identity": "fixture-native-identity"},
+                 "database": {"nativePath": str(database), "identity": native_identity},
                  "beforeSha256": sha(Path(prior_file).read_bytes()), "backup": reference(prior_file),
                  "after": reference(provision)}
         if case == "wrong-original-process":
@@ -112,7 +115,7 @@ def scenario(case):
                  "provisionReceipt": reference(bound_file), "retiredProcess": reference(retired_file)}
         if case == "changed-original-bytes":
             Path(prior_file).write_text("changed")
-        normal = {"database": {"nativePath": str(database), "identity": "fixture-native-identity"},
+        normal = {"database": {"nativePath": str(database), "identity": native_identity},
                   "provisionSha256": sha(Path(provision).read_bytes()),
                   "handoffRequest": reference(request_file, False),
                   "handoffReceipt": reference(receipt_file, False),
@@ -149,21 +152,35 @@ def scenario(case):
             if case == "registered-process-still-alive" and process["pid"] == 34:
                 raise ValueError("Original process still alive")
 
-        env = {"p": p, "request": {"old": {"pid": 38, "birth": "38"}}, "strict": json.loads,
+        def identity(fd):
+            return native_identity.replace("[1,", "[2,") if (
+                case == "write-handle-rebind" and fd in writers) else native_identity
+
+        def publish(file, raw):
+            with open(file, "xb") as output:
+                output.write(raw)
+            return snapshot(file)
+
+        env = {"p": p, "request": {"old": {"pid": 38, "birth": "38"}, "nonce": "b" * 32}, "strict": json.loads,
                "snapshot": snapshot, "base64": base64, "Path": Path, "os": os, "sqlite3": sqlite3,
                "json": json, "held": [], "owned_state": None, "owned_replacement": None,
                "owned_database_handles": [], "open_file": open_file,
-               "identity": lambda fd: "fixture-native-identity", "check_acl": lambda *a, **k: None,
+               "identity": identity, "check_acl": lambda *a, **k: None,
                "digest": sha, "dead": dead, "inventory": inventory, "private_directory": lambda _: None,
-               "file_bytes": lambda file: (Path(file).read_bytes(), "fixture-native-identity"),
+               "file_bytes": lambda file, *args: (Path(file).read_bytes(), native_identity),
+               "publish": publish, "process_birth": lambda _: "40",
+               "owned_checkpoint": lambda *args: None, "require_profile": lambda _: None,
                "k": types.SimpleNamespace(CloseHandle=os.close)}
         names = {"owned_reference", "owned_database", "owned_fence", "owned_prepare",
                  "owned_before_generation", "owned_registered_before", "owned_replacement_file",
-                 "owned_replacement_before", "owned_inputs_fence"}
+                 "owned_replacement_before", "owned_inputs_fence", "owned_check_provision_identity",
+                 "owned_bind_fields", "owned_bind"}
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name in names:
                 if node.name == "owned_prepare" and "owned_prepare" in env:
                     env["owned_base_prepare"] = env["owned_prepare"]
+                if node.name == "owned_bind" and "owned_bind" in env:
+                    env["owned_base_bind"] = env["owned_bind"]
                 exec(compile(ast.Module(body=[node], type_ignores=[]), "<generated-owned-contract>", "exec"), env)
         real_fence = env["owned_fence"]
 
@@ -178,8 +195,18 @@ def scenario(case):
             env["owned_prepare"](source)
             raise AssertionError("Pre-mutation fence was not reached or denied")
         except VerifiedFence:
-            assert case == "replacement-valid", case
-            outcome = "VERIFIED_PRE_MUTATION_FENCE"
+            assert case in ("replacement-valid", "replacement-bind"), case
+            if case == "replacement-bind":
+                env["owned_fence"] = real_fence
+                result = env["owned_base_bind"](types.SimpleNamespace(pid=40, process=None), source, {})
+                after = json.loads(Path(provision).read_bytes())
+                assert after == {**current, "pid": 40, "birth": "40"}
+                assert {key for key in after if after[key] != current[key]} == {"pid", "birth"}
+                assert Path(normal["provisionBackupPath"]).read_bytes() == encode(current).encode()
+                assert json.loads(base64.b64decode(result["receipt"]["base64"]))["generation"] == new
+                outcome = "VERIFIED_REPLACEMENT_BIND"
+            else:
+                outcome = "VERIFIED_PRE_MUTATION_FENCE"
         except ValueError as error:
             assert case != "replacement-valid", str(error)
             outcome = str(error)
@@ -189,12 +216,18 @@ def scenario(case):
                     os.close(fd)
                 except OSError:
                     pass
-        assert before == {file: sha(file.read_bytes()) for file in root.iterdir() if file.is_file()}
-        assert not list(root.glob("never-*"))
+        if case == "replacement-bind":
+            assert all(sha(file.read_bytes()) == digest for file, digest in before.items()
+                       if str(file) != provision)
+            assert sorted(file.name for file in root.glob("never-*")) == ["never-backup", "never-receipt"]
+        else:
+            assert before == {file: sha(file.read_bytes()) for file in root.iterdir() if file.is_file()}
+            assert not list(root.glob("never-*"))
         return {"case": case, "outcome": outcome, "SDK": 0, "processOperations": 0}
 
 
-cases = ["replacement-valid", "no-explicit-replacement", "wrong-original-process",
+cases = ["replacement-valid", "replacement-bind", "write-handle-rebind",
+         "no-explicit-replacement", "wrong-original-process",
          "forced-retirement", "changed-original-bytes", "wrong-registered-process",
          "existing-current-owner", "registered-process-still-alive"]
 results = [scenario(case) for case in cases]

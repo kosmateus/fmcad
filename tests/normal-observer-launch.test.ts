@@ -264,7 +264,7 @@ test("owned replacement verifies the original chain and real SQLite guards witho
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const evidence = JSON.parse(result.stdout);
-  assert.equal(evidence.count, 8);
+  assert.equal(evidence.count, 10);
   assert.equal(evidence.actualFusion, "NOTRUN");
   assert.equal(evidence.cases[0].outcome, "VERIFIED_PRE_MUTATION_FENCE");
   for (const item of evidence.cases) {
