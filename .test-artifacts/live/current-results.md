@@ -1,3 +1,13 @@
+## 2026-11-25 13:32 UTC — Piąty startup controller UNKNOWN na guardzie normal-close
+
+- Próba `56a1fe02` zakończyła się terminalnie **exit 1 / UNKNOWN**. Main `sh_212e27c7a001…` zakończył się kodem `1`, a watcher potwierdził failure event. Oryginalny transcript ma `action=normal-close`, `process=null`, `phases=[]`; guard zwrócił `ValueError: Unique exact vendor main window required`. Nie ponawiano operacji.
+- Klasyfikacja: odmowa istniejącego guarda normal-close, przed dalszym Identity/startup. To **nie** jest Identity pre-start failure ani nowa próba uruchomienia Fusion/SDK. Nie dowodzi też działania poprawki Identity; jej live qualification pozostaje **NOTRUN**.
+- Piny wejścia: broker source `d3422f3b9465ee8dae03b61438558aeb62b6bf4f`, runtime build `a0ee94be5c1d583e00052ba22dfb79bbf83bdcf1a2c8bc9a058a2bb68b25f23a`, full dist `2220fe7601c1e724d05ca43d6d48ed3520a0411f0bb03fde5ebcf5df3151834a`, kwalifikowany R2 container `/tmp/opencode/luna-identity-broker-artifact-qualified-r2-20261125`. Broker ma **17/17 offline PASS i whole APP review**; to nie jest actual live qualification. Physical native source `0a105` pozostał bez zmian.
+- Liczniki rozdzielone: controlled startup controllers **5 UNKNOWN / 5**, **0 RUNNING** (cztery poprzednie wyniki zachowane plus ta próba); odrębny preflight pozostaje poza tym mianownikiem. Historyczne SDK **4 UNKNOWN**, retired exposures **5**, kolejka **17 816** jobs bez settlementu. Pełne profile: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- Evidence: plan `/tmp/opencode/root-next-current-plan/operator-plan.ACTUAL.private.json`, bootstrap `/tmp/opencode/root-next-current-operator/actual-56a1fe02-c526-43fe-932e-d66b866aebe4/bootstrap-result.json`, failure i pozostałe receipt/readback odnośniki są w `latestOwnedStartupWindowUnknown` w JSON wraz z SHA-256. Bez SDK, runtime, native, queue, probe, lifecycle, replay ani zmian procesu.
+
+---
+
 ## 2026-11-25 07:31 UTC — Czwarty owned startup controller UNKNOWN; późniejsze odczyty wyjaśniają granicę uruchomienia
 
 - Czwarty controlled owned startup-controller run `f945bf5f` pozostaje **UNKNOWN 1/1**: brak kompletnej oryginalnej pary receiptów, brak replay. Transcript zapisał proces `41728` / birth `134400637715175662` w fazie `owned-suspended-provision-intent-origin-bound`; późniejsza, dokładna obserwacja OS wykazała ten tuple **ALIVE** z dwoma widocznymi oknami Qt. Poprzedni proces `38484` / `134400514037375634` był **DEAD**. To nie dowodzi wznowienia, READY ani kwalifikacji SDK.

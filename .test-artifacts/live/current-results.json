@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-25T07:31:44.890720+00:00",
+  "generatedAt": "2026-11-25T13:32:01+00:00",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -35464,6 +35464,124 @@
       "observedError": "IDSDK_E_SERVER_PROCESS_NOT_READY during idsdk_set_product_config; Fusion showed blocking Quit/login dialog before add-in autoload",
       "addinAutoloadLinesInSnapshot": 0,
       "classification": "Observed startup/authentication blocker explaining why the attempted add-in startup was not reached in this snapshot. Not evidence of broker-feature FAIL or SDK qualification; original attempt remains UNKNOWN."
+    }
+  },
+  "latestOwnedStartupWindowUnknown": {
+    "reportedAt": "2026-11-25T13:32:01Z",
+    "recordType": "fifth-controlled-owned-startup-controller-unknown-normal-close-guard",
+    "model": "openai/gpt-6-luna",
+    "variant": "default",
+    "session": "ses_e02d46320ffeqeaBow4hyBXc9V",
+    "attempt": {
+      "runId": "56a1fe02-c526-43fe-932e-d66b866aebe4",
+      "mainCommandId": "sh_212e27c7a001…",
+      "commandExitCode": 1,
+      "watcher": "failure event confirmed",
+      "phase": "owned-cold-bootstrap",
+      "outcome": "UNKNOWN",
+      "action": "normal-close",
+      "authority": "NONE"
+    },
+    "classification": {
+      "state": "UNKNOWN",
+      "reason": "normal-close guard raised ValueError: Unique exact vendor main window required",
+      "identityPrestartFailure": false,
+      "newFusionSdkAttempt": false,
+      "meaning": "The existing vendor main-window close guard refused before the subsequent Identity/startup work. This is not a failed Identity pre-start test and not a new Fusion/SDK run."
+    },
+    "transcript": {
+      "state": "UNKNOWN",
+      "old": {
+        "pid": 41728,
+        "birth": "134400637715175662"
+      },
+      "process": null,
+      "phases": [],
+      "error": "ValueError: Unique exact vendor main window required",
+      "receiptState": "original normal-close outcome unproven; preserve originals, no replay"
+    },
+    "counts": {
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 5,
+        "denominator": 5,
+        "RUNNING": 0,
+        "meaning": "four prior UNKNOWN controller outcomes preserved, plus this fifth terminal UNKNOWN"
+      },
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "separatePreflight": {
+        "reportedUNKNOWN": 1,
+        "denominator": 1,
+        "includedInControllerCount": false
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "retiredExposures": {
+        "count": 5,
+        "changed": false
+      },
+      "queueJobs": {
+        "count": 17816,
+        "historicalSettlement": "none; preserved"
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "brokerSource": "d3422f3b9465ee8dae03b61438558aeb62b6bf4f",
+      "brokerRuntimeBuild": "a0ee94be5c1d583e00052ba22dfb79bbf83bdcf1a2c8bc9a058a2bb68b25f23a",
+      "brokerRuntimeFullDist": "2220fe7601c1e724d05ca43d6d48ed3520a0411f0bb03fde5ebcf5df3151834a",
+      "qualificationContainer": "/tmp/opencode/luna-identity-broker-artifact-qualified-r2-20261125",
+      "brokerOfflineQualification": "APP 17/17 offline; whole APP review; not actual live qualification",
+      "physicalNativeSource": "0a105 (unchanged; identifier as supplied)",
+      "physicalNativeChanged": false
+    },
+    "qualification": {
+      "actualSDK": "NOTRUN",
+      "newFusionProcess": "NOTRUN",
+      "newFusionSdkRun": false,
+      "IdentityCorrectionLiveQualification": "NOTRUN",
+      "fullProfiles": "NOTRUN",
+      "runningControllerCount": 0
+    },
+    "evidencePaths": {
+      "plan": "/tmp/opencode/root-next-current-plan/operator-plan.ACTUAL.private.json",
+      "bootstrapTranscript": "/tmp/opencode/root-next-current-operator/actual-56a1fe02-c526-43fe-932e-d66b866aebe4/bootstrap-result.json",
+      "failure": "/tmp/opencode/root-next-current-operator/actual-56a1fe02-c526-43fe-932e-d66b866aebe4/failure.json",
+      "operatorStderr": "/tmp/opencode/root-next-current-plan/actual-operator.stderr",
+      "databaseMetadata": "/tmp/opencode/root-next-current-operator/actual-56a1fe02-c526-43fe-932e-d66b866aebe4/database-metadata.original.json",
+      "directoryResult": "/tmp/opencode/root-next-current-operator/actual-56a1fe02-c526-43fe-932e-d66b866aebe4/directory-result.json"
+    },
+    "evidenceSha256": {
+      "plan": "1ff54691f62cbb7bdad48a4673485bfc0692a4cde0b729ee9efd43767b920813",
+      "bootstrapTranscript": "daf09ebfbb1838ca102fa63fab05f79d0acac99116c9647873939afd29f6e0db",
+      "failure": "e54bd32e0b8076ff4364c2933d2215cbbc0d7ff6eca1c14335bbe37b43da6542",
+      "operatorStderr": "e064a2983547f7673e3ccf25183357d8a6c4df781dd11fb3f8e861f8684a05d1",
+      "databaseMetadata": "caffc7af42b87a9a5104e0f64b1d2d50670f4756d050b7e7d8dfdd58babec498",
+      "directoryResult": "b8d23921604d95480ee4c7e0b24210227f8cf9dca04020160efee419d70f15e6"
+    },
+    "preservedHistory": {
+      "fourEarlierControllerUnknowns": "unchanged",
+      "separatePreflight": "unchanged and excluded from controller denominator",
+      "historicalFourSdkUnknowns": "unchanged",
+      "retiredExposures": "unchanged"
+    },
+    "reportingScope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdown": true,
+      "noSDKNativeQueueProbeLifecycleOrRuntimeOperationByReporter": true,
+      "noReplay": true,
+      "noDiscordOrOtherAgents": true
     }
   }
 }
