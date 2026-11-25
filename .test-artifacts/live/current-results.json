@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-25T13:32:01+00:00",
+  "generatedAt": "2026-11-25T16:16:04Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -35582,6 +35582,147 @@
       "noSDKNativeQueueProbeLifecycleOrRuntimeOperationByReporter": true,
       "noReplay": true,
       "noDiscordOrOtherAgents": true
+    }
+  },
+  "latestOwnedStartupLoginDialogTerminalUnknown": {
+    "reportedAt": "2026-11-25T16:16:04Z",
+    "terminalObservedAt": null,
+    "terminalTimeNote": "Dokładny czas terminalny nie jest dostępny w zachowanych wynikach; reportedAt oznacza aktualizację raportu.",
+    "recordType": "sixth-controlled-owned-startup-controller-unknown-followed-by-ordinary-login-dialog-quit",
+    "model": "openai/gpt-6-luna",
+    "variant": "default",
+    "session": "ses_e02d46320ffeqeaBow4hyBXc9V",
+    "attempt": {
+      "runId": "f8dc285d-f28d-4bb7-ae50-8193603673ad",
+      "mainCommandId": "sh_213707ca20025oAvX6KbT4sAaD",
+      "commandExitCode": 1,
+      "watcher": "failure event confirmed",
+      "phase": "owned-cold-bootstrap",
+      "outcome": "UNKNOWN",
+      "authority": "NONE",
+      "action": "normal-close",
+      "transcript": {
+        "process": null,
+        "phases": [],
+        "references": [],
+        "error": "Controlled native normal-close outcome unproven; preserve originals, no replay"
+      },
+      "failure": {
+        "phase": "owned-cold-bootstrap",
+        "code": "ERR_ASSERTION",
+        "outcome": "UNKNOWN"
+      },
+      "meaning": "The controlled attempt remains UNKNOWN; the later ordinary UI Quit is a separate observed action and does not rewrite the attempt or qualify startup."
+    },
+    "normalLoginDialogQuit": {
+      "processPid": 41728,
+      "processBirth": "134400637715175662",
+      "dialogHandle": 10095462,
+      "dialogTitle": "Nie można zalogować",
+      "action": "one exact normal UI Quit invocation",
+      "forcedTermination": false,
+      "WM_CLOSE_replayed": false,
+      "SDK": 0,
+      "result": "exited=true",
+      "meaning": "Ordinary Quit exited the exact process; this is not settlement of the earlier controlled UNKNOWN and not a Fusion startup/SDK PASS."
+    },
+    "observations": {
+      "preQuitLoginDialog": {
+        "result": "PASS for read-only observation only",
+        "visibleDialogHandle": 10095462,
+        "exactProcessAlive": true,
+        "sdkCalls": 0,
+        "processControl": 0
+      },
+      "processExit": {
+        "result": "PASS for one ordinary UI Quit action only",
+        "evidence": "quit-login-error.stdout",
+        "exactPid": 41728,
+        "exactBirth": "134400637715175662",
+        "exited": true,
+        "forcedTermination": false
+      },
+      "namedWindowsAfterCloseCapture": {
+        "file": "windows-after-close.stdout",
+        "observed": "exact process and login windows still ALIVE in this capture",
+        "interpretation": "Not used as evidence of post-exit state; direct Quit result is the evidence for exited=true."
+      },
+      "installedNative": {
+        "source": "0a105",
+        "changed": false
+      },
+      "newFusionProcessAfterQuit": "NOTRUN/unverified"
+    },
+    "counts": {
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 6,
+        "denominator": 6,
+        "RUNNING": 0,
+        "meaning": "six controller attempts are UNKNOWN; previous five preserved and current f8dc285d is the sixth terminal attempt"
+      },
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueHistoricalUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false,
+        "meaning": "preserved canonical queue history; not the controller-attempt count"
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "newFusionIdentitySdkReadiness": "NOTRUN"
+    },
+    "pins": {
+      "sourceCandidate": "5506095",
+      "qualification": "source-qualified r3; not final APP",
+      "package": "6afa",
+      "planSha256": "c187a93a63729c0cd66a99d392e814504c46a4a2c12d86028a8c1f0317848012",
+      "physicalNativeSource": "0a105 (unchanged)",
+      "backend": "autodesk-fusion-mcp via ADDIN 8765",
+      "physicalNativeBackend27182": "excluded"
+    },
+    "evidencePaths": {
+      "bootstrapResult": "/tmp/opencode/root-window-current-operator/live-qualification-f8dc285d-f28d-4bb7-ae50-8193603673ad/bootstrap-result.json",
+      "failure": "/tmp/opencode/root-window-current-operator/live-qualification-f8dc285d-f28d-4bb7-ae50-8193603673ad/failure.json",
+      "quitResult": "/tmp/opencode/root-normal-close-timeout-20261125/quit-login-error.stdout",
+      "quitStderr": "/tmp/opencode/root-normal-close-timeout-20261125/quit-login-error.stderr",
+      "loginDialogReadonly": "/tmp/opencode/root-normal-close-timeout-20261125/login-dialog.stdout",
+      "windowsCapture": "/tmp/opencode/root-normal-close-timeout-20261125/windows-after-close.stdout"
+    },
+    "evidenceSha256": {
+      "bootstrapResult": "9a7022b9e17e90c81127301fec09399d7acda21000c601475a99ef01bb2019e3",
+      "failure": "e54bd32e0b8076ff4364c2933d2215cbbc0d7ff6eca1c14335bbe37b43da6542",
+      "quitResult": "6e3327fb1a8c79d5bb16c780eb551401305b242173f99820e896749109746132",
+      "quitStderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loginDialogReadonly": "414de67ef9210687448d0e980e2c294d8ffad2f5b3c41ec83518b6f1e19b6d14",
+      "windowsCapture": "8dc9f2510c62efe2aea1051f8e53f9fd55f58230ac4718161da77a282a289181"
+    },
+    "preservedHistory": {
+      "fiveEarlierControllerUnknowns": "unchanged",
+      "historicalSdkUnknowns": "four UNKNOWN unchanged",
+      "canonicalQueueUnknowns": "four UNKNOWN unchanged; not reclassified as six",
+      "fullProfileHistory": "previous PASS/FAIL records preserved; current required 11-profile catalog remains NOTRUN",
+      "noPriorSuccessReclassified": true
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noCodeSdkQueueProbeLifecycleDeploymentOrFusionActionsByReporter": true,
+      "noDiscordOrSubagents": true,
+      "noReplayOrForcedTermination": true,
+      "privateCarrierKeyReadOrCopied": false
     }
   }
 }

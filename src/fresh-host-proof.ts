@@ -210,17 +210,53 @@ export async function prepareControlledBootstrapOriginals(
   const startup = startupInputsApi();
   if (startupInputs) await startup.verifyControlledStartupInputs(startupInputs);
   const witness = await controller.prepareOriginalWitness(transcript);
+  const readOriginals = () =>
+    [
+      ...witness.context.originalRefs,
+      ...(startupInputs
+        ? startup.readControlledStartupInputs(startupInputs).files
+        : []),
+    ].map(({ nativePath, sha256, identity }) => ({
+      nativePath,
+      sha256,
+      identity,
+    }));
+  const originals = readOriginals();
   const assertCurrent = () => {
     controller.assertPreparedWitness(witness);
     if (startupInputs) startup.assertControlledStartupInputs(startupInputs);
+    // Keep every original role and identity pinned, even when multiple held
+    // roles refer to one file in the native MAC's path/digest projection.
+    if (!same(readOriginals(), originals))
+      throw new FreshHostProofError("BOOTSTRAP_CLOSURE_UNPROVEN");
   };
   assertCurrent();
-  const references = [
-    ...witness.context.originalRefs,
-    ...(startupInputs
-      ? startup.readControlledStartupInputs(startupInputs).files
-      : []),
-  ].map((ref) => Object.freeze({ path: ref.nativePath, sha256: ref.sha256 }));
+  const unique = new Map<string, (typeof originals)[number]>();
+  for (const ref of originals) {
+    const windows = /^[A-Za-z]:[\\/]/.test(ref.nativePath);
+    if (
+      (!windows &&
+        (!path.posix.isAbsolute(ref.nativePath) ||
+          ref.nativePath.startsWith("//"))) ||
+      ref.nativePath.includes("\0") ||
+      !/^[a-f0-9]{64}$/.test(ref.sha256) ||
+      typeof ref.identity !== "string" ||
+      !ref.identity
+    )
+      throw new FreshHostProofError("BOOTSTRAP_CLOSURE_UNPROVEN");
+    const key = windows
+      ? path.win32.normalize(ref.nativePath).toLowerCase()
+      : path.posix.normalize(ref.nativePath);
+    const previous = unique.get(key);
+    // Do not merge aliases, digest conflicts or different file identities.
+    // Exact same-file roles retain both source fences above.
+    if (previous && !same(previous, ref))
+      throw new FreshHostProofError("BOOTSTRAP_CLOSURE_UNPROVEN");
+    if (!previous) unique.set(key, ref);
+  }
+  const references = [...unique.values()].map((ref) =>
+    Object.freeze({ path: ref.nativePath, sha256: ref.sha256 }),
+  );
   return Object.freeze({
     assertCurrent,
     readCurrentReferences() {
