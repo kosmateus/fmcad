@@ -886,7 +886,7 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
       },
     );
     await t.test(
-      "owned replacement shares current provision correctly and binds only PID/birth before one real resume",
+      "owned replacements verify the complete original lineage before each real bind and one resume",
       async () => {
         const { f, pins, report } = ownedFixture();
         const windowProgram = ownWindow.replace(
@@ -979,7 +979,7 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
             ownedChildProgram.replace(
               "CREATE TABLE normal_observer_fixture_started",
               "CREATE TABLE IF NOT EXISTS normal_observer_fixture_started",
-            ),
+            ) + windowProgram,
             secondReport,
           ],
           owned: {
@@ -1040,6 +1040,129 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
         await assert.rejects(
           adapter.launchAfterDeath(first.process, "3".repeat(32)),
           /replayed/,
+        );
+        native(config, waitReport, { report: secondReport + ".window" });
+        const retiredSecondPath = nextName(retired.nativePath);
+        const normalOriginalPaths = [
+          ...new Set([...secondPins.originalPaths, retiredSecondPath]),
+        ];
+        const retiredSecond = await createNormalObserverLaunchAdapter({
+          ...normalBase,
+          paths: secondPins.paths,
+          installedSource: admissionPins.source,
+          installedBuild: admissionPins.build,
+          originalPaths: normalOriginalPaths,
+          mappedOriginalPaths: Object.fromEntries(
+            [...Object.values(secondPins.paths), ...normalOriginalPaths].map(
+              (name) => [name, mapped(name)],
+            ),
+          ),
+          normal: {
+            ...normal,
+            database: secondPins.owned.database,
+            provisionSha256: second.provision.sha256,
+            retiredProcessPath: retiredSecondPath,
+          },
+        }).requestNormalCloseAndWait(second.process);
+        const thirdPaths = Object.fromEntries(
+          Object.entries(secondPins.paths).map(([key, value]) => [
+            key,
+            ["profile", "provision", "receiptDirectory"].includes(key)
+              ? value
+              : nextName(value),
+          ]),
+        ) as typeof pins.paths;
+        const thirdOutputs = Object.fromEntries(
+          Object.entries(outputs).map(([key, value]) => [key, nextName(value)]),
+        ) as typeof outputs;
+        const chain = [
+          {
+            priorProvision: first.provisionBackup,
+            provisionReceipt: first.provisionReceipt,
+            retiredProcess: retired,
+          },
+          {
+            priorProvision: second.provisionBackup,
+            provisionReceipt: second.provisionReceipt,
+            retiredProcess: retiredSecond,
+          },
+        ];
+        const chainFiles = chain.flatMap((step) => [
+          step.priorProvision,
+          step.provisionReceipt,
+          step.retiredProcess,
+        ]);
+        const thirdOriginalPaths = [
+          ...new Set([
+            ...secondPins.originalPaths,
+            ...Object.values(thirdOutputs),
+            ...chainFiles.map((file) => file.nativePath),
+          ]),
+        ];
+        const thirdDatabase = originalFiles([f.database])[0]!;
+        const thirdReport = nextName(secondReport);
+        const thirdPins: OwnedAutoloadLaunchPins = {
+          ...secondPins,
+          paths: thirdPaths,
+          originalPaths: thirdOriginalPaths,
+          mappedOriginalPaths: Object.fromEntries(
+            [...Object.values(thirdPaths), ...thirdOriginalPaths].map(
+              (name) => [name, mapped(name)],
+            ),
+          ),
+          arguments: [
+            "-I",
+            "-S",
+            "-B",
+            "-c",
+            ownedChildProgram.replace(
+              "CREATE TABLE normal_observer_fixture_started",
+              "CREATE TABLE IF NOT EXISTS normal_observer_fixture_started",
+            ),
+            thirdReport,
+          ],
+          owned: {
+            ...secondPins.owned,
+            ...thirdOutputs,
+            database: {
+              nativePath: thirdDatabase.nativePath,
+              identity: thirdDatabase.identity,
+            },
+            provisionSha256: second.provision.sha256,
+            retiredProcessPath: retiredSecond.nativePath,
+            replacement: {
+              kind: "unregistered-created-process-chain-v1",
+              steps: chain,
+            },
+          },
+        };
+        const third = await createOwnedAutoloadLaunchAdapter(
+          thirdPins,
+        ).launchAfterDeath(second.process, "4".repeat(32));
+        const thirdObserved = native(config, waitReport, {
+          report: thirdReport,
+        });
+        assert.equal(thirdObserved["correctFirstRead"], true);
+        assert.equal(thirdObserved["pid"], third.process.pid);
+        assert.deepEqual(thirdObserved["sdkModules"], []);
+        assert.equal(
+          JSON.parse(Buffer.from(third.provision.bytes).toString()).instance,
+          after.instance,
+        );
+        assert.deepEqual(
+          Buffer.from(third.provisionBackup.bytes),
+          Buffer.from(second.provision.bytes),
+        );
+        for (const original of chainFiles)
+          assert.deepEqual(
+            fs.readFileSync(mapped(original.nativePath)),
+            Buffer.from(original.bytes),
+          );
+        assert.equal(
+          native(config, waitReport, {
+            report: thirdReport + ".database-write",
+          })["databaseWrite"],
+          true,
         );
       },
     );

@@ -156,7 +156,7 @@ function ownedPins(): OwnedAutoloadLaunchPins {
     assertBeforeResumeOriginals() {},
   };
 }
-function replacementPins(): OwnedAutoloadLaunchPins {
+function replacementPins() {
   const p = ownedPins();
   const original = (nativePath: string) => {
     const bytes = Buffer.from("original replacement fixture " + nativePath);
@@ -195,19 +195,19 @@ test("owned replacement requires distinct pinned originals without exposing anot
     ["launchAfterDeath"],
   );
   for (const change of [
-    (p: OwnedAutoloadLaunchPins) =>
+    (p: ReturnType<typeof replacementPins>) =>
       Object.assign(p.owned.replacement!, { kind: "unproved" }),
-    (p: OwnedAutoloadLaunchPins) =>
+    (p: ReturnType<typeof replacementPins>) =>
       Object.assign(p.owned.replacement!, { extra: true }),
-    (p: OwnedAutoloadLaunchPins) =>
+    (p: ReturnType<typeof replacementPins>) =>
       Object.assign(p.owned.replacement!.priorProvision, {
         sha256: "f".repeat(64),
       }),
-    (p: OwnedAutoloadLaunchPins) =>
+    (p: ReturnType<typeof replacementPins>) =>
       Object.assign(p.owned.replacement!.retiredProcess, {
         nativePath: p.owned.replacement!.priorProvision.nativePath,
       }),
-    (p: OwnedAutoloadLaunchPins) =>
+    (p: ReturnType<typeof replacementPins>) =>
       Object.assign(p.owned.replacement!.priorProvision, {
         nativePath: p.paths.profile,
       }),
@@ -217,41 +217,116 @@ test("owned replacement requires distinct pinned originals without exposing anot
     assert.throws(() => createOwnedAutoloadLaunchAdapter(p));
   }
 });
-test("owned replacement mapped proof drift refuses before native executable access", async (t) => {
-  const root = fs.mkdtempSync("/tmp/opencode/owned-replacement-proof-");
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const p = replacementPins(),
-    proof = p.owned.replacement!;
-  const inputs = [
-    ...p.owned.autorunOriginals,
-    ...p.owned.discoveryOriginals,
-    proof.priorProvision,
-    proof.provisionReceipt,
-    proof.retiredProcess,
+function chainReplacementPins(): OwnedAutoloadLaunchPins {
+  const p = replacementPins();
+  const original = (nativePath: string) => {
+    const bytes = Buffer.from("chain original " + nativePath);
+    return {
+      nativePath,
+      bytes,
+      identity: "[1,2,3,4,5,6,7,8,9,1,0]",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  };
+  const steps = [
+    {
+      priorProvision: p.owned.replacement.priorProvision,
+      provisionReceipt: p.owned.replacement.provisionReceipt,
+      retiredProcess: original("C:\\fixture\\first-retirement.json"),
+    },
+    {
+      priorProvision: original("C:\\fixture\\second-backup.json"),
+      provisionReceipt: original("C:\\fixture\\second-receipt.json"),
+      retiredProcess: p.owned.replacement.retiredProcess,
+    },
   ];
-  const mappedOriginalPaths = { ...p.mappedOriginalPaths };
-  for (const [i, input] of inputs.entries()) {
-    const file = path.join(root, `original-${i}`);
-    fs.writeFileSync(file, input.bytes);
-    mappedOriginalPaths[input.nativePath] = file;
-  }
-  const adapter = createOwnedAutoloadLaunchAdapter({
+  const added = steps.flatMap((step) => [
+    step.priorProvision,
+    step.provisionReceipt,
+    step.retiredProcess,
+  ]);
+  return {
     ...p,
-    mappedOriginalPaths,
-  });
-  fs.writeFileSync(
-    mappedOriginalPaths[proof.provisionReceipt.nativePath]!,
-    "changed",
+    owned: {
+      ...p.owned,
+      replacement: { kind: "unregistered-created-process-chain-v1", steps },
+    },
+    originalPaths: [
+      ...new Set([...p.originalPaths, ...added.map((file) => file.nativePath)]),
+    ],
+    mappedOriginalPaths: {
+      ...p.mappedOriginalPaths,
+      ...Object.fromEntries(
+        added.map((file, i) => [file.nativePath, `/fixture/chain-${i}`]),
+      ),
+    },
+  };
+}
+test("owned replacement chain requires closed, distinct ordered original roles", () => {
+  assert.deepEqual(
+    Object.keys(createOwnedAutoloadLaunchAdapter(chainReplacementPins())),
+    ["launchAfterDeath"],
   );
-  await assert.rejects(
-    adapter.launchAfterDeath({ pid: 38, birth: "38" }, "a".repeat(32)),
-    /Mapped bytes or identity changed/,
-  );
-  await assert.rejects(
-    adapter.launchAfterDeath({ pid: 38, birth: "38" }, "b".repeat(32)),
-    /replayed/,
-  );
+  for (const change of [
+    (steps: unknown[]) => steps.splice(0),
+    (steps: unknown[]) => steps.splice(1),
+    (steps: unknown[]) => Object.assign(steps[0]!, { extra: true }),
+    (steps: unknown[]) => Object.assign(steps[0]!, steps[1]),
+  ]) {
+    const p = chainReplacementPins(),
+      proof = p.owned.replacement!;
+    assert.equal(proof.kind, "unregistered-created-process-chain-v1");
+    if (proof.kind !== "unregistered-created-process-chain-v1")
+      throw new Error("Fixture kind");
+    const steps = [...proof.steps];
+    change(steps);
+    Object.assign(proof, { steps });
+    assert.throws(() => createOwnedAutoloadLaunchAdapter(p));
+  }
 });
+for (const [label, makePins] of [
+  ["single", replacementPins],
+  ["chain", chainReplacementPins],
+] as const)
+  test(`owned ${label} replacement mapped proof drift refuses before native executable access`, async (t) => {
+    const root = fs.mkdtempSync("/tmp/opencode/owned-replacement-proof-");
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const p = makePins(),
+      proof = p.owned.replacement!;
+    const steps =
+      proof.kind === "unregistered-created-process-v1" ? [proof] : proof.steps;
+    const inputs = [
+      ...p.owned.autorunOriginals,
+      ...p.owned.discoveryOriginals,
+      ...steps.flatMap((step) => [
+        step.priorProvision,
+        step.provisionReceipt,
+        step.retiredProcess,
+      ]),
+    ];
+    const mappedOriginalPaths = { ...p.mappedOriginalPaths };
+    for (const [i, input] of inputs.entries()) {
+      const file = path.join(root, `original-${i}`);
+      fs.writeFileSync(file, input.bytes);
+      mappedOriginalPaths[input.nativePath] = file;
+    }
+    const adapter = createOwnedAutoloadLaunchAdapter({
+      ...p,
+      mappedOriginalPaths,
+    });
+    fs.writeFileSync(
+      mappedOriginalPaths[steps[0]!.provisionReceipt.nativePath]!,
+      "changed",
+    );
+    await assert.rejects(
+      adapter.launchAfterDeath({ pid: 38, birth: "38" }, "a".repeat(32)),
+      /Mapped bytes or identity changed/,
+    );
+    await assert.rejects(
+      adapter.launchAfterDeath({ pid: 38, birth: "38" }, "b".repeat(32)),
+      /replayed/,
+    );
+  });
 test("owned replacement verifies the original chain and real SQLite guards without replay or writes", () => {
   const result = spawnSync(
     "python3",
@@ -264,7 +339,7 @@ test("owned replacement verifies the original chain and real SQLite guards witho
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const evidence = JSON.parse(result.stdout);
-  assert.equal(evidence.count, 10);
+  assert.equal(evidence.count, 21);
   assert.equal(evidence.actualFusion, "NOTRUN");
   assert.equal(evidence.cases[0].outcome, "VERIFIED_PRE_MUTATION_FENCE");
   for (const item of evidence.cases) {

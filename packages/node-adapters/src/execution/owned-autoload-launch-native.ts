@@ -79,8 +79,124 @@ def owned_replacement_file(ref):
         raise ValueError("Original owned replacement bytes/identity changed")
     return strict(base64.b64decode(original["base64"]))
 
+def owned_replacement_steps(proof):
+    if type(proof) is not dict:
+        raise ValueError("Closed original owned replacement required")
+    if proof.get("kind") == "unregistered-created-process-v1":
+        if set(proof) != {"kind", "priorProvision", "provisionReceipt", "retiredProcess"}:
+            raise ValueError("Closed original owned replacement required")
+        return [{key: proof[key] for key in ("priorProvision", "provisionReceipt", "retiredProcess")}]
+    if (set(proof) != {"kind", "steps"}
+            or proof["kind"] != "unregistered-created-process-chain-v1"
+            or type(proof["steps"]) is not list or len(proof["steps"]) < 2):
+        raise ValueError("Two or more original owned replacement steps required")
+    for step in proof["steps"]:
+        if type(step) is not dict or set(step) != {"priorProvision", "provisionReceipt", "retiredProcess"}:
+            raise ValueError("Closed original owned replacement step required")
+    return proof["steps"]
+
+def owned_provision_identity(value):
+    parsed = strict(value)
+    if (type(parsed) is not list or len(parsed) != 11
+            or any(type(item) is not int or item < 0 or item > 0xffffffff for item in parsed)):
+        raise ValueError("Original native provision identity required")
+    # File object/creation, link count and attributes must survive every in-place
+    # bind. Write time and length change legitimately; the final ref is exact.
+    return tuple(parsed[index] for index in (0, 1, 2, 3, 4, 9, 10))
+
+def owned_replacement_chain(n, steps):
+    _, handoff = owned_reference(n["handoffRequest"])
+    current_raw, current_identity = file_bytes(p["paths"]["provision"], True, False)
+    current_file = {"nativePath": str(Path(p["paths"]["provision"])),
+                    "sha256": digest(current_raw), "identity": current_identity}
+    current = strict(current_raw)
+    root = previous = previous_ref = None
+    seen_processes, seen_nonces = set(), set()
+    for index, step in enumerate(steps):
+        prior = owned_replacement_file(step["priorProvision"])
+        receipt = owned_replacement_file(step["provisionReceipt"])
+        retired = owned_replacement_file(step["retiredProcess"])
+        if (type(prior) is not dict
+                or set(prior) != {"database", "pid", "birth", "instance", "epoch", "source", "build", "credentials"}
+                or type(receipt) is not dict
+                or set(receipt) != {"kind", "isolation", "nonce", "old", "process", "generation",
+                                    "handoffId", "handoffRequest", "handoffReceipt", "database",
+                                    "beforeSha256", "backup", "after"}):
+            raise ValueError("Closed original owned replacement chain records required")
+        process = receipt["process"]
+        if (type(process) is not dict or set(process) != {"pid", "birth"}
+                or type(process["pid"]) is not int or not 0 < process["pid"] <= 0xffffffff
+                or type(process["birth"]) is not str or not process["birth"]
+                or any(c not in "0123456789" for c in process["birth"])
+                or int(process["birth"]) <= 0
+                or type(prior["pid"]) is not int or not 0 < prior["pid"] <= 0xffffffff
+                or type(prior["birth"]) is not str or not prior["birth"]
+                or any(c not in "0123456789" for c in prior["birth"])
+                or int(prior["birth"]) <= 0):
+            raise ValueError("Exact original owned replacement process required")
+        before_process = {"pid": prior["pid"], "birth": prior["birth"]}
+        if index == 0:
+            root = prior
+            seen_processes.add((prior["pid"], prior["birth"]))
+        elif (prior != previous or step["priorProvision"]["sha256"] != previous_ref["sha256"]):
+            raise ValueError("Original owned replacement continuity differs")
+        after = {**prior, **process, **handoff["nextGeneration"]}
+        last = index == len(steps) - 1
+        if (receipt["kind"] != "owned-autoload-provision-bound-v1"
+                or receipt["isolation"] != "NOT_PROVEN"
+                or type(receipt["nonce"]) is not str or len(receipt["nonce"]) != 32
+                or any(c not in "0123456789abcdef" for c in receipt["nonce"])
+                or receipt["nonce"] in seen_nonces
+                or (process["pid"], process["birth"]) in seen_processes
+                or receipt["old"] != before_process
+                or receipt["generation"] != handoff["nextGeneration"]
+                or {"instance": prior["instance"], "epoch": prior["epoch"]} != (
+                    handoff["generation"] if index == 0 else handoff["nextGeneration"])
+                or receipt["handoffId"] != handoff["handoffId"]
+                or receipt["handoffRequest"] != n["handoffRequest"]
+                or receipt["handoffReceipt"] != n["handoffReceipt"]
+                or receipt["backup"] != step["priorProvision"]
+                or receipt["beforeSha256"] != step["priorProvision"]["sha256"]
+                or type(receipt["after"]) is not dict
+                or set(receipt["after"]) != {"nativePath", "sha256", "identity"}
+                or receipt["after"]["nativePath"] != current_file["nativePath"]
+                or owned_provision_identity(receipt["after"]["identity"]) != owned_provision_identity(current_identity)
+                or (last and (receipt["after"] != current_file or after != current
+                              or process != request["old"]
+                              or step["retiredProcess"]["nativePath"] != n["retiredProcessPath"]))
+                or current_file["sha256"] != n["provisionSha256"]
+                or type(receipt["database"]) is not dict
+                or set(receipt["database"]) != {"nativePath", "identity"}
+                or receipt["database"].get("nativePath") != n["database"]["nativePath"]
+                or owned_provision_identity(receipt["database"]["identity"]) != owned_provision_identity(n["database"]["identity"])
+                or Path(prior["database"]).resolve() != Path(n["database"]["nativePath"]).resolve()
+                or prior["source"] != n["source"] or prior["build"] != n["build"]
+                or type(retired) is not dict
+                or set(retired) != {"exited", "oldPidPresent", "forceUsed", "oldPid", "oldBirth",
+                                    "observation", "windowHandle", "windowVisibleAtInput",
+                                    "windowClass", "oldExe", "oldExeSha256"}
+                or retired["exited"] is not True or retired["oldPidPresent"] is not False
+                or retired["forceUsed"] is not False or retired["windowVisibleAtInput"] is not True
+                or retired["windowClass"] != p["mainWindowClass"]
+                or type(retired["windowHandle"]) is not int or retired["windowHandle"] <= 0
+                or retired["observation"] != "exact-original-process-signaled-after-one-WM_CLOSE"
+                or {"pid": retired["oldPid"], "birth": retired["oldBirth"]} != process
+                or type(retired["oldExe"]) is not str
+                or retired["oldExe"].casefold() != p["executable"].casefold()
+                or retired["oldExeSha256"] != p["executableSha256"]):
+            raise ValueError("Original owned replacement chain differs")
+        dead(before_process)
+        dead(process)
+        seen_nonces.add(receipt["nonce"])
+        seen_processes.add((process["pid"], process["birth"]))
+        previous, previous_ref = after, receipt["after"]
+    return {"registeredBefore": root, "provisionIdentity": current_identity}
+
 def owned_replacement_before(n):
     proof = n.get("replacement")
+    steps = owned_replacement_steps(proof)
+    if proof["kind"] == "unregistered-created-process-chain-v1":
+        return owned_replacement_chain(n, steps)
     if (type(proof) is not dict or set(proof) != {
             "kind", "priorProvision", "provisionReceipt", "retiredProcess"}
             or proof["kind"] != "unregistered-created-process-v1"
@@ -194,10 +310,8 @@ def owned_prepare(source):
     owned_inputs = n["autorunOriginals"] + n["discoveryOriginals"]
     if "replacement" in n:
         proof = n["replacement"]
-        if (type(proof) is not dict or set(proof) != {
-                "kind", "priorProvision", "provisionReceipt", "retiredProcess"}):
-            raise ValueError("Closed original owned replacement required")
-        owned_inputs += [proof[key] for key in ("priorProvision", "provisionReceipt", "retiredProcess")]
+        owned_inputs += [step[key] for step in owned_replacement_steps(proof)
+                         for key in ("priorProvision", "provisionReceipt", "retiredProcess")]
     names = set()
     for ref in owned_inputs:
         if (type(ref) is not dict or set(ref) != {"nativePath", "sha256", "identity"}

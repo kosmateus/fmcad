@@ -144,6 +144,49 @@ def scenario(case):
              "executable": str(executable), "executableSha256": sha(b"exe"),
              "nativePython": str(python), "nativePythonSha256": sha(b"python")}
         p["mainWindowClass"] = "fixture"
+        if case.startswith("chain-"):
+            first = {key: normal["replacement"][key] for key in
+                     ("priorProvision", "provisionReceipt", "retiredProcess")}
+            next_prior = write(root / "prior-second.json", current)
+            current = {**current, "pid": 39, "birth": "39"}
+            write(Path(provision), current)
+            next_retired = write(root / "retired-second.json", {**retired, "oldPid": 39, "oldBirth": "39"})
+            next_bound = {**bound, "nonce": "c" * 32,
+                          "old": {"pid": 38, "birth": "38"},
+                          "process": {"pid": 39, "birth": "39"},
+                          "beforeSha256": sha(Path(next_prior).read_bytes()),
+                          "backup": reference(next_prior), "after": reference(provision)}
+            if case == "chain-gap":
+                write(Path(next_prior), {**json.loads(Path(next_prior).read_bytes()), "credentials": {"changed": True}})
+                next_bound["beforeSha256"] = sha(Path(next_prior).read_bytes())
+                next_bound["backup"] = reference(next_prior)
+            if case == "chain-repeated-nonce":
+                next_bound["nonce"] = bound["nonce"]
+            if case == "chain-database-rebind":
+                next_bound["database"] = {**next_bound["database"],
+                                          "identity": native_identity.replace("[1,", "[2,")}
+            if case == "chain-generation-drift":
+                next_bound["generation"] = old
+            if case == "chain-identity-rebind":
+                bound["after"]["identity"] = native_identity.replace("[1,", "[2,")
+                write(Path(bound_file), bound)
+                first["provisionReceipt"] = reference(bound_file)
+            if case == "chain-current-body":
+                write(Path(provision), {**current, "credentials": {"changed": True}})
+                next_bound["after"] = reference(provision)
+            next_bound_file = write(root / "bound-second.json", next_bound)
+            second = {"priorProvision": reference(next_prior),
+                      "provisionReceipt": reference(next_bound_file),
+                      "retiredProcess": reference(next_retired)}
+            steps = [first, second]
+            if case == "chain-reordered":
+                steps.reverse()
+            if case == "chain-missing-retirement":
+                del second["retiredProcess"]
+            normal["replacement"] = {"kind": "unregistered-created-process-chain-v1", "steps": steps}
+            normal["retiredProcessPath"] = next_retired
+            normal["provisionSha256"] = sha(Path(provision).read_bytes())
+            p["originalPaths"] += [next_prior, next_bound_file, next_retired]
 
         def inventory(folder, *args):
             return {file.name: sha(file.read_bytes()) for file in Path(folder).iterdir()}
@@ -151,6 +194,8 @@ def scenario(case):
         def dead(process):
             if case == "registered-process-still-alive" and process["pid"] == 34:
                 raise ValueError("Original process still alive")
+            if case == "chain-alive-intermediate" and process["pid"] == 38:
+                raise ValueError("Intermediate original process still alive")
 
         def identity(fd):
             return native_identity.replace("[1,", "[2,") if (
@@ -161,7 +206,8 @@ def scenario(case):
                 output.write(raw)
             return snapshot(file)
 
-        env = {"p": p, "request": {"old": {"pid": 38, "birth": "38"}, "nonce": "b" * 32}, "strict": json.loads,
+        old_pid = 39 if case.startswith("chain-") else 38
+        env = {"p": p, "request": {"old": {"pid": old_pid, "birth": str(old_pid)}, "nonce": "b" * 32}, "strict": json.loads,
                "snapshot": snapshot, "base64": base64, "Path": Path, "os": os, "sqlite3": sqlite3,
                "json": json, "held": [], "owned_state": None, "owned_replacement": None,
                "owned_database_handles": [], "open_file": open_file,
@@ -174,7 +220,8 @@ def scenario(case):
         names = {"owned_reference", "owned_database", "owned_fence", "owned_prepare",
                  "owned_before_generation", "owned_registered_before", "owned_replacement_file",
                  "owned_replacement_before", "owned_inputs_fence", "owned_check_provision_identity",
-                 "owned_bind_fields", "owned_bind"}
+                 "owned_bind_fields", "owned_bind", "owned_replacement_steps",
+                 "owned_provision_identity", "owned_replacement_chain"}
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name in names:
                 if node.name == "owned_prepare" and "owned_prepare" in env:
@@ -195,8 +242,8 @@ def scenario(case):
             env["owned_prepare"](source)
             raise AssertionError("Pre-mutation fence was not reached or denied")
         except VerifiedFence:
-            assert case in ("replacement-valid", "replacement-bind"), case
-            if case == "replacement-bind":
+            assert case in ("replacement-valid", "replacement-bind", "chain-valid", "chain-bind"), case
+            if case in ("replacement-bind", "chain-bind"):
                 env["owned_fence"] = real_fence
                 result = env["owned_base_bind"](types.SimpleNamespace(pid=40, process=None), source, {})
                 after = json.loads(Path(provision).read_bytes())
@@ -208,7 +255,7 @@ def scenario(case):
             else:
                 outcome = "VERIFIED_PRE_MUTATION_FENCE"
         except ValueError as error:
-            assert case != "replacement-valid", str(error)
+            assert case not in ("replacement-valid", "replacement-bind", "chain-valid", "chain-bind"), str(error)
             outcome = str(error)
         finally:
             for fd in handles:
@@ -216,7 +263,7 @@ def scenario(case):
                     os.close(fd)
                 except OSError:
                     pass
-        if case == "replacement-bind":
+        if case in ("replacement-bind", "chain-bind"):
             assert all(sha(file.read_bytes()) == digest for file, digest in before.items()
                        if str(file) != provision)
             assert sorted(file.name for file in root.glob("never-*")) == ["never-backup", "never-receipt"]
@@ -229,6 +276,12 @@ def scenario(case):
 cases = ["replacement-valid", "replacement-bind", "write-handle-rebind",
          "no-explicit-replacement", "wrong-original-process",
          "forced-retirement", "changed-original-bytes", "wrong-registered-process",
-         "existing-current-owner", "registered-process-still-alive"]
+          "existing-current-owner", "registered-process-still-alive"]
+cases += ["chain-valid", "chain-bind", "chain-gap", "chain-reordered",
+          "chain-repeated-nonce", "chain-identity-rebind", "chain-current-body",
+          "chain-missing-retirement", "chain-alive-intermediate",
+          "chain-database-rebind", "chain-generation-drift"]
+if os.environ.get("FMCAD_REPLACEMENT_CASE_PREFIX"):
+    cases = [case for case in cases if case.startswith(os.environ["FMCAD_REPLACEMENT_CASE_PREFIX"])]
 results = [scenario(case) for case in cases]
 print(json.dumps({"cases": results, "count": len(results), "actualFusion": "NOTRUN"}, sort_keys=True))

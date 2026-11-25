@@ -83,6 +83,19 @@ export interface NormalObserverLaunchPins extends ControlledFusionLaunchPins {
   /** Trusted synchronous held lifecycle boundary, never JSON or a public flag. */
   assertHeld(): void;
 }
+export interface OwnedReplacementStep {
+  readonly priorProvision: ControlledFile;
+  readonly provisionReceipt: ControlledFile;
+  readonly retiredProcess: ControlledFile;
+}
+type OwnedReplacement =
+  | (OwnedReplacementStep & {
+      readonly kind: "unregistered-created-process-v1";
+    })
+  | {
+      readonly kind: "unregistered-created-process-chain-v1";
+      readonly steps: readonly OwnedReplacementStep[];
+    };
 export interface OwnedAutoloadLaunchOriginals extends NormalObserverLaunchOriginals {
   /** Original provision's admission protocol identity, not installed native code. */
   readonly admissionPins: { readonly source: string; readonly build: string };
@@ -90,12 +103,7 @@ export interface OwnedAutoloadLaunchOriginals extends NormalObserverLaunchOrigin
   readonly discoveryOriginals: readonly ControlledFile[];
   /** Original native chain for a created but unregistered process already dead.
    * This selects a private verification contract, never a serialized grant. */
-  readonly replacement?: {
-    readonly kind: "unregistered-created-process-v1";
-    readonly priorProvision: ControlledFile;
-    readonly provisionReceipt: ControlledFile;
-    readonly retiredProcess: ControlledFile;
-  };
+  readonly replacement?: OwnedReplacement;
 }
 export interface OwnedAutoloadLaunchPins extends ControlledFusionLaunchPins {
   readonly owned: OwnedAutoloadLaunchOriginals;
@@ -144,6 +152,28 @@ function closed(value: unknown, keys: readonly string[]) {
   if (Object.keys(record).sort().join() !== [...keys].sort().join())
     throw new Error("Closed native fields differ");
   return record;
+}
+function replacementSteps(
+  proof: OwnedReplacement,
+): readonly OwnedReplacementStep[] {
+  if (proof.kind === "unregistered-created-process-v1") {
+    closed(proof, [
+      "kind",
+      "priorProvision",
+      "provisionReceipt",
+      "retiredProcess",
+    ]);
+    return [proof];
+  }
+  if (proof.kind === "unregistered-created-process-chain-v1") {
+    closed(proof, ["kind", "steps"]);
+    if (!Array.isArray(proof.steps) || proof.steps.length < 2)
+      throw new Error("Two or more original owned replacement steps required");
+    for (const step of proof.steps)
+      closed(step, ["priorProvision", "provisionReceipt", "retiredProcess"]);
+    return proof.steps;
+  }
+  throw new Error("Explicit original owned replacement contract required");
 }
 function windowsPath(value: string): string {
   if (
@@ -334,6 +364,9 @@ function createLaunchAdapter(
   if (normalOptions && ownedOptions)
     throw new Error("Disjoint native launch roles required");
   const owned = ownedOptions && structuredClone(ownedOptions);
+  const originalReplacementSteps = owned?.replacement
+    ? replacementSteps(owned.replacement)
+    : [];
   const lifecycle = owned
     ? (({ admissionPins, replacement, ...originals }) => {
         void admissionPins;
@@ -383,13 +416,11 @@ function createLaunchAdapter(
       const stamps = [
         ...owned.autorunOriginals,
         ...owned.discoveryOriginals,
-        ...(owned.replacement
-          ? [
-              owned.replacement.priorProvision,
-              owned.replacement.provisionReceipt,
-              owned.replacement.retiredProcess,
-            ]
-          : []),
+        ...originalReplacementSteps.flatMap((step) => [
+          step.priorProvision,
+          step.provisionReceipt,
+          step.retiredProcess,
+        ]),
       ].map((file) => {
         const mapped = pins.mappedOriginalPaths[file.nativePath]!;
         if (fs.realpathSync(mapped) !== path.resolve(mapped))
@@ -599,42 +630,34 @@ function createLaunchAdapter(
       seen.add(name);
     }
     if (owned.replacement) {
-      const proof = owned.replacement;
-      closed(proof, [
-        "kind",
-        "priorProvision",
-        "provisionReceipt",
-        "retiredProcess",
-      ]);
-      if (proof.kind !== "unregistered-created-process-v1")
-        throw new Error(
-          "Explicit original owned replacement contract required",
-        );
       const retirement = windowsPath(normal!.retiredProcessPath);
-      for (const [role, input] of [
-        ["priorProvision", proof.priorProvision],
-        ["provisionReceipt", proof.provisionReceipt],
-        ["retiredProcess", proof.retiredProcess],
-      ] as const) {
-        const name = windowsPath(input.nativePath);
-        if (
-          !pins.originalPaths.includes(input.nativePath) ||
-          !allowed.has(input.nativePath) ||
-          seen.has(name) ||
-          reserved.some(
-            (value) =>
-              value === name &&
-              !(role === "retiredProcess" && name === retirement),
-          ) ||
-          (role === "retiredProcess" && name !== retirement) ||
-          !identity(input.identity) ||
-          !sha(input.sha256) ||
-          digest(input.bytes) !== input.sha256
-        )
-          throw new Error(
-            "Distinct pinned original owned replacement bytes/identity required",
-          );
-        seen.add(name);
+      for (const [index, proof] of originalReplacementSteps.entries()) {
+        const last = index === originalReplacementSteps.length - 1;
+        for (const [role, input] of [
+          ["priorProvision", proof.priorProvision],
+          ["provisionReceipt", proof.provisionReceipt],
+          ["retiredProcess", proof.retiredProcess],
+        ] as const) {
+          const name = windowsPath(input.nativePath);
+          if (
+            !pins.originalPaths.includes(input.nativePath) ||
+            !allowed.has(input.nativePath) ||
+            seen.has(name) ||
+            reserved.some(
+              (value) =>
+                value === name &&
+                !(last && role === "retiredProcess" && name === retirement),
+            ) ||
+            (last && role === "retiredProcess" && name !== retirement) ||
+            !identity(input.identity) ||
+            !sha(input.sha256) ||
+            digest(input.bytes) !== input.sha256
+          )
+            throw new Error(
+              "Distinct pinned original owned replacement bytes/identity required",
+            );
+          seen.add(name);
+        }
       }
     }
   }
@@ -803,18 +826,37 @@ function createLaunchAdapter(
                     discoveryOriginals: owned.discoveryOriginals.map(reference),
                     ...(owned.replacement
                       ? {
-                          replacement: {
-                            kind: owned.replacement.kind,
-                            priorProvision: reference(
-                              owned.replacement.priorProvision,
-                            ),
-                            provisionReceipt: reference(
-                              owned.replacement.provisionReceipt,
-                            ),
-                            retiredProcess: reference(
-                              owned.replacement.retiredProcess,
-                            ),
-                          },
+                          replacement:
+                            owned.replacement.kind ===
+                            "unregistered-created-process-v1"
+                              ? {
+                                  kind: owned.replacement.kind,
+                                  priorProvision: reference(
+                                    owned.replacement.priorProvision,
+                                  ),
+                                  provisionReceipt: reference(
+                                    owned.replacement.provisionReceipt,
+                                  ),
+                                  retiredProcess: reference(
+                                    owned.replacement.retiredProcess,
+                                  ),
+                                }
+                              : {
+                                  kind: owned.replacement.kind,
+                                  steps: originalReplacementSteps.map(
+                                    (step) => ({
+                                      priorProvision: reference(
+                                        step.priorProvision,
+                                      ),
+                                      provisionReceipt: reference(
+                                        step.provisionReceipt,
+                                      ),
+                                      retiredProcess: reference(
+                                        step.retiredProcess,
+                                      ),
+                                    }),
+                                  ),
+                                },
                         }
                       : {}),
                   }
