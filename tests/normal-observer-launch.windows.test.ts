@@ -166,6 +166,19 @@ while True:
     if result<0:raise OSError("Fixture message loop failed")
     u.TranslateMessage(ctypes.byref(message));u.DispatchMessageW(ctypes.byref(message))
 `;
+const ownedPopupWindow = ownWindow
+  .replace(
+    "u.ShowWindow.argtypes=",
+    'popup=u.CreateWindowExW(0,cls.name,"Same-class owned popup",0x80000000,0,0,100,100,hwnd,None,cls.instance,None)\nassert popup\nu.ShowWindow.argtypes=',
+  )
+  .replace(
+    "u.ShowWindow(hwnd,4)",
+    "u.ShowWindow(popup,4)\nu.ShowWindow(hwnd,4)",
+  )
+  .replace(
+    '{"visible":hwnd,"hidden":hidden}',
+    '{"visible":hwnd,"hidden":hidden,"ownedPopup":popup}',
+  );
 const childProgram = String.raw`
 import ctypes,json,os,sqlite3,sys,time
 from ctypes import wintypes as w
@@ -364,12 +377,13 @@ test(
       withWindow = false,
       admissionSource = config.source,
       admissionBuild = protocolBuild,
+      windowProgram = ownWindow,
     ) {
       const f = native(config, setup, {
         ...config,
         source: admissionSource,
         build: admissionBuild,
-        ...(withWindow ? { windowProgram: ownWindow } : {}),
+        ...(withWindow ? { windowProgram } : {}),
       }) as {
         root: string;
         helper: string;
@@ -631,9 +645,14 @@ print(json.dumps({"refs":out}))
       },
     );
     await t.test(
-      "one normal close selects the sole visible same-class owned window and publishes OS death facts",
+      "one normal close selects the unowned main window despite a visible same-class owned popup",
       async () => {
-        const { f, pins } = fixture(true);
+        const { f, pins } = fixture(
+          true,
+          config.source,
+          protocolBuild,
+          ownedPopupWindow,
+        );
         const adapter = createNormalObserverLaunchAdapter(pins);
         const original = await adapter.requestNormalCloseAndWait(f.old);
         const facts = JSON.parse(
@@ -646,12 +665,51 @@ print(json.dumps({"refs":out}))
         assert.equal(facts["oldBirth"], f.old.birth);
         const windows = JSON.parse(
           fs.readFileSync(mapped(`${f.private}\\old-window-ready`), "utf8"),
-        ) as { visible: number; hidden: number };
+        ) as { visible: number; hidden: number; ownedPopup: number };
         assert.equal(facts["windowHandle"], windows.visible);
         assert.notEqual(facts["windowHandle"], windows.hidden);
+        assert.notEqual(facts["windowHandle"], windows.ownedPopup);
         assert.equal(facts["windowVisibleAtInput"], true);
         assert.equal(original.nativePath, pins.normal.retiredProcessPath);
         assert.equal(sha(original.bytes), original.sha256);
+        await assert.rejects(
+          adapter.requestNormalCloseAndWait(f.old),
+          /replayed/,
+        );
+      },
+    );
+
+    await t.test(
+      "two independent visible same-class windows remain ambiguous before any close input",
+      async () => {
+        const ambiguous = ownedPopupWindow.replace(
+          "100,100,hwnd,None,cls.instance,None)",
+          "100,100,None,None,cls.instance,None)",
+        );
+        assert.notEqual(ambiguous, ownedPopupWindow);
+        const { f, pins } = fixture(
+          true,
+          config.source,
+          protocolBuild,
+          ambiguous,
+        );
+        const adapter = createNormalObserverLaunchAdapter(pins);
+        await assert.rejects(
+          adapter.requestNormalCloseAndWait(f.old),
+          (error: unknown) => {
+            assert.ok(error instanceof ControlledFusionNativeError);
+            assert.equal(error.action, "normal-close");
+            assert.match(
+              error.stderr,
+              /Unique exact vendor main window required/,
+            );
+            return true;
+          },
+        );
+        assert.equal(
+          fs.existsSync(mapped(pins.normal.retiredProcessPath)),
+          false,
+        );
         await assert.rejects(
           adapter.requestNormalCloseAndWait(f.old),
           /replayed/,

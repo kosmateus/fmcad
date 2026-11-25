@@ -262,6 +262,10 @@ def normal_close(value):
         u.GetClassNameW.argtypes = [w.HWND, w.LPWSTR, ctypes.c_int]
         u.IsWindowVisible.argtypes = [w.HWND]
         u.IsWindowVisible.restype = w.BOOL
+        u.GetWindow.argtypes = [w.HWND, w.UINT]
+        u.GetWindow.restype = w.HWND
+        u.GetAncestor.argtypes = [w.HWND, w.UINT]
+        u.GetAncestor.restype = w.HWND
         u.PostMessageW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
         windows = []
         def inspect(hwnd, _):
@@ -269,8 +273,12 @@ def normal_close(value):
             u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             if pid.value == value["pid"]:
                 name = ctypes.create_unicode_buffer(512)
+                # Qt owned popups can share the visible main window's class.
+                # NORMAL targets the unique unowned root, never its popup.
                 if (u.GetClassNameW(hwnd, name, len(name)) and name.value == p["mainWindowClass"]
-                        and (p.get("normal") is None or u.IsWindowVisible(hwnd))):
+                        and (p.get("normal") is None or (
+                            u.IsWindowVisible(hwnd) and not u.GetWindow(hwnd, 4)
+                            and u.GetAncestor(hwnd, 3) == hwnd))):
                     windows.append(hwnd)
             return True
         # Enumerate GUI windows ONLY on the exact process's native threads,
@@ -308,6 +316,8 @@ def normal_close(value):
                 or k.WaitForSingleObject(h, 0) != 258
                 or (p.get("normal") is not None and (
                     not u.IsWindowVisible(windows[0]) or
+                    u.GetWindow(windows[0], 4) or
+                    u.GetAncestor(windows[0], 3) != windows[0] or
                     not u.GetClassNameW(windows[0], current_class, len(current_class)) or
                     current_class.value != p["mainWindowClass"]))):
             raise ValueError("Exact original window/process changed")
