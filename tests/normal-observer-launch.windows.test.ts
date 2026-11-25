@@ -605,6 +605,102 @@ print(json.dumps({"refs":out}))
     }
 
     await t.test(
+      "already-dead observation captures current absence without claiming a normal WM_CLOSE receipt",
+      async () => {
+        const { f, pins } = fixture();
+        const adapter = createNormalObserverLaunchAdapter(pins);
+        const observe: unknown = Reflect.get(adapter, "observeAlreadyDead");
+        assert.ok(
+          typeof observe === "function",
+          "Explicit already-dead observation API required",
+        );
+        const original: unknown = await Reflect.apply(observe, adapter, [
+          f.old,
+        ]);
+        assert.ok(original && typeof original === "object");
+        assert.ok("nativePath" in original && "bytes" in original);
+        assert.equal(original.nativePath, pins.normal.retiredProcessPath);
+        assert.ok(original.bytes instanceof Uint8Array);
+        const facts = JSON.parse(Buffer.from(original.bytes).toString("utf8"));
+        assert.equal(
+          facts.observation,
+          "exact-original-provision-process-verified-dead",
+        );
+        assert.equal(facts.processControl, 0);
+        assert.equal(facts.originalTerminationOutcome, "UNKNOWN_UNCHANGED");
+        assert.equal(facts.oldPid, f.old.pid);
+        assert.equal(facts.oldBirth, f.old.birth);
+        assert.equal(facts.oldPidPresent, false);
+        assert.equal(
+          "forceUsed" in facts,
+          false,
+          "No invented claim about historical termination",
+        );
+        assert.equal(
+          "windowHandle" in facts,
+          false,
+          "No invented WM_CLOSE observation",
+        );
+        await assert.rejects(
+          async () => Reflect.apply(observe, adapter, [f.old]),
+          /cannot be replayed/,
+        );
+      },
+    );
+    await t.test(
+      "already-dead observation refuses a live original and never falls back to normal close",
+      async () => {
+        const { f, pins } = fixture(true);
+        const adapter = createNormalObserverLaunchAdapter(pins);
+        await assert.rejects(
+          adapter.observeAlreadyDead(f.old),
+          (error: unknown) => {
+            assert.ok(error instanceof ControlledFusionNativeError);
+            assert.equal(error.action, "observe-dead");
+            assert.match(error.stderr, /Original process is still alive/);
+            return true;
+          },
+        );
+        assert.equal(
+          fs.existsSync(mapped(pins.normal.retiredProcessPath)),
+          false,
+        );
+        await assert.rejects(
+          adapter.requestNormalCloseAndWait(f.old),
+          /cannot be replayed/,
+        );
+        // Separate cleanup of our benign fixture, not a fallback inside capture.
+        await createNormalObserverLaunchAdapter(pins).requestNormalCloseAndWait(
+          f.old,
+        );
+      },
+    );
+    await t.test(
+      "already-dead observation requires original provision birth and never overwrites an output",
+      async () => {
+        const first = fixture();
+        await assert.rejects(
+          createNormalObserverLaunchAdapter(first.pins).observeAlreadyDead({
+            ...first.f.old,
+            birth: first.f.old.birth + "1",
+          }),
+        );
+        assert.equal(
+          fs.existsSync(mapped(first.pins.normal.retiredProcessPath)),
+          false,
+        );
+        const second = fixture();
+        const output = mapped(second.pins.normal.retiredProcessPath);
+        fs.writeFileSync(output, "original fixture bytes", { flag: "wx" });
+        await assert.rejects(
+          createNormalObserverLaunchAdapter(second.pins).observeAlreadyDead(
+            second.f.old,
+          ),
+        );
+        assert.equal(fs.readFileSync(output, "utf8"), "original fixture bytes");
+      },
+    );
+    await t.test(
       "owned native program refuses manual/NORMAL actions before any filesystem or process mutation",
       () => {
         const program = Buffer.from(ownedAutoloadLaunchNative(), "utf8");
@@ -612,6 +708,7 @@ print(json.dumps({"refs":out}))
           "launch",
           "normal-launch",
           "normal-close",
+          "observe-dead",
           "replace-profile",
           "publish",
         ]) {
@@ -1457,7 +1554,7 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
         const normalOriginalPaths = [
           ...new Set([...secondPins.originalPaths, retiredSecondPath]),
         ];
-        const retiredSecond = await createNormalObserverLaunchAdapter({
+        const secondRetirementPins: NormalObserverLaunchPins = {
           ...normalBase,
           paths: secondPins.paths,
           installedSource: admissionPins.source,
@@ -1474,7 +1571,33 @@ print(json.dumps({"retainedOriginalWriteBlocked":blocked}))
             provisionSha256: second.provision.sha256,
             retiredProcessPath: retiredSecondPath,
           },
-        }).requestNormalCloseAndWait(second.process);
+        };
+        await createNormalObserverLaunchAdapter(
+          secondRetirementPins,
+        ).requestNormalCloseAndWait(second.process);
+        // A fresh capture proves only present absence. This exact new file,
+        // not the prior normal-close file, must be accepted by the owned chain.
+        const observedSecondPath = nextName(retiredSecondPath);
+        const observedOriginalPaths = [
+          ...new Set([...normalOriginalPaths, observedSecondPath]),
+        ];
+        const retiredSecond = await createNormalObserverLaunchAdapter({
+          ...secondRetirementPins,
+          originalPaths: observedOriginalPaths,
+          mappedOriginalPaths: Object.fromEntries(
+            [...Object.values(secondPins.paths), ...observedOriginalPaths].map(
+              (name) => [name, mapped(name)],
+            ),
+          ),
+          normal: {
+            ...secondRetirementPins.normal,
+            retiredProcessPath: observedSecondPath,
+          },
+        }).observeAlreadyDead(second.process);
+        assert.equal(
+          JSON.parse(Buffer.from(retiredSecond.bytes).toString()).observation,
+          "exact-original-provision-process-verified-dead",
+        );
         const thirdPaths = Object.fromEntries(
           Object.entries(secondPins.paths).map(([key, value]) => [
             key,

@@ -98,6 +98,17 @@ def scenario(case):
                    "oldExe": "fixture-executable", "oldExeSha256": sha(b"exe")}
         if case == "forced-retirement":
             retired["forceUsed"] = True
+        if "dead-observation" in case:
+            retired = {key: retired[key] for key in
+                       ("exited", "oldPidPresent", "oldPid", "oldBirth", "oldExe", "oldExeSha256")}
+            retired.update(observation="exact-original-provision-process-verified-dead",
+                           processControl=0, originalTerminationOutcome="UNKNOWN_UNCHANGED")
+            if case.endswith("forced-claim"):
+                retired["forceUsed"] = False
+            if case.endswith("boolean-control"):
+                retired["processControl"] = False
+            if case.endswith("settled-claim"):
+                retired["originalTerminationOutcome"] = "COMPLETED"
         retired_file = write(root / "retired.json", retired)
         bound = {"kind": "owned-autoload-provision-bound-v1", "isolation": "NOT_PROVEN",
                  "nonce": "a" * 32, "old": {"pid": 34, "birth": "34"},
@@ -221,7 +232,7 @@ def scenario(case):
                  "owned_before_generation", "owned_registered_before", "owned_replacement_file",
                  "owned_replacement_before", "owned_inputs_fence", "owned_check_provision_identity",
                  "owned_bind_fields", "owned_bind", "owned_replacement_steps",
-                 "owned_provision_identity", "owned_replacement_chain"}
+                 "owned_provision_identity", "owned_replacement_chain", "owned_retirement_matches"}
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name in names:
                 if node.name == "owned_prepare" and "owned_prepare" in env:
@@ -242,7 +253,7 @@ def scenario(case):
             env["owned_prepare"](source)
             raise AssertionError("Pre-mutation fence was not reached or denied")
         except VerifiedFence:
-            assert case in ("replacement-valid", "replacement-bind", "chain-valid", "chain-bind"), case
+            assert case in success_cases, case
             if case in ("replacement-bind", "chain-bind"):
                 env["owned_fence"] = real_fence
                 result = env["owned_base_bind"](types.SimpleNamespace(pid=40, process=None), source, {})
@@ -255,7 +266,7 @@ def scenario(case):
             else:
                 outcome = "VERIFIED_PRE_MUTATION_FENCE"
         except ValueError as error:
-            assert case not in ("replacement-valid", "replacement-bind", "chain-valid", "chain-bind"), str(error)
+            assert case not in success_cases, str(error)
             outcome = str(error)
         finally:
             for fd in handles:
@@ -273,6 +284,8 @@ def scenario(case):
         return {"case": case, "outcome": outcome, "SDK": 0, "processOperations": 0}
 
 
+success_cases = ("replacement-valid", "replacement-bind", "chain-valid", "chain-bind",
+                 "replacement-dead-observation-valid", "chain-dead-observation-valid")
 cases = ["replacement-valid", "replacement-bind", "write-handle-rebind",
          "no-explicit-replacement", "wrong-original-process",
          "forced-retirement", "changed-original-bytes", "wrong-registered-process",
@@ -281,6 +294,9 @@ cases += ["chain-valid", "chain-bind", "chain-gap", "chain-reordered",
           "chain-repeated-nonce", "chain-identity-rebind", "chain-current-body",
           "chain-missing-retirement", "chain-alive-intermediate",
           "chain-database-rebind", "chain-generation-drift"]
+cases += [prefix + "-dead-observation-" + suffix
+          for prefix in ("replacement", "chain")
+          for suffix in ("valid", "forced-claim", "boolean-control", "settled-claim")]
 if os.environ.get("FMCAD_REPLACEMENT_CASE_PREFIX"):
     cases = [case for case in cases if case.startswith(os.environ["FMCAD_REPLACEMENT_CASE_PREFIX"])]
 results = [scenario(case) for case in cases]

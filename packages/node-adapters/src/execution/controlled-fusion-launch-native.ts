@@ -241,7 +241,7 @@ def alive(value):
     finally:
         k.CloseHandle(h)
 
-def normal_close(value):
+def normal_original(value):
     if p.get("normal") is not None:
         if os.path.lexists(p["normal"]["retiredProcessPath"]):
             raise ValueError("Original normal retirement output already exists")
@@ -251,6 +251,27 @@ def normal_close(value):
                 {"pid": body["pid"], "birth": body["birth"]} != value or
                 body["source"] != p["normal"]["source"] or body["build"] != p["normal"]["build"]):
             raise ValueError("Normal close original process/provision/source differs")
+
+def observe_dead(value):
+    if p.get("normal") is None:
+        raise ValueError("Private normal retirement observation role required")
+    normal_original(value)
+    dead(value)
+    # The source/OS/provision-bound observation is new. It does not assert a
+    # successful earlier WM_CLOSE, a termination cause, or historical settlement.
+    facts = {"exited": True, "oldPidPresent": False,
+             "oldPid": value["pid"], "oldBirth": value["birth"],
+             "observation": "exact-original-provision-process-verified-dead",
+             "processControl": 0, "originalTerminationOutcome": "UNKNOWN_UNCHANGED",
+             "oldExe": p["executable"], "oldExeSha256": p["executableSha256"]}
+    dead(value)
+    result = publish(p["normal"]["retiredProcessPath"],
+                     json.dumps(facts, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    dead(value)
+    return result
+
+def normal_close(value):
+    normal_original(value)
     h = process_handle(value)
     try:
         if k.WaitForSingleObject(h, 0) != 258 or image(h).casefold() != p["executable"].casefold():
@@ -535,6 +556,8 @@ try:
         result = None
     elif action == "normal-close":
         result = normal_close(request["process"])
+    elif action == "observe-dead":
+        result = observe_dead(request["process"])
     elif action == "assert-process":
         alive(request["process"])
         result = None

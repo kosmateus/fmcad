@@ -108,6 +108,27 @@ def owned_replacement_file(ref):
         raise ValueError("Original owned replacement bytes/identity changed")
     return strict(base64.b64decode(original["base64"]))
 
+def owned_retirement_matches(retired, process):
+    common = {"exited", "oldPidPresent", "oldPid", "oldBirth",
+              "observation", "oldExe", "oldExeSha256"}
+    if (type(retired) is not dict or not common.issubset(retired)
+            or retired["exited"] is not True or retired["oldPidPresent"] is not False
+            or {"pid": retired["oldPid"], "birth": retired["oldBirth"]} != process
+            or type(retired["oldExe"]) is not str
+            or retired["oldExe"].casefold() != p["executable"].casefold()
+            or retired["oldExeSha256"] != p["executableSha256"]):
+        return False
+    if retired["observation"] == "exact-original-process-signaled-after-one-WM_CLOSE":
+        return (set(retired) == common | {"forceUsed", "windowHandle", "windowVisibleAtInput", "windowClass"}
+                and retired["forceUsed"] is False and retired["windowVisibleAtInput"] is True
+                and retired["windowClass"] == p["mainWindowClass"]
+                and type(retired["windowHandle"]) is int and retired["windowHandle"] > 0)
+    if retired["observation"] == "exact-original-provision-process-verified-dead":
+        return (set(retired) == common | {"processControl", "originalTerminationOutcome"}
+                and type(retired["processControl"]) is int and retired["processControl"] == 0
+                and retired["originalTerminationOutcome"] == "UNKNOWN_UNCHANGED")
+    return False
+
 def owned_replacement_steps(proof):
     if type(proof) is not dict:
         raise ValueError("Closed original owned replacement required")
@@ -200,19 +221,7 @@ def owned_replacement_chain(n, steps):
                 or owned_provision_identity(receipt["database"]["identity"]) != owned_provision_identity(n["database"]["identity"])
                 or Path(prior["database"]).resolve() != Path(n["database"]["nativePath"]).resolve()
                 or prior["source"] != n["source"] or prior["build"] != n["build"]
-                or type(retired) is not dict
-                or set(retired) != {"exited", "oldPidPresent", "forceUsed", "oldPid", "oldBirth",
-                                    "observation", "windowHandle", "windowVisibleAtInput",
-                                    "windowClass", "oldExe", "oldExeSha256"}
-                or retired["exited"] is not True or retired["oldPidPresent"] is not False
-                or retired["forceUsed"] is not False or retired["windowVisibleAtInput"] is not True
-                or retired["windowClass"] != p["mainWindowClass"]
-                or type(retired["windowHandle"]) is not int or retired["windowHandle"] <= 0
-                or retired["observation"] != "exact-original-process-signaled-after-one-WM_CLOSE"
-                or {"pid": retired["oldPid"], "birth": retired["oldBirth"]} != process
-                or type(retired["oldExe"]) is not str
-                or retired["oldExe"].casefold() != p["executable"].casefold()
-                or retired["oldExeSha256"] != p["executableSha256"]):
+                or not owned_retirement_matches(retired, process)):
             raise ValueError("Original owned replacement chain differs")
         dead(before_process)
         dead(process)
@@ -266,18 +275,7 @@ def owned_replacement_before(n):
             or Path(prior["database"]).resolve() != Path(n["database"]["nativePath"]).resolve()
             or prior["source"] != n["source"] or prior["build"] != n["build"]
             or current != {**prior, **process, **handoff["nextGeneration"]}
-            or set(retired) != {"exited", "oldPidPresent", "forceUsed", "oldPid", "oldBirth",
-                               "observation", "windowHandle", "windowVisibleAtInput",
-                               "windowClass", "oldExe", "oldExeSha256"}
-            or retired["exited"] is not True or retired["oldPidPresent"] is not False
-            or retired["forceUsed"] is not False
-            or retired["windowVisibleAtInput"] is not True
-            or retired["windowClass"] != p["mainWindowClass"]
-            or type(retired["windowHandle"]) is not int or retired["windowHandle"] <= 0
-            or retired["observation"] != "exact-original-process-signaled-after-one-WM_CLOSE"
-            or {"pid": retired["oldPid"], "birth": retired["oldBirth"]} != process
-            or retired["oldExe"].casefold() != p["executable"].casefold()
-            or retired["oldExeSha256"] != p["executableSha256"]):
+            or not owned_retirement_matches(retired, process)):
         raise ValueError("Original owned replacement chain differs")
     # Neither a retired registry entry nor the unregistered created process may
     # still be alive. No registration, handoff or UNKNOWN settlement is written.

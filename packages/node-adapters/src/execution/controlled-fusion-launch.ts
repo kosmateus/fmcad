@@ -132,6 +132,7 @@ export interface OwnedIdentityPreparationPins {
 }
 type PrivateLaunchAdapter = ControlledNativeAdapter & {
   closeNormal(old: ControlledProcess): Promise<ControlledFile>;
+  observeDead(old: ControlledProcess): Promise<ControlledFile>;
   launchNormal(
     old: ControlledProcess,
     original: ControlledFile,
@@ -260,11 +261,12 @@ function validateSource(
 export function createControlledFusionLaunchAdapter(
   options: ControlledFusionLaunchPins,
 ): ControlledNativeAdapter {
-  const { launchNormal, launchOwned, closeNormal, ...controlled } =
+  const { launchNormal, launchOwned, closeNormal, observeDead, ...controlled } =
     createLaunchAdapter(options);
   void launchNormal;
   void closeNormal;
   void launchOwned;
+  void observeDead;
   return Object.freeze(controlled);
 }
 
@@ -280,6 +282,21 @@ export function createNormalObserverLaunchAdapter(
     closeAttempted = false,
     closeFailed = false;
   return Object.freeze({
+    /** Capture present absence only. Never infer how an earlier process exited
+     * or turn a prior UNKNOWN close into a successful normal-close receipt. */
+    async observeAlreadyDead(old: ControlledProcess) {
+      if (closeAttempted || attempted)
+        throw new Error(
+          "Retirement observation cannot be replayed or follow launch",
+        );
+      closeAttempted = true;
+      try {
+        return await adapter.observeDead(old);
+      } catch (error) {
+        closeFailed = true;
+        throw error;
+      }
+    },
     /** Existing exact OS/image/birth/source normal-close primitive, NORMAL pins. */
     async requestNormalCloseAndWait(old: ControlledProcess) {
       if (closeAttempted || attempted)
@@ -1445,6 +1462,14 @@ function createLaunchAdapter(
       if (!normal) throw new Error("Private normal close role required");
       return file(
         await invoke("normal-close", { process: inputProcess(old) }),
+        normal.retiredProcessPath,
+      );
+    },
+    async observeDead(old) {
+      if (!normal)
+        throw new Error("Private normal retirement observation role required");
+      return file(
+        await invoke("observe-dead", { process: inputProcess(old) }),
         normal.retiredProcessPath,
       );
     },

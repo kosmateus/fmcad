@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import {
+  createControlledFusionLaunchAdapter,
   createNormalObserverLaunchAdapter,
   type NormalObserverLaunchPins,
   createOwnedAutoloadLaunchAdapter,
@@ -367,7 +368,7 @@ test("owned replacement verifies the original chain and real SQLite guards witho
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const evidence = JSON.parse(result.stdout);
-  assert.equal(evidence.count, 21);
+  assert.equal(evidence.count, 29);
   assert.equal(evidence.actualFusion, "NOTRUN");
   assert.equal(evidence.cases[0].outcome, "VERIFIED_PRE_MUTATION_FENCE");
   for (const item of evidence.cases) {
@@ -465,6 +466,22 @@ test("owned mapped symlink and hardlink inputs refuse before native executable a
   }
 });
 
+test("manual adapter never exposes private preexisting-death observation operations", () => {
+  const { normal, assertHeld, ...base } = pins();
+  void normal;
+  void assertHeld;
+  const installedFiles = {
+    ...base.installedFiles,
+    "lib/bootstrap_entry.py": "b".repeat(64),
+  };
+  const adapter = createControlledFusionLaunchAdapter({
+    ...base,
+    installedFiles,
+    installedBuild: bootstrapInstalledFilesDigest(installedFiles),
+  });
+  assert.equal("observeDead" in adapter, false);
+  assert.equal("observeAlreadyDead" in adapter, false);
+});
 test("normal private constructor accepts a separate closed actual bytecode inventory without claiming isolation", () => {
   const options = pins();
   assert.notEqual(
@@ -473,6 +490,7 @@ test("normal private constructor accepts a separate closed actual bytecode inven
   );
   const adapter = createNormalObserverLaunchAdapter(options);
   assert.deepEqual(Object.keys(adapter), [
+    "observeAlreadyDead",
     "requestNormalCloseAndWait",
     "launchAfterDeath",
   ]);
@@ -487,7 +505,7 @@ test("standard staged runtime includes the private normal adapter and native ext
     );
   assert.deepEqual(
     Object.keys(staged.createNormalObserverLaunchAdapter(pins())),
-    ["requestNormalCloseAndWait", "launchAfterDeath"],
+    ["observeAlreadyDead", "requestNormalCloseAndWait", "launchAfterDeath"],
   );
   assert.deepEqual(
     Object.keys(staged.createOwnedAutoloadLaunchAdapter(ownedPins())),
