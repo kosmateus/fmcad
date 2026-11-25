@@ -179,6 +179,7 @@ test("normal staged controller imports and runs without workspace packages or te
     "controlled-fusion-launch",
     "controlled-fusion-launch-native",
     "owned-autoload-launch-native",
+    "owned-identity-preparation-native",
     "bootstrap-entry-evidence",
     "fusion-bootstrap-autoload",
     "admission-json",
