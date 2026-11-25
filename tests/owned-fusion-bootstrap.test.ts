@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import test from "node:test";
 import {
   createOwnedFusionBootstrap,
@@ -316,6 +317,12 @@ test("owned original controller composes through MAC-reference port and provider
     f.owned,
     transcript,
     startupInputs,
+  );
+  const refs = originals.readCurrentReferences();
+  assert.equal(
+    new Set(refs.map((ref) => path.win32.normalize(ref.path).toLowerCase())).size,
+    refs.length,
+    "actual owned controller and startup roles must produce native-consumable unique references",
   );
   const digest = (text: string) =>
     createHash("sha256").update(text).digest("hex");

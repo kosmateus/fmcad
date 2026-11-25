@@ -921,6 +921,86 @@ test("bootstrap MAC producer includes both original OS autorun inputs and retain
   assert.throws(port.readCurrentReferences, /Original held/);
 });
 
+test("bootstrap MAC producer unifies identical original roles without losing either live fence", async () => {
+  const f = await controlledFixture();
+  f.context.originalRefs.push(
+    { ...f.context.originalRefs[0]! },
+    ...f.autorunFiles.map(({ nativePath, sha256, identity }) => ({
+      nativePath,
+      sha256,
+      identity,
+    })),
+  );
+  const port = await prepareControlledBootstrapOriginals(
+    f.ports.controller,
+    f.ports.transcript,
+    f.startupInputs,
+  );
+  const refs = port.readCurrentReferences();
+  assert.equal(refs.length, f.context.originalRefs.length - 1);
+  assert.equal(
+    new Set(refs.map((ref) => ref.path.toLowerCase())).size,
+    refs.length,
+  );
+  f.loseWindow();
+  assert.throws(port.readCurrentReferences, /CONTROLLED_WINDOW_REVOKED/);
+  const g = await controlledFixture();
+  g.context.originalRefs.push(
+    ...g.autorunFiles.map(({ nativePath, sha256, identity }) => ({
+      nativePath,
+      sha256,
+      identity,
+    })),
+  );
+  const startupPort = await prepareControlledBootstrapOriginals(
+    g.ports.controller,
+    g.ports.transcript,
+    g.startupInputs,
+  );
+  g.changeStartupInputs();
+  assert.throws(startupPort.readCurrentReferences, /STARTUP_INPUT_REPLACED/);
+});
+
+for (const conflict of ["digest", "identity", "alias"] as const)
+  test(`bootstrap MAC producer refuses duplicate original ${conflict} conflicts`, async () => {
+    const f = await controlledFixture();
+    const original = f.autorunFiles[0]!;
+    f.context.originalRefs.push({
+      nativePath:
+        conflict === "alias"
+          ? original.nativePath.toUpperCase()
+          : original.nativePath,
+      sha256: conflict === "digest" ? "0".repeat(64) : original.sha256,
+      identity: conflict === "identity" ? "replacement" : original.identity,
+    });
+    await assert.rejects(
+      prepareControlledBootstrapOriginals(
+        f.ports.controller,
+        f.ports.transcript,
+        f.startupInputs,
+      ),
+      { code: "BOOTSTRAP_CLOSURE_UNPROVEN" },
+    );
+  });
+
+for (const drift of ["identity", "sha256", "nativePath", "roles"] as const)
+  test(`bootstrap MAC producer rejects original ${drift} drift after preparation`, async () => {
+    const f = await controlledFixture();
+    const port = await prepareControlledBootstrapOriginals(
+      f.ports.controller,
+      f.ports.transcript,
+      f.startupInputs,
+    );
+    if (drift === "roles") f.context.originalRefs.pop();
+    else f.context.originalRefs[0]![drift] = "replaced-after-preparation";
+    assert.throws(port.readCurrentReferences, {
+      code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+    });
+    assert.throws(port.assertCurrent, {
+      code: "BOOTSTRAP_CLOSURE_UNPROVEN",
+    });
+  });
+
 test("missing and serialized OS-input witnesses never qualify the controlled host", async () => {
   const f = await controlledFixture();
   const missing = { ...f.ports };
