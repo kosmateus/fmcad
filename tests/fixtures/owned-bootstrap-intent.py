@@ -1,8 +1,9 @@
 """Exercise published owned intent from the generated native program, SDK-free."""
 import ast
 import base64
+import hashlib
 import json
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 import re
 import sys
 import types
@@ -10,7 +11,9 @@ import types
 program = sys.stdin.read()
 tree = ast.parse(program)
 checkpoint = [node for node in tree.body
-              if isinstance(node, ast.FunctionDef) and node.name == "owned_checkpoint"][-1]
+               if isinstance(node, ast.FunctionDef) and node.name == "owned_checkpoint"][-1]
+strict_decoder = next(node for node in tree.body
+                      if isinstance(node, ast.FunctionDef) and node.name == "strict")
 directory = r"C:\fixture\private\receipts"
 paths = {
     "provision": r"C:\fixture\private\provision.json",
@@ -21,7 +24,15 @@ paths = {
     "returned": directory + r"\returned.json",
 }
 process = {"pid": 1234, "birth": "134400000000000000"}
-profile = {"sha256": "b" * 64}
+profile_value = {"loadedScripts": [{"name": "Zażółć 😀", "location": 3,
+                                   "path": r"C:\fixture\addin\AutodeskFusionMCP.py",
+                                   "runOnStartup": True, "isRemoved": False, "isFavorite": False}],
+                 "nested": {"😀": {"b": 2, "a": 1}, "\ue000": "ą"}}
+profile_bytes = json.dumps(profile_value, ensure_ascii=False, indent="\t").replace("\n", "\r\n").encode()
+if len(sys.argv) > 1:
+    profile_bytes = Path(sys.argv[1]).read_bytes()
+    profile_value = json.loads(profile_bytes)
+profile = {"sha256": hashlib.sha256(profile_bytes).hexdigest()}
 provision = {"nativePath": paths["provision"], "sha256": "a" * 64,
              "identity": "synthetic-original-provision"}
 published = {}
@@ -78,16 +89,33 @@ scope = {
     "json": json, "Path": PureWindowsPath,
     "print": lambda *_args, **_kwargs: None,
     "strict": json.loads,
+    "file_bytes": lambda *_args: (profile_bytes, "synthetic-profile-identity"),
+    "digest": lambda raw: hashlib.sha256(raw).hexdigest(),
     "sys": types.SimpleNamespace(
         stdin=types.SimpleNamespace(buffer=types.SimpleNamespace(readline=acknowledge))),
 }
-exec(compile(ast.Module(body=[checkpoint], type_ignores=[]),
+exec(compile(ast.Module(body=[strict_decoder, checkpoint], type_ignores=[]),
              "<generated-owned-native>", "exec"), scope)
 scope["owned_checkpoint"]("bound-before-resume", process, provision["sha256"])
 intent = published["value"]
 assert intent["process"] == process
 assert intent["version"] == 3 and intent["mode"] == "owned-autoload-v1"
 assert intent["generation"] == scope["owned_state"]["next"]
+assert intent["profile"]["sha256"] == profile["sha256"]
+assert intent["profile"]["semanticSha256"] == hashlib.sha256(
+    json.dumps(profile_value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+).hexdigest()
+for invalid in (b'{"loadedScripts":[],"loadedScripts":[]}', b'{"loadedScripts":NaN}'):
+    profile_bytes = invalid
+    profile["sha256"] = hashlib.sha256(invalid).hexdigest()
+    published.clear()
+    try:
+        scope["owned_checkpoint"]("bound-before-resume", process, provision["sha256"])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Ambiguous profile must not publish an intent")
+    assert not published
 receipts = intent["receipts"]
 assert set(receipts) == {"directory", "entry", "returned"}
 assert receipts["directory"] == directory
@@ -101,4 +129,5 @@ for role in ("entry", "returned"):
     assert not re.fullmatch(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])[.]json", name)
     assert str(PureWindowsPath(receipts["directory"]) / name) == paths[role]
 print(json.dumps({"SDK": 0, "nativeProcessControl": 0,
+                  "semanticSha256": intent["profile"]["semanticSha256"],
                   "receiptNames": [receipts["entry"], receipts["returned"]]}))

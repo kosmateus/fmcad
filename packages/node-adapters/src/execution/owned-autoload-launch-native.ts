@@ -360,6 +360,11 @@ def owned_checkpoint(phase, process=None, provision=None):
         profile = owned_binding_profile
         require_profile(profile)
         owned_fence(owned_binding_source)
+        profile_raw, _ = file_bytes(p["paths"]["profile"], True)
+        if digest(profile_raw) != profile["sha256"]:
+            raise ValueError("Original controlled owned profile changed before intent")
+        profile_semantic = digest(json.dumps(strict(profile_raw), sort_keys=True,
+                                            separators=(",", ":"), allow_nan=False).encode("utf-8"))
         value = {
             "kind": "fmcad-bootstrap-entry-intent", "version": 3,
             "mode": "owned-autoload-v1", "nonce": request["nonce"],
@@ -367,7 +372,8 @@ def owned_checkpoint(phase, process=None, provision=None):
             "executable": {"path": p["executable"], "sha256": p["executableSha256"]},
             "installed": {"directory": p["installedDirectory"], "source": p["installedSource"],
                           "files": p["installedFiles"]},
-            "profile": {"path": p["paths"]["profile"], "sha256": profile["sha256"]},
+            "profile": {"path": p["paths"]["profile"], "sha256": profile["sha256"],
+                        "semanticSha256": profile_semantic},
             "provision": {"path": p["paths"]["provision"], "sha256": provision_file["sha256"]},
             "generation": owned_state["next"],
             "receipts": {"directory": p["paths"]["receiptDirectory"],

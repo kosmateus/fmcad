@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual as same } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
 import { bootstrapInstalledFilesDigest } from "./bootstrap-entry-evidence";
+import { bootstrapProfileSemanticDigest } from "./bootstrap-profile-digest";
 import { ControlledFusionNativeError } from "./controlled-fusion-launch";
 import {
   controlledNativeHandoffProgram,
@@ -622,8 +623,11 @@ function createHandoff(
     )
       throw new Error("Current original old tuple/qualified package differs");
   }
-  function capture(files: readonly ControlledFile[]): () => void {
-    const stamp = (name: string, expected: string) => {
+  function capture(
+    files: readonly ControlledFile[],
+    semanticProfile?: { nativePath: string; sha256: string },
+  ): () => void {
+    const stamp = (name: string, expected: string, semantic = false) => {
       const before = fs.lstatSync(name, { bigint: true });
       if (!before.isFile() || before.isSymbolicLink())
         throw new Error("Mapped original file required");
@@ -644,7 +648,8 @@ function createHandoff(
           key(before) !== key(opened) ||
           key(opened) !== key(after) ||
           key(after) !== key(current) ||
-          hash(bytes) !== expected
+          (semantic ? bootstrapProfileSemanticDigest(bytes) : hash(bytes)) !==
+            expected
         )
           throw new Error("Mapped current bytes/FD identity differs");
         return key(after);
@@ -709,10 +714,19 @@ function createHandoff(
       if (!mapped) throw new Error("Mapped original unavailable");
       add(mapped, file.sha256);
     }
+    const checkSemanticProfile = () => {
+      if (semanticProfile) {
+        const mapped = pins.mappedPaths[semanticProfile.nativePath];
+        if (!mapped) throw new Error("Mapped owned profile unavailable");
+        stamp(mapped, semanticProfile.sha256, true);
+      }
+    };
+    checkSemanticProfile();
     // Deliberately no live database or queue-state entry in this lifetime fence.
     return () => {
       tree(pins.mappedHelperDirectory);
       tree(pins.mappedInstalledDirectory);
+      checkSemanticProfile();
       for (const [name, original] of entries)
         if (stamp(name, original.hash) !== original.identity)
           throw new Error("Mapped original identity changed");
@@ -760,8 +774,41 @@ function createHandoff(
     owned!.handoffRequest,
     owned!.handoffReceipt,
   ];
-  function ownedCapture(files: readonly ControlledFile[]) {
-    const check = capture(files);
+  function ownedCapture(
+    launch: OwnedAutoloadLaunch,
+    files = ownedFiles(launch),
+  ) {
+    const intent = record(
+      decodeAdmissionJson(Buffer.from(launch.intent.bytes).toString("utf8")),
+    );
+    const descriptor = record(intent["profile"]);
+    let semanticProfile: { nativePath: string; sha256: string } | undefined;
+    if (Object.hasOwn(descriptor, "semanticSha256")) {
+      if (
+        intent["version"] !== 3 ||
+        intent["mode"] !== "owned-autoload-v1" ||
+        Object.keys(descriptor).sort().join() !==
+          "path,semanticSha256,sha256" ||
+        descriptor["path"] !== launch.profile.nativePath ||
+        descriptor["sha256"] !== launch.profile.sha256 ||
+        typeof descriptor["semanticSha256"] !== "string" ||
+        !/^[a-f0-9]{64}$/.test(descriptor["semanticSha256"]) ||
+        hash(launch.profile.bytes) !== launch.profile.sha256 ||
+        bootstrapProfileSemanticDigest(launch.profile.bytes) !==
+          descriptor["semanticSha256"]
+      )
+        throw new Error("Original owned semantic profile descriptor differs");
+      semanticProfile = {
+        nativePath: launch.profile.nativePath,
+        sha256: descriptor["semanticSha256"],
+      };
+    }
+    const check = capture(
+      semanticProfile
+        ? files.filter((file) => file.nativePath !== launch.profile.nativePath)
+        : files,
+      semanticProfile,
+    );
     return () => {
       for (const file of files) {
         const mapped = pins.mappedPaths[file.nativePath]!;
@@ -865,7 +912,7 @@ function createHandoff(
         launch.provision.nativePath !== pins.paths.provision
       )
         throw new Error("Original owned launch references required");
-      const before = ownedCapture(ownedFiles(launch));
+      const before = ownedCapture(launch);
       sync(before);
       const result = record(
         await invoke("observe-owned-rebound", {
@@ -892,7 +939,7 @@ function createHandoff(
       const state = {
         launch,
         audit,
-        fence: ownedCapture([...ownedFiles(launch), audit]),
+        fence: ownedCapture(launch, [...ownedFiles(launch), audit]),
         revoked: false,
       };
       const witness: NativeRebindWitness = Object.freeze({

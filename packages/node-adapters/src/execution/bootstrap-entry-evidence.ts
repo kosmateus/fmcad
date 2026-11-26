@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual as same } from "node:util";
 import path from "node:path";
+import { bootstrapProfileSemanticDigest } from "./bootstrap-profile-digest";
 import {
   decodeAdmissionJson,
   validateOpaqueJsonObject,
@@ -110,12 +111,13 @@ export interface BootstrapEntryIntentV2 {
 
 export interface BootstrapOwnedEntryIntentV3 extends Omit<
   BootstrapEntryIntentV2,
-  "version"
+  "version" | "profile"
 > {
   version: 3;
   mode: "owned-autoload-v1";
   provision: { path: string; sha256: string };
   generation: { instance: string; epoch: string };
+  profile: { path: string; sha256: string; semanticSha256?: string };
 }
 
 /** Only v2 can bind controlled stdout; v1 forms remain refusal inputs. */
@@ -397,6 +399,10 @@ function bindEntryEvidence(
 ): BoundBootstrapEntryData | null {
   try {
     expected = structuredClone(expected);
+    const semanticProfile =
+      owned &&
+      expected.version === 3 &&
+      Object.hasOwn(expected.profile, "semanticSha256");
     if (
       !keys(
         expected,
@@ -411,7 +417,10 @@ function bindEntryEvidence(
       !keys(expected.process, "birth,pid") ||
       !keys(expected.executable, "path,sha256") ||
       !keys(expected.installed, "directory,files,source") ||
-      !keys(expected.profile, "path,sha256") ||
+      !keys(
+        expected.profile,
+        semanticProfile ? "path,sha256,semanticSha256" : "path,sha256",
+      ) ||
       !keys(expected.receipts, "directory,entry,returned") ||
       !keys(
         originals,
@@ -426,6 +435,10 @@ function bindEntryEvidence(
       !/^[a-f0-9]{40}$/.test(expected.installed.source) ||
       !/^[a-f0-9]{64}$/.test(expected.executable.sha256) ||
       !/^[a-f0-9]{64}$/.test(expected.profile.sha256) ||
+      (semanticProfile &&
+        (expected.version !== 3 ||
+          typeof expected.profile.semanticSha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(expected.profile.semanticSha256))) ||
       !outputName(expected.receipts.entry) ||
       !outputName(expected.receipts.returned) ||
       expected.receipts.entry === expected.receipts.returned ||
@@ -503,7 +516,10 @@ function bindEntryEvidence(
       !same(decode(input.intent.bytes), expected) ||
       nativePath(input.profile.nativePath) !==
         nativePath(expected.profile.path) ||
-      sha(input.profile.bytes) !== expected.profile.sha256 ||
+      (semanticProfile && ownedIntent
+        ? bootstrapProfileSemanticDigest(input.profile.bytes) !==
+          ownedIntent.profile.semanticSha256
+        : sha(input.profile.bytes) !== expected.profile.sha256) ||
       !(
         owned ? matchesOwnedBootstrapAutoload : matchesControlledFusionAutoload
       )(input.profile.bytes, installedForkEntry) ||
@@ -582,9 +598,12 @@ function bindEntryEvidence(
       entry: Object.freeze(reference(input.entry)),
       startupAudit: frozenData(structuredClone(audit)),
       references: Object.freeze(
-        Object.values(input).map((original) =>
-          Object.freeze(reference(original)),
-        ),
+        // An explicit semantic profile is a fresh content witness, not an
+        // immutable byte reference. Its original raw pin stays in the intent
+        // and receipts; the private owned controller/rebound rechecks semantics.
+        Object.entries(input)
+          .filter(([name]) => !semanticProfile || name !== "profile")
+          .map(([, original]) => Object.freeze(reference(original))),
       ),
     });
   } catch {

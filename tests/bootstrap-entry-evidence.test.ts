@@ -180,6 +180,155 @@ function ownedFixture() {
   return { expected, originals: { ...f.originals, provision }, fork: f.fork };
 }
 
+function ownedSemanticFixture() {
+  const f = ownedFixture();
+  const canonical = spawnSync(
+    "python3",
+    [
+      "-I",
+      "-S",
+      "-B",
+      "-c",
+      "import sys,json,hashlib; print(hashlib.sha256(json.dumps(json.load(sys.stdin),sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')).hexdigest())",
+    ],
+    { input: f.originals.profile.bytes, encoding: "utf8" },
+  );
+  assert.equal(canonical.status, 0, canonical.stderr);
+  Object.assign(f.expected.profile, {
+    semanticSha256: canonical.stdout.trim(),
+  });
+  resignOwnedFixture(f);
+  return f;
+}
+
+function resignOwnedFixture(f: ReturnType<typeof ownedFixture>) {
+  f.originals.intent.bytes = encode(f.expected);
+  const entry = JSON.parse(f.originals.entry.bytes.toString());
+  Object.assign(entry, {
+    profile: f.expected.profile,
+    intent: {
+      path: f.originals.intent.nativePath,
+      sha256: sha(f.originals.intent.bytes),
+    },
+  });
+  f.originals.entry.bytes = encode(entry);
+  const returned = JSON.parse(f.originals.returned.bytes.toString());
+  Object.assign(returned, {
+    profile: f.expected.profile,
+    intent: entry.intent,
+    entry: {
+      path: f.originals.entry.nativePath,
+      sha256: sha(f.originals.entry.bytes),
+    },
+  });
+  f.originals.returned.bytes = encode(returned);
+}
+
+test("owned v3 explicit semantic profile survives vendor whitespace but keeps original raw SHA", () => {
+  const f = ownedSemanticFixture(),
+    rawHash = f.expected.profile.sha256;
+  f.originals.profile.bytes = Buffer.from(
+    JSON.stringify(
+      JSON.parse(f.originals.profile.bytes.toString()),
+      null,
+      "\t",
+    ).replaceAll("\n", "\r\n"),
+  );
+  assert.notEqual(sha(f.originals.profile.bytes), rawHash);
+  const bound = bindOwnedBootstrapEntryEvidence(
+    f.expected,
+    f.originals,
+    f.fork,
+  );
+  assert(bound);
+  assert(
+    !bound.references.some(
+      (reference) => reference.path === f.expected.profile.path,
+    ),
+  );
+  assert.equal(f.expected.profile.sha256, rawHash);
+});
+
+test("owned semantic profile denies all content changes and bad digest even when raw is unchanged", () => {
+  for (const mutate of [
+    (p: MutableRecord) =>
+      (object((p["loadedScripts"] as unknown[])[0])["runOnStartup"] = false),
+    (p: MutableRecord) =>
+      (object((p["loadedScripts"] as unknown[])[0])["isFavorite"] = true),
+    (p: MutableRecord) =>
+      (object((p["loadedScripts"] as unknown[])[0])["isRemoved"] = true),
+    (p: MutableRecord) =>
+      (object((p["loadedScripts"] as unknown[])[0])["name"] = "changed"),
+    (p: MutableRecord) =>
+      (object((p["loadedScripts"] as unknown[])[0])["location"] = 2),
+    (p: MutableRecord) =>
+      (object((p["loadedScripts"] as unknown[])[0])["path"] = "C:\\foreign.py"),
+    (p: MutableRecord) => (p["loadedScripts"] as unknown[]).pop(),
+    (p: MutableRecord) =>
+      (p["loadedScripts"] as unknown[]).push({
+        ...object((p["loadedScripts"] as unknown[])[0]),
+        name: "foreign",
+        path: "C:\\foreign.py",
+        runOnStartup: false,
+      }),
+  ]) {
+    const f = ownedSemanticFixture(),
+      profile = JSON.parse(f.originals.profile.bytes.toString());
+    mutate(profile);
+    f.originals.profile.bytes = encode(profile);
+    assert.equal(
+      bindOwnedBootstrapEntryEvidence(f.expected, f.originals, f.fork),
+      null,
+    );
+  }
+  const f = ownedSemanticFixture();
+  object(f.expected.profile)["semanticSha256"] = "0".repeat(64);
+  resignOwnedFixture(f);
+  assert.equal(
+    bindOwnedBootstrapEntryEvidence(f.expected, f.originals, f.fork),
+    null,
+  );
+});
+
+test("legacy owned v3 stays raw-bound; malformed or unknown profile descriptors deny", () => {
+  const legacy = ownedFixture();
+  legacy.originals.profile.bytes = Buffer.from(
+    JSON.stringify(
+      JSON.parse(legacy.originals.profile.bytes.toString()),
+      null,
+      2,
+    ),
+  );
+  assert.equal(
+    bindOwnedBootstrapEntryEvidence(
+      legacy.expected,
+      legacy.originals,
+      legacy.fork,
+    ),
+    null,
+  );
+  for (const extra of [
+    { semanticSha256: "bad" },
+    { semanticSha256: null },
+    { semanticSha256: 1 },
+    { ignored: true },
+  ]) {
+    const f = ownedFixture();
+    Object.assign(f.expected.profile, extra);
+    resignOwnedFixture(f);
+    assert.equal(
+      bindOwnedBootstrapEntryEvidence(f.expected, f.originals, f.fork),
+      null,
+    );
+  }
+  const manual = fixture();
+  Object.assign(manual.expected.profile, { semanticSha256: "a".repeat(64) });
+  assert.equal(
+    bindBootstrapEntryEvidence(manual.expected, manual.originals, manual.fork),
+    null,
+  );
+});
+
 test("owned v3 binds original provision and cannot qualify as manual v2", () => {
   const f = ownedFixture();
   const result = bindOwnedBootstrapEntryEvidence(

@@ -249,6 +249,10 @@ export function createOwnedFusionBootstrap(
   };
   const originals = new WeakMap<ControlledFusionBootstrapTranscript, Witness>();
   const preparedWitnesses = new WeakSet<object>();
+  const immutableFiles = (w: Witness) =>
+    w.expected.profile.semanticSha256 === undefined
+      ? w.files
+      : w.files.filter((file) => file.nativePath !== w.expected.profile.path);
   async function assertOriginalTranscript(
     transcript: ControlledFusionBootstrapTranscript,
   ) {
@@ -271,7 +275,18 @@ export function createOwnedFusionBootstrap(
       await native.assertSource();
       await native.assertProcess(w.process);
       await w.rebound.assertCurrent();
-      for (const file of w.files) await native.assertOriginal(file);
+      for (const file of immutableFiles(w)) await native.assertOriginal(file);
+      if (w.expected.profile.semanticSha256 !== undefined) {
+        const profile = await native.readOriginal(w.expected.profile.path);
+        if (
+          !evidenceApi.bindOwnedBootstrapEntryEvidence(
+            w.expected,
+            { ...w.evidence, profile },
+            path.win32.join(native.installedDirectory, "AutodeskFusionMCP.py"),
+          )
+        )
+          throw new Error("Current owned semantic profile changed");
+      }
       await startupApi.verifyControlledStartupInputs(w.prepared.startupInputs);
       sync(() => w.lease.fence());
       sync(() => w.prepared.fence());
@@ -288,7 +303,7 @@ export function createOwnedFusionBootstrap(
     ) {
       await assertOriginalTranscript(transcript);
       const w = originals.get(transcript)!;
-      const mapped = native.captureSynchronousFence(w.files);
+      const mapped = native.captureSynchronousFence(immutableFiles(w));
       await assertOriginalTranscript(transcript);
       const witness = Object.freeze({
         context: Object.freeze({
@@ -299,7 +314,7 @@ export function createOwnedFusionBootstrap(
           installedBuild: native.installedBuild,
           nativePathMappings: Object.freeze({ ...native.nativePathMappings }),
           originalRefs: Object.freeze(
-            w.files.map((file) => Object.freeze(ref(file))),
+            immutableFiles(w).map((file) => Object.freeze(ref(file))),
           ),
         }),
         fence() {

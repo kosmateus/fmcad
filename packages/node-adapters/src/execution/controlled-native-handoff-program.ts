@@ -420,6 +420,30 @@ def owned_match(reference):
 def owned_pair(reference):
     actual,value=owned_match(reference)
     return ref(actual),value
+def owned_profile_match(reference,original,intent):
+    descriptor=intent.get("profile")
+    if type(descriptor) is not dict or "semanticSha256" not in descriptor:
+        return owned_match(reference)
+    if (intent.get("version")!=3 or intent.get("mode")!="owned-autoload-v1"
+        or set(descriptor)!={"path","sha256","semanticSha256"}
+        or type(descriptor["semanticSha256"]) is not str
+        or re.fullmatch("[a-f0-9]{64}",descriptor["semanticSha256"]) is None
+        or type(original) is not dict or set(original)!={"nativePath","sha256","identity","base64"}
+        or ref(original)!=reference
+        or descriptor["path"]!=reference["nativePath"] or descriptor["sha256"]!=reference["sha256"]):
+        raise ValueError("Original owned semantic profile descriptor differs")
+    original_raw=base64.b64decode(original["base64"],validate=True)
+    original_value=decode(original_raw.decode("utf-8","strict"))
+    if (sha(original_raw)!=reference["sha256"]
+        or sha(_encode(original_value).encode("utf-8"))!=descriptor["semanticSha256"]):
+        raise ValueError("Original owned semantic profile attestation differs")
+    # Keep the original raw snapshot and identity as provenance. Read the live
+    # file on every witness check; never repin it or cache accepted semantics.
+    current_raw,_=read(reference["nativePath"],locks=held)
+    current=decode(current_raw.decode("utf-8","strict"))
+    if sha(_encode(current).encode("utf-8"))!=descriptor["semanticSha256"]:
+        raise ValueError("Current owned semantic profile changed")
+    return original,original_value
 def owned_process(value):
     if value["pid"]==p["old"]["pid"] or value["birth"]==p["old"]["birth"]:
         raise ValueError("Owned old/new tuple differs")
@@ -483,8 +507,9 @@ def owned_view():
         raise ValueError("Original separate owned launch required")
     owned_process(launch["process"])
     files={};data={}
-    for key in ("journal","attempt","coldProcess","sourceClosure","profile","profileBackup","provision","provisionBackup","provisionReceipt","intent"):
+    for key in ("journal","attempt","coldProcess","sourceClosure","profileBackup","provision","provisionBackup","provisionReceipt","intent"):
         files[key],data[key]=owned_match(launch[key])
+    files["profile"],data["profile"]=owned_profile_match(launch["profile"],data["attempt"]["profile"],data["intent"])
     for key in ("installReceipt","installClosure","entry","returned"):
         files[key],data[key]=owned_match(o[key])
     request_ref,handoff=owned_pair(o["handoffRequest"]);receipt_ref,completion=owned_pair(o["handoffReceipt"])
@@ -492,6 +517,9 @@ def owned_view():
         or completion!={**handoff,"state":"completed"}):
         raise ValueError("Original owned lifecycle handoff differs")
     intent=data["intent"];process=launch["process"];nonce=v["nonce"]
+    profile_descriptor={"path":files["profile"]["nativePath"],"sha256":files["profile"]["sha256"]}
+    if type(intent.get("profile")) is dict and "semanticSha256" in intent["profile"]:
+        profile_descriptor["semanticSha256"]=intent["profile"]["semanticSha256"]
     if (type(nonce) is not str or re.fullmatch("[a-f0-9]{32}",nonce) is None
         or type(intent) is not dict or set(intent)!={"kind","version","mode","nonce","process","executable","purpose","engineVersion","installed","profile","receipts","provision","generation"}
         or intent["kind"]!="fmcad-bootstrap-entry-intent" or type(intent["version"]) is not int or intent["version"]!=3
@@ -502,7 +530,7 @@ def owned_view():
         or intent["installed"]!={"directory":q["directory"],"source":q["source"],"files":q["files"]}
         or intent["generation"]!=p["nextGeneration"]
         or intent["provision"]!={"path":p["paths"]["provision"],"sha256":files["provision"]["sha256"]}
-        or intent["profile"]!={"path":files["profile"]["nativePath"],"sha256":files["profile"]["sha256"]}):
+        or intent["profile"]!=profile_descriptor):
         raise ValueError("Original owned v3 intent differs")
     if (launch["journal"]["nativePath"]!=p["paths"]["launchJournal"] or launch["attempt"]["nativePath"]!=p["paths"]["launchAttempt"]
         or launch["provision"]["nativePath"]!=p["paths"]["provision"]):

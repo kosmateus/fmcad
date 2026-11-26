@@ -13,6 +13,7 @@ import {
 } from "./controlled-fusion-bootstrap-fixture";
 import type { OwnedAutoloadLaunch } from "../packages/node-adapters/src/execution/controlled-fusion-launch-types";
 import type { BootstrapOwnedEntryIntentV3 } from "../packages/node-adapters/src/execution/bootstrap-entry-evidence";
+import { bootstrapProfileSemanticDigest } from "../packages/node-adapters/src/execution/bootstrap-profile-digest";
 import { createOwnedControlledStdoutProvider } from "../src/controlled-stdout-provider";
 import { prepareControlledBootstrapOriginals } from "../src/fresh-host-proof";
 import { compilePythonStdout } from "../src/python-diagnostic-broker";
@@ -46,6 +47,7 @@ function fixture(
     | "generation"
     | "foreign-startup"
     | "native-unknown"
+    | "vendor-format"
     | "lease",
 ) {
   const f = controlledFusionBootstrapFixture({ captureStartupInputs: true });
@@ -73,6 +75,19 @@ function fixture(
     const intent: BootstrapOwnedEntryIntentV3 = JSON.parse(
       Buffer.from(original.bytes).toString(),
     );
+    if (fault === "vendor-format") {
+      const current = f.files.get(native.paths.profile)!;
+      f.file(
+        native.paths.profile,
+        Buffer.from(
+          JSON.stringify(
+            JSON.parse(Buffer.from(current.bytes).toString()),
+            null,
+            "\t",
+          ).replaceAll("\n", "\r\n"),
+        ),
+      );
+    }
     const audit = controlledStartupAuditFixture();
     audit.scripts.items[0]!.folder = native.installedDirectory;
     audit.scripts.items[0]!.isRunOnStartup = true;
@@ -257,6 +272,9 @@ function fixture(
             profile: {
               path: applied.profile.nativePath,
               sha256: applied.profile.sha256,
+              semanticSha256: bootstrapProfileSemanticDigest(
+                applied.profile.bytes,
+              ),
             },
             provision: { path: provision.nativePath, sha256: provision.sha256 },
             generation:
@@ -308,6 +326,38 @@ function fixture(
   };
 }
 
+test("owned controller accepts receipt binding after post-resume vendor formatting with original raw provenance", async () => {
+  const f = fixture("vendor-format");
+  const transcript = await f.owned.run();
+  assert.equal(transcript.state, "COMPLETED", transcript.error ?? "");
+  const intent: BootstrapOwnedEntryIntentV3 = JSON.parse(
+    Buffer.from(f.files.get(f.native.paths.intent)!.bytes).toString(),
+  );
+  const current = f.files.get(f.native.paths.profile)!;
+  assert.notEqual(
+    createHash("sha256").update(current.bytes).digest("hex"),
+    intent.profile.sha256,
+  );
+  assert.equal(
+    bootstrapProfileSemanticDigest(current.bytes),
+    intent.profile.semanticSha256,
+  );
+  const witness = await f.owned.prepareOriginalWitness(transcript);
+  assert(
+    !witness.context.originalRefs.some(
+      (reference) => reference.nativePath === f.native.paths.profile,
+    ),
+  );
+  witness.fence();
+  const changed = JSON.parse(Buffer.from(current.bytes).toString());
+  changed.loadedScripts[0].isFavorite = !changed.loadedScripts[0].isFavorite;
+  f.file(f.native.paths.profile, encode(changed));
+  await assert.rejects(
+    f.owned.assertOriginalTranscript(transcript),
+    /semantic profile/,
+  );
+});
+
 test("owned original controller composes through MAC-reference port and provider to the real compiler without SDK execution", async () => {
   const f = fixture();
   const transcript = await f.owned.run();
@@ -320,7 +370,8 @@ test("owned original controller composes through MAC-reference port and provider
   );
   const refs = originals.readCurrentReferences();
   assert.equal(
-    new Set(refs.map((ref) => path.win32.normalize(ref.path).toLowerCase())).size,
+    new Set(refs.map((ref) => path.win32.normalize(ref.path).toLowerCase()))
+      .size,
     refs.length,
     "actual owned controller and startup roles must produce native-consumable unique references",
   );

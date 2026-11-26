@@ -738,8 +738,11 @@ test("normal staged helper loads without workspace packages and structurally sup
     "controlled-fusion-launch",
     "controlled-fusion-launch-native",
     "owned-autoload-launch-native",
+    "owned-identity-preparation-native",
+    "owned-historical-process-native",
     "normal-observer-launch-native",
     "bootstrap-entry-evidence",
+    "bootstrap-profile-digest",
     "fusion-bootstrap-autoload",
     "admission-json",
   ])
