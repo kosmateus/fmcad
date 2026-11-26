@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-26T14:13:27Z",
+  "generatedAt": "2026-11-26T14:34:40Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -36848,5 +36848,186 @@
       "noCleanup": true
     },
     "scope": "Canonical result report update only; no product/source/build/runtime/Fusion/SDK/probe/lifecycle operation by reporter."
+  },
+  "latestPrivateAclOwnedControllerUnknown": {
+    "reportedAt": "2026-11-26T14:34:40Z",
+    "runId": "1eb07d67fbd6048d67d69bc756594bc2eabf4c6280c21cb9f1d19003c2b5a248",
+    "recordType": "fresh-controlled-owned-startup-controller-unknown-private-source-acl-guard",
+    "terminal": {
+      "mainCommandId": "sh_21840f1ec001mQ3xsTviu8D4nF",
+      "mainExitCode": 1,
+      "watcherCommandId": "sh_21840cc4e001rT560zH3sDaI9H",
+      "watcher": "failure",
+      "phase": "owned-cold-bootstrap",
+      "code": "ERR_ASSERTION",
+      "outcome": "UNKNOWN",
+      "controllerRunInvoked": true
+    },
+    "classification": "This is a new terminal controlled startup-controller UNKNOWN because controller.run was invoked. It is not a full Fusion-profile FAIL. The known guard refusal explains why this attempt could not establish the dead-process outcome; preserve the original UNKNOWN and do not settle or replay it.",
+    "directoryPreparation": {
+      "status": "PASS",
+      "exitCode": 0,
+      "result": "CREATED",
+      "directoryCount": 3,
+      "directories": [
+        {
+          "path": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-c43cb630051a4de28f1b169765fce13a",
+          "identity": {
+            "device": "4824059094287526125",
+            "inode": "3096224744921521",
+            "ctimeNs": "1795703240617264500",
+            "mode": "16895"
+          }
+        },
+        {
+          "path": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-c43cb630051a4de28f1b169765fce13a\\receipts",
+          "identity": {
+            "device": "4824059094287526125",
+            "inode": "1970324838078898",
+            "ctimeNs": "1795703240629279100",
+            "mode": "16895"
+          }
+        },
+        {
+          "path": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-receipt-dead-observation-f64d9d80613541418c99c0413d7c614f",
+          "identity": {
+            "device": "4824059094287526125",
+            "inode": "1125899907946931",
+            "ctimeNs": "1795703240629279100",
+            "mode": "16895"
+          }
+        }
+      ],
+      "sdk": 0,
+      "terminalEvidence": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/directory-preparation-terminal.original.json",
+        "sha256": "e389b43766ccb4e6ec67e0243bfed1096ee88b4048f34300db4a591e7f556618"
+      },
+      "readbackEvidence": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/directory-result.json",
+        "sha256": "b20870e6ed1fe0c8879d398e4ab9e45a252a9dc60f3769ff92d25da58d5a94a5"
+      }
+    },
+    "controller": {
+      "invoked": true,
+      "bootstrapTranscript": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/bootstrap-result.json",
+        "sha256": "ac22107ecc72e32f8af794e5b312fba7d9878662418ae2c2c65fad38743d2aeb",
+        "state": "UNKNOWN",
+        "process": null,
+        "phases": [],
+        "references": [],
+        "action": "dead",
+        "stdout": "",
+        "errorMessage": "Controlled native dead outcome unproven; preserve originals, no replay",
+        "nativeError": "Private Windows owner and DACL required",
+        "failedAt": "inventory(p[\"sourceDirectory\"], True) -> check_acl(None, handle=handle) -> _check_windows_acl -> _validate_windows_private_acl",
+        "meaning": "Private source owner/DACL guard refused before a new Fusion process, native installation, or SDK work; controlled native dead outcome remains unproven."
+      }
+    },
+    "evidence": {
+      "directory": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54",
+      "failure": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/failure.json",
+        "sha256": "e54bd32e0b8076ff4364c2933d2215cbbc0d7ff6eca1c14335bbe37b43da6542"
+      },
+      "directoryPreparationIntent": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/directory-preparation-intent.original.json",
+        "sha256": "85514132eac0517604abb41e5f1c24b54721b3992b078b0c4b10e804dc50c093"
+      },
+      "directoryPreparationTerminal": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/directory-preparation-terminal.original.json",
+        "sha256": "e389b43766ccb4e6ec67e0243bfed1096ee88b4048f34300db4a591e7f556618"
+      },
+      "directoryResult": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/directory-result.json",
+        "sha256": "b20870e6ed1fe0c8879d398e4ab9e45a252a9dc60f3769ff92d25da58d5a94a5"
+      },
+      "bootstrapResult": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/bootstrap-result.json",
+        "sha256": "ac22107ecc72e32f8af794e5b312fba7d9878662418ae2c2c65fad38743d2aeb"
+      },
+      "sourceWorkersCleanup": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/source-workers-cleanup.json",
+        "sha256": "2705dd5d5c13d26bf89ade03e8717508b7c353775ee82a25c40296d958158e4c"
+      },
+      "brokerHandleAbsence": {
+        "path": "/tmp/opencode/root-layout-owned-operator-20261126/live-qualification-946fecfa-e532-4901-95cb-cc3013531a54/broker-handle-absence.json",
+        "sha256": "86269c42541a09f09165898e335289d66aa7fd0a7631646bfc19597b7648974c"
+      }
+    },
+    "boundary": {
+      "sourceWorkers": "JOINED",
+      "brokerHandle": "NO_HANDLE_CREATED",
+      "nativeOutcome": "UNCHANGED",
+      "controllerRun": "INVOKED",
+      "oldProcessTuple": {
+        "pid": 18436,
+        "birth": "134401672783022581"
+      },
+      "newFusionProcess": "NOTRUN/process=null",
+      "nativeInstallation": "NOTRUN",
+      "sdk": "NOTRUN",
+      "nativeSource": "0a105 (unchanged)",
+      "futureNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "futureNativeDeployed": false
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 14,
+        "denominator": 14,
+        "meaning": "Thirteen previous terminal controller UNKNOWN outcomes preserved plus this newly invoked controller run."
+      },
+      "preparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "changed": false,
+        "meaning": "Prior separate harness preparation failures 649 and 6b7; not included in controller runs."
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "changed": false
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "qualifiedPublicSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "qualifiedBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "plannedNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "plannedNativeManifestDigest": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "plannedNativeDeployed": false
+    },
+    "preservedHistory": {
+      "previousPreparationUnknowns": "unchanged",
+      "thirteenPreviousControllerUnknowns": "unchanged",
+      "separateHarnessInterruption": "unchanged",
+      "sdkUnknowns": "unchanged",
+      "queueUnknowns": "unchanged",
+      "noReplay": true,
+      "noCleanup": true
+    },
+    "scope": "Canonical result report update only; no source, native, SDK, process, lifecycle, recovery, probe or Fusion operation by reporter."
   }
 }

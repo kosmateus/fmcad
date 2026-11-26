@@ -1,3 +1,13 @@
+## 2026-11-26 14:34 UTC — Kontroler zatrzymany na prywatnym ACL źródła
+
+- **Wynik terminalny:** próba `1eb07d67fbd6048d67d69bc756594bc2eabf4c6280c21cb9f1d19003c2b5a248` zakończyła się `exit 1`; watcher potwierdził failure. `controller.run` został rzeczywiście wywołany, a terminalny wynik pozostaje **UNKNOWN** w fazie `owned-cold-bootstrap` (`ERR_ASSERTION`). To nie jest `FAIL` pełnego profilu Fusion.
+- **Przygotowanie katalogów przeszło:** odczyt terminalny i readback potwierdzają `exit 0`, `CREATED` oraz **3/3** katalogi z zachowanymi identyfikatorami; `SDK=0`. Jest to wynik bieżącej próby, nie tylko wcześniejszego fixture.
+- **Granica awarii:** kontroler nie mógł udowodnić bezpiecznego wyniku `dead`: w `inventory(sourceDirectory, True)` prywatny owner/DACL guard odmówił z komunikatem `Private Windows owner and DACL required` (`physical_authority.py`, walidacja ACL). Transcript ma `action=dead`, `process=null`, puste `phases` i `references`, a komunikat nakazuje zachować oryginały bez replay. Nowy proces Fusion, instalacja native i SDK są **NOTRUN**. Source workers dołączyli (`JOINED`), uchwyt brokera nie powstał, native pozostał bez zmian. Nie zmieniamy pierwotnego `UNKNOWN` w settled ACL failure.
+- **Oddzielne liczniki:** kontrolowane uruchomienia kontrolera: **14 UNKNOWN / 14** (13 wcześniejszych plus ten rzeczywiście wywołany run). Dwa wcześniejsze błędy samego przygotowania pozostają **2 UNKNOWN / 2** i poza licznikiem kontrolerów; osobna przerwana próba harnessu pozostaje **1 INTERRUPTED / 1**. Historyczne SDK **4 UNKNOWN / 4** i kolejka **4 UNKNOWN / 4** bez zmian. Pełny katalog: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- **Piny i dowody:** publiczne źródło `66643767d74711eb411c6eddcbdf32dc786cc80a`, build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; przyszłe źródło native `efa30271f18281e0705ea2659ee9a37a52085b9e` i manifest `964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750` pozostają niewdrożone. Pełne ścieżki oraz SHA-256 są w `latestPrivateAclOwnedControllerUnknown` w JSON.
+
+---
+
 ## 2026-11-26 14:13 UTC — Próba zatrzymana przed utworzeniem katalogów
 
 - **Wynik terminalny:** świeża próba `6b7dc71be8eb027e3af42093c17a02ea7f695223bd684d100270b4bd5168051d` zakończyła się `exit 1`; watcher potwierdził `failure`. Wynik źródłowy pozostaje **UNKNOWN** w fazie `owned-private-directories` (`ERR_ASSERTION`). Nie powstał wynik katalogu ani bootstrapu; nie uruchomiono kontrolera, SDK ani nowego procesu Fusion.
