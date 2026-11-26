@@ -1,3 +1,14 @@
+## 2026-11-26 16:52 UTC — Kontrolowany start zakończył się UNKNOWN przed READY
+
+- **Wynik terminalny:** nowy kontroler `owned-cold-bootstrap` został uruchomiony i zakończył się kodem 1; watcher potwierdził failure. Transkrypt ma `state=UNKNOWN`, `authority=NONE`, `process=null` i wyłącznie fazę `old-death-os-confirmed`. Nie osiągnięto `READY`; nie ponawiano próby.
+- **Przygotowanie katalogów:** osobny etap zakończył się `CREATED`, exit 0, dla 3 katalogów; `SDK=0`. Nie oznacza to startu Fusion ani kwalifikacji.
+- **Zarejestrowany błąd:** `ValueError: process birth changed`, po którym nastąpiło `1 !== 0`. To zapisany komunikat/assertion, nie potwierdzona diagnoza PID reuse ani błędu Win32. Zachowano UNKNOWN.
+- **Piny i granice:** manifest źródeł r2 ma SHA-256 `b935d28891cb74ef1836f7d866676a161fcb0a245a3ba25fd67cb88f8e6961bf`. Broker source/build: `66643767d74711eb411c6eddcbdf32dc786cc80a` / `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; zainstalowany native source/build: `efa30271f18281e0705ea2659ee9a37a52085b9e` / `964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750`. To odrębne piny; nie są dowodem gotowości.
+- **Liczniki:** kontrolowane próby kontrolera: **15 UNKNOWN z 15** (w tym nowa próba). Poprzednie **2 UNKNOWN** przygotowania pozostają osobną kategorią. Pełne profile Fusion: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**. SDK, CAD i READY są **NOTRUN**; przegląd 17 pozostaje BLOCKED. Dawna próba `6df8` pozostaje osobno `INTERRUPTED_UNRESOLVED`, bez rozliczenia SDK/CAD.
+- **Dowody:** `bootstrap-result.json`, `failure.json` i manifest źródeł są przypięte ścieżkami oraz SHA-256 w `latestTerminalOwnedStartupControllerUnknown` w JSON. `process=null` nie dowodzi globalnego braku Fusion.
+
+---
+
 ## 2026-11-26 14:34 UTC — Kontroler zatrzymany na prywatnym ACL źródła
 
 - **Wynik terminalny:** próba `1eb07d67fbd6048d67d69bc756594bc2eabf4c6280c21cb9f1d19003c2b5a248` zakończyła się `exit 1`; watcher potwierdził failure. `controller.run` został rzeczywiście wywołany, a terminalny wynik pozostaje **UNKNOWN** w fazie `owned-cold-bootstrap` (`ERR_ASSERTION`). To nie jest `FAIL` pełnego profilu Fusion.

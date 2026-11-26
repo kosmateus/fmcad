@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-26T14:34:40Z",
+  "generatedAt": "2026-11-26T16:52:00Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -37029,5 +37029,96 @@
       "noCleanup": true
     },
     "scope": "Canonical result report update only; no source, native, SDK, process, lifecycle, recovery, probe or Fusion operation by reporter."
+  },
+  "latestTerminalOwnedStartupControllerUnknown": {
+    "reportedAt": "2026-11-26T16:52:00Z",
+    "recordType": "terminal-controlled-owned-startup-controller-unknown",
+    "attempt": {
+      "runId": "2e7d9dee-2ed4-40d6-9e25-ef251eda3b2b",
+      "controller": "owned-cold-bootstrap",
+      "mainCommand": "sh_218ba5146001oHLdrgLhzIp9rt",
+      "mainPid": 559596,
+      "mainExitCode": 1,
+      "watcherCommand": "sh_218ba304a001DRWqf0NedR8l4T",
+      "watcherPid": 559547,
+      "watcherExitCode": 0,
+      "controllerInvoked": true,
+      "outcome": "UNKNOWN",
+      "replay": "FORBIDDEN"
+    },
+    "transcript": {
+      "path": "/tmp/opencode/root-bounded-start-20261126/execution-2e7d9dee-2ed4-40d6-9e25-ef251eda3b2b/bootstrap-result.json",
+      "state": "UNKNOWN",
+      "authority": "NONE",
+      "process": null,
+      "phases": [
+        "old-death-os-confirmed"
+      ],
+      "oldProcess": {
+        "pid": 18436,
+        "birth": "134401672783022581"
+      },
+      "error": "ValueError: process birth changed; assertion 1 !== 0"
+    },
+    "failure": {
+      "path": "/tmp/opencode/root-bounded-start-20261126/execution-2e7d9dee-2ed4-40d6-9e25-ef251eda3b2b/failure.json",
+      "phase": "controlled-bootstrap",
+      "code": "ERR_ASSERTION",
+      "outcome": "UNKNOWN",
+      "message": "Bootstrap UNKNOWN; never replay"
+    },
+    "preparation": {
+      "path": "/tmp/opencode/root-bounded-start-20261126/execution-2e7d9dee-2ed4-40d6-9e25-ef251eda3b2b/directory-result.json",
+      "status": "PASS",
+      "result": "CREATED",
+      "directories": 3,
+      "SDK": 0
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 15,
+        "denominator": 15
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "sourceManifest": "/tmp/opencode/root-bounded-start-20261126/current-source-manifest.r2.private.json",
+      "sourceManifestSha256": "b935d28891cb74ef1836f7d866676a161fcb0a245a3ba25fd67cb88f8e6961bf",
+      "brokerSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "brokerBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "installedNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "installedNativeBuild": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "pinScope": "Broker runtime/source, source manifest and native install are distinct; admission pins are not current-code pins."
+    },
+    "evidenceSha256": {
+      "bootstrapResult": "63fe57615ca839c6a52862555595ac9c78ceeb5549d9bf07d37e6d92ef29472d",
+      "failure": "15747c593beebba40f0ba3f87ca77347397fcd667ab8e1273e451bed288ad7cc",
+      "sourceManifest": "b935d28891cb74ef1836f7d866676a161fcb0a245a3ba25fd67cb88f8e6961bf"
+    },
+    "boundary": {
+      "ready": "NOTRUN",
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "fullReview17": "BLOCKED",
+      "processNullMeaning": "No new process tuple recorded; this does not prove global Fusion absence.",
+      "cause": "PID reuse/Win32 explanation is unverified hypothesis; report only recorded assertion."
+    },
+    "historical": {
+      "previousControllerUnknowns": 14,
+      "previousPreparationUnknowns": 2,
+      "priorAttempt6df8": "INTERRUPTED_UNRESOLVED; separate, SDK/CAD NOTRUN; not settled by this run",
+      "profileDenominator": "11 profiles remain NOTRUN; not counted as FAIL or UNKNOWN"
+    }
   }
 }
