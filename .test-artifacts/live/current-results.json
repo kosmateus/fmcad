@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-26T14:00:48Z",
+  "generatedAt": "2026-11-26T14:13:27Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -36705,6 +36705,141 @@
       "existingNativePackage": "105 files unchanged"
     },
     "preservedHistory": {
+      "thirteenControllerUnknowns": "unchanged",
+      "historicalHarnessInterruption": "unchanged",
+      "sdkUnknowns": "unchanged",
+      "queueUnknowns": "unchanged",
+      "noReplay": true,
+      "noCleanup": true
+    },
+    "scope": "Canonical result report update only; no product/source/build/runtime/Fusion/SDK/probe/lifecycle operation by reporter."
+  },
+  "latestPrivateDirectoriesPreparationFailure": {
+    "reportedAt": "2026-11-26T14:13:27Z",
+    "runId": "6b7dc71be8eb027e3af42093c17a02ea7f695223bd684d100270b4bd5168051d",
+    "recordType": "fresh-live-qualification-private-directory-preparation-failure",
+    "terminal": {
+      "mainCommandId": "sh_2182e35c3002527gvvMI8VS3CC",
+      "mainExitCode": 1,
+      "watcherCommandId": "sh_2182e134f002AEiMixEDeoMdHN",
+      "watcher": "failure",
+      "phase": "owned-private-directories",
+      "code": "ERR_ASSERTION",
+      "outcome": "UNKNOWN",
+      "controllerRun": false
+    },
+    "classification": "A second distinct preparation-stage UNKNOWN, not a Fusion profile FAIL or controller startup run. Root read-only reproduction reached the original Python prefix assertion before directory creation; it does not convert the original attempt outcome from UNKNOWN.",
+    "failure": {
+      "path": "/tmp/opencode/root-canonical-owned-operator-20261126/live-qualification-6c040a51-9b15-4e5c-a763-283182ddaac4/failure.json",
+      "sha256": "179b1526a4a14432e6684273ce4ca94744a8995c6033e48f8705052ea530c9a4",
+      "phase": "owned-private-directories",
+      "code": "ERR_ASSERTION",
+      "outcome": "UNKNOWN"
+    },
+    "diagnosis": {
+      "kind": "read-only reproduction of exact original native Python prefix; stops before mkdir",
+      "log": "/tmp/opencode/root-native-layout-diagnosis-20261126/native-prefix-repro-r2.log",
+      "sha256": "a4d152f1d951e27527ed86caafd781738b1ad8b024374e18833e300f8c271d56",
+      "assertion": "target.parent == root.parent.parent",
+      "sourceDirectory": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-profile-source-exact-1391d46a0bab4f6ebdb8749927714309",
+      "expectedSourceLayout": "Temp/package-UUID/source",
+      "observedTargetParent": "C:\\Users\\kamil\\AppData\\Local\\Temp",
+      "requiredSourceGrandparent": "C:\\Users\\kamil\\AppData\\Local",
+      "assertionResult": "failed because source is flat under Temp rather than nested under package-UUID/source",
+      "prefixContainsMkdir": false,
+      "sdk": 0,
+      "nativeWrites": 0,
+      "plannedRootExists": false,
+      "interpretation": "Input packaging/layout error before native directory creation; the correct existing guard must not be weakened. This confirms the pre-mkdir layout cause, not a Fusion/profile failure."
+    },
+    "evidence": {
+      "directory": "/tmp/opencode/root-canonical-owned-operator-20261126/live-qualification-6c040a51-9b15-4e5c-a763-283182ddaac4",
+      "failure": {
+        "path": "/tmp/opencode/root-canonical-owned-operator-20261126/live-qualification-6c040a51-9b15-4e5c-a763-283182ddaac4/failure.json",
+        "sha256": "179b1526a4a14432e6684273ce4ca94744a8995c6033e48f8705052ea530c9a4"
+      },
+      "sourceWorkersCleanup": {
+        "path": "/tmp/opencode/root-canonical-owned-operator-20261126/live-qualification-6c040a51-9b15-4e5c-a763-283182ddaac4/source-workers-cleanup.json",
+        "sha256": "2705dd5d5c13d26bf89ade03e8717508b7c353775ee82a25c40296d958158e4c"
+      },
+      "brokerHandleAbsence": {
+        "path": "/tmp/opencode/root-canonical-owned-operator-20261126/live-qualification-6c040a51-9b15-4e5c-a763-283182ddaac4/broker-handle-absence.json",
+        "sha256": "86269c42541a09f09165898e335289d66aa7fd0a7631646bfc19597b7648974c"
+      },
+      "readOnlyPrefixReproducer": {
+        "path": "/tmp/opencode/root-native-layout-diagnosis-20261126/native-prefix-repro-r2.log",
+        "sha256": "a4d152f1d951e27527ed86caafd781738b1ad8b024374e18833e300f8c271d56"
+      }
+    },
+    "boundary": {
+      "sourceWorkers": "JOINED",
+      "brokerHandle": "NO_HANDLE_CREATED",
+      "nativeOutcome": "UNCHANGED",
+      "directoryResult": "NOTRUN/no result created",
+      "bootstrapResult": "NOTRUN/no result created",
+      "controllerRun": "NOTRUN",
+      "newFusionProcess": "NOTRUN",
+      "sdk": "NOTRUN",
+      "plannedWindowsRoot": "44cad6ff05fb47eda19995c356cdfcba",
+      "plannedWindowsRootExists": false,
+      "nativePackageFiles": "105 unchanged",
+      "futureNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "futureNativeDeployed": false,
+      "plannedWindowsRootPathKnown": false
+    },
+    "counts": {
+      "thisPreparationFailure": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "preparationFailuresAcrossReportedRuns": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "meaning": "Prior 649 preparation UNKNOWN plus this 6b7 directory-preparation UNKNOWN; neither is a controller run."
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 13,
+        "denominator": 13,
+        "changed": false
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "changed": false
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "qualifiedPublicSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "qualifiedBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "requiredCanonicalNativeManifestDigest": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "futureNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "futureNativeDeployed": false
+    },
+    "context": {
+      "previous649PrettyManifestDigestFailure": "fixed; not the current cause",
+      "previousr1": "JS object misread retirementPath before spawn; not evidence for native layout",
+      "r2": "actual read-only execution of the exact native Python prefix; assertion fails before mkdir"
+    },
+    "preservedHistory": {
+      "previousPreparationUnknown": "unchanged",
       "thirteenControllerUnknowns": "unchanged",
       "historicalHarnessInterruption": "unchanged",
       "sdkUnknowns": "unchanged",

@@ -1,3 +1,13 @@
+## 2026-11-26 14:13 UTC — Próba zatrzymana przed utworzeniem katalogów
+
+- **Wynik terminalny:** świeża próba `6b7dc71be8eb027e3af42093c17a02ea7f695223bd684d100270b4bd5168051d` zakończyła się `exit 1`; watcher potwierdził `failure`. Wynik źródłowy pozostaje **UNKNOWN** w fazie `owned-private-directories` (`ERR_ASSERTION`). Nie powstał wynik katalogu ani bootstrapu; nie uruchomiono kontrolera, SDK ani nowego procesu Fusion.
+- **Przyczyna przygotowania:** read-only reproducer wykonał dokładny prefiks natywnego skryptu do granicy przed `mkdir` i odtworzył nieudaną asercję `target.parent == root.parent.parent`. Wejście było płaskim katalogiem źródła pod `Temp`, a wymagany układ to `Temp/package-UUID/source`; ścieżka rodzica nie spełniała guarda. Planowany Windows root `44cad6ff05fb47eda19995c356cdfcba` nie istnieje. To błąd układu wejścia przed utworzeniem katalogu, nie `FAIL` Fusion. Guard jest prawidłowy i nie został osłabiony.
+- **Granica dowodów:** source workers dołączyli (`JOINED`), uchwyt brokera nie powstał, native pozostał bez zmian; reproducer zatrzymał się przed `mkdir` (`SDK 0`, `nativeWrites 0`). Przyszłe źródło native `efa30271…` nie jest wdrożone. Zachowano `UNKNOWN`; bez replay i cleanup. Wcześniejszy błąd pretty-manifestu z próbą 649 został naprawiony i **nie** jest przyczyną tej próby; wcześniejsza diagnoza r1 błędnie odczytała obiekt JS i nie stanowi dowodu natywnej ścieżki.
+- **Liczniki:** kontrolowane starty kontrolera pozostają **13 UNKNOWN / 13** — ta próba nie uruchomiła kontrolera. Dwa oddzielne błędy przygotowania to **2 UNKNOWN / 2** (próba 649 oraz ta próba); wcześniejsze przerwanie harnessu nadal **1 INTERRUPTED / 1**. Historyczne SDK **4 UNKNOWN / 4** i kolejka **4 UNKNOWN / 4** bez zmian. Pełny katalog: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- **Piny i dowody:** publiczne źródło `66643767d74711eb411c6eddcbdf32dc786cc80a`, build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; wymagany digest kanonicznego manifestu native `964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750`. Pełne ścieżki i SHA-256 są w `latestPrivateDirectoriesPreparationFailure` w JSON; reproducer: `/tmp/opencode/root-native-layout-diagnosis-20261126/native-prefix-repro-r2.log`.
+
+---
+
 ## 2026-11-26 14:00 UTC — Świeża próba zatrzymana w przygotowaniu harnessu
 
 - **Wynik terminalny:** świeża próba `649343fb63a447bfd98dc800f87c74effe9bf920704c6eb7bb1d647da76db5ee` zakończyła się kodem `1`; watcher potwierdził zdarzenie failure. Operator odnotował `UNKNOWN` w fazie `readonly-preparation`. Nie uruchomiono kontrolera startowego Fusion.
