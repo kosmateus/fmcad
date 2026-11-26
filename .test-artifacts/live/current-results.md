@@ -1,3 +1,14 @@
+## 2026-11-26 12:10 UTC — Trzynasty owned bootstrap controller zakończył się UNKNOWN po logowaniu
+
+- **Wynik terminalny:** próba `2d0039a2-52dc-4ea1-b905-a8e29d4ea8a4` zakończyła się `exit 1` (`ERR_ASSERTION`); operator `sh_2178e0b52002LhCoa9rNRepaEk` i watcher potwierdzili failure. Pierwotny wynik pozostaje **UNKNOWN**.
+- **Granica dowodów:** transcript zapisał PID `18436` / birth `134401672783022581` oraz trzy fazy: `old-death-os-confirmed`, `original-startup-source-observations-held`, `owned-suspended-provision-intent-origin-bound`. Oryginalny `receipts/entry.json` nie istniał; para receiptów pozostała niekompletna i operator zakończył się `TimeoutError`. Nie ma dowodu READY, SDK ani wykonania katalogu.
+- **Nie przenosić wcześniejszego stanu na nowy proces:** potwierdzenie logowania użytkownika oraz zmiana UI procesu `40052` nastąpiły przed jego zwykłym zamknięciem `52`; nie dowodzą aktualnego stanu uwierzytelnienia, żywotności ani wznowienia procesu `18436`. Zapis tuple/fazy utworzenia i powiązania nie dowodzi rzeczywistego resume. Osobny observer `54` ma bieżący stan **PENDING**. Dla prób bootstrapu **0 RUNNING**.
+- **Oddzielne liczniki:** kontrolowane próby bootstrap-controller: **13 UNKNOWN / 13**. Osobny zachowany harness: **1 INTERRUPTED / 1**, poza tym mianownikiem. Historyczne SDK: **4 UNKNOWN / 4**; kolejka: **4 UNKNOWN / 4**. Pełny katalog: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- **Piny:** kwalifikowane źródło `7f4dcd4a6100dbcd0ebeb77f0c63518a3ebb7aad`, build `419d0b525b71d3324d38219a9ac969aa9e555de019fe457fcbf0f7cea9caad1a`, runtime `40`; plan `2e7c7aa9a5ce8f66e75ab0fbb275edafa7b819537c23d4e0878779d2113caa98`; baseline `9fdf5873dfe7cd78f6739773f22ae74097c1d011bdf6ad94b6db519326e9d06b`; archiwum **PASS `3da61`**. Piny źródła i build pozostają bez zmian.
+- **Dowody i zachowanie:** `/tmp/opencode/root-postlogin-owned-operator-20261126/live-qualification-2d0039a2-52dc-4ea1-b905-a8e29d4ea8a4/failure.json`, `/tmp/opencode/root-postlogin-owned-operator-20261126/live-qualification-2d0039a2-52dc-4ea1-b905-a8e29d4ea8a4/bootstrap-result.json` i `/tmp/opencode/root-postlogin-owned-operator-20261126/live-qualification-2d0039a2-52dc-4ea1-b905-a8e29d4ea8a4/source-workers-cleanup.json`; pełne SHA-256 zapisano w `thirteenthOwnedStartupControllerUnknown` w JSON. Bez cleanup i replay.
+
+---
+
 ## 2026-11-26 02:57 UTC — Dwunasty owned bootstrap controller zakończył się UNKNOWN
 
 - **Wynik terminalny:** próba `b51170bc-bf53-46e4-9a0b-61e47ab34525` zakończyła się `exit 1` (`ERR_ASSERTION`); operator `sh_2159aefe800162DGYHu5abHdiq` i watcher odnotowali failure. Wynik pierwotny pozostaje **UNKNOWN**.
