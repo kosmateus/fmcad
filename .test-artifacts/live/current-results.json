@@ -37450,4 +37450,109 @@
       "noBrokerOrGlobalCleanHostClaim": true
     }
   }
+,
+  "latestRootDiagnosticStartUnknown": {
+    "reportedAt": "2026-11-26T19:32:00Z",
+    "terminalObservedAt": null,
+    "terminalTimeNote": "Exact terminal wall-clock time was not independently recorded; reportedAt is report time.",
+    "recordType": "actual-diagnostic-start-controller-unknown-before-new-fusion-process",
+    "operator": {
+      "main": "sh_21949dde50020f9eGaOORLgTFu",
+      "exitCode": 1,
+      "watcher": "sh_21949ba14001xhXhLEucY3zrBZ",
+      "watcherTerminal": "failure"
+    },
+    "outcome": {
+      "status": "UNKNOWN",
+      "action": "install",
+      "error": "Exact old process not dead",
+      "classification": "Controller returned UNKNOWN before a new Fusion process was recorded.",
+      "replay": "FORBIDDEN",
+      "authority": "NONE"
+    },
+    "transcript": {
+      "path": "/tmp/opencode/root-diagnostic-start-20261126/execution-4b32d3ae-e362-4332-ad4b-e03a27f52095/bootstrap-result.json",
+      "sha256": "25dbd22f298b7f1b8ed23ec38e0ed90df3451fe598a23320224f36b8644c0c1a",
+      "process": null,
+      "old": {
+        "pid": 40232,
+        "birth": "134401901160878433"
+      },
+      "phases": [
+        "old-death-os-confirmed"
+      ],
+      "references": []
+    },
+    "failure": {
+      "path": "/tmp/opencode/root-diagnostic-start-20261126/execution-4b32d3ae-e362-4332-ad4b-e03a27f52095/failure.json",
+      "sha256": "15747c593beebba40f0ba3f87ca77347397fcd667ab8e1273e451bed288ad7cc",
+      "phase": "controlled-bootstrap",
+      "code": "ERR_ASSERTION",
+      "outcome": "UNKNOWN"
+    },
+    "diagnosticObservation": {
+      "status": "UNVERIFIED",
+      "meaning": "No new Fusion process was created/recorded, so no process-specific observation could establish a Fusion logger failure."
+    },
+    "installGuardBoundary": {
+      "detail": "Operator/source diagnosis places the Exact old process not dead guard before first provision read/write. Provision/install state after this failed attempt is UNVERIFIED; no global PID-reuse inference.",
+      "futurePrivatePackage": {
+        "label": "B7/bf3",
+        "sourceApp": "83",
+        "status": "PREPARED_PRIVATE_NOT_DEPLOYED_OR_QUALIFIED"
+      }
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 18,
+        "denominator": 18,
+        "meaning": "Seventeen prior controller UNKNOWN outcomes plus this terminal attempt."
+      },
+      "separatePreparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "excludedFromControllerDenominator": true
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "excludedFromControllerDenominator": true
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "runtimePins": {
+      "brokerSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "brokerBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "installedNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "installedNativeBuild": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "meaning": "Publicly used broker and installed native pins remain unchanged; private future package is not the current runtime."
+    },
+    "preserved": {
+      "priorSeventeenControllerUnknownsUnchanged": true,
+      "prior40232Cleanup82EvidenceUnchanged": true,
+      "priorBootstrapUnknownsUnchanged": true,
+      "receiptReplay": 0,
+      "SDKCalls": 0,
+      "canonicalReceiptsChanged": false,
+      "fullProfileCountsChanged": false
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noRuntimeOrNativeChangesByReporter": true,
+      "noFusionClientsOrSDKActions": true
+    }
+  }
 }
