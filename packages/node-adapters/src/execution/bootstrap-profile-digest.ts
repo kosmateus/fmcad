@@ -53,7 +53,11 @@ function pythonNumber(token: string): string {
  * Admission decoding first retains the existing duplicate/nonfinite/loss guards.
  */
 export function bootstrapProfileSemanticDigest(bytes: Uint8Array): string {
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  // Preserve U+FEFF for strict JSON refusal, matching native bytes.decode("utf-8").
+  const text = new TextDecoder("utf-8", {
+    fatal: true,
+    ignoreBOM: true,
+  }).decode(bytes);
   decodeAdmissionJson(text);
   let cursor = 0;
   const space = () => {

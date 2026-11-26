@@ -106,6 +106,8 @@ def run(semantic=True, pretty=True, fault=None):
     if fault == "content": profile_value["loadedScripts"][0]["isFavorite"] = True
     if pretty:
         store[profile["nativePath"]] = (json.dumps(profile_value, indent="\t", ensure_ascii=False).replace("\n", "\r\n").encode(), "vendor-current-identity")
+    if fault == "bom":
+        store[profile["nativePath"]] = (b"\xef\xbb\xbf" + store[profile["nativePath"]][0], "bom-current-identity")
     reads = []
     def read(name, **_):
         reads.append(name);return store[name]
@@ -126,11 +128,11 @@ def run(semantic=True, pretty=True, fault=None):
 assert run(semantic=False, pretty=False)
 assert run()
 for options in [{"semantic": False}, {"fault": "content"}, {"fault": "bad-digest", "pretty": False},
-                {"fault": "unknown-field", "pretty": False}]:
+                {"fault": "unknown-field", "pretty": False}, {"fault": "bom"}]:
     try:
         run(**options)
     except ValueError:
         pass
     else:
         raise AssertionError(f"Expected profile refusal: {options}")
-print(json.dumps({"SDK": 0, "nativeProcessControl": 0, "cases": 6}))
+print(json.dumps({"SDK": 0, "nativeProcessControl": 0, "cases": 7}))

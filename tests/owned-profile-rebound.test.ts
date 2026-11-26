@@ -21,7 +21,7 @@ test("actual late owned rebound preserves original raw provenance and freshly ch
     { input: ownedNativeReboundProgram(), encoding: "utf8" },
   );
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).cases, 6);
+  assert.equal(JSON.parse(r.stdout).cases, 7);
 });
 
 test("profile canonical digest agrees with native Python for Unicode/nested order and numeric token types", () => {
@@ -52,7 +52,28 @@ test("profile canonical digest agrees with native Python for Unicode/nested orde
   }
 });
 
-test("actual mapped owned lifetime fence accepts only explicit same-content profile rewrites and rereads every time", () => {
+test("semantic profile strict UTF8 rejects BOM exactly as native JSON decoding", () => {
+  const bytes = Buffer.concat([
+    Buffer.from([0xef, 0xbb, 0xbf]),
+    Buffer.from('{"loadedScripts":[]}'),
+  ]);
+  const native = spawnSync(
+    "python3",
+    [
+      "-I",
+      "-S",
+      "-B",
+      "-c",
+      "import sys,json\ntry: json.loads(sys.stdin.buffer.read().decode('utf-8'))\nexcept ValueError: print('DENIED')\nelse: raise AssertionError('BOM accepted')",
+    ],
+    { input: bytes, encoding: "utf8" },
+  );
+  assert.equal(native.status, 0, native.stderr);
+  assert.equal(native.stdout.trim(), "DENIED");
+  assert.throws(() => bootstrapProfileSemanticDigest(bytes));
+});
+
+test("actual mapped owned lifetime fence accepts only same-content rewrites, denies BOM and rereads every time", () => {
   const moduleFile = path.join(
     __dirname,
     "../packages/node-adapters/src/execution/controlled-native-handoff.js",
@@ -192,6 +213,15 @@ test("actual mapped owned lifetime fence accepts only explicit same-content prof
         fence();
         rewrite();
         fence();
+        fs.writeFileSync(
+          mappedPaths[profile.nativePath]!,
+          Buffer.concat([
+            Buffer.from([0xef, 0xbb, 0xbf]),
+            Buffer.from(JSON.stringify(JSON.parse(profile.bytes.toString()))),
+          ]),
+        );
+        assert.throws(fence);
+        rewrite();
         fs.writeFileSync(
           mappedPaths[profile.nativePath]!,
           '{"loadedScripts":[]}',
