@@ -37120,5 +37120,113 @@
       "priorAttempt6df8": "INTERRUPTED_UNRESOLVED; separate, SDK/CAD NOTRUN; not settled by this run",
       "profileDenominator": "11 profiles remain NOTRUN; not counted as FAIL or UNKNOWN"
     }
+  },
+  "latestR3TerminalOwnedStartupControllerUnknown": {
+    "reportedAt": "2026-11-26T17:33:42.190393+00:00",
+    "recordType": "actual-r3-unknown-with-separate-ordinary-host-close",
+    "controller": {
+      "outcome": "UNKNOWN",
+      "classification": "UNKNOWN_UNCHANGED_ORIGINAL_RECEIPT_PAIR_INCOMPLETE",
+      "nativeTranscriptState": "UNKNOWN",
+      "authority": "NONE",
+      "process": {
+        "pid": 9456,
+        "birth": "134401870273666349"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "error": "Original receipt pair incomplete; no replay"
+    },
+    "rootTerminal": {
+      "producerPid": 566044,
+      "producerTerminal": "SIGTERM_EXIT_VERIFIED_PIDFD_AFTER_READONLY_FINAL_FENCE",
+      "watcherPid": 570561,
+      "watcherTerminal": "SIGTERM_EXIT_VERIFIED_PIDFD",
+      "interpretation": "Root main/watcher termination is not evidence that the native Fusion host was absent; original native transcript records host creation."
+    },
+    "separateOrdinaryHostClose": {
+      "pid": 9456,
+      "birth": "134401870273666349",
+      "result": "ONE_WM_CLOSE_EXIT_CONFIRMED_WITH_SAME_PROCESS_HANDLE",
+      "forceUsed": false,
+      "SDK": 0,
+      "interpretation": "Ordinary host retirement only; does not settle the bootstrap UNKNOWN."
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 16,
+        "denominator": 16,
+        "meaning": "Fifteen historical controller UNKNOWNs preserved plus this actual r3 UNKNOWN."
+      },
+      "separatePreparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "meaning": "Preparations 649 and 6b7; excluded from controller denominator."
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "excludedFromControllerDenominator": true
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "brokerSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "brokerBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "installedNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "installedNativeBuild": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "candidateProvisionSource": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97",
+      "candidateProvisionBuild": "ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
+      "meaning": "Report commit does not change runtime; broker and installed-native pins are distinct."
+    },
+    "evidence": {
+      "retirementResult": "/tmp/opencode/sol-retire-r3-boundary-20261126/retirement-result.json",
+      "retirementResultSha256": "5fcd47145de2c8cff18e90ee754ad5f74f787f34a81fff083a3a771e74ef654e",
+      "nativeTranscript": "/mnt/c/Users/kamil/AppData/Local/Temp/root-owned-cold-bf4a4bf4b06e43e280357aa06b073c25/transcript.json",
+      "nativeTranscriptSha256": "472008d9a414eb35597efbf29aeefabf6009b699b05afde00f47134bc30191eb",
+      "normalCloseResult": "/tmp/opencode/sol-retire-r3-boundary-20261126/normal-close.stdout.json",
+      "normalCloseStderr": "/tmp/opencode/sol-retire-r3-boundary-20261126/normal-close.stderr.log"
+    },
+    "preserved": {
+      "originalReceiptPairIncomplete": true,
+      "bootstrapUNKNOWNUnchanged": true,
+      "receiptReplay": 0,
+      "canonicalReceiptsPublished": 0,
+      "SDKCalls": 0,
+      "CAD": "NOTRUN",
+      "ordinaryCloseDoesNotSettleUnknown": true,
+      "earlierControllerUnknownsPreserved": true,
+      "preparationUnknownsSeparate": true,
+      "fullProfileDenominatorChanged": false
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noCodeRuntimeSDKQueueOrFusionActionsByReporter": true,
+      "noNativeBackend27182": true
+    }
   }
 }
