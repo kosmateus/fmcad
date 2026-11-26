@@ -1,3 +1,14 @@
+## 2026-11-26 02:57 UTC — Dwunasty owned bootstrap controller zakończył się UNKNOWN
+
+- **Wynik terminalny:** próba `b51170bc-bf53-46e4-9a0b-61e47ab34525` zakończyła się `exit 1` (`ERR_ASSERTION`); operator `sh_2159aefe800162DGYHu5abHdiq` i watcher odnotowali failure. Wynik pierwotny pozostaje **UNKNOWN**.
+- **Stan nie jest rozstrzygnięty:** transcript zapisał tuple `PID 40052 / birth 134401342671383604` oraz fazy `old-death-os-confirmed`, `original-startup-source-observations-held` i `owned-suspended-provision-intent-origin-bound`. Faza i zapis tuple nie dowodzą, że host jest obecnie martwy, zawieszony, wznowiony ani READY; samo utworzenie/binding nie jest sukcesem startu. Brak oryginalnego `receipts/entry.json` zakończył próbę błędem `Original receipt pair incomplete; no replay`. Nie uzyskano READY ani SDK; source workers dołączyli, uchwyt brokera nie powstał, wynik native pozostał bez zmian.
+- **Oddzielny obserwator:** działa osobny hostowy obserwator read-only nr 48. Nie jest to SDK execution ani kwalifikacja bootstrapu; nie wykonano tu probe, zmiany runtime ani operacji native.
+- **Liczniki:** kontrolowane próby bootstrap-controller: **12 UNKNOWN / 12**, **0 RUNNING**. Osobny zachowany harness: **1 INTERRUPTED / 1**, poza licznikiem kontrolerów. Historia SDK: **4 UNKNOWN / 4**; kolejka: **4 UNKNOWN / 4**, bez zmian. Pełny katalog: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- **Piny i zachowane skutki:** plan `2ae8e0790e18323c73dceee0dd8398ee02daec530e459f99df9d177add70edc2`; źródło `7f4dcd4a6100dbcd0ebeb77f0c63518a3ebb7aad`, kwalifikowany build `419d0b525b71d3324d38219a9ac969aa9e555de019fe457fcbf0f7cea9caad1a`, runtime `40`; baseline `0a10`, rola native `47 R4`, qualification transport `11800`, physical execution wyłącznie ADDIN `8765` (physical MCP `27182` wykluczony), archiwum `PASS 7888`. Istniejące skutki własnej instalacji/profilu/provision pozostawiono bez cleanup.
+- **Dowody:** `/tmp/opencode/root-native-history-owned-operator-20261126/live-qualification-b51170bc-bf53-46e4-9a0b-61e47ab34525/failure.json`, `/tmp/opencode/root-native-history-owned-operator-20261126/live-qualification-b51170bc-bf53-46e4-9a0b-61e47ab34525/bootstrap-result.json` i `/tmp/opencode/root-native-history-owned-operator-20261126/live-qualification-b51170bc-bf53-46e4-9a0b-61e47ab34525/source-workers-cleanup.json`, z pełnymi SHA-256 w `twelfthOwnedStartupControllerUnknown` w JSON. Nie powtórzono operacji ani nie zmieniano SDK/runtime/Fusion.
+
+---
+
 ## 2026-11-26 01:27 UTC — Jedenasty owned bootstrap controller zakończył się UNKNOWN
 
 - **Terminalny wynik:** operator `sh_21564cc5c001q7kXdkgol55TBF` zakończył się kodem `1`, a watcher odnotował `failure`. Próba `921aae42-9359-4a87-8980-4ee3c9000498` pozostała **UNKNOWN** w fazie `owned-cold-bootstrap`; błąd to `ERR_ASSERTION`.

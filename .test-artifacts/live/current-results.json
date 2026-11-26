@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-26T01:27:58Z",
+  "generatedAt": "2026-11-26T02:57:47Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -36359,5 +36359,127 @@
       "noCleanupOrMutationByReporter": true
     },
     "scope": "Canonical current-results report update only; no Fusion/SDK/runtime/probe/lifecycle operations and no changes outside current-results.md/json."
+  },
+  "twelfthOwnedStartupControllerUnknown": {
+    "reportedAt": "2026-11-26T02:57:47Z",
+    "terminalObservedAt": null,
+    "terminalTimeNote": "Exact terminal wall-clock time is unavailable; reportedAt is the environment UTC time when this report was updated.",
+    "recordType": "twelfth-controlled-owned-startup-controller-terminal-unknown",
+    "model": "openai/gpt-6-luna",
+    "variant": "default",
+    "session": "ses_dea8a34fcffe0LexzJQaT5wHcR",
+    "attempt": {
+      "runId": "b51170bc-bf53-46e4-9a0b-61e47ab34525",
+      "operatorId": "root-native-history-owned-operator-20261126",
+      "commandId": "sh_2159aefe800162DGYHu5abHdiq",
+      "commandExitCode": 1,
+      "watcher": "FAILURE",
+      "phase": "owned-cold-bootstrap",
+      "error": "ERR_ASSERTION",
+      "outcome": "UNKNOWN",
+      "authority": "NONE"
+    },
+    "transcript": {
+      "state": "UNKNOWN",
+      "oldProcess": {
+        "pid": 4676,
+        "birth": "134401214394528546"
+      },
+      "recordedProcess": {
+        "pid": 40052,
+        "birth": "134401342671383604"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "processStateInterpretation": "Transcript records this PID/birth tuple and provision-intent-origin-bound phase only. No independent proof here that the host is currently dead, suspended, resumed, or READY; creation/binding is not startup success.",
+      "receiptFailure": "Original receipts/entry.json was missing; TimeoutError: Original receipt pair incomplete; no replay.",
+      "meaning": "Preserve the original controller outcome as UNKNOWN. No verified READY or SDK execution."
+    },
+    "separateOutcomes": {
+      "brokerHandle": "NO_HANDLE_CREATED",
+      "sourceWorkers": "JOINED",
+      "nativeOutcome": "UNCHANGED",
+      "sdk": "NOTRUN",
+      "separateReadOnlyHostObserver48": {
+        "status": "RUNNING",
+        "scope": "Read-only observer; not SDK execution or qualification for this bootstrap."
+      }
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 12,
+        "denominator": 12,
+        "meaning": "Eleven previous terminal controller UNKNOWN outcomes preserved, plus this twelfth terminal UNKNOWN."
+      },
+      "separateHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "meaning": "One separately retained harness interruption; excluded from controller-run count."
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "livePlanSha256": "2ae8e0790e18323c73dceee0dd8398ee02daec530e459f99df9d177add70edc2",
+      "qualifiedSource": "7f4dcd4a6100dbcd0ebeb77f0c63518a3ebb7aad",
+      "qualifiedBuild": "419d0b525b71d3324d38219a9ac969aa9e555de019fe457fcbf0f7cea9caad1a",
+      "qualifiedRuntime": "40",
+      "baseline": "0a10",
+      "native47R4Role": "native 47 R4 role",
+      "qualificationTransport": "11800",
+      "physicalExecutionTransport": "ADDIN 8765 only; physical MCP 27182 excluded",
+      "archive": "PASS 7888"
+    },
+    "evidence": {
+      "directory": "/tmp/opencode/root-native-history-owned-operator-20261126/live-qualification-b51170bc-bf53-46e4-9a0b-61e47ab34525",
+      "failure": {
+        "path": "failure.json",
+        "sha256": "e54bd32e0b8076ff4364c2933d2215cbbc0d7ff6eca1c14335bbe37b43da6542"
+      },
+      "bootstrap": {
+        "path": "bootstrap-result.json",
+        "sha256": "ddbcb8dbb038765fbc61921db78f7ce026c4842d5ee3374b37da9fc5507a26a4"
+      },
+      "sourceWorkersCleanup": {
+        "path": "source-workers-cleanup.json",
+        "sha256": "2705dd5d5c13d26bf89ade03e8717508b7c353775ee82a25c40296d958158e4c"
+      },
+      "terminal": {
+        "main": "sh_2159aefe800162DGYHu5abHdiq exit 1",
+        "watcher": "failure"
+      }
+    },
+    "preservedHistory": {
+      "previousElevenControllerUnknowns": "unchanged",
+      "separateHarnessInterruption": "unchanged and excluded from controller count",
+      "historicalFourSdkUnknowns": "unchanged",
+      "canonicalFourQueueUnknowns": "unchanged",
+      "ownedInstallProfileProvisionSideEffects": "remain; no cleanup by this report update",
+      "noReplay": true
+    },
+    "scope": "Canonical current-results report update only; no SDK, runtime, probe, native mutation, lifecycle operation, replay or cleanup by reporter."
   }
 }
