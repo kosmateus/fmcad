@@ -37228,5 +37228,111 @@
       "noCodeRuntimeSDKQueueOrFusionActionsByReporter": true,
       "noNativeBackend27182": true
     }
+  },
+  "latestCurrentFenceOwnedStartupControllerUnknown": {
+    "reportedAt": "2026-11-26T19:13:00Z",
+    "recordType": "actual-current-fence-controller-unknown-original-receipts-incomplete",
+    "controller": {
+      "command": "sh_219038acc001iU4WADyQ9bv0JR",
+      "source": "36",
+      "terminalExitCode": 1,
+      "watchContinuation": "sh_2190d8b26001qXJMv409oA2XtK",
+      "watchTerminal": "failureevent",
+      "outcome": "UNKNOWN",
+      "failurePhase": "controlled-bootstrap",
+      "failureCode": "ERR_ASSERTION",
+      "replay": "FORBIDDEN",
+      "action": "receipts",
+      "error": "Original receipt pair incomplete; no replay"
+    },
+    "transcript": {
+      "path": "/tmp/opencode/root-current-fence-20261126/execution-985eff93-2cac-414c-b54e-318b85e3c0b2/bootstrap-result.json",
+      "sha256": "d902242691a0e4c251291e1d346e6572776852bcc13e5687ed3b736a984afa06",
+      "state": "UNKNOWN",
+      "authority": "NONE",
+      "old": {
+        "pid": 9456,
+        "birth": "134401870273666349"
+      },
+      "process": {
+        "pid": 40232,
+        "birth": "134401901160878433"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "receiptPair": "incomplete; original evidence preserved"
+    },
+    "processBoundary": {
+      "pid": 40232,
+      "birth": "134401901160878433",
+      "lastReportedState": "ALIVE",
+      "exit": "UNKNOWN",
+      "meaning": "Do not infer process closure from the controller failure."
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 17,
+        "denominator": 17,
+        "meaning": "Sixteen prior controller UNKNOWN outcomes plus this actual run."
+      },
+      "separatePreparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "excludedFromControllerDenominator": true
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "excludedFromControllerDenominator": true
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "sdk": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "pins": {
+      "brokerSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "brokerBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "installedNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "installedNativeBuild": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "operatorSource": "00f1",
+      "operatorCompositionSource": "36",
+      "meaning": "The operator composition/source is not the broker runtime or a deployed runtime."
+    },
+    "evidence": {
+      "bootstrapResult": "/tmp/opencode/root-current-fence-20261126/execution-985eff93-2cac-414c-b54e-318b85e3c0b2/bootstrap-result.json",
+      "bootstrapResultSha256": "d902242691a0e4c251291e1d346e6572776852bcc13e5687ed3b736a984afa06",
+      "failure": "/tmp/opencode/root-current-fence-20261126/execution-985eff93-2cac-414c-b54e-318b85e3c0b2/failure.json",
+      "failureSha256": "15747c593beebba40f0ba3f87ca77347397fcd667ab8e1273e451bed288ad7cc",
+      "executionDirectory": "/tmp/opencode/root-current-fence-20261126/execution-985eff93-2cac-414c-b54e-318b85e3c0b2"
+    },
+    "preserved": {
+      "previousSixteenControllerUnknownsUnchanged": true,
+      "preparationUnknownsSeparate": true,
+      "harnessInterruptionSeparate": true,
+      "receiptReplay": 0,
+      "SDKCalls": 0,
+      "CAD": "NOTRUN",
+      "host40232NotClaimedClosed": true,
+      "fullProfileDenominatorChanged": false
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noFusionClientsOrSDKOrRuntimeActionsByReporter": true,
+      "noNativeBackend27182": true
+    }
   }
 }

@@ -1185,3 +1185,11 @@ This is a supplemental run, not a historical required profile-replica cell. The 
 - Liczniki: kontrolery **16 UNKNOWN / 16** (15 historycznych plus r3); osobne błędy przygotowania **2 UNKNOWN / 2** oraz przerwanie harnessu **1 INTERRUPTED / 1** pozostają poza tym mianownikiem. Historyczne SDK **4 UNKNOWN / 4** i kolejka **4 UNKNOWN / 4** bez zmian. Pełny katalog **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**. Brak READY/CAD PASS.
 - Piny rzeczywistego brokera pozostają source `66643767d74711eb411c6eddcbdf32dc786cc80a` / build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; zainstalowany native to osobny pin. Commit raportu nie jest zmianą ani dowodem runtime.
 - Wynik zamknięcia i transcript przypięto SHA-256 w `latestR3TerminalOwnedStartupControllerUnknown` w JSON. SDK **0**, CAD **NOTRUN**, replay **0**; oryginalny transcript i niepewny wynik zachowano.
+
+
+## 2026-11-26 19:13 UTC — Siedemnasty startup controller UNKNOWN; proces pozostaje nierozstrzygnięty
+
+- Bieżący kontroler zakończył się kodem 1, a watcher zarejestrował failure. Oryginalny transcript mówi **UNKNOWN**: istnieje checkpoint utworzenia Fusion PID `40232` / birth `134401901160878433` i trzy fazy bootstrapu, ale odczyt pary receiptów nie powiódł się („Original receipt pair incomplete; no replay”). Nie ponawiano operacji. Proces odnotowano jako żywy; jego późniejsze wyjście pozostaje **UNKNOWN** — nie raportujemy zamknięcia.
+- Liczniki: kontrolery **17 UNKNOWN / 17**. Dwa błędy przygotowania (**2 UNKNOWN / 2**) i przerwanie harnessu (**1 INTERRUPTED / 1**) są osobno, poza tym mianownikiem. Pełne profile: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**; SDK i CAD **NOTRUN**.
+- Broker/runtime bez zmian: source `66643767d74711eb411c6eddcbdf32dc786cc80a`, build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; zainstalowany native source `efa30271f18281e0705ea2659ee9a37a52085b9e` / build `964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750`. Operator source `00f1` i kompozycja `36` nie są runtime.
+- SHA-256 transcriptu, failure i ścieżki dowodów są w `latestCurrentFenceOwnedStartupControllerUnknown` w JSON. Bez klienta Fusion, SDK, replay i cleanup.
