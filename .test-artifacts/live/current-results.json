@@ -426,7 +426,7 @@
     "originalAuthenticatedFindRequest": null,
     "sdkSettlement": "Unverified; absence of a public job receipt alone is not proof of SDK completion or non-dispatch",
     "evidence": "/tmp/opencode/sol-feature10-d34d026c-f021-41f1-9479-021d649eaf36/terminal-summary.json",
-    "next": "Naprawa publicznego CLI/typed worker w fmcad-g0t; następna próba dopiero po technicznej poprawce, ze świeżymi IDs"
+    "next": "Naprawa publicznego CLI/typed worker w fmcad-g0t; nast\u0119pna pr\u00f3ba dopiero po technicznej poprawce, ze \u015bwie\u017cymi IDs"
   },
   "db9SuccessorBootstrap": {
     "source": "db9ceaa6cd87bd3484294996e37585631a4355ff",
@@ -764,7 +764,7 @@
         "runner": "all",
         "scope": "Backend capabilities, progress, transport limits and read-only soak",
         "status": "FAIL",
-        "reason": "Fresh C runtime54 adapter runner terminally failed on owner0 at marker-28 submit timeout: runner recorded 27/4500; owner0 FAIL, owners1–9 NOTRUN. Original request :31 later resolved succeeded/SDK-settled with ADAPTER_PROBE_28, but the runner had already failed and did not continue. Final inventory assertion was NOTRUN and cleanup deferred, not an inventory failure.",
+        "reason": "Fresh C runtime54 adapter runner terminally failed on owner0 at marker-28 submit timeout: runner recorded 27/4500; owner0 FAIL, owners1\u20139 NOTRUN. Original request :31 later resolved succeeded/SDK-settled with ADAPTER_PROBE_28, but the runner had already failed and did not continue. Final inventory assertion was NOTRUN and cleanup deferred, not an inventory failure.",
         "replica": "C",
         "run": "9ddd70bc-cc1e-47e4-b99a-b6d21fcccb3e",
         "driver": "54d6cc937ccef332d38757e47d85720845351c25",
@@ -990,7 +990,7 @@
           }
         ],
         "priorTerminal": {
-          "reason": "C terminal runner failed at marker request :228 after Queue IPC timeout; runner recorded 224/450 owner0 markers and did not continue. Exact request :228 was read-only recovered as terminal succeeded, sdkSettled=true, output ADAPTER_PROBE_225; that response arrived after runner failure and does not qualify the soak. Owner0 FAIL, owners1–9 NOTRUN.",
+          "reason": "C terminal runner failed at marker request :228 after Queue IPC timeout; runner recorded 224/450 owner0 markers and did not continue. Exact request :228 was read-only recovered as terminal succeeded, sdkSettled=true, output ADAPTER_PROBE_225; that response arrived after runner failure and does not qualify the soak. Owner0 FAIL, owners1\u20139 NOTRUN.",
           "run": "dbc24fe9-6862-4101-94af-5e340ddb72e4",
           "driver": "afc4525dec4b730cbe9289b237412a2d959a624c",
           "counts": {
@@ -1067,7 +1067,7 @@
           "runtimeSource": "44f31bbfe9233630aec85ca1c8f6f11abe8fdb",
           "runtimeBuild": "e3df2e67e15940b1a306542c703599f3ede686c7b5ec2bc50dba29406c3e0291",
           "evidenceRoot": "/tmp/opencode/fmcad-vns10-c-runtime44-driver6300fda/.test-artifacts/scenarios/d44322ff-147f-4803-aa74-c1aba94fcfb8",
-          "reason": "Runner/profile remains terminal FAIL before markers: owner0 FAIL, owners1–9 NOTRUN, 0/4500 markers. The initial client reported Queue IPC timeout for snapshot request :2, but later read-only lifecycle evidence found its original accepted durable job terminal succeeded/SDK-settled with exitCode 0 and publication published. This receipt resolution does not resume the runner or qualify the soak; no replay was performed.",
+          "reason": "Runner/profile remains terminal FAIL before markers: owner0 FAIL, owners1\u20139 NOTRUN, 0/4500 markers. The initial client reported Queue IPC timeout for snapshot request :2, but later read-only lifecycle evidence found its original accepted durable job terminal succeeded/SDK-settled with exitCode 0 and publication published. This receipt resolution does not resume the runner or qualify the soak; no replay was performed.",
           "cleanup": "No documents created; read-only; no cleanup required.",
           "markerCounts": {
             "completed": 0,
@@ -1158,7 +1158,7 @@
         "runner": "standalone",
         "scope": "Batch reference resolution, propagation and failure stop",
         "status": "FAIL",
-        "reason": "Fresh C runtime54 batch-reference10 failed at owner0 before script submission: production checker rejected redeclaration of _ATOMIC_REQUEST. The settled request is not_started/userScriptSubmitted=false/mayHaveMutated=false; neither shape.box nor the reference assertion ran. Owner0 FAIL, owners1–9 NOTRUN. Exact fixture retained; cleanup deferred, no replay.",
+        "reason": "Fresh C runtime54 batch-reference10 failed at owner0 before script submission: production checker rejected redeclaration of _ATOMIC_REQUEST. The settled request is not_started/userScriptSubmitted=false/mayHaveMutated=false; neither shape.box nor the reference assertion ran. Owner0 FAIL, owners1\u20139 NOTRUN. Exact fixture retained; cleanup deferred, no replay.",
         "previousLatestEvidenceBeforeRuntime54": {
           "status": "NOTRUN",
           "reason": "Initial inventory snapshot; attach authoritative current full-live evidence before changing status."
@@ -1388,7 +1388,7 @@
         "runner": "standalone",
         "scope": "Nested occurrences, component lookup and transforms",
         "status": "FAIL",
-        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37→37. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
+        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37\u219237. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
         "replica": "C",
         "run": "6f5f4b39-4113-4d69-badb-ee8218ea67a7",
         "driver": "54d6cc937ccef332d38757e47d85720845351c25",
@@ -1422,7 +1422,7 @@
           "runtimeSource": "62d0e951d21d658c5c27cbff7e87a6c87725ad67",
           "runtimeBuild": "2d910abc332a1ada92c1a0be90c6cc33ebd33bcd42909246bdb4eea076c30907",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/f984373f-36e0-48a2-a87a-b1068b1cb116",
-          "reason": "C run terminal FAIL: owner0 completed 8 original requests, including shape.box and component.from_bodies; later owned-fixture inventory assertion failed because concurrent scenario documents appeared. This is confirmed test-orchestrator preload-gate interference (report.json.new blocked before atomic rename), not a proven product regression. Owners1–9 NOTRUN; fixture cdefe4cc-4e77-45dd-b34e-2092db564e44 retained; cleanup deferred to protect peer baseline.",
+          "reason": "C run terminal FAIL: owner0 completed 8 original requests, including shape.box and component.from_bodies; later owned-fixture inventory assertion failed because concurrent scenario documents appeared. This is confirmed test-orchestrator preload-gate interference (report.json.new blocked before atomic rename), not a proven product regression. Owners1\u20139 NOTRUN; fixture cdefe4cc-4e77-45dd-b34e-2092db564e44 retained; cleanup deferred to protect peer baseline.",
           "cleanup": "Deferred; exact fixture cdefe4cc-4e77-45dd-b34e-2092db564e44 intentionally retained."
         },
         "runIdPending": false,
@@ -1537,8 +1537,8 @@
               "denominator": 10
             },
             "assertions": "13 original SDK requests succeeded/settled; context matching and exact replay passed. Final observe-definition-4 request job 4323881c-0dd3-4fe5-abcd-5c2278ba3bd2 succeeded/settled, but host assertion failed: An observed fixture disappeared without its exact close receipt (open !== closed).",
-            "peerEvidence": "Absent seen IDs were peer native-solids run 2c84d124… cases1–8; current peer reports have no cleanup request records, so root cause is not established.",
-            "cleanup": "Owned modified fixture 1043e467… retained; cleanup deferred, no close.",
+            "peerEvidence": "Absent seen IDs were peer native-solids run 2c84d124\u2026 cases1\u20138; current peer reports have no cleanup request records, so root cause is not established.",
+            "cleanup": "Owned modified fixture 1043e467\u2026 retained; cleanup deferred, no close.",
             "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/36f6918c-81d1-4873-ac6a-da97e8285d8a"
           }
         ],
@@ -1558,7 +1558,7 @@
           "runtimeSource": "62d0e951d21d658c5c27cbff7e87a6c87725ad67",
           "runtimeBuild": "2d910abc332a1ada92c1a0be90c6cc33ebd33bcd42909246bdb4eea076c30907",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/b7567022-802d-47f4-9d78-c49bb3a6f155",
-          "reason": "Matching context assertion mismatch: expected {component:root, doc, docId}, actual {preview:false, doc, docId}. Actual definition instantiate and four physical steps succeeded; bounds 23×11×7 and volume 1771. Exact own cleanup completed; this does not make suite PASS."
+          "reason": "Matching context assertion mismatch: expected {component:root, doc, docId}, actual {preview:false, doc, docId}. Actual definition instantiate and four physical steps succeeded; bounds 23\u00d711\u00d77 and volume 1771. Exact own cleanup completed; this does not make suite PASS."
         },
         "runIdPending": false,
         "driverSource": "54d6cc937ccef332d38757e47d85720845351c25",
@@ -1620,7 +1620,7 @@
         "runner": "standalone",
         "scope": "Engineering calculations with native geometry/measurement readback",
         "status": "FAIL",
-        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
+        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
         "replica": "C",
         "run": "32d35a78-a4a3-45bb-9c98-9041cd5126b8",
         "driver": "54d6cc937ccef332d38757e47d85720845351c25",
@@ -1671,7 +1671,7 @@
           "runtimeSource": "62d0e951d21d658c5c27cbff7e87a6c87725ad67",
           "runtimeBuild": "2d910abc332a1ada92c1a0be90c6cc33ebd33bcd42909246bdb4eea076c30907",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/b4de65ac-520f-47c5-92fb-d5d085012026",
-          "reason": "A native-engineering run terminal FAIL: owner0 FAIL, owners1–9 NOTRUN. 32/33 original SDK requests succeeded and all 33 settled. First failing job 2b3f5fbb-1e3c-4b13-89e0-720cded114b7 returned ValueError: Invalid or incompatible expression '6000 mm3' for units 'cm^3'. Owner0 subtests: 11 PASS / 1 FAIL / 14 UNKNOWN (26 denominator; separate from owner counts). Later cleanupHold: a previously admitted peer lost exact lifecycle proof; last original shape.box job a59cab19-35f8-40bd-aa35-1a905cb55736 succeeded/settled. Own fixture 2c2dba83-d4ef-4dde-a37f-5faba185d569 retained; cleanup deferred, no close submitted.",
+          "reason": "A native-engineering run terminal FAIL: owner0 FAIL, owners1\u20139 NOTRUN. 32/33 original SDK requests succeeded and all 33 settled. First failing job 2b3f5fbb-1e3c-4b13-89e0-720cded114b7 returned ValueError: Invalid or incompatible expression '6000 mm3' for units 'cm^3'. Owner0 subtests: 11 PASS / 1 FAIL / 14 UNKNOWN (26 denominator; separate from owner counts). Later cleanupHold: a previously admitted peer lost exact lifecycle proof; last original shape.box job a59cab19-35f8-40bd-aa35-1a905cb55736 succeeded/settled. Own fixture 2c2dba83-d4ef-4dde-a37f-5faba185d569 retained; cleanup deferred, no close submitted.",
           "cleanup": "Deferred: peer lifecycle proof missing after admission; owned fixture 2c2dba83-d4ef-4dde-a37f-5faba185d569 retained; no close submitted."
         },
         "runIdPending": false,
@@ -1743,7 +1743,7 @@
         "runner": "standalone",
         "scope": "Entity identity, attributes and selection behavior",
         "status": "FAIL",
-        "reason": "Original profile FAIL remains (owner0 PASS, owner1 FAIL, 8 NOTRUN); final set request failed with “Unproven non-baseline document in fenced inventory”. The exact owned fixture e8cee2f6… has since been removed by cleanup request feda3efa-0bdb-4e76-a54c-41ddcc00220e / job 0712bf4f-ef04-45ef-82f2-edfb885e344e (terminal succeeded, sdkSettled=true, target absent, foreign 25/25 unchanged in the same SDK turn). Cross-turn peer-baseline preservation was not confirmed; cleanup does not change the original profile result.",
+        "reason": "Original profile FAIL remains (owner0 PASS, owner1 FAIL, 8 NOTRUN); final set request failed with \u201cUnproven non-baseline document in fenced inventory\u201d. The exact owned fixture e8cee2f6\u2026 has since been removed by cleanup request feda3efa-0bdb-4e76-a54c-41ddcc00220e / job 0712bf4f-ef04-45ef-82f2-edfb885e344e (terminal succeeded, sdkSettled=true, target absent, foreign 25/25 unchanged in the same SDK turn). Cross-turn peer-baseline preservation was not confirmed; cleanup does not change the original profile result.",
         "replica": "A",
         "run": "705a9db6-277f-4d4a-8fdc-c0cfa8ac240a",
         "driver": "53b59c01e65f7e00404232f25631bdee5a9f15f6",
@@ -1850,7 +1850,7 @@
         "runner": "all",
         "scope": "Extrusion, hole, sweep and loft variants; geometry and timeline health",
         "status": "FAIL",
-        "reason": "Fresh shared feature-modes10 runtime54 run terminally failed: owner0 FAIL, owners1–9 NOTRUN. Owner report contains 47 request records (:0–:46), 46 succeeded/SDK-settled and one failed/SDK-settled. Request :36 failed during native feature-property probing with SDK_EXECUTION_FAILED / Other document state changed (mayHaveMutated=true). Later requests :45 and :46 were SDK-settled admission-only inventory-changed results (helperCalls=0, mutationStarted=false); the final fenced CAD turn stopped with ADMISSION_CHANGED because no new terminal receipt was available. The 28 recorded geometry metrics do not qualify the feature profile as PASS. Supplemental close request :48 / job d661b960-f9eb-42ba-aa73-761fb8a34410 succeeded and settled; the exact fixture is absent, the original report remains FAIL/deferred and unchanged. Closing the active fixture selected an existing foreign sketch document as active; document content and saved counts were unchanged. Shared run is not replica-attributed.",
+        "reason": "Fresh shared feature-modes10 runtime54 run terminally failed: owner0 FAIL, owners1\u20139 NOTRUN. Owner report contains 47 request records (:0\u2013:46), 46 succeeded/SDK-settled and one failed/SDK-settled. Request :36 failed during native feature-property probing with SDK_EXECUTION_FAILED / Other document state changed (mayHaveMutated=true). Later requests :45 and :46 were SDK-settled admission-only inventory-changed results (helperCalls=0, mutationStarted=false); the final fenced CAD turn stopped with ADMISSION_CHANGED because no new terminal receipt was available. The 28 recorded geometry metrics do not qualify the feature profile as PASS. Supplemental close request :48 / job d661b960-f9eb-42ba-aa73-761fb8a34410 succeeded and settled; the exact fixture is absent, the original report remains FAIL/deferred and unchanged. Closing the active fixture selected an existing foreign sketch document as active; document content and saved counts were unchanged. Shared run is not replica-attributed.",
         "executionLabel": "Shared normal-default2/feature10 crossover; replica attribution not evidenced",
         "run": "7ea44800-fbaa-494c-b2f6-95cdd6b3db21",
         "runtimeSource": "54d6cc937ccef332d38757e47d85720845351c25",
@@ -1883,7 +1883,7 @@
         "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/7ea44800-fbaa-494c-b2f6-95cdd6b3db21",
         "sourceChanges": "None in this run; C8 fix work is separately owned/in progress.",
         "priorLatest": {
-          "reason": "C8 terminal run failed for owner0; owners1–9 NOTRUN. The 30 CAD calls were rejected before Fusion dispatch with PYTHON_CHECK_REJECTED/tool_error (not_started, userScriptSubmitted=false, mayHaveMutated=false); no CAD method ran. The generated payload was ~604 KB and hit unresolved dynamic-execution/checker output limits. 65 original requests all settled: 35 succeeded, 30 failed. Exact owned fixture cleanup completed.",
+          "reason": "C8 terminal run failed for owner0; owners1\u20139 NOTRUN. The 30 CAD calls were rejected before Fusion dispatch with PYTHON_CHECK_REJECTED/tool_error (not_started, userScriptSubmitted=false, mayHaveMutated=false); no CAD method ran. The generated payload was ~604 KB and hit unresolved dynamic-execution/checker output limits. 65 original requests all settled: 35 succeeded, 30 failed. Exact owned fixture cleanup completed.",
           "run": "ee008cf5-299b-4b2c-bc77-b612b0bc714b",
           "driver": "not present in captured owner report; do not infer",
           "runtimeSource": "62d0e951d21d658c5c27cbff7e87a6c87725ad67",
@@ -2003,7 +2003,7 @@
           },
           "requestRecords": {
             "denominator": 47,
-            "idRange": "0–46",
+            "idRange": "0\u201346",
             "succeededAndSdkSettled": 46,
             "failedAndSdkSettled": 1,
             "unsettled": 0
@@ -2105,7 +2105,7 @@
             "mutationStarted": false,
             "geometryCreated": false
           },
-          "failure": "Host lifecycle proof guard refused three new peers without accepted lifecycle proof: c412 saved-transfer, 671c legacy, 3b48 controlled-peer. Owner0 failed; owners1–9 not created.",
+          "failure": "Host lifecycle proof guard refused three new peers without accepted lifecycle proof: c412 saved-transfer, 671c legacy, 3b48 controlled-peer. Owner0 failed; owners1\u20139 not created.",
           "cleanup": "deferred; own fixture 689c76ad retained",
           "evidence": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/efade94b-7d79-4690-b16b-5d04233ff90c/native-feature-modes-0/report.json",
           "log": "/tmp/opencode/astra-feature-live93a8.log"
@@ -2195,7 +2195,7 @@
           },
           "requestRecords": {
             "denominator": 47,
-            "idRange": "0–46",
+            "idRange": "0\u201346",
             "succeededAndSdkSettled": 46,
             "failedAndSdkSettled": 1,
             "unsettled": 0
@@ -2825,7 +2825,7 @@
         },
         "requestRecords": {
           "denominator": 47,
-          "idRange": "0–46",
+          "idRange": "0\u201346",
           "succeededAndSdkSettled": 46,
           "failedAndSdkSettled": 1,
           "unsettled": 0
@@ -2895,7 +2895,7 @@
         "runner": "standalone",
         "scope": "Native export artifacts, paths and file checks",
         "status": "FAIL",
-        "reason": "C standalone owner failed final inventory assertion after export operations and binary readback. Four STEP/STL outputs were read back; STEP bounding boxes matched within tolerance (not full geometric equivalence). Exact owned cleanup completed, but final inventory contained peer docs 237c4d28… and 65bb2cd6…; no peer documents changed or removed.",
+        "reason": "C standalone owner failed final inventory assertion after export operations and binary readback. Four STEP/STL outputs were read back; STEP bounding boxes matched within tolerance (not full geometric equivalence). Exact owned cleanup completed, but final inventory contained peer docs 237c4d28\u2026 and 65bb2cd6\u2026; no peer documents changed or removed.",
         "replica": "C",
         "run": "26bbb893-c187-4326-b2d6-6a955f480ce2",
         "driver": "afc4525dec4b730cbe9289b237412a2d959a624c",
@@ -2910,7 +2910,7 @@
           "denominator": 1
         },
         "failurePhase": "final original-document inventory assertion",
-        "error": "Original documents changed or an unowned scenario document remains after cleanup; peer docs 237c4d28… and 65bb2cd6… detected.",
+        "error": "Original documents changed or an unowned scenario document remains after cleanup; peer docs 237c4d28\u2026 and 65bb2cd6\u2026 detected.",
         "assertions": "Four STEP/STL outputs binary-readback verified. STEP bounding-box source/reimport deltas were zero within 0.0001 cm; this does not prove shape/topology/volume equivalence.",
         "cleanup": "PASS for exact owned file/document cleanup; peer inventory comparison failed, peers preserved.",
         "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/26bbb893-c187-4326-b2d6-6a955f480ce2"
@@ -3083,7 +3083,7 @@
         },
         "actualRestore": true,
         "remainingOwnedDocuments": [],
-        "statusScope": "Standalone canonical suite/profile result; excluded from the per-replica 36×3 matrix and does not increase the 29 required physical profiles per replica."
+        "statusScope": "Standalone canonical suite/profile result; excluded from the per-replica 36\u00d73 matrix and does not increase the 29 required physical profiles per replica."
       },
       {
         "id": "gm12-spring",
@@ -3179,7 +3179,7 @@
         },
         "priorTerminal": {
           "status": "RUNNING",
-          "reason": "A fresh full legacy profile was launched after actual READY with a new operator baseline. Launcher is active, but no terminal output, original run ID, or accepted SDK evidence is available yet; profile and owner results must not be inferred. The prior runtime44 FAIL and its separate cleanup-only 49… PASS remain preserved.",
+          "reason": "A fresh full legacy profile was launched after actual READY with a new operator baseline. Launcher is active, but no terminal output, original run ID, or accepted SDK evidence is available yet; profile and owner results must not be inferred. The prior runtime44 FAIL and its separate cleanup-only 49\u2026 PASS remain preserved.",
           "run": null,
           "driver": "aa942f37710e872ef3f1997c9110d4fc2631328f",
           "runtimeSource": "93a8c494",
@@ -3365,7 +3365,7 @@
             "runtimeBuild": "07a66146c33f8240a1d898380038c6cbd52e4959ff1cb65b1379379785cf8bdb",
             "runtimeNonce": "8773e526-c57a-4bf1-9c62-ada2a8078e9e",
             "protocol": "ADDIN 8765",
-            "actionTimings": "10–18 initialize/tools-list/tools-call/result events per owner",
+            "actionTimings": "10\u201318 initialize/tools-list/tools-call/result events per owner",
             "sourceBeforeAfter": "94b4b8b17fb03f44fdf0540e624f33f8ed646cee95e7306047b81f905a7793d8",
             "evidence": [
               "/tmp/opencode/sol-replica-c-54d6cc9-mcp-stdio10.log",
@@ -3423,7 +3423,7 @@
           "runtimeBuild": "07a66146c33f8240a1d898380038c6cbd52e4959ff1cb65b1379379785cf8bdb",
           "runtimeNonce": "8773e526-c57a-4bf1-9c62-ada2a8078e9e",
           "protocol": "ADDIN 8765",
-          "actionTimings": "10–18 initialize/tools-list/tools-call/result events per owner",
+          "actionTimings": "10\u201318 initialize/tools-list/tools-call/result events per owner",
           "sourceBeforeAfter": "94b4b8b17fb03f44fdf0540e624f33f8ed646cee95e7306047b81f905a7793d8",
           "evidence": [
             "/tmp/opencode/sol-replica-c-54d6cc9-mcp-stdio10.log",
@@ -3522,7 +3522,7 @@
             "NOTRUN": 0,
             "denominator": 2
           },
-          "reason": "B full existing launcher defaulted to two owners (not 10). Both owned create/write/read assertion sets passed (2/2), all 12 original receipts succeeded/settled, both owned documents closed and absent, and active document restored. The profile failed only its literal final `after == before` inventory assertion: baseline had 32 documents, after had 31; the sole missing peer was legacy fixture 49c95b59…, with no other changed/new documents. A separate exact-owner legacy close completed between this run’s baseline and restore; this is correlated timing, not attribution of that close to the normal-multidocument run. Historical JS had the same literal equality assertion; follow-up .10.4.5 is open.",
+          "reason": "B full existing launcher defaulted to two owners (not 10). Both owned create/write/read assertion sets passed (2/2), all 12 original receipts succeeded/settled, both owned documents closed and absent, and active document restored. The profile failed only its literal final `after == before` inventory assertion: baseline had 32 documents, after had 31; the sole missing peer was legacy fixture 49c95b59\u2026, with no other changed/new documents. A separate exact-owner legacy close completed between this run\u2019s baseline and restore; this is correlated timing, not attribution of that close to the normal-multidocument run. Historical JS had the same literal equality assertion; follow-up .10.4.5 is open.",
           "evidence": "/tmp/opencode/fmcad-sol-normal-multidocument-b/.test-artifacts/live/normal-multidocument-terminal-summary.json",
           "originalReport": "/tmp/opencode/sol-normal-multidocument-b-live/68c2b6cd-d16c-4e71-988b-537c7fc763f0/report.json"
         },
@@ -3672,7 +3672,7 @@
           "ownDocumentsAbsentAfterClose": true
         },
         "sourceFixEvidence": {
-          "status": "TDD source fix RED→GREEN; qualification/publish pending",
+          "status": "TDD source fix RED\u2192GREEN; qualification/publish pending",
           "change": "Convert nullable fileId to string before sorted-key comparison",
           "fullPhysicalAcceptance": false
         },
@@ -3696,7 +3696,7 @@
           "sdkSettled": true,
           "executionOutcome": "not_started",
           "userScriptSubmitted": false,
-          "failureCause": "Owned nullable fileId snapshot was serialized/sorted as key with inferred None; real pinned checker RED→GREEN str(id) fix is TDD source evidence, qualification/publish pending.",
+          "failureCause": "Owned nullable fileId snapshot was serialized/sorted as key with inferred None; real pinned checker RED\u2192GREEN str(id) fix is TDD source evidence, qualification/publish pending.",
           "profileOwnerCopiesPlanned": 2,
           "ownDocumentsCreated": 0,
           "ownWriteReadClose": "NOTRUN",
@@ -3709,7 +3709,7 @@
             "peer": "3b48 / f33ace70",
             "jobId": "0a5ff32b-d727-40c6-bb9c-de36d24092e1",
             "sdkSettled": true,
-            "inventory": "33→32; 32 foreign preserved; target absent; public canonical state closed",
+            "inventory": "33\u219232; 32 foreign preserved; target absent; public canonical state closed",
             "evidenceRoot": "/tmp/opencode/sol-normal-controlled-proof-9NrI0P",
             "proof": "/tmp/opencode/sol-normal-controlled-proof-9NrI0P/first-close-completion.json",
             "scope": "This settles only cleanup of the controlled peer, not the normal profile own-document cases."
@@ -3723,7 +3723,7 @@
           "peerCloseJobId": "2bb52ea4-8a55-4384-bca4-ebe8b14879d5",
           "peerCreationId": "bb5c4fc8-f250-4859-ab56-168e19f761b6",
           "peerAbsent": true,
-          "beforeAfterInventory": "34→33 across the peer close; no unproved drift; normal owned docs and unrelated active feature fixture unchanged",
+          "beforeAfterInventory": "34\u219233 across the peer close; no unproved drift; normal owned docs and unrelated active feature fixture unchanged",
           "classification": "separately owned exact peer close and restore audit; does not change feature-modes outcome"
         },
         "latestSharedTerminalRun": {
@@ -3869,7 +3869,7 @@
           "controlledPeer": {
             "run": "528bd533-b5ad-43de-8e2a-7deedf551fa6",
             "closedJob": "479b15ca-4a4d-4cef-98f8-d38825afcab9",
-            "finalInventoryFence": "31 → 31",
+            "finalInventoryFence": "31 \u2192 31",
             "newOpenFeaturePreserved": "9818cd42-81de-4b79-9ddb-d029e237d995"
           },
           "replica": "unassigned-by-this-evidence",
@@ -4062,7 +4062,7 @@
         "runner": "standalone",
         "scope": "Curated M10 catalog selection, separate native M10x1.5 ThreadInfo selection, creation and feature readback",
         "status": "FAIL",
-        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
+        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
         "executionLabel": "C",
         "run": "d8245ddf-8ee3-4743-967c-2475519452d2",
         "sourceBeforeAfter": "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
@@ -4102,7 +4102,7 @@
             "executed": false
           }
         },
-        "notRun": "shape.cylinder, thread creation and geometry readback; owners1–9 all cases",
+        "notRun": "shape.cylinder, thread creation and geometry readback; owners1\u20139 all cases",
         "cleanup": "Deferred; exact owned fixture 2fe984a6-fc2e-4a60-829b-6f72556fb662 retained.",
         "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/d8245ddf-8ee3-4743-967c-2475519452d2",
         "sourceFiles": [
@@ -4140,9 +4140,9 @@
           "sdkSettled": true,
           "readback": "ISO Metric profile; M10x1.5; 6g; pitch 1.5 mm; response omitted creationId"
         },
-        "runnerState": "terminal FAIL; owner0 FAIL, owners1–9 NOTRUN; all 9 original RPCs settled",
+        "runnerState": "terminal FAIL; owner0 FAIL, owners1\u20139 NOTRUN; all 9 original RPCs settled",
         "priorLatest": {
-          "reason": "Fresh A attempt: owner0 FAIL, owners1–9 NOTRUN. The expected negative M10x1.5 catalog check settled and its assertion passed. The descriptor call itself then succeeded/settled and returned ISO Metric profile, M10x1.5, class 6g, but omitted creationId; host failed closed with `Foreign document result`. This does not prove a foreign document was modified. Thread creation/model.thread did not run. Exact cleanup is deferred; own fixture 3524a1ae-440e-4d71-8c78-fcdec04811da retained.",
+          "reason": "Fresh A attempt: owner0 FAIL, owners1\u20139 NOTRUN. The expected negative M10x1.5 catalog check settled and its assertion passed. The descriptor call itself then succeeded/settled and returned ISO Metric profile, M10x1.5, class 6g, but omitted creationId; host failed closed with `Foreign document result`. This does not prove a foreign document was modified. Thread creation/model.thread did not run. Exact cleanup is deferred; own fixture 3524a1ae-440e-4d71-8c78-fcdec04811da retained.",
           "run": "559ca4ee-4be3-495a-b0b3-658417bdd2af",
           "executionLabel": "C8; replica attribution not included in captured evidence",
           "counts": {
@@ -4297,7 +4297,7 @@
           },
           "runtimeSource": "93a8c494c665e29a7d6bf9972eb9af8e0403017e",
           "runtimeBuild": "d3fcfc77da8e96102c4bc578066edf4701322705b2f45318e46abada4139edd8",
-          "reason": "Fresh runtime93a8 native-thread A run terminally failed at host inventory re-admission before shape.cylinder. Nine of nine RPCs SDK-settled (8 succeeded, 1 expected designation-negative); request 8 was admission-only, helperCalls=0, mutationStarted=false. No geometry executed. Profile 0 PASS / 1 FAIL; owner0 FAIL, owners1–9 NOTRUN. Own c6fff3d4… fixture is CLEAN/unsaved with cleanup hold/deferred; source before/after unchanged. Prior runtime44 attempts and supplemental cleanup remain separate.",
+          "reason": "Fresh runtime93a8 native-thread A run terminally failed at host inventory re-admission before shape.cylinder. Nine of nine RPCs SDK-settled (8 succeeded, 1 expected designation-negative); request 8 was admission-only, helperCalls=0, mutationStarted=false. No geometry executed. Profile 0 PASS / 1 FAIL; owner0 FAIL, owners1\u20139 NOTRUN. Own c6fff3d4\u2026 fixture is CLEAN/unsaved with cleanup hold/deferred; source before/after unchanged. Prior runtime44 attempts and supplemental cleanup remain separate.",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/2ca94d0c-7025-4a5b-b7c9-a99f7705de8e"
         },
         "runIdPending": false,
@@ -5398,7 +5398,7 @@
         "RUNNING": 0,
         "denominator": 0
       },
-      "note": "Six latest distinct A cases: native-mcp-stdio PASS; definitions, component-hierarchy, attributes, engineering and thread FAIL. Thread run 559ca4ee… is the latest attempt and is not a second catalog entry. Engineering supplemental measurement PASS does not change its full-profile FAIL.",
+      "note": "Six latest distinct A cases: native-mcp-stdio PASS; definitions, component-hierarchy, attributes, engineering and thread FAIL. Thread run 559ca4ee\u2026 is the latest attempt and is not a second catalog entry. Engineering supplemental measurement PASS does not change its full-profile FAIL.",
       "terminalCases": [
         {
           "case": "native-definitions",
@@ -5422,7 +5422,7 @@
           "counts": "0 PASS / 1 FAIL / 9 NOTRUN",
           "assertion": "expected context component=root; actual context preview=false; doc/docId match",
           "physicalReadback": "instantiate 4 steps succeeded; bounds 23x11x7; volume 1771",
-          "cleanup": "complete, exact own fixture 43f6fcd3… closed via terminal job d5cc4c3d-31dd-4282-88df-011a241b76ad",
+          "cleanup": "complete, exact own fixture 43f6fcd3\u2026 closed via terminal job d5cc4c3d-31dd-4282-88df-011a241b76ad",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/b7567022-802d-47f4-9d78-c49bb3a6f155"
         },
         {
@@ -5433,7 +5433,7 @@
           "runtimeBuild": "2d910abc332a1ada92c1a0be90c6cc33ebd33bcd42909246bdb4eea076c30907",
           "counts": "0 PASS / 1 FAIL / 9 NOTRUN",
           "assertion": "Fixture is not active in read-only observe-native-modeling-state-0; 3 original requests succeeded/settled",
-          "cleanup": "deferred/RUNNING latest, cleanup cf69d718…",
+          "cleanup": "deferred/RUNNING latest, cleanup cf69d718\u2026",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/0c7031e7-a1aa-43a9-a474-00385feaa62b"
         },
         {
@@ -5443,8 +5443,8 @@
           "runtimeSource": "62d0e951d21d658c5c27cbff7e87a6c87725ad67",
           "runtimeBuild": "2d910abc332a1ada92c1a0be90c6cc33ebd33bcd42909246bdb4eea076c30907",
           "counts": "1 PASS / 1 FAIL / 8 NOTRUN / 0 RUNNING / 0 UNKNOWN (10 owners)",
-          "owner0": "14/14 requests succeeded/settled; exact own cleanup complete; closed creationId a8eb0638… via job d6156c0f-c820-4370-99af-d533df230612",
-          "owner1": "cad-attribute-7-entity.attribute.set failed settled, SDK_EXECUTION_FAILED, physical turn 1, mayHaveMutated=true, helperCallsOnly=[]; error Unproven non-baseline document in fenced inventory; exact owned modified fixture creationId e8cee2f6… cleanup deferred",
+          "owner0": "14/14 requests succeeded/settled; exact own cleanup complete; closed creationId a8eb0638\u2026 via job d6156c0f-c820-4370-99af-d533df230612",
+          "owner1": "cad-attribute-7-entity.attribute.set failed settled, SDK_EXECUTION_FAILED, physical turn 1, mayHaveMutated=true, helperCallsOnly=[]; error Unproven non-baseline document in fenced inventory; exact owned modified fixture creationId e8cee2f6\u2026 cleanup deferred",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/705a9db6-277f-4d4a-8fdc-c0cfa8ac240a"
         },
         {
@@ -5466,7 +5466,7 @@
           "runtimeBuild": "2d910abc332a1ada92c1a0be90c6cc33ebd33bcd42909246bdb4eea076c30907",
           "counts": "0 PASS / 1 FAIL / 9 NOTRUN",
           "requests": "13 original SDK requests succeeded/settled; context-match and exact-replay assertions passed; final observe job 4323881c-0dd3-4fe5-abcd-5c2278ba3bd2 settled, host assertion open !== closed. SaveAs changed creationIds; not proven publication race.",
-          "cleanup": "Deferred; owned modified fixture 1043e467… preserved, no close.",
+          "cleanup": "Deferred; owned modified fixture 1043e467\u2026 preserved, no close.",
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/36f6918c-81d1-4873-ac6a-da97e8285d8a"
         },
         {
@@ -5614,7 +5614,7 @@
           "runtimeSource": "54d6cc937ccef332d38757e47d85720845351c25",
           "runtimeBuild": "07a66146c33f8240a1d898380038c6cbd52e4959ff1cb65b1379379785cf8bdb",
           "counts": "0 PASS / 1 FAIL / 9 NOTRUN",
-          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37→37. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
+          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37\u219237. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
           "cleanup": "Deferred; exact owned fixture 86e0907a-aca8-4d8a-b491-269884ab2fc9 intentionally retained.",
           "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/6f5f4b39-4113-4d69-badb-ee8218ea67a7",
           "request": {
@@ -5640,7 +5640,7 @@
           "runtimeSource": "54d6cc937ccef332d38757e47d85720845351c25",
           "runtimeBuild": "07a66146c33f8240a1d898380038c6cbd52e4959ff1cb65b1379379785cf8bdb",
           "counts": "0 PASS / 1 FAIL / 9 NOTRUN",
-          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
+          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
           "cleanup": "Deferred; exact owned fixture 07df7580-4fc5-4487-a7c3-bc8b382fb1fc retained because peer lifecycle proof was unavailable.",
           "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/32d35a78-a4a3-45bb-9c98-9041cd5126b8",
           "failedRequest": {
@@ -5668,7 +5668,7 @@
           "runtimeSource": "54d6cc937ccef332d38757e47d85720845351c25",
           "runtimeBuild": "07a66146c33f8240a1d898380038c6cbd52e4959ff1cb65b1379379785cf8bdb",
           "counts": "0 PASS / 1 FAIL / 9 NOTRUN",
-          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
+          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
           "cleanup": "Deferred; exact owned fixture 2fe984a6-fc2e-4a60-829b-6f72556fb662 retained.",
           "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/d8245ddf-8ee3-4743-967c-2475519452d2",
           "request": {
@@ -5839,7 +5839,7 @@
             "pid": 1449447,
             "birth": "ef02231a-e8b4-45ff-9f6d-d3a36b3a5321:16886671"
           },
-          "scope": "10 owners × 450 sequential markers",
+          "scope": "10 owners \u00d7 450 sequential markers",
           "state": "FAIL (terminal; earlier RUNNING snapshot superseded)",
           "reportsPublished": 0,
           "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/dbc24fe9-6862-4101-94af-5e340ddb72e4",
@@ -6037,7 +6037,7 @@
               "UNKNOWN": 0,
               "denominator": 1
             },
-            "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37→37. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
+            "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37\u219237. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
             "cleanup": "Deferred; exact owned fixture 86e0907a-aca8-4d8a-b491-269884ab2fc9 intentionally retained.",
             "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/6f5f4b39-4113-4d69-badb-ee8218ea67a7",
             "requests": {
@@ -6085,7 +6085,7 @@
               "UNKNOWN": 0,
               "denominator": 1
             },
-            "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
+            "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
             "cleanup": "Deferred; exact owned fixture 07df7580-4fc5-4487-a7c3-bc8b382fb1fc retained because peer lifecycle proof was unavailable.",
             "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/32d35a78-a4a3-45bb-9c98-9041cd5126b8",
             "requests": {
@@ -6166,7 +6166,7 @@
               "UNKNOWN": 0,
               "denominator": 1
             },
-            "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
+            "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
             "cleanup": "Deferred; exact owned fixture 2fe984a6-fc2e-4a60-829b-6f72556fb662 retained.",
             "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/d8245ddf-8ee3-4743-967c-2475519452d2",
             "requests": {
@@ -6381,7 +6381,7 @@
       "markers": "10/10",
       "receipts": "10 terminal succeeded, sdkSettled=true",
       "cleanup": "complete; before/after coordinator settled",
-      "executionSeconds": "14.3–39.8 per owner; 5/10 exceeded prior 20-second timeout, no replay",
+      "executionSeconds": "14.3\u201339.8 per owner; 5/10 exceeded prior 20-second timeout, no replay",
       "evidence": [
         "/tmp/opencode/sol46-live-summary.json",
         "/tmp/opencode/sol46-live-10owners-afc4525.log",
@@ -6479,7 +6479,7 @@
         "NOTRUN": 0,
         "denominator": 1
       },
-      "readback": "4 STEP/STL outputs verified; owned cleanup passed; final inventory failed on peer docs 237c4d28… and 65bb2cd6…, preserved.",
+      "readback": "4 STEP/STL outputs verified; owned cleanup passed; final inventory failed on peer docs 237c4d28\u2026 and 65bb2cd6\u2026, preserved.",
       "evidenceRoot": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/26bbb893-c187-4326-b2d6-6a955f480ce2"
     },
     {
@@ -6657,7 +6657,7 @@
       "controlledPeer": {
         "run": "528bd533-b5ad-43de-8e2a-7deedf551fa6",
         "closedJob": "479b15ca-4a4d-4cef-98f8-d38825afcab9",
-        "finalInventoryFence": "31 → 31",
+        "finalInventoryFence": "31 \u2192 31",
         "newOpenFeaturePreserved": "9818cd42-81de-4b79-9ddb-d029e237d995"
       },
       "replica": "unassigned-by-this-evidence",
@@ -6944,7 +6944,7 @@
       "exactOriginalBodyTokenMatched": true,
       "actualValue": 6000,
       "units": "mm3",
-      "acceptedRange": "5999.99–6000.01 mm3 (floating-point tolerance)",
+      "acceptedRange": "5999.99\u20136000.01 mm3 (floating-point tolerance)",
       "passed": true,
       "operation": "read-only check; no creation/close requested",
       "receiptMayHaveMutated": true,
@@ -7209,7 +7209,7 @@
       "controlledPeer": {
         "run": "528bd533-b5ad-43de-8e2a-7deedf551fa6",
         "closedJob": "479b15ca-4a4d-4cef-98f8-d38825afcab9",
-        "finalInventoryFence": "31 → 31",
+        "finalInventoryFence": "31 \u2192 31",
         "newOpenFeaturePreserved": "9818cd42-81de-4b79-9ddb-d029e237d995"
       },
       "replica": "unassigned-by-this-evidence",
@@ -7435,7 +7435,7 @@
       "classification": "Supplemental only; does not change a replica profile."
     },
     {
-      "description": "ROOT source-bound reference→motion10 acceptance; terminal motion result, not an A/B/C profile cell.",
+      "description": "ROOT source-bound reference\u2192motion10 acceptance; terminal motion result, not an A/B/C profile cell.",
       "status": "FAIL",
       "run": "6bf486d9-197b-4f58-ae72-d03ca5a0a981",
       "driverSource": "01ac61f1616eb60692e6c827b5ddb4fa6cbb0e8f",
@@ -7475,7 +7475,7 @@
       "description": "ROOT concurrent pair64; normal component passed but feature component remains active, so the pair is not terminal.",
       "status": "FAIL",
       "run": "0db9309d-f92e-4441-8c35-d12a94434355 + 7a3eb760-7c88-42fb-870b-62c27d4bedb2",
-      "driverSource": "64e3a25… (abbreviated pin from ROOT handoff)",
+      "driverSource": "64e3a25\u2026 (abbreviated pin from ROOT handoff)",
       "runtimeSource": "5e025c68bf10081468361a87d006a628e4ab159c",
       "runtimeBuild": "ef27ace70b39279b443ae232cfbd5ecd711c8e4f731e34d42adb35a9c7f520b1",
       "nonce": "1db0cc93-304a-41ea-980e-da30c9ead6db",
@@ -11468,7 +11468,7 @@
             "runtimeSource": "93a8c494c665e29a7d6bf9972eb9af8e0403017e",
             "runtimeBuild": "d3fcfc77da8e96102c4bc578066edf4701322705b2f45318e46abada4139edd8",
             "evidence": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/e6235774-083d-4661-b0a1-3545c65e31db/native-feature-modes-0/report.json",
-            "basis": "latest terminal same-suite attempt; owner0 FAIL, owners1–9 NOTRUN; final sketch.create admission-only; no geometry metrics",
+            "basis": "latest terminal same-suite attempt; owner0 FAIL, owners1\u20139 NOTRUN; final sketch.create admission-only; no geometry metrics",
             "runtime44Qualification": {
               "status": "FAIL",
               "run": "b32a5a6b-6444-4ffb-bbc4-8503b31441c9",
@@ -11506,7 +11506,7 @@
               "runtimeBuild": "d3fcfc77da8e96102c4bc578066edf4701322705b2f45318e46abada4139edd8",
               "driverSourcePrefix": "68def11",
               "evidence": "/tmp/opencode/fmcad-c93-live-scenarios.hZ3jxTAu/e6235774-083d-4661-b0a1-3545c65e31db/native-feature-modes-0/report.json",
-              "basis": "latest terminal same-suite attempt; owner0 FAIL, owners1–9 NOTRUN; final sketch.create admission-only; no geometry metrics"
+              "basis": "latest terminal same-suite attempt; owner0 FAIL, owners1\u20139 NOTRUN; final sketch.create admission-only; no geometry metrics"
             },
             "previousCurrent93a8Qualification": {
               "status": "FAIL",
@@ -12485,7 +12485,7 @@
       "status": "PASS",
       "jobId": "0a5ff32b-d727-40c6-bb9c-de36d24092e1",
       "sdkSettled": true,
-      "inventory": "33→32",
+      "inventory": "33\u219232",
       "foreignPreserved": 32,
       "targetAbsent": true,
       "publicCanonicalState": "closed",
@@ -13015,7 +13015,7 @@
     {
       "scope": "runtime5e025c6 B thread-method and engineering-analytics",
       "asOf": "2026-11-20T22:18:44Z",
-      "detail": "Both first B attempts ended in terminal harness FAIL before the target function assertions. Their original readback requests later have terminal succeeded receipts; this does not qualify either function. Each has owner 0 FAIL, owners 1–9 NOTRUN and deferred owned-fixture cleanup.",
+      "detail": "Both first B attempts ended in terminal harness FAIL before the target function assertions. Their original readback requests later have terminal succeeded receipts; this does not qualify either function. Each has owner 0 FAIL, owners 1\u20139 NOTRUN and deferred owned-fixture cleanup.",
       "evidence": [
         "/tmp/opencode/fmcad-live-5e025c6-20261120/a7cb5dc0-514d-4965-850b-3472fa0f6b32",
         "/tmp/opencode/fmcad-live-5e025c6-20261120/8ac0f973-70af-4467-80ca-0500ba460afd"
@@ -13099,7 +13099,7 @@
       "passedPercent": 0.93,
       "notPassed": 107,
       "remainingToPassPercent": 99.07,
-      "basis": "108 canonical suite × A/B/C cells at runtime93a8; not the 87 required-profile denominator"
+      "basis": "108 canonical suite \u00d7 A/B/C cells at runtime93a8; not the 87 required-profile denominator"
     },
     "latestRecordedMixedPinSuiteReplicaCells": {
       "counts": {
@@ -13115,7 +13115,7 @@
       "passed": 3,
       "passedPercent": 2.78,
       "notPassed": 105,
-      "basis": "108 canonical suite × A/B/C cells across mixed pinned runtimes"
+      "basis": "108 canonical suite \u00d7 A/B/C cells across mixed pinned runtimes"
     },
     "fullReplicaCatalogs": {
       "passed": 0,
@@ -13183,7 +13183,7 @@
     },
     "fullReplicaCatalogsPassed": 0,
     "fullReplicaCatalogsDenominator": 3,
-    "mappingMethod": "For the 27 native-qualification profiles, require both exact profile ID equality and exact source-path equality with one canonical inventory entry, then use that cell’s current93a8Qualification status. The two required native-fixture profiles have no canonical inventory entry; both manifest records explicitly set qualification=not-run and there is no live run/result for them in current-results.json, so each is NOTRUN on A/B/C. No standalone/shared result is assigned to a replica.",
+    "mappingMethod": "For the 27 native-qualification profiles, require both exact profile ID equality and exact source-path equality with one canonical inventory entry, then use that cell\u2019s current93a8Qualification status. The two required native-fixture profiles have no canonical inventory entry; both manifest records explicitly set qualification=not-run and there is no live run/result for them in current-results.json, so each is NOTRUN on A/B/C. No standalone/shared result is assigned to a replica.",
     "sources": [
       "tests/live-required-profiles.json",
       "tests/live-suite-inventory.json",
@@ -15150,12 +15150,12 @@
         "ownerProgress": null,
         "ownerAttempts": [],
         "relatedSharedRunExcluded": null,
-        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37→37. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
+        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37\u219237. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
         "evidence": {
           "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/6f5f4b39-4113-4d69-badb-ee8218ea67a7",
           "log": null,
           "request": null,
-          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37→37. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
+          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. Final request :14/job 5a3841b9-0aa5-44e4-a87f-84b80d4c451f was SDK-settled but admission-only (inventory-changed, helperCalls=0, mutationStarted=false); component.create did not execute. Inventory remained 37\u219237. Exact owned fixture retained; cleanup deferred. This is a lifecycle-proof/harness failure, not an established product regression.",
           "cleanup": "Deferred; exact owned fixture 86e0907a-aca8-4d8a-b491-269884ab2fc9 intentionally retained.",
           "fixtureCreationId": "86e0907a-aca8-4d8a-b491-269884ab2fc9",
           "fixtureIdentityEvidence": "/tmp/opencode/sol-replica-c-54d6cc9-hierarchy-identity-binding.json"
@@ -15606,12 +15606,12 @@
         "ownerProgress": null,
         "ownerAttempts": [],
         "relatedSharedRunExcluded": null,
-        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
+        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
         "evidence": {
           "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/32d35a78-a4a3-45bb-9c98-9041cd5126b8",
           "log": null,
           "request": null,
-          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
+          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 34 original requests settled (33 succeeded, one failed). Request :14/job 9cea7ca5-5a8e-4bee-9ba4-4fc0560cb68e failed during `report`: `ValueError: Invalid or incompatible expression '5999 mm3' for units 'cm^3'`. Later request :33/job 9596ec4e-af4c-418a-bd47-c7eed27aa697 settled succeeded; cleanup remains deferred because exact peer lifecycle proof was unavailable. No cleanup/replay was performed.",
           "cleanup": "Deferred; exact owned fixture 07df7580-4fc5-4487-a7c3-bc8b382fb1fc retained because peer lifecycle proof was unavailable."
         }
       },
@@ -17107,12 +17107,12 @@
         "ownerProgress": null,
         "ownerAttempts": [],
         "relatedSharedRunExcluded": null,
-        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
+        "reason": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
         "evidence": {
           "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/d8245ddf-8ee3-4743-967c-2475519452d2",
           "log": "/tmp/opencode/sol-replica-c-54d6cc9-thread10.log",
           "request": null,
-          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1–9 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
+          "failure": "Fresh C runtime54 full profile terminally FAIL: owner0 FAIL, owners1\u20139 NOTRUN. All 9 original requests settled (8 succeeded and one expected-negative catalog request failed). Request :8/job 3478acff-1523-4235-bc39-01bc95a2e6c3 had a succeeded/settled envelope but was admission-only (`inventory-changed`, helperCalls=0, mutationStarted=false); `shape.cylinder`, thread creation and geometry readback did not execute. Own fixture retained; cleanup deferred.",
           "cleanup": "Deferred; exact owned fixture 2fe984a6-fc2e-4a60-829b-6f72556fb662 retained."
         }
       },
@@ -17328,7 +17328,7 @@
           "denominator": 10
         },
         "failurePhase": "Request :36: feature-mode-1-native-feature-properties / Other document state changed; terminal runner error at request :46: Fenced CAD turn failed / ADMISSION_CHANGED.",
-        "reason": "Fresh shared feature-modes10 runtime54 run terminally failed: owner0 FAIL, owners1–9 NOTRUN. Owner report contains 47 request records (:0–:46), 46 succeeded/SDK-settled and one failed/SDK-settled. Request :36 failed during native feature-property probing with SDK_EXECUTION_FAILED / Other document state changed (mayHaveMutated=true). Later requests :45 and :46 were SDK-settled admission-only inventory-changed results (helperCalls=0, mutationStarted=false); the final fenced CAD turn stopped with ADMISSION_CHANGED because no new terminal receipt was available. The 28 recorded geometry metrics do not qualify the feature profile as PASS. Supplemental close request :48 / job d661b960-f9eb-42ba-aa73-761fb8a34410 succeeded and settled; the exact fixture is absent, the original report remains FAIL/deferred and unchanged. Closing the active fixture selected an existing foreign sketch document as active; document content and saved counts were unchanged. Shared run is not replica-attributed.",
+        "reason": "Fresh shared feature-modes10 runtime54 run terminally failed: owner0 FAIL, owners1\u20139 NOTRUN. Owner report contains 47 request records (:0\u2013:46), 46 succeeded/SDK-settled and one failed/SDK-settled. Request :36 failed during native feature-property probing with SDK_EXECUTION_FAILED / Other document state changed (mayHaveMutated=true). Later requests :45 and :46 were SDK-settled admission-only inventory-changed results (helperCalls=0, mutationStarted=false); the final fenced CAD turn stopped with ADMISSION_CHANGED because no new terminal receipt was available. The 28 recorded geometry metrics do not qualify the feature profile as PASS. Supplemental close request :48 / job d661b960-f9eb-42ba-aa73-761fb8a34410 succeeded and settled; the exact fixture is absent, the original report remains FAIL/deferred and unchanged. Closing the active fixture selected an existing foreign sketch document as active; document content and saved counts were unchanged. Shared run is not replica-attributed.",
         "cleanup": "Cleanup-only PASS: exact feature fixture closed and absent after settled receipt :48/job d661b960-f9eb-42ba-aa73-761fb8a34410. Original full-profile report and status remain FAIL/deferred. Closing the active target selected existing document 989912cf-ff1a-4f6e-973e-c94976841659; no document content or saved-document count changed, and no separate activation request was sent.",
         "evidenceRoot": "/tmp/opencode/fmcad-live-54d6cc9-pair-20261120/7ea44800-fbaa-494c-b2f6-95cdd6b3db21",
         "log": "/tmp/opencode/sol-feature-pair-54d6cc9-live.log",
@@ -17410,7 +17410,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "no terminal B full-profile result attached on runtime5e025c6 yet",
         "status": "FAIL",
-        "reason": "Correct suite native-animation reached terminal FAIL during original-user-view capture: SDK_EXECUTION_FAILED; active peer lacked source-bound user-view ancestry. Owner 0 FAIL, owners 1–9 NOTRUN; cleanup deferred.",
+        "reason": "Correct suite native-animation reached terminal FAIL during original-user-view capture: SDK_EXECUTION_FAILED; active peer lacked source-bound user-view ancestry. Owner 0 FAIL, owners 1\u20139 NOTRUN; cleanup deferred.",
         "runId": "bbf19e85-3360-4a14-99c7-fd0563322d4d",
         "attempt": "runtime5-first-valid",
         "ownerCounts": {
@@ -17439,7 +17439,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "Terminal B profile FAIL on runtime5e025c6; original request :2 remains unresolved and unreplayed.",
         "status": "FAIL",
-        "reason": "Terminal profile FAIL: owner 0 failed and owners 1–9 did not run. Original tools/call request :2 has no terminal receipt; do not replay. No adapter markers were observed (0/450).",
+        "reason": "Terminal profile FAIL: owner 0 failed and owners 1\u20139 did not run. Original tools/call request :2 has no terminal receipt; do not replay. No adapter markers were observed (0/450).",
         "attempt": "runtime5-initial",
         "evidence": [
           "/tmp/opencode/sol-replica-b-5e025c6/backend-adapter.json",
@@ -17557,7 +17557,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "no terminal B full-profile result attached on runtime5e025c6 yet",
         "status": "FAIL",
-        "reason": "Owner 0 failed the owned-unsaved inventory guard after an unrelated fixture changed; owners 1–9 did not run. Cleanup deferred.",
+        "reason": "Owner 0 failed the owned-unsaved inventory guard after an unrelated fixture changed; owners 1\u20139 did not run. Cleanup deferred.",
         "runId": "3807f45c-28cf-4ce3-b9b5-7ba4aeaa4988",
         "attempt": "runtime5-initial",
         "ownerCounts": {
@@ -17586,7 +17586,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "no terminal B full-profile result attached on runtime5e025c6 yet",
         "status": "FAIL",
-        "reason": "Terminal FAIL during original-user-view capture: active peer lacked source-bound user-view ancestry. Owner 0 FAIL, owners 1–9 NOTRUN; workload did not run and cleanup is deferred.",
+        "reason": "Terminal FAIL during original-user-view capture: active peer lacked source-bound user-view ancestry. Owner 0 FAIL, owners 1\u20139 NOTRUN; workload did not run and cleanup is deferred.",
         "runId": "247a9998-3096-40a1-a553-aada328a1f4c",
         "attempt": "runtime5-next-3",
         "ownerCounts": {
@@ -17615,7 +17615,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "no terminal B full-profile result attached on runtime5e025c6 yet",
         "status": "FAIL",
-        "reason": "Terminal profile FAIL. Owner 0 stopped when the runner saw the original observe-native-modeling-state-1 request as unsettled/mismatched; its exact job later acquired a terminal succeeded receipt. The native readback has 0 results and 0 assertions, and all 56 canonical operation-coverage rows are not-passed; no engineering function was qualified. Owners 1–9 NOTRUN; fixture cleanup deferred.",
+        "reason": "Terminal profile FAIL. Owner 0 stopped when the runner saw the original observe-native-modeling-state-1 request as unsettled/mismatched; its exact job later acquired a terminal succeeded receipt. The native readback has 0 results and 0 assertions, and all 56 canonical operation-coverage rows are not-passed; no engineering function was qualified. Owners 1\u20139 NOTRUN; fixture cleanup deferred.",
         "runId": "8ac0f973-70af-4467-80ca-0500ba460afd",
         "attempt": "runtime5-existing-62-normal-ipc-trace-dist",
         "ownerCounts": {
@@ -17714,7 +17714,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "fresh B attempt is active on frozen runtime5e025c6",
         "status": "FAIL",
-        "reason": "Terminal FAIL after admission budget exhaustion; the full feature assertions did not run. Owner 0 FAIL, owners 1–9 NOTRUN; own fixture cleanup deferred.",
+        "reason": "Terminal FAIL after admission budget exhaustion; the full feature assertions did not run. Owner 0 FAIL, owners 1\u20139 NOTRUN; own fixture cleanup deferred.",
         "attempt": "runtime5-initial",
         "evidence": [
           "/tmp/opencode/sol-replica-b-5e025c6/feature-modes.json",
@@ -18044,7 +18044,7 @@
         "manifestQualification": "not-run",
         "pinDisposition": "no terminal B full-profile result attached on runtime5e025c6 yet",
         "status": "FAIL",
-        "reason": "Terminal profile FAIL. Runner stopped at receipt binding for observe-native-modeling-state-1: report had no attached result and raised “Public queue job receipt is missing or mismatched”. The exact original request was later recovered read-only as terminal succeeded. This observer receipt does not qualify the thread function; the native readback has 0 results and 0 assertions, and all 8 canonical operation-coverage rows are not-passed. Owner 0 FAIL, owners 1–9 NOTRUN; fixture cleanup deferred.",
+        "reason": "Terminal profile FAIL. Runner stopped at receipt binding for observe-native-modeling-state-1: report had no attached result and raised \u201cPublic queue job receipt is missing or mismatched\u201d. The exact original request was later recovered read-only as terminal succeeded. This observer receipt does not qualify the thread function; the native readback has 0 results and 0 assertions, and all 8 canonical operation-coverage rows are not-passed. Owner 0 FAIL, owners 1\u20139 NOTRUN; fixture cleanup deferred.",
         "runId": "a7cb5dc0-514d-4965-850b-3472fa0f6b32",
         "attempt": "runtime5-existing-62-normal-ipc-trace-dist",
         "ownerCounts": {
@@ -18184,7 +18184,7 @@
         "denominator": 29
       }
     },
-    "mappingMethod": "Manifest-exact, all 29 native-qualification/native-fixture slots. Current selection prefers the explicit sdk-project-pin-2 attempts for the three retried cloud fixtures; each initial FAIL remains in that profile’s attempts history. C results do not fill B cells.",
+    "mappingMethod": "Manifest-exact, all 29 native-qualification/native-fixture slots. Current selection prefers the explicit sdk-project-pin-2 attempts for the three retried cloud fixtures; each initial FAIL remains in that profile\u2019s attempts history. C results do not fill B cells.",
     "cleanupInventory": {
       "source": "/tmp/opencode/sol-replica-c-5e025c6/terminal-owned-cleanup-inventory.json",
       "entriesObserved": 12,
@@ -24784,7 +24784,7 @@
         "runtimeNonce": "1db0cc93-304a-41ea-980e-da30c9ead6db",
         "transport": "ADDIN 8765",
         "status": "FAIL",
-        "reason": "Owner 0 failed its inventory fence after an unrelated response-recovery document changed; owners 1–9 did not run. Cleanup deferred.",
+        "reason": "Owner 0 failed its inventory fence after an unrelated response-recovery document changed; owners 1\u20139 did not run. Cleanup deferred.",
         "runId": "88598b16-d6cc-486d-9ab2-dd72911721b4",
         "ownerCounts": {
           "PASS": 0,
@@ -24841,7 +24841,7 @@
         "runtimeNonce": "1db0cc93-304a-41ea-980e-da30c9ead6db",
         "transport": "ADDIN 8765",
         "status": "FAIL",
-        "reason": "Owner 0 failed the owned-document inventory guard after detecting an unrelated native-import fixture; owners 1–9 did not run. Cleanup deferred.",
+        "reason": "Owner 0 failed the owned-document inventory guard after detecting an unrelated native-import fixture; owners 1\u20139 did not run. Cleanup deferred.",
         "runId": "a9b7ac92-be25-41ed-aae0-ee52b105b5cb",
         "ownerCounts": {
           "PASS": 0,
@@ -25065,7 +25065,7 @@
         "runtimeNonce": "1db0cc93-304a-41ea-980e-da30c9ead6db",
         "transport": "ADDIN 8765",
         "status": "FAIL",
-        "reason": "Owner 0 failed the original-document inventory fence after detecting an unrelated native-import fixture; owners 1–9 did not run. Cleanup deferred.",
+        "reason": "Owner 0 failed the original-document inventory fence after detecting an unrelated native-import fixture; owners 1\u20139 did not run. Cleanup deferred.",
         "runId": "a2328126-5975-498e-9493-f4f2fc3a4af4",
         "ownerCounts": {
           "PASS": 0,
@@ -25207,7 +25207,7 @@
       "passed": 0,
       "denominator": 3
     },
-    "countSemantics": "These are required profile×replica cells. They are not owner-case, marker/assertion, suite-row, or attempt counts. Owner cases and markers are reported only within their exact run/profile evidence.",
+    "countSemantics": "These are required profile\u00d7replica cells. They are not owner-case, marker/assertion, suite-row, or attempt counts. Owner cases and markers are reported only within their exact run/profile evidence.",
     "attributionLimitations": [
       "Replica A is conservative: five exact A-bound terminal FAILs, 23 cells without safe A attribution (NOTRUN), and one incomplete normal-multidocument cell (UNKNOWN). Older A notes overlap run IDs now attributed to B, C, or supplemental evidence.",
       "B backend-adapter is a terminal profile FAIL although its original tools/call :2 has no terminal receipt; preserve request uncertainty and do not replay.",
@@ -25544,7 +25544,7 @@
       "newBrokerLog": "/tmp/opencode/fmcad-ipc-25c6320-offline-1ex717_8/fresh-root/actual-switch/new-broker.log"
     },
     "historicalUnknownRowsUnchanged": true,
-    "blocker": "Fresh broker bootstrap rejects the published retirement proof: “Retirement coverage no longer matches its authenticated root”. No broker lock or lifecycle was established; no authenticated fresh baseline, public proof, or suite setup qualification is complete.",
+    "blocker": "Fresh broker bootstrap rejects the published retirement proof: \u201cRetirement coverage no longer matches its authenticated root\u201d. No broker lock or lifecycle was established; no authenticated fresh baseline, public proof, or suite setup qualification is complete.",
     "owner": "fmcad-y69.1.15.8 / ROOT",
     "nextAction": "The operator/ROOT must reconcile the authenticated retirement-coverage chain and terminally verify a fresh broker baseline. Only then run the two public reads plus 10 parallel queue-exec reads; do not start profiles or replay any UNKNOWN before that proof.",
     "reportedAt": "2026-11-23T10:24:54+00:00"
@@ -27436,7 +27436,7 @@
             "SKIPPED": 0,
             "denominator": 1
           },
-          "status": "RUNNING; ROOT-owned inspect → accept → param.apply 20 mm → inspect/readback 2 cm",
+          "status": "RUNNING; ROOT-owned inspect \u2192 accept \u2192 param.apply 20 mm \u2192 inspect/readback 2 cm",
           "runLog": "/tmp/opencode/root-a3-reference-run.log",
           "script": "/tmp/opencode/root-a3-owned-reference.py",
           "scriptSha256": "5f4996842173fdb39cbef904f63c9dd381174b4c9ffbbed1ca3ebb7570526b2c",
@@ -28713,7 +28713,7 @@
       ],
       "integration": {
         "status": "PASS",
-        "method": "fast-forward A3 → 58",
+        "method": "fast-forward A3 \u2192 58",
         "source": "58e78835cbf38bf4100d88d55bbab979cb6040b0",
         "remoteBranch": "origin/refactor/offline-completion",
         "verification": "ls-remote matched exact integrated source",
@@ -28831,7 +28831,7 @@
     ],
     "integration": {
       "status": "PASS",
-      "method": "fast-forward A3 → 58",
+      "method": "fast-forward A3 \u2192 58",
       "source": "58e78835cbf38bf4100d88d55bbab979cb6040b0",
       "remoteBranch": "origin/refactor/offline-completion",
       "verification": "ls-remote matched exact integrated source"
@@ -30105,7 +30105,7 @@
     },
     "status": "HISTORICAL runtime51; preserved as-is, not current.",
     "historicalFullFusionGroupsSnapshot": {
-      "status": "HISTORICAL SNAPSHOT — current runtime is 758; do not use as current catalog status",
+      "status": "HISTORICAL SNAPSHOT \u2014 current runtime is 758; do not use as current catalog status",
       "asOf": "2026-11-23T16:50:38+00:00",
       "priorCounts": {
         "PASS": 0,
@@ -30535,7 +30535,7 @@
         "MCP"
       ],
       "activePreparationMeaning": "Executor ownership/accepted preparation does not establish a live test start or result. Preserve each group until attributable evidence arrives.",
-      "history": "37 canonical suite entries and 87 profile×replica cells are historical crosswalk denominators; unchanged and not reattributed to current758.",
+      "history": "37 canonical suite entries and 87 profile\u00d7replica cells are historical crosswalk denominators; unchanged and not reattributed to current758.",
       "historicalOutcomeCounts": {
         "PASS": 0,
         "FAIL": 2,
@@ -30720,7 +30720,7 @@
     "historicalStatus": "HISTORICAL runtime758 results; not current50a.",
     "supersededAt": "2026-11-23T18:22:39.669400+00:00",
     "interpretation": "All 758 outcomes, including FAIL profiles and issuer PASS10/10, remain attributed only to their original 758 pins and runs.",
-    "status": "HISTORICAL — actual runtime5482 is current; preserve every758 result with original runtime pins, run IDs and denominators."
+    "status": "HISTORICAL \u2014 actual runtime5482 is current; preserve every758 result with original runtime pins, run IDs and denominators."
   },
   "current758StaleSubmitDiagnostic": {
     "status": "FAIL",
@@ -31221,7 +31221,7 @@
       "newSDKUnknown": false,
       "automaticReplay": false
     },
-    "interpretation": "Owner0 admission refused before RPC/physical turn; owners1–9 did not run. Keep durable raw-scope refusal separate from any harness conservative UNKNOWN; no Fusion feature function executed."
+    "interpretation": "Owner0 admission refused before RPC/physical turn; owners1\u20139 did not run. Keep durable raw-scope refusal separate from any harness conservative UNKNOWN; no Fusion feature function executed."
   },
   "current5482UnfinishedBrokerWork": {
     "protocol": {
@@ -31654,12 +31654,12 @@
                             "properties": {
                               "width": {
                                 "type": "number",
-                                "minimum": 1e-9,
+                                "minimum": 1e-09,
                                 "maximum": 1000000000000
                               },
                               "height": {
                                 "type": "number",
-                                "minimum": 1e-9,
+                                "minimum": 1e-09,
                                 "maximum": 1000000000000
                               }
                             },
@@ -32310,7 +32310,7 @@
         "required": 4500,
         "status": "NOTRUN"
       },
-      "workloadShape": "10 owners × 450 markers; full native-backend-adapter qualification remains pending."
+      "workloadShape": "10 owners \u00d7 450 markers; full native-backend-adapter qualification remains pending."
     },
     "limits": "Fourclosedprotocolmethods+boundednewunsavedcreation/readback only; no rawPython/tools-callpermission, no10x450adapter/fullcatalog qualification; oldproofs remaintheiractualsources",
     "terminalEvidence": "/tmp/opencode/sol-protocol-50a-handoff-prep-230o050i/actual-rollout/terminal-50a-live-proof.json",
@@ -33029,7 +33029,7 @@
         "isModified": false,
         "creationId": "248cc0fd-db9a-4487-a15b-c8df373ff1e9"
       },
-      "normalGuiOutcome": "Two unmodified owned documents were closed with Ctrl+W. The modified d996 owned test fixture was closed via its exact normal save modal and one explicit “Nie zapisuj”. No saved CAD file/version was deleted or modified.",
+      "normalGuiOutcome": "Two unmodified owned documents were closed with Ctrl+W. The modified d996 owned test fixture was closed via its exact normal save modal and one explicit \u201cNie zapisuj\u201d. No saved CAD file/version was deleted or modified.",
       "safety": {
         "mayHaveMutated": true,
         "validation": "not_checked",
@@ -34879,11 +34879,11 @@
         "operator-plan.PREPARED.r5.json": "bd04a7faf30c18e42143daeef35db03ae3e172e6b49a71abfefe260257a00a17",
         "operator-plan.ACTUAL.private.json": "1cb6ac6c84f7c704bab8512778c766be056824e1ab7d23953c2f17caf87a6267"
       },
-      "brokerCandidateSource": "79ce87…",
-      "brokerCandidateBuild": "36cf2b…",
-      "brokerCandidateFullDistPin": "8038305b…",
-      "nativeTargetSource": "e80…",
-      "nativeFull104Digest": "17e5…",
+      "brokerCandidateSource": "79ce87\u2026",
+      "brokerCandidateBuild": "36cf2b\u2026",
+      "brokerCandidateFullDistPin": "8038305b\u2026",
+      "nativeTargetSource": "e80\u2026",
+      "nativeFull104Digest": "17e5\u2026",
       "expectedInstalled104ReceiptReference": "99b6d48a6d8d350ff6673215ac1fbe769fe68353e828d939e4e298fcb0ae8962",
       "helperFileCount": 104,
       "nativeStdoutInstalledFileCount": 104,
@@ -34967,7 +34967,7 @@
     "session": "ses_e02d46320ffeqeaBow4hyBXc9V",
     "attempt": {
       "linuxPid": 3558810,
-      "shellJobId": "sh_2103ef2da…",
+      "shellJobId": "sh_2103ef2da\u2026",
       "commandExitCode": 1,
       "reportedOutcome": "UNKNOWN",
       "failurePhase": "readonly-preparation",
@@ -35029,7 +35029,7 @@
       "readerManifest": "/tmp/opencode/root-fresh-reader-review-7ffbc2b6-abb5-4eb6-977f-4b4780cb1b75/manifest.json",
       "readerManifestSha256": "58f05958c3a0e8ea8aea61b9ea1fae3e056749103736f5b986703f509bcbc72d",
       "readerSha256": "285573cce4bb7b3d81d850ee7b5ac4430bff6726feba1169f9f8a5788bb8a1c1",
-      "nativeFixedPackage": "105-file package 428921ac / B0160…; source-only, NOT DEPLOYED"
+      "nativeFixedPackage": "105-file package 428921ac / B0160\u2026; source-only, NOT DEPLOYED"
     },
     "counts": {
       "thisPreflightAttempt": {
@@ -35192,14 +35192,14 @@
     "pins": {
       "operatorPlanSha256": "ebe511504a9cfee5c9b34f70c38ee790f1ec290df1f027c9225dfc0f44e8886a",
       "operatorRuntime": "Node 24.15.0",
-      "immutableBrokerSource": "79ce87…",
-      "immutableBrokerBuild": "36cf2b…",
-      "immutableBrokerFullDist": "8038…",
+      "immutableBrokerSource": "79ce87\u2026",
+      "immutableBrokerBuild": "36cf2b\u2026",
+      "immutableBrokerFullDist": "8038\u2026",
       "oldInstalledNativeSource": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97",
       "oldInstalledNativeBuild": "ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
-      "expectedNativeTargetSource": "e80…",
-      "expectedNativeFull104Digest": "17e5…",
-      "future105Package": "428921ac / B0160…",
+      "expectedNativeTargetSource": "e80\u2026",
+      "expectedNativeFull104Digest": "17e5\u2026",
+      "future105Package": "428921ac / B0160\u2026",
       "future105PackageStatus": "NOT DEPLOYED",
       "runtimeAttribution": "Do not attribute the future 105-file package to this run."
     },
@@ -35364,9 +35364,9 @@
       "brokerSource": "8edb1ffa58a2faa7dc7dca8c03d7e6d63709d202",
       "brokerBuild": "317e351b62ae67fb15b128abb883af641b10d4e03eeb4b4e520bf75b07c2a26b",
       "brokerFullDist": "96a17f51ce6afb6356e95cb834c0f238c2ee4c3ac385cee67063ec73590c9c74",
-      "brokerVerificationSha256": "8e3b653f…",
-      "brokerWholeRoot13Source": "80926774…",
-      "brokerLifecycle20Source": "912ea14…",
+      "brokerVerificationSha256": "8e3b653f\u2026",
+      "brokerWholeRoot13Source": "80926774\u2026",
+      "brokerLifecycle20Source": "912ea14\u2026",
       "installedNativePackage": "428921ac8877c3485aa4854216894f87ec79a688",
       "installedNativeHelperFiles": 105,
       "installedNativeBuild": "b0160a2a0041afc371daa14a79f512d311063dcd0504ffa280f134143847c368",
@@ -35474,7 +35474,7 @@
     "session": "ses_e02d46320ffeqeaBow4hyBXc9V",
     "attempt": {
       "runId": "56a1fe02-c526-43fe-932e-d66b866aebe4",
-      "mainCommandId": "sh_212e27c7a001…",
+      "mainCommandId": "sh_212e27c7a001\u2026",
       "commandExitCode": 1,
       "watcher": "failure event confirmed",
       "phase": "owned-cold-bootstrap",
@@ -35587,7 +35587,7 @@
   "latestOwnedStartupLoginDialogTerminalUnknown": {
     "reportedAt": "2026-11-25T16:16:04Z",
     "terminalObservedAt": null,
-    "terminalTimeNote": "Dokładny czas terminalny nie jest dostępny w zachowanych wynikach; reportedAt oznacza aktualizację raportu.",
+    "terminalTimeNote": "Dok\u0142adny czas terminalny nie jest dost\u0119pny w zachowanych wynikach; reportedAt oznacza aktualizacj\u0119 raportu.",
     "recordType": "sixth-controlled-owned-startup-controller-unknown-followed-by-ordinary-login-dialog-quit",
     "model": "openai/gpt-6-luna",
     "variant": "default",
@@ -35618,7 +35618,7 @@
       "processPid": 41728,
       "processBirth": "134400637715175662",
       "dialogHandle": 10095462,
-      "dialogTitle": "Nie można zalogować",
+      "dialogTitle": "Nie mo\u017cna zalogowa\u0107",
       "action": "one exact normal UI Quit invocation",
       "forcedTermination": false,
       "WM_CLOSE_replayed": false,
@@ -35936,7 +35936,7 @@
         "birth": "134401126511370060"
       },
       "provisionAndIntentReferences": "Present at bound-before-resume; their exact reference hashes and identities remain in the original bootstrap-result.json.",
-      "lastFailureBoundary": "final_resume → owned_identity_assert_current → process_handle",
+      "lastFailureBoundary": "final_resume \u2192 owned_identity_assert_current \u2192 process_handle",
       "sanitizedError": "OSError 87: Process identity unavailable",
       "interpretation": "Creation is recorded in the original checkpoints; successful resume, READY, SDK calls, and the process current state are not established. Actual state of PID/birth 10676/134401126511370060 remains UNKNOWN/unverified; no claim that it is currently alive or dead."
     },
@@ -37230,7 +37230,7 @@
     }
   },
   "latestCurrentFenceOwnedStartupControllerUnknown": {
-    "reportedAt": "2026-11-26T19:13:00Z",
+    "reportedAt": "2026-11-26T18:17:00Z",
     "recordType": "actual-current-fence-controller-unknown-original-receipts-incomplete",
     "controller": {
       "command": "sh_219038acc001iU4WADyQ9bv0JR",
@@ -37333,6 +37333,8 @@
       "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
       "noFusionClientsOrSDKOrRuntimeActionsByReporter": true,
       "noNativeBackend27182": true
-    }
+    },
+    "terminalObservedAt": null,
+    "terminalTimeNote": "Dok\u0142adny czas terminalny nie zosta\u0142 niezale\u017cnie odczytany; reportedAt oznacza czas raportowania."
   }
 }

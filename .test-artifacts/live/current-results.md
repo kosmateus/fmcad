@@ -1187,7 +1187,7 @@ This is a supplemental run, not a historical required profile-replica cell. The 
 - Wynik zamknięcia i transcript przypięto SHA-256 w `latestR3TerminalOwnedStartupControllerUnknown` w JSON. SDK **0**, CAD **NOTRUN**, replay **0**; oryginalny transcript i niepewny wynik zachowano.
 
 
-## 2026-11-26 19:13 UTC — Siedemnasty startup controller UNKNOWN; proces pozostaje nierozstrzygnięty
+## 2026-11-26 18:17 UTC — Siedemnasty startup controller UNKNOWN; proces pozostaje nierozstrzygnięty
 
 - Bieżący kontroler zakończył się kodem 1, a watcher zarejestrował failure. Oryginalny transcript mówi **UNKNOWN**: istnieje checkpoint utworzenia Fusion PID `40232` / birth `134401901160878433` i trzy fazy bootstrapu, ale odczyt pary receiptów nie powiódł się („Original receipt pair incomplete; no replay”). Nie ponawiano operacji. Proces odnotowano jako żywy; jego późniejsze wyjście pozostaje **UNKNOWN** — nie raportujemy zamknięcia.
 - Liczniki: kontrolery **17 UNKNOWN / 17**. Dwa błędy przygotowania (**2 UNKNOWN / 2**) i przerwanie harnessu (**1 INTERRUPTED / 1**) są osobno, poza tym mianownikiem. Pełne profile: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**; SDK i CAD **NOTRUN**.
