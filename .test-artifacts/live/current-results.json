@@ -672,7 +672,7 @@
     "evidence": "/home/kamil/.local/state/fmcad/evidence/metadata-live-r20-20261122T004105Z/preflight-failure.json",
     "catalogCountsUnchanged": true
   },
-  "generatedAt": "2026-11-26T12:10:53Z",
+  "generatedAt": "2026-11-26T14:00:48Z",
   "statusSemantics": "PASS/FAIL require terminal actual Fusion evidence. NOTRUN means no current authoritative terminal full-live PASS/FAIL has been attached. Historical partials remain attached separately; simulator, smoke, transport exit, checker and marker-only partials are not full catalog PASS.",
   "sources": {
     "suiteInventory": "tests/live-suite-inventory.json",
@@ -36603,5 +36603,115 @@
       "noCleanup": true
     },
     "scope": "Canonical current-results report update only; no SDK, replay, runtime, or native/probe operations by reporter."
+  },
+  "latestSemanticPreparationFailure": {
+    "reportedAt": "2026-11-26T14:00:48Z",
+    "runId": "649343fb63a447bfd98dc800f87c74effe9bf920704c6eb7bb1d647da76db5ee",
+    "recordType": "fresh-live-qualification-preparation-harness-failure-not-controller-run",
+    "terminal": {
+      "mainExitCode": 1,
+      "watcher": "failure event",
+      "phase": "readonly-preparation",
+      "code": "OWNED_OPERATOR_FAILED",
+      "outcome": "UNKNOWN",
+      "controllerRun": false
+    },
+    "classification": "Harness/operator preparation failure before Windows directory/bootstrap/controller startup; not a Fusion profile FAIL. Preserve this event separately from the prior 13 controller UNKNOWN outcomes and the historical harness interruption.",
+    "failure": {
+      "path": "/tmp/opencode/root-semantic-owned-operator-20261126/live-qualification-90a53eb9-7c57-4d21-a741-8815a08642ce/failure.json",
+      "sha256": "64aad992da8428c146422f5cef277461198d6d8d40beb344bfedb62c50030b8d",
+      "phase": "readonly-preparation",
+      "code": "OWNED_OPERATOR_FAILED",
+      "outcome": "UNKNOWN"
+    },
+    "diagnosis": {
+      "stage": "composeOwnedBootstrap",
+      "error": "Qualified native build/full-manifest digest differs",
+      "log": "/tmp/opencode/root-semantic-preparation-diagnosis-20261126/pure-compose-repro-r1.log",
+      "sha256": "8983557554fb106f12447d5746ca4d7dac4d75e4857fc2ff94fe395e33cbd05f",
+      "requiredCanonicalManifestDigest": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "providedPrettyManifestRawSha256": "3e6cc886521362969eca1afee8d7d95ff909502cc12d43990cbb2cde801534c7",
+      "meaning": "The pure composition reproducer failed the native-build/full-manifest guard: it supplied the raw SHA-256 of pretty-printed manifest JSON instead of the required canonical digest. This is a packaging/input-format error; the guard correctly refused."
+    },
+    "evidence": {
+      "directory": "/tmp/opencode/root-semantic-owned-operator-20261126/live-qualification-90a53eb9-7c57-4d21-a741-8815a08642ce",
+      "databaseMetadata": {
+        "path": "/tmp/opencode/root-semantic-owned-operator-20261126/live-qualification-90a53eb9-7c57-4d21-a741-8815a08642ce/database-metadata.original.json",
+        "sha256": "8c755d4c7621748f3f2a05eb92d73c31ae10c2fb34e4cce088d96e0794ba224b"
+      },
+      "failure": {
+        "path": "/tmp/opencode/root-semantic-owned-operator-20261126/live-qualification-90a53eb9-7c57-4d21-a741-8815a08642ce/failure.json",
+        "sha256": "64aad992da8428c146422f5cef277461198d6d8d40beb344bfedb62c50030b8d"
+      },
+      "sourceWorkersCleanup": {
+        "path": "/tmp/opencode/root-semantic-owned-operator-20261126/live-qualification-90a53eb9-7c57-4d21-a741-8815a08642ce/source-workers-cleanup.json",
+        "sha256": "2705dd5d5c13d26bf89ade03e8717508b7c353775ee82a25c40296d958158e4c"
+      },
+      "brokerHandleAbsence": {
+        "path": "/tmp/opencode/root-semantic-owned-operator-20261126/live-qualification-90a53eb9-7c57-4d21-a741-8815a08642ce/broker-handle-absence.json",
+        "sha256": "86269c42541a09f09165898e335289d66aa7fd0a7631646bfc19597b7648974c"
+      }
+    },
+    "boundary": {
+      "sourceWorkers": "JOINED",
+      "brokerHandle": "NO_HANDLE_CREATED",
+      "nativeOutcome": "UNCHANGED",
+      "windowsDirectoryResult": "NOT_CREATED",
+      "bootstrapResult": "NOT_CREATED",
+      "controllerStartup": "NOTRUN",
+      "sdk": "NOTRUN",
+      "futureNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "futureNativeSourceDeployed": false
+    },
+    "counts": {
+      "thisPreparationHarnessFailure": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 13,
+        "denominator": 13,
+        "changed": false
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "changed": false
+      },
+      "historicalSdkUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "canonicalQueueUnknowns": {
+        "UNKNOWN": 4,
+        "denominator": 4,
+        "changedOrSettled": false
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "source": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "build": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "futureNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "futureNativeDeployed": false,
+      "existingNativePackage": "105 files unchanged"
+    },
+    "preservedHistory": {
+      "thirteenControllerUnknowns": "unchanged",
+      "historicalHarnessInterruption": "unchanged",
+      "sdkUnknowns": "unchanged",
+      "queueUnknowns": "unchanged",
+      "noReplay": true,
+      "noCleanup": true
+    },
+    "scope": "Canonical result report update only; no product/source/build/runtime/Fusion/SDK/probe/lifecycle operation by reporter."
   }
 }

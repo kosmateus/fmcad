@@ -1,3 +1,13 @@
+## 2026-11-26 14:00 UTC — Świeża próba zatrzymana w przygotowaniu harnessu
+
+- **Wynik terminalny:** świeża próba `649343fb63a447bfd98dc800f87c74effe9bf920704c6eb7bb1d647da76db5ee` zakończyła się kodem `1`; watcher potwierdził zdarzenie failure. Operator odnotował `UNKNOWN` w fazie `readonly-preparation`. Nie uruchomiono kontrolera startowego Fusion.
+- **Przyczyna:** niezależny reproducer samej kompozycji operatora (bez `controller.run`) odrzucił wejściowy SHA manifestu: podano hash surowego, ładnie sformatowanego JSON (`3e6cc…`), podczas gdy guarda wymagał kanonicznego digestu (`964677…`). Jest to błąd przygotowania/formatu wejścia, nie wynik funkcji Fusion ani `FAIL` profilu; sam guard zadziałał prawidłowo.
+- **Granica dowodów:** source workers dołączyli (`JOINED`), uchwyt brokera nie powstał, a wynik native pozostał niezmieniony. Wyniki katalogu Windows i bootstrapu nie powstały; kontroler, SDK i kwalifikacja Fusion są **NOTRUN**. Przyszłe źródło native `efa30271…` nie zostało wdrożone. Zachowano oryginalne `UNKNOWN`; bez replay i cleanup.
+- **Oddzielne liczniki:** historyczne kontrolowane uruchomienia kontrolera pozostają **13 UNKNOWN / 13** — ta awaria przygotowania nie jest czternastym uruchomieniem kontrolera. Osobna, wcześniejsza przerwana próba harnessu pozostaje **1 INTERRUPTED / 1**. Nowy błąd przygotowania zapisano osobno jako **1 UNKNOWN / 1**. Historyczne SDK **4 UNKNOWN / 4** i kolejka **4 UNKNOWN / 4** bez zmian. Pełny katalog: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- **Piny i dowody:** kwalifikowane źródło `66643767d74711eb411c6eddcbdf32dc786cc80a`, build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; pełne ścieżki i SHA-256 zapisano w `latestSemanticPreparationFailure` w JSON. Reproducer: `/tmp/opencode/root-semantic-preparation-diagnosis-20261126/pure-compose-repro-r1.log`.
+
+---
+
 ## 2026-11-26 12:10 UTC — Trzynasty owned bootstrap controller zakończył się UNKNOWN po logowaniu
 
 - **Wynik terminalny:** próba `2d0039a2-52dc-4ea1-b905-a8e29d4ea8a4` zakończyła się `exit 1` (`ERR_ASSERTION`); operator `sh_2178e0b52002LhCoa9rNRepaEk` i watcher potwierdzili failure. Pierwotny wynik pozostaje **UNKNOWN**.
