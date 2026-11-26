@@ -1193,3 +1193,12 @@ This is a supplemental run, not a historical required profile-replica cell. The 
 - Liczniki: kontrolery **17 UNKNOWN / 17**. Dwa błędy przygotowania (**2 UNKNOWN / 2**) i przerwanie harnessu (**1 INTERRUPTED / 1**) są osobno, poza tym mianownikiem. Pełne profile: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**; SDK i CAD **NOTRUN**.
 - Broker/runtime bez zmian: source `66643767d74711eb411c6eddcbdf32dc786cc80a`, build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; zainstalowany native source `efa30271f18281e0705ea2659ee9a37a52085b9e` / build `964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750`. Operator source `00f1` i kompozycja `36` nie są runtime.
 - SHA-256 transcriptu, failure i ścieżki dowodów są w `latestCurrentFenceOwnedStartupControllerUnknown` w JSON. Bez klienta Fusion, SDK, replay i cleanup.
+
+
+## 2026-11-26 18:51 UTC — Potwierdzone zamknięcie hosta 40232; wcześniejszy bootstrap nadal UNKNOWN
+
+- Późniejszy, odrębny cleanup potwierdził zamknięcie dokładnego procesu Fusion PID `40232` / birth `134401901160878433`: właściwa ścieżka i SHA-256 pliku wykonywalnego zostały przypięte przed działaniem, wysłano jedno zwykłe `WM_CLOSE`, a ten sam uchwyt potwierdził wyjście. Bez force, SDK i replay. Weryfikacja po zamknięciu użyła raz trybu `verify` istniejącego guardu: **PASS**, dokładny PID/birth `PID_ABSENT`, 32.747 ms.
+- To rozlicza wyłącznie stan procesu i cleanup. Oryginalny bootstrap z tej próby pozostaje historycznie **UNKNOWN**; niekompletna para receiptów nie została odtworzona ani rozliczona przez zamknięcie. Broker readiness, SDK i CAD pozostają **NOTRUN**. To nie jest dowód globalnie czystego hosta (`globalCleanHost=NOT_PROVEN`).
+- Liczniki bez zmian: kontrolery **17 UNKNOWN / 17**; osobne przygotowania **2 UNKNOWN / 2** i przerwanie harnessu **1 INTERRUPTED / 1**; pełne profile **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**.
+- Piny broker/runtime pozostają source `66643767d74711eb411c6eddcbdf32dc786cc80a` / build `47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae`; zainstalowany native source `efa30271f18281e0705ea2659ee9a37a52085b9e` / build `964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750`. Cleanup nie zmienił ani nie zakwalifikował runtime.
+- Wynik, wejściowe fakty, transcript zamknięcia, konfigurację i capture VERIFY oraz SHA-256 zapisano w `latestCurrentFenceHostCleanup` w JSON.

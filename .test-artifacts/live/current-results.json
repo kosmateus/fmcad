@@ -37337,4 +37337,117 @@
     "terminalObservedAt": null,
     "terminalTimeNote": "Dok\u0142adny czas terminalny nie zosta\u0142 niezale\u017cnie odczytany; reportedAt oznacza czas raportowania."
   }
+,
+  "latestCurrentFenceHostCleanup": {
+    "verifiedAt": "2026-11-26T18:51:02.109Z",
+    "recordType": "owner-confirmed-current-host-retirement-followup",
+    "target": {
+      "pid": 40232,
+      "birth": "134401901160878433",
+      "image": "C:\\Users\\kamil\\AppData\\Local\\Autodesk\\webdeploy\\production\\39e8a3d5e919c70b05ef3ebfe9c6bfc8d9ee001e\\Fusion360.exe",
+      "imageSha256": "2cbbbc14ab4dd4dd40c21ba85861317d2d6f532abbc1b71c37835e22e7090abc"
+    },
+    "normalClose": {
+      "messages": 1,
+      "exited": true,
+      "forceUsed": false,
+      "observation": "exact-original-process-signaled-after-one-WM_CLOSE",
+      "windowHandle": 104794822,
+      "verifiedSamePidBirth": true,
+      "ownerCleanupTask": "82",
+      "ownerAndClosureReadback": "reported closed by proper owner"
+    },
+    "postCloseVerify": {
+      "result": "PASS",
+      "guard": "PASS_ACTUAL_NATIVE_VERIFY_AFTER_RETIREMENT",
+      "actualNativeCalls": 1,
+      "mode": "verify",
+      "processObservation": "PID_ABSENT",
+      "elapsedMs": 32.747,
+      "authority": "NONE",
+      "SDK": 0,
+      "canonicalWrites": 0
+    },
+    "historicalBootstrap": {
+      "state": "UNKNOWN",
+      "unchanged": true,
+      "evidencePath": "/tmp/opencode/root-current-fence-20261126/execution-985eff93-2cac-414c-b54e-318b85e3c0b2/bootstrap-result.json",
+      "sha256": "d902242691a0e4c251291e1d346e6572776852bcc13e5687ed3b736a984afa06",
+      "meaning": "Prior controller UNKNOWN remains UNKNOWN; cleanup/VERIFY is separate and does not settle bootstrap."
+    },
+    "currentState": {
+      "targetHost": "DEAD; exact PID/birth absent on post-close verify",
+      "globalCleanHost": "NOT_PROVEN",
+      "brokerReady": "NOTRUN",
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "counts": {
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 17,
+        "denominator": 17,
+        "meaning": "Sixteen prior controller UNKNOWN outcomes plus this actual run."
+      },
+      "separatePreparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "excludedFromControllerDenominator": true
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "excludedFromControllerDenominator": true
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      }
+    },
+    "pins": {
+      "brokerSource": "66643767d74711eb411c6eddcbdf32dc786cc80a",
+      "brokerBuild": "47cbe11122b7cdd89e93b43682b57e188380a4fa21b95971b63f49c3b19148ae",
+      "installedNativeSource": "efa30271f18281e0705ea2659ee9a37a52085b9e",
+      "installedNativeBuild": "964677ba443b798e34592998053271c7c60bf58db8258fac493e0748c3444750",
+      "admissionProvisionSource": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97",
+      "admissionProvisionBuild": "ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
+      "meaning": "Broker runtime, installed native runtime and historical admission provision are distinct; this cleanup did not modify or qualify them."
+    },
+    "evidence": {
+      "currentResult": {
+        "path": "/tmp/opencode/luna-current-host-boundary-20261126/current-result.json",
+        "sha256": "f171ba04df37955ff8c6355ce6aa0a0d119f53125c05f6ef41268a11d41d4578"
+      },
+      "inputFacts": {
+        "path": "/tmp/opencode/luna-current-host-boundary-20261126/current-input-facts.json",
+        "sha256": "5f66c8f2d7ce69d98c8d654903ae3f0a8dd09b596de2015c5c3d35c5b13d463f"
+      },
+      "normalClose": {
+        "path": "/tmp/opencode/luna-current-host-boundary-20261126/normal-close.stdout.json",
+        "sha256": "8ba75edd35236d711d09aa10e3ad5b800ea15f0d4b38f2ea0d8c47dad8c36448"
+      },
+      "verifyConfig": {
+        "path": "/tmp/opencode/luna-current-host-boundary-20261126/current-expected-pins.json",
+        "sha256": "c34a5861c448a127fcb17e71dadddfae8388738f895904a54c77332783a3c8cf"
+      },
+      "verifyCapture": {
+        "path": "/tmp/opencode/luna-current-host-boundary-20261126/current-capture.json",
+        "sha256": "33c6290f98760a7bc022659cbef6f7cbda2a5b13618f77ad712c1951f622a162"
+      },
+      "priorBootstrapUnknown": {
+        "path": "/tmp/opencode/root-current-fence-20261126/execution-985eff93-2cac-414c-b54e-318b85e3c0b2/bootstrap-result.json",
+        "sha256": "d902242691a0e4c251291e1d346e6572776852bcc13e5687ed3b736a984afa06"
+      }
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noReplay": true,
+      "noForce": true,
+      "noSDK": true,
+      "noBrokerOrGlobalCleanHostClaim": true
+    }
+  }
 }
