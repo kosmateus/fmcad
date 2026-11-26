@@ -1,3 +1,13 @@
+## 2026-11-26 01:27 UTC — Jedenasty owned bootstrap controller zakończył się UNKNOWN
+
+- **Terminalny wynik:** operator `sh_21564cc5c001q7kXdkgol55TBF` zakończył się kodem `1`, a watcher odnotował `failure`. Próba `921aae42-9359-4a87-8980-4ee3c9000498` pozostała **UNKNOWN** w fazie `owned-cold-bootstrap`; błąd to `ERR_ASSERTION`.
+- **Granica awarii:** `bootstrap-result.json` zapisuje `process=null` oraz wyłącznie fazę `old-death-os-confirmed`. Traceback pokazuje, że `native-state.py` w linii 302 sprawdzał historyczny `previousCreatedProcess`, po czym asercja identyfikatora birth w linii 224 nie przeszła. Nie jest to dowód niepowodzenia funkcji brokera ani kwalifikacji Fusion. Nie wykazano nowego procesu, wznowienia, READY, uchwytu brokera ani wywołania SDK; SDK pozostaje **NOTRUN**. Workerzy dołączyli, uchwyt brokera nie został utworzony, a wynik native pozostał bez zmian.
+- **Liczniki są oddzielne:** kontrolowane bootstrap-controller próby: **11 UNKNOWN / 11**, w tym dziesięć wcześniejszych wyników zachowanych i ta jedenasta próba; **0 RUNNING**. Osobny harness pozostaje **1 INTERRUPTED / 1** i nie wchodzi do tego mianownika. Cztery historyczne SDK UNKNOWN oraz cztery queue UNKNOWN są niezmienione. Pełny katalog: **0 PASS / 0 FAIL / 11 NOTRUN / 0 RUNNING / 0 UNKNOWN z 11**. Nie przypisujemy tej próbie FAIL profilu.
+- **Piny:** plan `63e5cbaad9bf0bf55680c9692b7f666a5b89c6f39185e6ae24d0b51b211f38cc`; kwalifikowane źródło `7f4dcd4a6100dbcd0ebeb77f0c63518a3ebb7aad`, build `419d0b525b71d3324d38219a9ac969aa9e555de019fe457fcbf0f7cea9caad1a`, runtime `40`. Tożsamość źródła raportującej gałęzi nie jest pinem testowanego runtime. Dla autodesk-fusion-mcp dozwolony był wyłącznie transport ADDIN `8765`; physical MCP `27182` pozostaje wykluczony.
+- **Dowody:** `/tmp/opencode/root-phase-owned-operator-20261126/live-qualification-921aae42-9359-4a87-8980-4ee3c9000498/failure.json`, `/tmp/opencode/root-phase-owned-operator-20261126/live-qualification-921aae42-9359-4a87-8980-4ee3c9000498/bootstrap-result.json` i `/tmp/opencode/root-phase-owned-operator-20261126/live-qualification-921aae42-9359-4a87-8980-4ee3c9000498/source-workers-cleanup.json`; pełne SHA-256 znajdują się w polu `eleventhOwnedStartupControllerUnknown` pliku JSON. Oryginalny UNKNOWN zachowano; bez replay, cleanup ani operacji Fusion przez autora raportu.
+
+---
+
 ## 2026-11-25 13:32 UTC — Piąty startup controller UNKNOWN na guardzie normal-close
 
 - Próba `56a1fe02` zakończyła się terminalnie **exit 1 / UNKNOWN**. Main `sh_212e27c7a001…` zakończył się kodem `1`, a watcher potwierdził failure event. Oryginalny transcript ma `action=normal-close`, `process=null`, `phases=[]`; guard zwrócił `ValueError: Unique exact vendor main window required`. Nie ponawiano operacji.
