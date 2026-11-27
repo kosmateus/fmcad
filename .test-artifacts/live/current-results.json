@@ -38140,4 +38140,130 @@
       "noCI": true
     }
   }
+,
+  "latestRegisteredMetadataHandoff": {
+    "reportedAt": "2026-11-27T15:37:00Z",
+    "recordType": "sdk-free-registered-metadata-handoff-cas",
+    "evidence": {
+      "path": "/tmp/opencode/root-registered-handoff-run-20261127/execution-e62e34ff-cd88-4476-a0f0-f7848f5e316c/metadata-cas-result.json",
+      "sha256": "5a45757f1347512eb1e2baa7ae2edcc734d8e16f621f5b0310621627c3f5d08e",
+      "state": "NEW_HANDOFF_COMMITTED",
+      "action": "dead-registered-handoff",
+      "SDK": 0,
+      "FusionStarted": false,
+      "historicalOutcome": "UNKNOWN_UNCHANGED"
+    },
+    "result": {
+      "status": "PASS",
+      "metadataCAS": {
+        "PASS": 1,
+        "denominator": 1,
+        "meaning": "one successful canonical metadata compare-and-swap handoff, separate from Fusion startup/controller and CAD profile counts"
+      },
+      "handoffId": "root-dead-registered-e62e34ff-cd88-4476-a0f0-f7848f5e316c",
+      "previousGeneration": {
+        "instance": "e44fa4fa-804c-4e9e-ad8b-557a3bf6c407",
+        "epoch": "35f4bd0d-a431-4fca-94af-f2e97627cd04"
+      },
+      "newGeneration": {
+        "instance": "42065fea-88b7-4481-a251-4d2d442ac0e9",
+        "epoch": "70c4d74d-2ab9-4d4b-8a30-0f91677e394f"
+      },
+      "committedState": "committed",
+      "requestSha256": "1773251cef9c399473060a648351da0eb1e87c6e8416ce0db32b0d1f0cad2b4c",
+      "receiptSha256": "803899ed7ce1fd7cd15a1fe3f352007d4dd303aa121ebadffc68a9512376d907",
+      "nativeChildCall": "real AdmissionStore CAS",
+      "sourceProgram": "841cae4d…",
+      "sourceApp": "17",
+      "metadataSource": "9b79dc8f213e6e19984cfc16e2b43c13bf9e2a90294810fd97497f8280b44370"
+    },
+    "postCASBoundedReadback": {
+      "databaseGeneration": {
+        "instance": "42065fea-88b7-4481-a251-4d2d442ac0e9",
+        "epoch": "70c4d74d-2ab9-4d4b-8a30-0f91677e394f"
+      },
+      "databaseIdentity": "[4068485357,3670016,146502,31291900,2219675459,31293059,2139025527,0,385024,1,32]",
+      "processObservation": {
+        "kind": "PID_ABSENT",
+        "original": {
+          "pid": 17616,
+          "birth": "134402607350031858"
+        },
+        "authority": "NONE",
+        "processControl": 0
+      },
+      "activeAdmission": false,
+      "unreleasedTurn": false,
+      "currentOwner": false,
+      "mailboxRequest": false,
+      "SDK": 0,
+      "FusionStarted": false,
+      "meaning": "Post-CAS source fences, exact old process 17616/birth absent, same database object/registered identity and no active admission/turn/owner/mailbox verified in bounded readback."
+    },
+    "separateWork": {
+      "adapterCommit": "24999d82aa61be9c3be134ccc9043fb8162696e7",
+      "adapter": "private SDK-free metadata adapter source only; integrated by fast-forward, not rebuilt public runtime",
+      "relatedRootTask99": "closed; root-owned scope",
+      "currentRuntime": {
+        "publicSource": "562aa210087e6534198376e3b6a86959375a601b",
+        "publicBuild": "f3d681ee2db12b35e8480f56c545f0c8269a53135a0a57dff3d6c3e872d4abaf",
+        "installedNativeSource": "149a268",
+        "installedNativeBuild": "3cd811d782dc37b2c838a21c5830c8babe19f2d281f32ba4211f9552ea120eb2",
+        "unchanged": true
+      }
+    },
+    "nextRegisteredPacket": {
+      "manifest": "f713e3fd4f89fa1c6048c06250d40f1ead98a8f32d2f54d1f272bf14d8617be9",
+      "operator": "80",
+      "pins": "SOURCE_REVIEW_PENDING",
+      "actualNewStart": "NOTRUN_UNTIL_NORMAL_RESULT_APP",
+      "meaning": "New generation metadata is committed; no startup result or runtime replacement is implied. ROOT handles SDK execution after source review."
+    },
+    "countsUnchanged": {
+      "controllerRuns": {
+        "UNKNOWN": 21,
+        "denominator": 21
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "preserved": {
+      "priorControllerUnknownsUnchanged": true,
+      "noControllerOrCADPassClaim": true,
+      "noRuntimeRebuildOrReplacement": true,
+      "noOperatorOrHelperEdits": true
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noSDKExecutionByReporter": true,
+      "noCI": true,
+      "noNativeProbe": true,
+      "noFusionRestart": true
+    }
+  }
 }
