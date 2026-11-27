@@ -38806,10 +38806,137 @@
         "PASS": 3,
         "denominator": 3
       },
+      "terminalControllerRuns": {"UNKNOWN": 24, "denominator": 24, "RUNNING": 0},
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true
+    }
+  }
+,
+  "latestOwnedAuditStartTerminal24": {
+    "reportedAt": "2026-11-27T18:19:00Z",
+    "recordType": "owned-audit-start-terminal-controller-unknown-24",
+    "sourceReview": {
+      "manifest": "1e95",
+      "sourceApp": "85"
+    },
+    "acceptedExecution": {
+      "watcher": "sh_21e356db1001i0ezrpbU76WEN9",
+      "main": "sh_21e354d03001AIoxuBTsx4aHWf",
+      "watcherExitCode": 1,
+      "mainExitCode": 1
+    },
+    "terminalOutcome": "UNKNOWN",
+    "transcript": {
+      "path": "/tmp/opencode/root-owned-audit-start-20261127/execution-c758e2b9-7d77-47af-a9b0-10d96ea96b64/bootstrap-result.json",
+      "sha256": "40fd4db8f78a0bc224dc3b7fd5e305da62d9b82b6d87a98bfc2493f39091d3b4",
+      "state": "UNKNOWN",
+      "authority": "NONE",
+      "process": {
+        "pid": 23440,
+        "birth": "134402768034068929"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound",
+        "owned-entry-audit-return-and-native-generation-bound"
+      ],
+      "error": "Pinned original bytes/identity required",
+      "lifecycleOriginals": {
+        "entry": {
+          "sha256": "b8d002c06b08d6a46df9764dee5cbb58a0d38be96b84e66023d56c5ff1371436",
+          "identity": "[4068485357,2031616,61274,31293083,87426431,31293083,87426431,0,24102,1,32]"
+        },
+        "returned": {
+          "sha256": "d74b0e62a0355492ce780616e020f67b7d6c9150c6aed74ff07b85ec91dee826",
+          "identity": "[4068485357,5767168,378391,31293083,90033156,31293083,90043155,0,1699,1,32]"
+        }
+      },
+      "replay": "FORBIDDEN"
+    },
+    "diagnostic": {
+      "path": "/tmp/opencode/root-owned-audit-start-20261127/execution-c758e2b9-7d77-47af-a9b0-10d96ea96b64/bootstrap-diagnostics.original.json",
+      "sha256": "32ade2e51d4b9aa75dea07d83b124a6b2ed7f5ca35eaeb8689535b3ded48e180",
+      "observation": "NO_VALID_DIAGNOSTIC_OBSERVED",
+      "meaning": "Not proof of absence."
+    },
+    "qualification": {
+      "hostExitAtTerminal": "UNVERIFIED",
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "FusionProfile": "NOTRUN",
+      "READY": false,
+      "meaning": "The owned audit reached a fourth phase, but the global bootstrap terminated UNKNOWN; passing that audit phase is not controller READY or CAD/SDK qualification."
+    },
+    "runtimePins": {
+      "manifest": "1e95",
+      "sourceApp": "85",
+      "privateBootstrapSource": "a924",
+      "qualifiedPackage": "107",
+      "qualifiedPackageSource": "ecfb330aa31574ad5e1fa46b5643c0adc1337db1",
+      "qualifiedPackageBuild": "385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617",
+      "installedNativeSource": "149a268",
+      "installedNativeBuild": "3cd811d782dc37b2c838a21c5830c8babe19f2d281f32ba4211f9552ea120eb2",
+      "legacyProvisionSource": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97",
+      "legacyProvisionBuild": "ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
+      "meaning": "Candidate/private bootstrap, qualified installed package, installed native runtime and legacy provision are distinct pins; no public library rebuild or new runtime qualification is implied."
+    },
+    "diagnosisAndFollowup": {
+      "task114": "Diagnosed the explicit readOriginal allowlist seam; diagnosis only, not a pass for this full bootstrap.",
+      "task109": "Alias guard fix had 3/3 component passes; bootstrap reached fourth owned-entry audit phase, but overall controller result remains UNKNOWN.",
+      "task115": {
+        "state": "ACTIVE_MINIMAL_HOST_BOUNDARY_WORKER",
+        "target": {
+          "pid": 23440,
+          "birth": "134402768034068929"
+        },
+        "meaning": "Separate active boundary work; its future exit/result is not known and is not inferred here."
+      }
+    },
+    "counts": {
       "terminalControllerRuns": {
-        "UNKNOWN": 23,
-        "denominator": 23,
-        "RUNNING": 0
+        "UNKNOWN": 24,
+        "denominator": 24
+      },
+      "activeControllerAttempts": {
+        "RUNNING": 0,
+        "denominator": 0
+      },
+      "metadataCAS": {
+        "PASS": 3,
+        "denominator": 3,
+        "separate": true
       },
       "separatePreparation": {
         "UNKNOWN": 2,
