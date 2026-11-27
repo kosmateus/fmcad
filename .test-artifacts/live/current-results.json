@@ -38802,10 +38802,7 @@
       "newControllerStartAfter23": "NOT_REPORTED"
     },
     "aggregateCounts": {
-      "metadataCAS": {
-        "PASS": 3,
-        "denominator": 3
-      },
+      "metadataCAS": {"PASS": 4, "denominator": 4},
       "terminalControllerRuns": {"UNKNOWN": 24, "denominator": 24, "RUNNING": 0},
       "separatePreparation": {
         "UNKNOWN": 2,
@@ -38937,6 +38934,186 @@
         "PASS": 3,
         "denominator": 3,
         "separate": true
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true
+    }
+  }
+,
+  "latestFourthMetadataCASAndTerminal24Boundary": {
+    "reportedAt": "2026-11-27T18:45:00Z",
+    "recordType": "fourth-sdk-free-registered-metadata-cas-and-later-terminal24-host-boundary",
+    "metadataCAS": {
+      "evidence": {
+        "path": "/tmp/opencode/root-owned-audit-reference-cas-20261127/execution-2d02388c-79f0-415b-abd7-9cb610c1c0c7/metadata-cas-result.json",
+        "sha256": "0863f1173c777610e88eaea78be0c4e2ff8c18637348ce8eac59ef7579d61412",
+        "state": "NEW_HANDOFF_COMMITTED",
+        "shell": "sh_21e5069a50012W8NPiqQagL0aN",
+        "shellPid": 911937,
+        "SDK": 0,
+        "FusionStarted": false,
+        "historicalOutcome": "UNKNOWN_UNCHANGED"
+      },
+      "result": {
+        "status": "PASS",
+        "metadataCAS": {
+          "PASS": 4,
+          "denominator": 4,
+          "separateFromControllerAndCAD": true
+        },
+        "handoffId": "root-dead-registered-2d02388c-79f0-415b-abd7-9cb610c1c0c7",
+        "previousGeneration": {
+          "instance": "a75a1827-d1a8-4bda-92e6-5047c1adc64d",
+          "epoch": "0ae61bb4-08a9-4520-a0e3-af4188eac703"
+        },
+        "newGeneration": {
+          "instance": "7e261c02-de00-4be6-9014-885b27e66f07",
+          "epoch": "513614ae-27ba-4500-b200-b200746d7c18"
+        },
+        "committedState": "committed",
+        "requestSha256": "b63aedbebda18e03dc3ad628d916c6d23ea46065822a1171c5bc108bcfafdc3a",
+        "receiptSha256": "c3d55516e7609257cc4701286b8463512e665ed385966deafe1488384379dadc",
+        "nativeChildCall": "real AdmissionStore CAS",
+        "processControl": 0
+      },
+      "postCASReadback": {
+        "sameDatabaseObject": true,
+        "databaseIdentity": "[4068485357,3670016,146502,31291900,2219674595,31293086,4232190379,0,385024,1,32]",
+        "generation": {
+          "instance": "7e261c02-de00-4be6-9014-885b27e66f07",
+          "epoch": "513614ae-27ba-4500-b200-b200746d7c18"
+        },
+        "processObservation": {
+          "kind": "PID_ABSENT",
+          "original": {
+            "pid": 23440,
+            "birth": "134402768034068929"
+          }
+        },
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "SDK": 0,
+        "FusionStarted": false
+      },
+      "runtimePins": {
+        "publicPackage": "107 / ecfb330aa31574ad5e1fa46b5643c0adc1337db1 / 385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617",
+        "installedNative": "149a268 / 107",
+        "unchanged": true,
+        "meaning": "Metadata handoff only; no runtime rebuild, start or new qualification."
+      }
+    },
+    "later115Boundary": {
+      "ownerTask": "115",
+      "ownerStatus": "SELF-CLOSED; administrative closure confirmed",
+      "summaryEvidence": {
+        "path": "/tmp/opencode/luna-current-23440-boundary-20261127/boundary-23440.final.results.json",
+        "sha256": "2e51cf8c791dbb96ddee4f15dd998ed9a2b01abacad2f7401cd071286a3d72d9",
+        "status": "PASS_REQUIRED_BOUNDARY_CRITERIA",
+        "target": {
+          "pid": 23440,
+          "birth": "134402768034068929"
+        },
+        "historicalTerminal": {
+          "state": "UNKNOWN",
+          "transcriptSha256": "40fd4db8f78a0bc224dc3b7fd5e305da62d9b82b6d87a98bfc2493f39091d3b4"
+        }
+      },
+      "normalClose": {
+        "path": "/tmp/opencode/luna-current-23440-boundary-20261127/normal-close-23440.result.json",
+        "sha256": "26b0636d97d9cb70234246992bfd786d2bf70277902ffe6b94bbec5c22c957d2",
+        "stdoutSha256": "cb72989e0497538f5b5c236f1c79ca501b7630632fd0f3c34f0665af5c557992",
+        "normalCloseMessages": 1,
+        "sameHandleExit": true,
+        "forceUsed": false,
+        "canonicalWrites": 0
+      },
+      "postCloseCapture": {
+        "path": "/tmp/opencode/luna-current-23440-boundary-20261127/postclose-capture-23440.results.json",
+        "rawCapturePath": "/tmp/opencode/luna-current-23440-boundary-20261127/postclose-capture-23440.raw.json",
+        "summarySha256": "7060b818a9b0166a72edfa30d097927112e2b0466b63756047ece8fc4710fd5a",
+        "rawCaptureSha256": "668e5219c4d9a1061a384de6a3bd657fed2acb18fd19d0bc8c467dfc3e6438b9",
+        "exactOriginalAbsent": true,
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "databaseGeneration": {
+          "instance": "a75a1827-d1a8-4bda-92e6-5047c1adc64d",
+          "epoch": "0ae61bb4-08a9-4520-a0e3-af4188eac703"
+        }
+      },
+      "postCloseProfile": {
+        "path": "/tmp/opencode/luna-current-23440-boundary-20261127/postclose-profile-23440.results.json",
+        "summarySha256": "6bae4695eefeaec929851892bc20e4dd8c75e059e5419da586d1ee7f0d0c7398",
+        "currentProfileSha256": "978a9c0774c6693a5e8748a79115e12193ccbdeda7c5171f13f2c4e0f79d008f",
+        "historicalTranscriptProfileSha256": "c132c749ef48c1401d43edf39f4039a2517522681a1afb5ad339802e6e5ba019",
+        "matchesHistoricalTranscriptReference": false,
+        "SDK": 0,
+        "lifecycle": "NOTRUN",
+        "writesToOriginals": 0,
+        "meaning": "Fresh profile readback only, not lifecycle run or settlement of original UNKNOWN."
+      },
+      "historicalBoundary": {
+        "terminal24HostExitAtTerminal": "UNVERIFIED",
+        "terminal24ControllerOutcome": "UNKNOWN_UNCHANGED",
+        "meaning": "Later verified ordinary close and exact PID absence do not rewrite terminal24 state or prove receipt validity, READY, CAD, or global host cleanliness."
+      }
+    },
+    "runtimeAndNextWork": {
+      "private114PathFix": {
+        "tests": "5 PASS",
+        "source": "bd883a",
+        "qualification": "Private path fix only; not native assert PASS or CAD qualification."
+      },
+      "newFullOperator": {
+        "source": "32ae",
+        "build": "86",
+        "sourceReview": "PENDING"
+      },
+      "newControllerStartAfter24": "NOT_REPORTED"
+    },
+    "aggregateCounts": {
+      "metadataCAS": {
+        "PASS": 4,
+        "denominator": 4
+      },
+      "terminalControllerRuns": {
+        "UNKNOWN": 24,
+        "denominator": 24,
+        "RUNNING": 0
       },
       "separatePreparation": {
         "UNKNOWN": 2,
