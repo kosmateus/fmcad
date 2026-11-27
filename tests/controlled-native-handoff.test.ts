@@ -520,6 +520,149 @@ test("native program parses as Python without executing imports, source installa
   assert.equal(result.status, 0, result.stderr);
 });
 
+// Exercise the actual install entry point up to its first provision read. Only
+// the kernel boundary and that first IO are replaced; the identity rule is not.
+const installIdentityHarness = String.raw`
+import ast,json,sys,types
+data=json.loads(sys.stdin.buffer.read().decode("utf-8"))
+tree=ast.parse(data["program"])
+functions=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in ("old_dead","install")]
+assert len(functions)==2
+code=compile(ast.Module(body=functions,type_ignores=[]),"<native-install-action>","exec")
+class ReachedInstallIO(Exception):pass
+def execute(namespace,old):
+    reads=[]
+    def provision():
+        reads.append("provision")
+        raise ReachedInstallIO()
+    namespace.update(p={"old":old},provision=provision)
+    exec(code,namespace)
+    try:
+        namespace["install"]()
+    except ReachedInstallIO:
+        return True,reads
+    except (ValueError,OSError):
+        return False,reads
+    raise AssertionError("Unexpected install result")
+if data["mode"]=="kernel-model":
+    class FileTime:
+        def __init__(self):self.dwHighDateTime=0;self.dwLowDateTime=0
+    cases=[
+        ("missing",False,"1000",0,87,True,True),
+        ("exited-original",True,"1000",0,0,True,True),
+        ("reused-live-number",True,"2000",258,0,True,True),
+        ("original-alive",True,"1000",258,0,True,False),
+        ("wait-unknown",True,"1000",-1,0,True,False),
+        ("birth-unavailable",True,"1000",258,0,False,False),
+        ("access-denied",False,"1000",0,5,True,False),
+    ]
+    results=[]
+    for name,present,birth,wait,error,times_ok,expected in cases:
+        class Kernel:
+            def __init__(self):self.waits=0;self.closes=0
+            def OpenProcess(self,rights,inherit,pid):
+                assert rights==0x1000|0x100000 and not inherit and pid==4567
+                return 7 if present else 0
+            def GetProcessTimes(self,handle,*times):
+                assert handle==7
+                times[0].dwHighDateTime=int(birth)>>32
+                times[0].dwLowDateTime=int(birth)&0xffffffff
+                return times_ok
+            def WaitForSingleObject(self,handle,timeout):
+                assert handle==7 and timeout==0
+                self.waits+=1
+                return wait
+            def CloseHandle(self,handle):
+                assert handle==7
+                self.closes+=1
+        kernel=Kernel()
+        reached,reads=execute({"k":kernel,"w":types.SimpleNamespace(FILETIME=FileTime),
+            "ctypes":types.SimpleNamespace(byref=lambda value:value,get_last_error=lambda:error)},
+            {"pid":4567,"birth":"1000"})
+        assert reached==expected,(name,reached,expected)
+        assert bool(reads)==expected,(name,reads)
+        assert kernel.closes==(1 if present else 0),(name,kernel.closes)
+        if name=="reused-live-number":assert kernel.waits==0
+        results.append({"case":name,"installIOReached":reached,"processControl":0})
+else:
+    import ctypes,os
+    from ctypes import wintypes as w
+    # Use the source program's own Win32 ABI bindings, not a second copy.
+    bindings=[node for node in tree.body if isinstance(node,ast.Assign)
+        and any(ast.unparse(target)=="k" or ast.unparse(target).startswith("k.") for target in node.targets)]
+    ns={"ctypes":ctypes,"w":w}
+    exec(compile(ast.Module(body=bindings,type_ignores=[]),"<native-kernel-bindings>","exec"),ns)
+    k=ns["k"]
+    h=k.OpenProcess(0x1000|0x100000,False,os.getpid())
+    assert h
+    try:
+        times=[w.FILETIME() for _ in range(4)]
+        assert k.GetProcessTimes(h,*(ctypes.byref(t)for t in times))
+        birth=(times[0].dwHighDateTime<<32)|times[0].dwLowDateTime
+    finally:k.CloseHandle(h)
+    same,_=execute(dict(ns),{"pid":os.getpid(),"birth":str(birth)})
+    different,reads=execute(dict(ns),{"pid":os.getpid(),"birth":str(birth-1)})
+    assert not same and different and reads==["provision"]
+    results={"sameTupleAliveRefused":True,"differentBirthOriginalAbsent":True,
+        "actualWindowsKernel":True,"SDK":0,"installationWrites":0,"processControl":0}
+print(json.dumps(results))
+`;
+
+test("native install identity gate distinguishes the original tuple from a reused PID before IO", () => {
+  const result = spawnSync(
+    "python3",
+    ["-I", "-S", "-B", "-c", installIdentityHarness],
+    {
+      input: JSON.stringify({
+        program: controlledNativeHandoffProgram,
+        mode: "kernel-model",
+      }),
+      encoding: "utf8",
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal((JSON.parse(result.stdout) as unknown[]).length, 7);
+});
+
+test(
+  "native install identity gate uses the actual Windows kernel without install or SDK",
+  {
+    skip:
+      !process.env["FMCAD_INSTALL_IDENTITY_WINDOWS_PINS"] &&
+      "NOTRUN: explicit qualified SDK-free Windows interpreter pins required",
+  },
+  () => {
+    const config = JSON.parse(
+      fs.readFileSync(
+        process.env["FMCAD_INSTALL_IDENTITY_WINDOWS_PINS"]!,
+        "utf8",
+      ),
+    ) as {
+      mappedNativePython: string;
+      nativePythonSha256: string;
+    };
+    assert.equal(
+      createHash("sha256")
+        .update(fs.readFileSync(config.mappedNativePython))
+        .digest("hex"),
+      config.nativePythonSha256,
+    );
+    const result = spawnSync(
+      config.mappedNativePython,
+      ["-I", "-S", "-B", "-c", installIdentityHarness],
+      {
+        input: JSON.stringify({
+          program: controlledNativeHandoffProgram,
+          mode: "actual-windows",
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal((JSON.parse(result.stdout) as { SDK: number }).SDK, 0);
+  },
+);
+
 test("fixed native program independently refuses unsafe package pins before platform/import/effects", () => {
   const qualified = pins().qualified;
   const missingAudit = { ...qualified.files };

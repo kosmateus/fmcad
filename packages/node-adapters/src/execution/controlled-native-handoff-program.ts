@@ -197,7 +197,11 @@ def old_dead(value):
         times=[w.FILETIME()for _ in range(4)]
         if not k.GetProcessTimes(h,*(ctypes.byref(t)for t in times)):raise OSError("Old process birth absent")
         birth=str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)
-        if birth!=value["birth"] or k.WaitForSingleObject(h,0)!=0:raise ValueError("Exact old process not dead")
+        # A reused number is not the original process. Do not wait on or
+        # control its unrelated occupant; the caller's lifecycle/source guards
+        # still govern installation. A live matching original remains refused.
+        if birth!=value["birth"]:return
+        if k.WaitForSingleObject(h,0)!=0:raise ValueError("Exact old process not dead")
     finally:k.CloseHandle(h)
 def new_alive(value):
     if value["pid"]==p["old"]["pid"] or value["birth"]==p["old"]["birth"]:
