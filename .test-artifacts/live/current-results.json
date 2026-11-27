@@ -39110,10 +39110,124 @@
         "PASS": 4,
         "denominator": 4
       },
+      "terminalControllerRuns": {"UNKNOWN": 25, "denominator": 25, "RUNNING": 0},
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true
+    }
+  }
+,
+  "latestReferenceAuditStartTerminal25": {
+    "reportedAt": "2026-11-27T18:50:00Z",
+    "recordType": "reference-audit-start-terminal-controller-unknown-25",
+    "acceptedExecution": {
+      "watcher": "sh_21e541a19002PMvizSGW8GDWmX",
+      "main": "sh_21e5406a9002wTSNErq9Dpr0t9",
+      "watcherExitCode": 1,
+      "mainExitCode": 1
+    },
+    "transcript": {
+      "path": "/tmp/opencode/root-owned-audit-reference-start-20261127/execution-2c9201ea-2f1c-44a4-b9ed-cb785ca9d77d/bootstrap-result.json",
+      "sha256": "e9c4a3fac20b0def44408e73f584df2c9322cee127dc9f15d2de3835fe5b29d9",
+      "state": "UNKNOWN",
+      "authority": "NONE",
+      "process": {
+        "pid": 31844,
+        "birth": "134402788135897354"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "failure": {
+        "action": "receipts",
+        "message": "Controlled native receipts outcome unproven; preserve originals, no replay",
+        "error": "BrokenPipeError: [Errno 32] Stable native file unavailable",
+        "location": "snapshot(p.paths.entry) → file_bytes → open_file"
+      },
+      "replay": "FORBIDDEN"
+    },
+    "diagnostic": {
+      "path": "/tmp/opencode/root-owned-audit-reference-start-20261127/execution-2c9201ea-2f1c-44a4-b9ed-cb785ca9d77d/bootstrap-diagnostics.original.json",
+      "sha256": "32ade2e51d4b9aa75dea07d83b124a6b2ed7f5ca35eaeb8689535b3ded48e180",
+      "observation": "NO_VALID_DIAGNOSTIC_OBSERVED",
+      "meaning": "Not proof of absence."
+    },
+    "qualification": {
+      "hostExitAtTerminal": "UNVERIFIED",
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "FusionProfile": "NOTRUN",
+      "READY": false,
+      "meaning": "This controller attempt failed before the later terminal24 owned-entry audit stage; no SDK/CAD functional test or profile result is established."
+    },
+    "runtimePins": {
+      "manifest": "32ae",
+      "build": "86",
+      "sourceApp": "17",
+      "helper": "bd883a / a924",
+      "publicPackage": "107 / ecfb330aa31574ad5e1fa46b5643c0adc1337db1 / 385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617",
+      "installedNative": "149a268 / 107",
+      "legacyProvision": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97 / ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
+      "meaning": "Recorded candidate/helper/package/native pins are distinct; no claim that the 114 readOriginal allowlist fix passed this live run."
+    },
+    "diagnosisAndFollowup": {
+      "task118": "ROOT owns SDK-free OS race diagnosis; no result inferred here.",
+      "task119": {
+        "state": "ACTIVE_MINIMAL_CURRENT_HOST_BOUNDARY_WORKER",
+        "target": {
+          "pid": 31844,
+          "birth": "134402788135897354"
+        },
+        "meaning": "Its future host-exit observation is unknown and not inferred."
+      },
+      "task114": "Earlier private allowlist fix is not asserted as a live PASS here.",
+      "newControllerStartAfter25": "NOT_REPORTED"
+    },
+    "counts": {
       "terminalControllerRuns": {
-        "UNKNOWN": 24,
-        "denominator": 24,
-        "RUNNING": 0
+        "UNKNOWN": 25,
+        "denominator": 25
+      },
+      "activeControllerAttempts": {
+        "RUNNING": 0,
+        "denominator": 0
+      },
+      "metadataCAS": {
+        "PASS": 4,
+        "denominator": 4,
+        "separate": true
       },
       "separatePreparation": {
         "UNKNOWN": 2,
