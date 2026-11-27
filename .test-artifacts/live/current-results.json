@@ -39746,4 +39746,149 @@
       "noReplay": true
     }
   }
+,
+  "latestOwnedStartup27BootstrapCarrierAndPreservationOutcome": {
+    "reportedAt": "2026-11-27T21:24:00Z",
+    "recordType": "owned-start-27-bootstrap-carrier-created-preservation-unknown",
+    "execution": {
+      "mainShell": "sh_21ecce1bf",
+      "mainOutcome": "TERMINAL_FAILURE",
+      "mainExitCode": 1,
+      "shortWatcher600s": "UNCONFIRMED",
+      "successorWatcher": "ACTUAL_FAILURE_OBSERVER; separate from main result"
+    },
+    "bootstrap": {
+      "result": "COMPLETED",
+      "qualification": "PASS",
+      "denominator": 1,
+      "path": "/tmp/opencode/root-semantic-carrier-start-20261127/execution-03213bd9-8508-461a-b229-07f1f31b05f3/bootstrap-result.json",
+      "sha256": "98f1f7daf443aa0527a9a8eb3137c6eb6d08d4b32efef4f4b8322769bfcc27e9",
+      "process": {
+        "pid": 27564,
+        "birth": "134402867293584926"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound",
+        "owned-entry-audit-return-and-native-generation-bound"
+      ],
+      "error": null
+    },
+    "carrierPublication": {
+      "result": "CREATED",
+      "count": {
+        "CREATED": 1,
+        "denominator": 1
+      },
+      "path": "/tmp/opencode/root-semantic-carrier-start-20261127/execution-03213bd9-8508-461a-b229-07f1f31b05f3/carrier-result.json",
+      "sha256": "b772ab311d4cbaeb4573c95e3140ba2056da66abe7cfb82a27e8386a7c737687",
+      "sdk": false,
+      "authority": "NONE",
+      "nativeReferenceSha256": "48fea076b947b3a19536434e34fcbc571d199594f167f55bf7b07ae0dc38042c"
+    },
+    "fullStart": {
+      "result": "FAIL",
+      "count": {
+        "FAIL": 1,
+        "denominator": 1
+      },
+      "failurePath": "/tmp/opencode/root-semantic-carrier-start-20261127/execution-03213bd9-8508-461a-b229-07f1f31b05f3/failure.json",
+      "failureSha256": "8bb5f97ce303964b4ada95b831e80af2b96127ab3871687e4f52cd25427a7e09",
+      "phase": "preservation-readonly",
+      "code": "ERR_ASSERTION",
+      "message": "Readonly preservation failed; do not replay\n\n1 !== 0\n",
+      "preservationOutcome": "UNKNOWN",
+      "replay": "FORBIDDEN",
+      "firstObservedCause": {
+        "artifact": "/tmp/opencode/root-semantic-carrier-start-20261127/execution-03213bd9-8508-461a-b229-07f1f31b05f3/preservation.native.stderr",
+        "sha256": "a313da28f5c8588ad98e66ac8d66b586deeb4de763b9ee58e30752fc0d170c55",
+        "observation": "observe-post-owned.py:35: historical committed handoffId differs from current runtime handoffId"
+      }
+    },
+    "qualification": {
+      "READY": false,
+      "rootProfileResume": "NOTRUN",
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "hostExitAtTerminal": "UNVERIFIED",
+      "boundary132": "ACTIVE; no result claimed"
+    },
+    "counts": {
+      "historicalControllerRunsThrough25": {
+        "UNKNOWN": 25,
+        "denominator": 25,
+        "unchanged": true
+      },
+      "bootstrap27": {
+        "PASS": 1,
+        "denominator": 1
+      },
+      "carrier27Publication": {
+        "CREATED": 1,
+        "denominator": 1,
+        "notCADQualification": true
+      },
+      "fullStart27": {
+        "FAIL": 1,
+        "denominator": 1
+      },
+      "preservation27": {
+        "UNKNOWN": 1,
+        "denominator": 1,
+        "notSettled": true
+      },
+      "metadataCAS": {
+        "PASS": 6,
+        "denominator": 6,
+        "separate": true
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "runtimePins": {
+      "source": "5dac89 (user-reported source pin)",
+      "APP": "17",
+      "currentPublicPackage": "123",
+      "priorMetadataCASPackage": "ca9c8d40f5180478e3be2d664d13e9fc324eb84f / build 60236…",
+      "installedNative": "149 / unchanged",
+      "meaning": "No qualified runtime/CAD/start result is claimed for this attempt."
+    },
+    "historicalLayersUnchanged": {
+      "terminal25": "UNKNOWN; unchanged",
+      "terminal26": {
+        "bootstrap": "COMPLETED",
+        "fullStart": "FAIL",
+        "carrier": "NOT_STARTED"
+      },
+      "CAS6": {
+        "PASS": 6,
+        "denominator": 6
+      }
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControl": true,
+      "noCI": true,
+      "noReplay": true
+    }
+  }
 }
