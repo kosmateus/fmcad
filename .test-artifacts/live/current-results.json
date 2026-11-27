@@ -39891,4 +39891,171 @@
       "noReplay": true
     }
   }
+,
+  "latestSeventhMetadataCASAndTerminal27Boundary": {
+    "reportedAt": "2026-11-27T22:13:00Z",
+    "recordType": "seventh-sdk-free-metadata-cas-and-later-terminal27-host-boundary",
+    "metadataCAS": {
+      "evidence": {
+        "path": "/tmp/opencode/root-current-preservation-cas-20261127/execution-d5f6ea07-4e49-4252-b843-ab8c6938c00c/metadata-cas-result.json",
+        "sha256": "f318ab979dd4881e710e7222eb53b3304e4d24dd1d138cd7b83d817fcbd3c601",
+        "state": "NEW_HANDOFF_COMMITTED",
+        "shell": "sh_21f0af7560029mW0R65acVNnJl",
+        "SDK": 0,
+        "FusionStarted": false,
+        "historicalOutcome": "UNKNOWN_UNCHANGED"
+      },
+      "result": {
+        "status": "PASS",
+        "count": {
+          "PASS": 7,
+          "denominator": 7,
+          "separateFromControllerAndCAD": true
+        },
+        "handoffId": "root-dead-registered-d5f6ea07-4e49-4252-b843-ab8c6938c00c",
+        "previousGeneration": {
+          "instance": "78bd0386-40c1-4d2e-854d-1a767b19bbd7",
+          "epoch": "b67fd465-3930-45d3-9b9b-e96cb1a7b040"
+        },
+        "newGeneration": {
+          "instance": "e280568b-dc9c-4c31-a334-0ed91198d5d5",
+          "epoch": "fcf7635f-08cf-4627-ace5-7553c4914ba9"
+        },
+        "committedState": "committed",
+        "requestSha256": "6b9a12af5429dbcd62a16ac06fdc1dd4211c5b5e44520cd75f6660ffe6e014df",
+        "receiptSha256": "74e9b40ea985c34eaf6dde626b63f9044b36d538f47dcfc6f00d5fd151129888"
+      },
+      "runtimeBoundary": {
+        "sourceAPP": "17",
+        "manifest": "848fc1ac107",
+        "publicPackage": "123",
+        "priorQualifiedMetadataOnlyPackage": "ca9c8d40f5180478e3be2d664d13e9fc324eb84f / build 60236…",
+        "native": "149 / program 371adf…",
+        "meaning": "SDK-free metadata CAS only; not full Fusion profile PASS."
+      }
+    },
+    "later132Boundary": {
+      "ownerTask": "132",
+      "ownerStatus": "SELF-CLOSED; proper-owner closure confirmed",
+      "finalVerification": {
+        "path": "/tmp/opencode/luna-current-27564-boundary-20261127/final-verification-27564.results.json",
+        "sha256": "7baf96bef7fa56e1c97ff3eb0f9f62f7f70de3900d42ed2f5f7515b99116997a",
+        "status": "PASS_27564_NORMAL_CLOSE_AND_POSTCAPTURE",
+        "target": {
+          "pid": 27564,
+          "birth": "134402867293584926"
+        },
+        "historicalFullStartOutcome": "UNKNOWN",
+        "globalCleanHost": "NOT_PROVEN",
+        "carrierPresentPreclose": true,
+        "carrierPresentPostclose": true,
+        "carrierContentRead": false,
+        "carrierTouched": false
+      },
+      "normalClose": {
+        "path": "/tmp/opencode/luna-current-27564-boundary-20261127/normal-close-27564-attempt2.result.json",
+        "sha256": "20fe215b6f8af8d029e7192926ff4c939dbc4a0d397dfd91807c34b10bcfab7d",
+        "stdoutPath": "/tmp/opencode/luna-current-27564-boundary-20261127/normal-close-27564-attempt2.stdout.jsonl",
+        "stdoutSha256": "e47cfca7bebdfb806d186284c1563cc8f39daed7562a10781799daa58d3d7520",
+        "normalCloseMessages": 1,
+        "sameHandleExit": true,
+        "forceUsed": false,
+        "canonicalWrites": 0,
+        "exitStatus": 0,
+        "wrapperAttemptNote": "attempt2 suffix refers to an earlier wrapper preflight failure; this evidence confirms exactly one WM_CLOSE."
+      },
+      "postCloseCapture": {
+        "rawPath": "/tmp/opencode/luna-current-27564-boundary-20261127/postclose-capture-27564-attempt2.raw.json",
+        "rawSha256": "0a47b5a113d4f9371d2cd1d4ce7fcf16b682ebf86edc72e5be5ef28d50ba7c5b",
+        "qualifiedPath": "/tmp/opencode/luna-current-27564-boundary-20261127/postclose-capture-27564-attempt2.results.json",
+        "qualifiedSha256": "df93237b27f1cbe8d52474a59013917004b73db9c5996c3e10600b0a3e91489f",
+        "exactOriginalAbsent": true,
+        "SDK": 0,
+        "historicalOutcome": "UNKNOWN_UNCHANGED",
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "globalCleanHost": "NOT_PROVEN"
+      },
+      "postCloseProfile": {
+        "path": "/tmp/opencode/luna-current-27564-boundary-20261127/postclose-profile-provision-27564-attempt2.results.json",
+        "sha256": "3ef440e3b45e9db8a6b8ac3a08ee98a04e58f56d963a06153850726177011f75",
+        "SDK": 0,
+        "lifecycle": "NOTRUN",
+        "writesToOriginals": 0
+      },
+      "historicalBoundary": {
+        "first27TerminalHostExit": "UNVERIFIED",
+        "later132CloseVerified": true,
+        "fullStart27": "FAIL",
+        "preservation27": "UNKNOWN",
+        "replay": "FORBIDDEN",
+        "meaning": "Later process exit does not settle the first terminal outcome or prove global isolation."
+      }
+    },
+    "separateReadonlyCapture": {
+      "path": "/tmp/opencode/root-current-preservation-20261127/actual-readonly-capture-test.log",
+      "sha256": "1777d7da52733ad49ed4a45f7f556fc968137eaf33ce4f2c54ec2096a7ab556e",
+      "result": "PASS",
+      "baselinePath": "/tmp/opencode/root-current-preservation-20261127/actual-readonly-capture-upKNby/preservation-baseline.native.original.json",
+      "baselineSha256": "d48a1c1b0c82db4a09d8f92645e7f384c93080b970aaabdf1123bc45848425f9",
+      "SDK": 0,
+      "SQLChanges": 0,
+      "filesystemWrites": "NOT_MEASURED",
+      "bootstrap": "NOTRUN",
+      "meaning": "One SDK-free read-only current-store capture test after CAS7 and before any bootstrap; not Fusion/CAD PASS, deployment, full controller component, or settlement of UNKNOWN."
+    },
+    "countsUnchanged": {
+      "historicalControllerRunsThrough25": {
+        "UNKNOWN": 25,
+        "denominator": 25
+      },
+      "terminal26": {
+        "bootstrap": "COMPLETED",
+        "fullStart": "FAIL",
+        "carrier": "NOT_STARTED"
+      },
+      "terminal27": {
+        "bootstrap": "COMPLETED",
+        "carrier": "CREATED",
+        "fullStart": "FAIL",
+        "preservation": "UNKNOWN",
+        "replay": "FORBIDDEN"
+      },
+      "metadataCAS": {
+        "PASS": 7,
+        "denominator": 7,
+        "separate": true
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "newStart28": "NOT_REPORTED"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noCurrentDatabaseWrites": true,
+      "noLifecycle": true,
+      "noCI": true,
+      "noReplay": true
+    }
+  }
 }
