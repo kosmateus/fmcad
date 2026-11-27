@@ -55,6 +55,10 @@ INVALID = ctypes.c_void_p(-1).value
 held = []
 mutated = False
 
+class NativeFileSharingViolation(OSError):
+    # Tagged only at CreateFileW, never a generic read/ACL/identity failure.
+    pass
+
 class FileInfo(ctypes.Structure):
     _fields_ = [("attributes", w.DWORD), ("creation", w.FILETIME),
                 ("access", w.FILETIME), ("write", w.FILETIME), ("volume", w.DWORD),
@@ -79,7 +83,10 @@ def open_file(name, write=False, directory=False):
     handle = k.CreateFileW(str(path), access, 1, None, 3,
                           0x00200000 | (0x02000000 if directory else 0), None)
     if handle in (None, INVALID):
-        raise OSError(ctypes.get_last_error(), "Stable native file unavailable")
+        error = ctypes.get_last_error()
+        if error == 32:
+            raise NativeFileSharingViolation(error, "Stable native file unavailable")
+        raise OSError(error, "Stable native file unavailable")
     try:
         info = FileInfo()
         if (k.GetFileType(handle) != 1 or
@@ -584,13 +591,17 @@ try:
         result = launch(source)
     elif action == "receipts":
         deadline = time.monotonic() + p["receiptTimeoutMs"] / 1000
+        # Keep one pinned entry handle while its separate returned file is pending.
+        entry = None
         while True:
             alive(request["process"])
             try:
-                result = {"entry": snapshot(p["paths"]["entry"]),
+                if entry is None:
+                    entry = snapshot(p["paths"]["entry"])
+                result = {"entry": entry,
                           "returned": snapshot(p["paths"]["returned"])}
                 break
-            except FileNotFoundError:
+            except (FileNotFoundError, NativeFileSharingViolation):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Original receipt pair incomplete; no replay")
                 time.sleep(0.05)
