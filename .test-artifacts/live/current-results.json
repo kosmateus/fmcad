@@ -39434,4 +39434,142 @@
       "noCI": true
     }
   }
+,
+  "latestOwnedStartup26BootstrapAndCarrierOutcome": {
+    "reportedAt": "2026-11-27T20:28:00Z",
+    "recordType": "owned-start-26-bootstrap-completed-carrier-not-started",
+    "source": "ROOT-reported terminal shell outcome plus original bootstrap and failure artifacts.",
+    "execution": {
+      "watcher": "sh_21e9daaf0002N8avN5ruZo22ur",
+      "watcherTimeoutMs": 600000,
+      "watcherOutcome": "UNCONFIRMED",
+      "main": "sh_21e5406a9002wTSNErq9Dpr0t9",
+      "mainExitCode": 1,
+      "mainOutcome": "TERMINAL_FAILURE"
+    },
+    "bootstrap": {
+      "result": "COMPLETED",
+      "qualification": "PASS",
+      "denominator": 1,
+      "path": "/tmp/opencode/root-entry-receipt-sharing-start-20261127/execution-beb098a9-bc7c-4e89-9473-213eb8c02490/bootstrap-result.json",
+      "sha256": "b0b13d64f81b770ed06ef2643fa93063344350f7476ba932ba04ec5079dbe799",
+      "state": "COMPLETED",
+      "authority": "NONE",
+      "process": {
+        "pid": 23792,
+        "birth": "134402836348477755"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound",
+        "owned-entry-audit-return-and-native-generation-bound"
+      ],
+      "error": null,
+      "entry": {
+        "sha256": "1ec5a103e778bc959bcc49683928f46e093d883ea0af98c0b29a705ee6c2a0b8",
+        "identity": "[4068485357,2359296,374116,31293098,3977770752,31293098,3977780753,0,24102,1,32]"
+      },
+      "returned": {
+        "sha256": "7b96dc145e1bfef2534bdeb3b7805981fbb5834b4191afdef7758fe55f3cbf2c",
+        "identity": "[4068485357,1703936,378587,31293098,3980329523,31293098,3980329523,0,1699,1,32]"
+      },
+      "nativeGenerationBound": true
+    },
+    "fullStart": {
+      "result": "FAIL",
+      "denominator": 1,
+      "failurePath": "/tmp/opencode/root-entry-receipt-sharing-start-20261127/execution-beb098a9-bc7c-4e89-9473-213eb8c02490/failure.json",
+      "failureSha256": "5714c95480a018fe712c7b77f82dbd90f28a04f3ce6fc0d34276cfd95abfa34a",
+      "failure": {
+        "phase": "native-carrier",
+        "code": "OWNED_CARRIER_REFUSED",
+        "outcome": "NOT_STARTED",
+        "replay": "FORBIDDEN",
+        "message": "Owned carrier publication refused; preserve originals and do not retry"
+      }
+    },
+    "counts": {
+      "historicalTerminalControllerRuns": {
+        "UNKNOWN": 25,
+        "denominator": 25,
+        "unchanged": true
+      },
+      "bootstrapRuns": {
+        "PASS": 1,
+        "denominator": 1
+      },
+      "fullStartAttempts": {
+        "FAIL": 1,
+        "denominator": 1
+      },
+      "carrierExecutions": {
+        "NOT_STARTED": 1,
+        "denominator": 1
+      },
+      "metadataCAS": {
+        "PASS": 5,
+        "denominator": 5,
+        "separate": true
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "hostExitAtTerminal": "UNVERIFIED",
+    "readiness": {
+      "READY": false,
+      "CAD": "NOTRUN",
+      "meaning": "Bootstrap completion is not full-start success or CAD/SDK qualification."
+    },
+    "boundary127": {
+      "result": "NOT_YET_REPORTED",
+      "meaning": "No later host-close result is claimed here."
+    },
+    "runtimeAndFollowup": {
+      "qualifiedPublicPackage107": "Not claimed as a controller or CAD fallback.",
+      "sourceCA9c8d40f5180478e3be2d664d13e9fc324eb84f": {
+        "build": "60236c68",
+        "sourceAPP": "122",
+        "remotePreserved": true,
+        "qualification": "Source/test work, not runtime evidence for this live start."
+      },
+      "package123": "BUILDING; no runtime qualification claim.",
+      "ROOT126CarrierContract": {
+        "earlierEvidence": "3+8 RED, then 6 JS / 10 Linux / 10 Windows SDK-free limited-seam PASS",
+        "scope": "Limited seam/component evidence only; not full native carrier PASS or CAD qualification."
+      }
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noNativeLifecycle": true,
+      "noCI": true,
+      "noReplay": true
+    }
+  }
 }
