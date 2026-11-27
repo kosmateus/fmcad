@@ -38405,4 +38405,188 @@
       "noCI": true
     }
   }
+,
+  "latestSecondMetadataCASAndTerminal22Boundary": {
+    "reportedAt": "2026-11-27T16:34:00Z",
+    "recordType": "second-metadata-cas-and-later-terminal22-host-boundary",
+    "metadataCAS": {
+      "reportedAt": "2026-11-27T16:34:00Z",
+      "recordType": "second-sdk-free-registered-metadata-handoff-cas",
+      "evidence": {
+        "path": "/tmp/opencode/root-owned-receipt-cas-20261127/execution-d0f4168b-0c76-42fe-bd10-b68f4c7a2515/metadata-cas-result.json",
+        "sha256": "66221ccb6926aabd4404ec54aba63a749c6979af135aa83692cce8fcb18ea0b6",
+        "state": "NEW_HANDOFF_COMMITTED",
+        "shellWatcher": "sh_21dd99d29002yaL74sBid81ZXM",
+        "shellPid": 872657,
+        "SDK": 0,
+        "FusionStarted": false,
+        "historicalOutcome": "UNKNOWN_UNCHANGED"
+      },
+      "result": {
+        "status": "PASS",
+        "metadataCAS": {
+          "PASS": 2,
+          "denominator": 2,
+          "meaning": "two successful actual metadata compare-and-swap handoffs, each SDK-free and separate from controller outcomes and CAD profile counts"
+        },
+        "handoffId": "root-dead-registered-d0f4168b-0c76-42fe-bd10-b68f4c7a2515",
+        "previousGeneration": {
+          "instance": "42065fea-88b7-4481-a251-4d2d442ac0e9",
+          "epoch": "70c4d74d-2ab9-4d4b-8a30-0f91677e394f"
+        },
+        "newGeneration": {
+          "instance": "60a36416-eed4-4dd5-a2e7-ce5322c79890",
+          "epoch": "c711fb02-88ea-48f4-9c18-0324622afb4b"
+        },
+        "committedState": "committed",
+        "requestSha256": "72d6b2777f9ed4182439ab1c6302f1fbc4d29905050a9ac210bbcd4e62cabad9",
+        "receiptSha256": "5b14a73fdab46a44191e74fd4fc4172ec05a6cb932483532a801c91e12966241",
+        "nativeChildCall": "real AdmissionStore CAS",
+        "processControl": 0
+      },
+      "postCASBoundedReadback": {
+        "databaseGeneration": {
+          "instance": "60a36416-eed4-4dd5-a2e7-ce5322c79890",
+          "epoch": "c711fb02-88ea-48f4-9c18-0324622afb4b"
+        },
+        "processObservation": {
+          "kind": "PID_ABSENT",
+          "original": {
+            "pid": 38228,
+            "birth": "134402676200449758"
+          },
+          "authority": "NONE",
+          "processControl": 0
+        },
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "SDK": 0,
+        "globalCleanHost": "NOT_PROVEN",
+        "meaning": "Bounded post-CAS capture saw the new generation and exact original process PID/birth absent with no admission/turn/owner/mailbox. This is not proof of a globally clean host."
+      },
+      "countsUnchanged": {
+        "controllerRuns": {
+          "UNKNOWN": 22,
+          "denominator": 22
+        },
+        "activeControllerAttempts": {
+          "RUNNING": 0,
+          "denominator": 0
+        },
+        "separatePreparation": {
+          "UNKNOWN": 2,
+          "denominator": 2
+        },
+        "separateHistoricalHarness": {
+          "INTERRUPTED": 1,
+          "denominator": 1
+        },
+        "fullProfiles": {
+          "PASS": 0,
+          "FAIL": 0,
+          "NOTRUN": 11,
+          "RUNNING": 0,
+          "UNKNOWN": 0,
+          "denominator": 11
+        },
+        "singleBox": {
+          "PASS": 0,
+          "FAIL": 0,
+          "NOTRUN": 1,
+          "RUNNING": 0,
+          "UNKNOWN": 0,
+          "READY": 0,
+          "denominator": 1
+        },
+        "SDK": "NOTRUN",
+        "CAD": "NOTRUN"
+      },
+      "interpretation": "This second CAS advances registered metadata only. It did not start Fusion or perform SDK/CAD, and does not alter or settle terminal controller 22."
+    },
+    "later104Cleanup": {
+      "recordType": "later-owner-confirmed-normal-cleanup-of-terminal22-process",
+      "ownerTask": "104",
+      "ownerStatus": "closed-by-proper-owner",
+      "normalCloseEvidence": {
+        "path": "/tmp/opencode/luna-current-38228-boundary-20261127/normal-close.stdout.jsonl",
+        "sha256": "2761df2f9ad35907a3bcbcd44f82acf4b467df41a8ecdea06e621bc1f3d74513",
+        "sameProcess": {
+          "pid": 38228,
+          "birth": "134402676200449758"
+        },
+        "normalCloseMessages": 1,
+        "forceUsed": false,
+        "exactHandleExitConfirmed": true,
+        "SDK": 0,
+        "canonicalWrites": 0
+      },
+      "postCloseCapture": {
+        "path": "/tmp/opencode/luna-current-38228-boundary-20261127/current-capture.postclose.result.json",
+        "sha256": "6f3a74254ec41efa02e8c9739ac65736b65b1ec69d0f5f62f0327c81be7cd1d6",
+        "processObservation": "PID_ABSENT",
+        "original": {
+          "pid": 38228,
+          "birth": "134402676200449758"
+        },
+        "processControl": 0,
+        "SDK": 0,
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "globalCleanHost": "NOT_PROVEN"
+      },
+      "historicalBoundary": {
+        "terminal22HostExitAtTerminal": "UNVERIFIED",
+        "controller22Outcome": "UNKNOWN_UNCHANGED",
+        "meaning": "This later normal close and bounded post-close capture confirm exit of the exact process, not terminal22 receipt validity, controller success, READY, CAD, or global host cleanliness."
+      }
+    },
+    "aggregateCounts": {
+      "metadataCAS": {
+        "PASS": 2,
+        "denominator": 2
+      },
+      "terminalControllerRuns": {
+        "UNKNOWN": 22,
+        "denominator": 22,
+        "RUNNING": 0
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "NOTRUN": 11,
+        "denominator": 11
+      },
+      "singleBox": {
+        "NOTRUN": 1,
+        "denominator": 1,
+        "READY": 0
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "runtimeBoundary": {
+      "installedNative": "149a268 / 3cd811d782dc37b2c838a21c5830c8babe19f2d281f32ba4211f9552ea120eb2",
+      "qualifiedPublicRuntime": "562aa210087e6534198376e3b6a86959375a601b / f3d681ee2db12b35e8480f56c545f0c8269a53135a0a57dff3d6c3e872d4abaf",
+      "newBinderFix": "ecfb330aa31574ad5e1fa46b5643c0adc1337db1 is not asserted as the runtime used for this metadata CAS or as a live CAD qualification",
+      "artifact107": "PENDING",
+      "newControllerStart": "NOT_REPORTED"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noReplayOfUnknown": true,
+      "noSDK": true,
+      "noHostControlByReporter": true,
+      "noCI": true
+    }
+  }
 }
