@@ -38545,10 +38545,7 @@
       }
     },
     "aggregateCounts": {
-      "metadataCAS": {
-        "PASS": 2,
-        "denominator": 2
-      },
+      "metadataCAS": {"PASS": 3, "denominator": 3},
       "terminalControllerRuns": {"UNKNOWN": 23, "denominator": 23, "RUNNING": 0},
       "separatePreparation": {
         "UNKNOWN": 2,
@@ -38702,6 +38699,151 @@
       "noHostControlOrProbe": true,
       "noCI": true,
       "noCatalogRun": true
+    }
+  }
+,
+  "latestThirdMetadataCASAndTerminal23Boundary": {
+    "reportedAt": "2026-11-27T18:12:00Z",
+    "recordType": "third-sdk-free-registered-metadata-handoff-cas-and-later-terminal23-host-boundary",
+    "metadataCAS": {
+      "evidence": {
+        "path": "/tmp/opencode/root-owned-audit-cas-20261127/execution-6558fc88-da1d-42c8-94d5-161ad82169c4/metadata-cas-result.json",
+        "sha256": "ed17c58a8c1be873fd67c74b4fc6d79cac659d7baf30cfb7d06eb35d30cdfb63",
+        "state": "NEW_HANDOFF_COMMITTED",
+        "shell": "sh_21e31c024001S5oPmjauK2aafm",
+        "shellPid": 900861,
+        "shellResult": "terminal SUCCESS",
+        "SDK": 0,
+        "FusionStarted": false,
+        "historicalOutcome": "UNKNOWN_UNCHANGED"
+      },
+      "result": {
+        "status": "PASS",
+        "metadataCAS": {
+          "PASS": 3,
+          "denominator": 3,
+          "separateFromControllerAndCAD": true
+        },
+        "handoffId": "root-dead-registered-6558fc88-da1d-42c8-94d5-161ad82169c4",
+        "previousGeneration": {
+          "instance": "60a36416-eed4-4dd5-a2e7-ce5322c79890",
+          "epoch": "c711fb02-88ea-48f4-9c18-0324622afb4b"
+        },
+        "newGeneration": {
+          "instance": "a75a1827-d1a8-4bda-92e6-5047c1adc64d",
+          "epoch": "0ae61bb4-08a9-4520-a0e3-af4188eac703"
+        },
+        "committedState": "committed",
+        "requestSha256": "0865b0bbcc2f7006e947c5d30ae33d528fa70718bdb6ad5dd820e8bd60f69401",
+        "receiptSha256": "6f7d57313133d3f0a6b6020cb31b982d04a44246d9197ed95867787158ef62b6",
+        "nativeChildCall": "real AdmissionStore CAS",
+        "processControl": 0
+      },
+      "postCASReadback": {
+        "sameDatabaseObject": true,
+        "native": "149a268 / 107",
+        "publicPackage": "107 / ecfb330aa31574ad5e1fa46b5643c0adc1337db1 / 385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617",
+        "meaning": "CAS only; no runtime rebuild or SDK/CAD qualification."
+      }
+    },
+    "later110Cleanup": {
+      "ownerTask": "110",
+      "ownerStatus": "SELF-CLOSED; administrative closure confirmed",
+      "normalClose": {
+        "path": "/tmp/opencode/luna-current-15952-boundary-20261127/normal-close-15952.result.json",
+        "sha256": "6dcba2389ffc6b58933d8dc1b3e62e5f0599c13c562a2bcfd7a075081d14e2ba",
+        "target": {
+          "pid": 15952,
+          "birth": "134402719034582573"
+        },
+        "status": "ONE_NORMAL_WM_CLOSE_CONFIRMED",
+        "normalCloseMessages": 1,
+        "sameHandleExit": true,
+        "forceUsed": false,
+        "SDK": 0,
+        "canonicalWrites": 0
+      },
+      "postCloseCapture": {
+        "path": "/tmp/opencode/luna-current-15952-boundary-20261127/postclose-capture-15952.results.json",
+        "sha256": "20907c74edeb0506cf35ce2655508bf92e863f499fd13318c468af1bf9e94013",
+        "rawCaptureSha256": "b1782130a315243038dea4e4ac872464db3d51fd600b95c2d38c9873ea332482",
+        "processObservation": "PID_ABSENT",
+        "exactOriginalAbsent": true,
+        "databaseGeneration": {
+          "instance": "60a36416-eed4-4dd5-a2e7-ce5322c79890",
+          "epoch": "c711fb02-88ea-48f4-9c18-0324622afb4b"
+        },
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "globalCleanHost": "NOT_PROVEN",
+        "SDK": 0
+      },
+      "postCloseProfile": {
+        "path": "/tmp/opencode/luna-current-15952-boundary-20261127/postclose-profile-15952.results.json",
+        "sha256": "48c38bcab3b8721815f100dcd247422bfe20317157399060915e34425e192474",
+        "SDK": 0,
+        "writesToOriginals": 0,
+        "lifecycle": "NOTRUN",
+        "historicalOutcome": "UNKNOWN_UNCHANGED",
+        "meaning": "Profile readback is not lifecycle execution or controller receipt validity."
+      },
+      "captureCaveat": "Two earlier read-only pre-close captures used an incorrect local constant SHA and are not treated as valid pre-close observations. Exactly one normal close and one qualified post-close capture are reported.",
+      "historicalBoundary": {
+        "terminal23HostExitAtTerminal": "UNVERIFIED",
+        "terminal23ControllerOutcome": "UNKNOWN_UNCHANGED",
+        "meaning": "Later exact-process close and post-close PID_ABSENT do not rewrite terminal23 UNKNOWN or establish receipt validity, READY, CAD or global host cleanliness."
+      }
+    },
+    "runtimeAndNextWork": {
+      "metadataCASRuntime": "Installed native 149a268/107 and public package source ecfb330aa31574ad5e1fa46b5643c0adc1337db1 build 385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617 remain unchanged; this CAS is not a new runtime qualification.",
+      "privateAliasFix109": "3/3 component SDK-free tests; source a924; full new operator source 1e95 review pending. No new live run yet.",
+      "newControllerStartAfter23": "NOT_REPORTED"
+    },
+    "aggregateCounts": {
+      "metadataCAS": {
+        "PASS": 3,
+        "denominator": 3
+      },
+      "terminalControllerRuns": {
+        "UNKNOWN": 23,
+        "denominator": 23,
+        "RUNNING": 0
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true
     }
   }
 }
