@@ -39572,4 +39572,178 @@
       "noReplay": true
     }
   }
+,
+  "latestSixthMetadataCASAndTerminal26Boundary": {
+    "reportedAt": "2026-11-27T20:57:00Z",
+    "recordType": "sixth-sdk-free-metadata-cas-and-later-terminal26-host-boundary",
+    "metadataCAS": {
+      "evidence": {
+        "path": "/tmp/opencode/root-semantic-carrier-cas-20261127/execution-0a7f3330-60c7-437e-aa76-e4c5bfca49be/metadata-cas-result.json",
+        "sha256": "23c47eda6caabc2fe36bba584e3b3a357115eecb2eaa4deaa36c5588bc7d7608",
+        "state": "NEW_HANDOFF_COMMITTED",
+        "SDK": 0,
+        "FusionStarted": false,
+        "historicalOutcome": "UNKNOWN_UNCHANGED"
+      },
+      "result": {
+        "status": "PASS",
+        "count": {
+          "PASS": 6,
+          "denominator": 6,
+          "separateFromControllerAndCAD": true
+        },
+        "handoffId": "root-dead-registered-0a7f3330-60c7-437e-aa76-e4c5bfca49be",
+        "previousGeneration": {
+          "instance": "721d7165-6c9c-4d6b-adff-6e0eb9b996b5",
+          "epoch": "b78f719f-d8ac-48aa-8016-5cf95cc5e791"
+        },
+        "newGeneration": {
+          "instance": "78bd0386-40c1-4d2e-854d-1a767b19bbd7",
+          "epoch": "b67fd465-3930-45d3-9b9b-e96cb1a7b040"
+        },
+        "committedState": "committed",
+        "requestSha256": "2fa01af4e6b217716290aa22f15b3d22fc1c0b87d376645eafe59c3a94501531",
+        "receiptSha256": "422d8f4f869940278445cd7d9bd6ed2fb4aa09cb517d62299b595bc8ee918b40"
+      },
+      "postCASReadback": {
+        "generation": {
+          "instance": "78bd0386-40c1-4d2e-854d-1a767b19bbd7",
+          "epoch": "b67fd465-3930-45d3-9b9b-e96cb1a7b040"
+        },
+        "oldHost": {
+          "pid": 23792,
+          "birth": "134402836348477755",
+          "state": "dead"
+        },
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "SDK": 0,
+        "FusionStarted": false
+      },
+      "runtimeBoundary": {
+        "package": "ca9c8d40f5180478e3be2d664d13e9fc324eb84f / build 60236c68d8b985b77da8e668388360488e45fd3fb538155c16620c14082641ec",
+        "use": "Metadata CAS only; no controller/CAD fallback or Fusion startup",
+        "sourceApp": "17",
+        "metadataPins": "d89a105",
+        "installedNative": "149a268 / 107",
+        "publicNativePinsUnchanged": true
+      }
+    },
+    "later127Boundary": {
+      "ownerTask": "127",
+      "ownerStatus": "SELF-CLOSED; administrative closure confirmed",
+      "normalClose": {
+        "path": "/tmp/opencode/luna-current-23792-boundary-20261127/normal-close-23792.result.json",
+        "sha256": "92185cfddbc12c719d204326754e2694c0b0ae0cdf0e8425321a73c376b8fab7",
+        "target": {
+          "pid": 23792,
+          "birth": "134402836348477755"
+        },
+        "messages": 1,
+        "sameHandleExit": true,
+        "forceUsed": false,
+        "SDK": 0,
+        "canonicalWrites": 0
+      },
+      "postCloseCapture": {
+        "path": "/tmp/opencode/luna-current-23792-boundary-20261127/postclose-capture-23792.results.json",
+        "sha256": "254b184d5878f096e21e7847f64639905fe3b79815433bdd3759839c8a9003eb",
+        "rawPath": "/tmp/opencode/luna-current-23792-boundary-20261127/postclose-capture-23792.raw.json",
+        "rawSha256": "05b691ff572c019f2dc4dee9043fd8162de118ce371e67188bf3fd049556eda4",
+        "exactOriginalAbsent": true,
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "globalCleanHost": "NOT_PROVEN",
+        "generation": {
+          "instance": "721d7165-6c9c-4d6b-adff-6e0eb9b996b5",
+          "epoch": "b78f719f-d8ac-48aa-8016-5cf95cc5e791"
+        }
+      },
+      "postCloseFreshProfile": {
+        "path": "/tmp/opencode/luna-current-23792-boundary-20261127/postclose-profile-provision-23792.results.json",
+        "sha256": "e941a53f36e9befaa8b1322e8c789bf40342a8b1a5489bc26fa34fff04b9b6d9",
+        "currentProfileSha256": "978a9c0774c6693a5e8748a79115e12193ccbdeda7c5171f13f2c4e0f79d008f",
+        "historicalTranscriptProfileSha256": "c132c749ef48c1401d43edf39f4039a2517522681a1afb5ad339802e6e5ba019",
+        "matchesHistoricalTranscriptReference": false,
+        "SDK": 0,
+        "lifecycle": "NOTRUN",
+        "writesToOriginals": 0,
+        "meaning": "Fresh read-only profile/provision evidence; does not settle bootstrap or carrier failure."
+      },
+      "historicalBoundary": {
+        "terminal26HostExitAtTerminal": "UNVERIFIED",
+        "bootstrap": "COMPLETED",
+        "fullStart": "FAIL",
+        "carrier": "NOT_STARTED",
+        "meaning": "Later verified close does not rewrite terminal26 evidence or qualify CAD."
+      }
+    },
+    "terminal26CountsUnchanged": {
+      "historicalControllerUNKNOWN": {
+        "UNKNOWN": 25,
+        "denominator": 25
+      },
+      "bootstrap": {
+        "PASS": 1,
+        "denominator": 1
+      },
+      "fullStart": {
+        "FAIL": 1,
+        "denominator": 1
+      },
+      "carrier": {
+        "NOT_STARTED": 1,
+        "denominator": 1
+      },
+      "metadataCAS": {
+        "PASS": 6,
+        "denominator": 6,
+        "separate": true
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "newWork": {
+      "carrierFix126": "Private component APP128; 6 JS / 10 Linux / 10 Windows limited-seam SDK-free PASS; not full carrier PASS/CAD.",
+      "preparedPacket": "1752a017… for generation 78bd0386-40c1-4d2e-854d-1a767b19bbd7 / b67fd465-3930-45d3-9b9b-e96cb1a7b040; SDK=0, Windows writes=0, composition guards 9/9 PASS; not a live start.",
+      "futureFullManifestReview": "ROOT70, separate and pending; no outcome inferred.",
+      "newControllerStartAfter26": "NOT_REPORTED"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noNativeLifecycle": true,
+      "noCI": true,
+      "noReplay": true
+    }
+  }
 }
