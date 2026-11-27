@@ -37555,4 +37555,238 @@
       "noFusionClientsOrSDKActions": true
     }
   }
+,
+  "latestRootInstallIdentityUnknown": {
+    "reportedAt": "2026-11-27T12:41:00Z",
+    "recordType": "actual-owned-install-identity-start-controller-unknown-after-fusion-start",
+    "outcome": {
+      "status": "UNKNOWN",
+      "action": "receipts",
+      "error": "Original receipt pair incomplete; no replay",
+      "replay": "FORBIDDEN",
+      "authority": "NONE"
+    },
+    "controller": {
+      "main": "sh_21cfdd56b001bGal3k3NSHmGa2",
+      "exitCode": 1,
+      "watcher": "sh_21cfdbdc7001NYs8q06KHNKchL",
+      "watcherTerminal": "failure"
+    },
+    "transcript": {
+      "path": "/tmp/opencode/root-install-identity-start-20261127/execution-613fe3fa-adb6-45f1-a986-9e9f3ed00f89/bootstrap-result.json",
+      "sha256": "2c4261ad6486cc86ecb70c11f95302f52eb6283709e45e03b7f8fe0716b7a72d",
+      "process": {
+        "pid": 40460,
+        "birth": "134402564942485132"
+      },
+      "old": {
+        "pid": 40232,
+        "birth": "134401901160878433"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "references": [
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\install-receipt.json",
+          "sha256": "8be3638305c5c8a8f52705636f69ed9dc58b140c5d82f8a8bdad1908bca11ea5",
+          "identity": "[4068485357,196608,72777,31293035,1412764187,31293035,1412774188,0,34230,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Roaming\\Autodesk\\Autodesk Fusion 360\\PythonAutorunModuleinfo",
+          "sha256": "0b12f2351c3d5d1d81445dfec5d939033b3d3caf36e2862ff2cc4d6d9a7f3a78",
+          "identity": "[4068485357,851968,108179,31279896,83542703,31279896,83562740,0,44,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Roaming\\Autodesk\\Autodesk Fusion 360\\WJQBNQ9PXBHW\\PythonAutorunModuleinfo",
+          "sha256": "0b12f2351c3d5d1d81445dfec5d939033b3d3caf36e2862ff2cc4d6d9a7f3a78",
+          "identity": "[4068485357,5308416,553,31257493,757428230,31292886,113116109,0,44,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\install-receipt.json",
+          "sha256": "8be3638305c5c8a8f52705636f69ed9dc58b140c5d82f8a8bdad1908bca11ea5",
+          "identity": "[4068485357,196608,72777,31293035,1412764187,31293035,1412774188,0,34230,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\install-closure.json",
+          "sha256": "d6636ab475253a84f232033ffa172d16271720c8bb1a86153d13c95687a6a91e",
+          "identity": "[4068485357,1835008,65822,31293035,1403519568,31293035,1403529565,0,57606,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\launchAttempt.json",
+          "sha256": "7df622ff47dc9c5d0700820fcc7b638573bf8f49e30a4f4411aa793fad234a4e",
+          "identity": "[4068485357,2818048,65433,31293035,3015779107,31293035,3015789095,0,9110,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\launchJournal.json",
+          "sha256": "8dfe1c2f893c1d5ebf4daa4b8eeba86d9a99964be7e1dbec102c1756e5e4dbec",
+          "identity": "[4068485357,851968,72779,31293035,3024967126,31293035,3024967126,0,738,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\sourceClosure.json",
+          "sha256": "b77779ed063c3c021ee21034c5123807aa29b9f01ab6c88c4dedfea0dc0828ad",
+          "identity": "[4068485357,2162688,62823,31293035,3015719094,31293035,3015719094,0,46805,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Roaming\\Autodesk\\Autodesk Fusion 360\\WJQBNQ9PXBHW\\JSLoadedScriptsinfo",
+          "sha256": "c132c749ef48c1401d43edf39f4039a2517522681a1afb5ad339802e6e5ba019",
+          "identity": "[4068485357,3735552,1157,31253778,2138208089,31293035,3015614023,0,6079,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\profileBackup.json",
+          "sha256": "978a9c0774c6693a5e8748a79115e12193ccbdeda7c5175f13f2c4e0f79d008f",
+          "identity": "[4068485357,10944512,58519,31293035,3015583948,31293035,3015583948,0,7190,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\fmcad\\addin-admission\\provision.json",
+          "sha256": "e1de21dd74b74b00b641d64a05fdf979f1094f2d76e85ed55b8b9804905dffb8",
+          "identity": "[4068485357,1638400,260792,31292284,1376130857,31293035,3034057242,0,460,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\provision-before.json",
+          "sha256": "dfa4e1ea71545159a82394de31d4481062814a40dcdafb169465fefc07d5bbb3",
+          "identity": "[4068485357,196608,74214,31293035,3033977237,31293035,3033977237,0,460,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\provision-bound.json",
+          "sha256": "b25103b0a59c7f09472b5d2b83d10d2e7133bd2608acbd38fe6ebfaf0a882e97",
+          "identity": "[4068485357,196608,74216,31293035,3034137399,31293035,3034137399,0,1751,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\cold-process.json",
+          "sha256": "2b0619f762c40b82c1ecb81ec30cbe2ea9853e001378070f1789c1fce366a4b9",
+          "identity": "[4068485357,10223616,74112,31293035,3025057176,31293035,3025057176,0,355,1,32]"
+        },
+        {
+          "nativePath": "C:\\Users\\kamil\\AppData\\Local\\Temp\\root-owned-cold-7324f0594c7d43238419c86fc529ad53\\intent.json",
+          "sha256": "80a87a03e38cc1de90dfb5d1fcec07db8d30ad82e7a40f207d52ebd24e3b0246",
+          "identity": "[4068485357,1179648,74313,31293035,3035921916,31293035,3035921916,0,11953,1,32]"
+        }
+      ]
+    },
+    "diagnostic": {
+      "path": "/tmp/opencode/root-install-identity-start-20261127/execution-613fe3fa-adb6-45f1-a986-9e9f3ed00f89/bootstrap-diagnostics.original.json",
+      "sha256": "d7a50f65bcb116f59a618c276d0078fbbb3e2fc9603cc6481686c5d118df3b75",
+      "observation": "DIAGNOSTIC_PRESENT_NOT_A_RECEIPT",
+      "authority": "NONE",
+      "receiptsChanged": false,
+      "SDK": 0,
+      "historicalOutcome": "UNKNOWN_UNCHANGED",
+      "exceptionClass": "AdmissionError",
+      "phase": "audit",
+      "stack": [
+        {
+          "file": "dispatch.py",
+          "function": "_consume_bootstrap_entry",
+          "line": 312
+        },
+        {
+          "file": "bootstrap_entry.py",
+          "function": "run_queued",
+          "line": 474
+        },
+        {
+          "file": "bootstrap_entry.py",
+          "function": "_qualify_owned_audit",
+          "line": 491
+        },
+        {
+          "file": "bootstrap_entry.py",
+          "function": "_path",
+          "line": 61
+        },
+        {
+          "file": "bootstrap_entry.py",
+          "function": "_deny",
+          "line": 23
+        }
+      ],
+      "process": {
+        "birth": "134402564942485132",
+        "pid": 40460
+      },
+      "ready": false,
+      "receipt": false,
+      "intentSha256": "80a87a03e38cc1de90dfb5d1fcec07db8d30ad82e7a40f207d52ebd24e3b0246"
+    },
+    "interpretation": {
+      "fusionProcessStarted": true,
+      "hostExit": "UNVERIFIED",
+      "bootstrapReceipt": "NOT_ESTABLISHED",
+      "diagnosticIsReceipt": false,
+      "runtimeReady": false,
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "meaning": "Private diagnostic is bound to process 40460 and identifies an actual AdmissionError at audit/_qualify_owned_audit:491 -> _path:61. It is diagnostic evidence only, not a receipt, authority, READY state or SDK/CAD pass. No delivery claim."
+    },
+    "isolatedBlocker": {
+      "description": "One audit-path blocker; ROOT88/Sol owns its repair. Reporter does not change or characterize it as fixed.",
+      "admissionBinding": {
+        "source": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97",
+        "build": "ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
+        "status": "legacy binding; distinct from new live-bound identity"
+      },
+      "currentPublicRuntime": {
+        "source": "3d9db4e1bdcf6c501de44a3dd5f042b29c4c777f",
+        "build": "1c85b71a33554903652c9b7018ed26a01d9423f13e7878dd3bfbb47b23dae7a9"
+      },
+      "installedNative": "B7/bf3 installation receipt exists in transcript; no qualification inferred."
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 19,
+        "denominator": 19,
+        "meaning": "Eighteen prior controller UNKNOWN outcomes plus this actual attempt."
+      },
+      "separatePreparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "excludedFromControllerDenominator": true
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "excludedFromControllerDenominator": true
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "preserved": {
+      "priorEighteenControllerUnknownsUnchanged": true,
+      "historicalUnknownsUnchanged": true,
+      "receiptReplay": 0,
+      "SDKCalls": 0,
+      "CADPasses": 0
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noCI": true,
+      "noSDK": true,
+      "noRestart": true,
+      "noRuntimeOrCodeChanges": true
+    }
+  }
 }
