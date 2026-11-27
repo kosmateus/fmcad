@@ -38216,8 +38216,8 @@
       "manifest": "f713e3fd4f89fa1c6048c06250d40f1ead98a8f32d2f54d1f272bf14d8617be9",
       "operator": "80",
       "pins": "SOURCE_REVIEWED",
-      "actualNewStart": "RUNNING_UNVERIFIED",
-      "meaning": "New generation metadata is committed; no startup result or runtime replacement is implied. ROOT handles SDK execution after source review."
+      "actualNewStart": "TERMINAL_UNKNOWN",
+      "meaning": "The metadata generation was committed, and its subsequent normal APP start has now terminated UNKNOWN; no runtime replacement or qualification is implied."
     },
     "countsUnchanged": {
       "controllerRuns": {
@@ -38267,10 +38267,9 @@
     }
   }
 ,
-  "latestRegisteredStartInProgress": {
-    "reportedAt": "2026-11-27T15:40:00Z",
-    "recordType": "registered-packet-start-current-in-progress-context",
-    "source": "Current execution state reported by ROOT; no terminal run artifact supplied yet.",
+  "latestRegisteredStartTerminal22": {
+    "recordType": "registered-packet-start-terminal-controller-unknown",
+    "source": "ROOT-reported accepted start, followed by terminal transcript evidence.",
     "sourceReview": {
       "status": "CONFIRMED",
       "manifest": "f713e3fd4f89fa1c6048c06250d40f1ead98a8f32d2f54d1f272bf14d8617be9",
@@ -38279,33 +38278,38 @@
     "runtimeStage": {
       "actor": "Astra17",
       "mode": "NORMAL_APP",
-      "rootStage": "REGISTERED_NO_REPLACEMENT_ONE_START_RUNNING"
+      "rootStage": "REGISTERED_NO_REPLACEMENT_ONE_START_TERMINAL_UNKNOWN"
     },
     "acceptedExecution": {
       "watcher": "sh_21da91469001QM4HZ9SC7HEC1",
       "run": "sh_21da947590019YRGbYObrfMNPX",
       "runtime": "Node 24"
     },
-    "status": "RUNNING_UNVERIFIED",
-    "terminalOutcome": "NOT_YET_AVAILABLE",
+    "status": "TERMINAL_UNKNOWN",
+    "terminalOutcome": "UNKNOWN",
     "qualification": {
-      "READY": false,
+      "FusionProcessStarted": true,
+      "SDK": "NOTRUN",
       "CAD": "NOTRUN",
       "FusionProfile": "NOTRUN",
-      "meaning": "Controller start is in progress; the CAD/live profile has not run."
+      "READY": false,
+      "hostExit": "UNVERIFIED",
+      "meaning": "A native Fusion process was recorded, but the intended SDK/CAD function test was not executed; this is not a profile failure."
     },
     "counts": {
       "completedControllerRuns": {
-        "UNKNOWN": 21,
-        "denominator": 21
+        "UNKNOWN": 22,
+        "denominator": 22,
+        "meaning": "Twenty-one prior terminal controller UNKNOWN outcomes plus this terminal attempt."
       },
       "activeControllerAttempts": {
-        "RUNNING_UNVERIFIED": 1,
-        "denominator": 1
+        "RUNNING": 0,
+        "denominator": 0
       },
       "metadataCAS": {
         "PASS": 1,
-        "denominator": 1
+        "denominator": 1,
+        "separateFromControllerAndCAD": true
       },
       "separatePreparation": {
         "UNKNOWN": 2,
@@ -38335,6 +38339,70 @@
       "SDK": "NOTRUN",
       "CAD": "NOTRUN"
     },
-    "interpretation": "The 21 completed controller UNKNOWN results remain unchanged. This distinct accepted attempt is currently RUNNING_UNVERIFIED; it is not a 22nd terminal result and must not be presented as a running Fusion/CAD profile."
+    "interpretation": "The 21 completed controller UNKNOWN results remain unchanged. This distinct accepted attempt is currently RUNNING_UNVERIFIED; it is not a 22nd terminal result and must not be presented as a running Fusion/CAD profile.",
+    "startedReportedAt": "2026-11-27T15:40:00Z",
+    "reportedAt": "2026-11-27T15:59:00Z",
+    "rootStage": "REGISTERED_NO_REPLACEMENT_ONE_START_TERMINAL_UNKNOWN",
+    "terminalExecution": {
+      "watcher": "sh_21da91469001QM4HZ9SC7HEC1",
+      "run": "sh_21da947590019YRGbYObrfMNPX",
+      "watcherExitCode": 1,
+      "runExitCode": 1,
+      "transcript": "/tmp/opencode/root-registered-start-20261127/execution-96ef5389-4038-45fa-955e-84a04867eed5/bootstrap-result.json",
+      "transcriptSha256": "04fb783654b4563d5282c239ad1c3e41dce079fa43f5731aa3c959d7c36dc69b",
+      "diagnostic": "/tmp/opencode/root-registered-start-20261127/execution-96ef5389-4038-45fa-955e-84a04867eed5/bootstrap-diagnostics.original.json",
+      "diagnosticSha256": "32ade2e51d4b9aa75dea07d83b124a6b2ed7f5ca35eaeb8689535b3ded48e180",
+      "state": "UNKNOWN",
+      "authority": "NONE",
+      "process": {
+        "pid": 38228,
+        "birth": "134402676200449758"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "error": "Original owned entry receipts differ",
+      "replay": "FORBIDDEN"
+    },
+    "receiptObservations": {
+      "entrySha256": "068de2d820e17dcfd9b5c406b81e6a181700b54ef1300ad0aa6d51f4fba121e0",
+      "returnedSha256": "6e6f6f0f35b457af4561067dd3c4240c1da3f888ae22b25b58c3419cce6849bb",
+      "interpretation": "Presence/read and these hashes do not establish a valid bound controller receipt or READY/CAD."
+    },
+    "diagnosticInterpretation": {
+      "observation": "NO_VALID_DIAGNOSTIC_OBSERVED",
+      "meaning": "NO_VALID_DIAGNOSTIC_OBSERVED is not proof of absence."
+    },
+    "hostExitAtTerminal": "UNVERIFIED",
+    "laterCleanup": "If a later ordinary cleanup is reported, it is a separate observation and does not rewrite this terminal UNKNOWN.",
+    "followup": {
+      "diagnosis": "ROOT103 identified strict canonical default-path rejection of SDK C:/…/API/.",
+      "privateFixCommit": "ecfb330aa31574ad5e1fa46b5643c0adc1337db1",
+      "offlineTests": "59/59 PASS",
+      "pureDataBinderWitness": "observed SDK-path binder RED to GREEN using current-profile semantic witness, not original terminal22 raw data",
+      "qualification": "NOT a live fix and does not settle terminal22",
+      "sourceReview": "106 PENDING",
+      "nextArtifact": "107 PENDING",
+      "nextAction": "ROOT to review source106, then deliver artifact107; do not claim live fix before new qualifying run."
+    },
+    "runtimePins": {
+      "publicSource": "562aa210087e6534198376e3b6a86959375a601b",
+      "publicBuild": "f3d681ee2db12b35e8480f56c545f0c8269a53135a0a57dff3d6c3e872d4abaf",
+      "installedNativeSource": "149a268",
+      "installedNativeBuild": "3cd811d782dc37b2c838a21c5830c8babe19f2d281f32ba4211f9552ea120eb2",
+      "operator": "f713e3fd4f89fa1c6048c06250d40f1ead98a8f32d2f54d1f272bf14d8617be9",
+      "operatorSourceApp": "80",
+      "unchanged": true
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostProbe": true,
+      "noNativeProbe": true,
+      "noAdditionalRunLogRead": true,
+      "noCI": true
+    }
   }
 }
