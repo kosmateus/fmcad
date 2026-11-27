@@ -39106,10 +39106,7 @@
       "newControllerStartAfter24": "NOT_REPORTED"
     },
     "aggregateCounts": {
-      "metadataCAS": {
-        "PASS": 4,
-        "denominator": 4
-      },
+      "metadataCAS": {"PASS": 5, "denominator": 5},
       "terminalControllerRuns": {"UNKNOWN": 25, "denominator": 25, "RUNNING": 0},
       "separatePreparation": {
         "UNKNOWN": 2,
@@ -39228,6 +39225,179 @@
         "PASS": 4,
         "denominator": 4,
         "separate": true
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true
+    }
+  }
+,
+  "latestFifthMetadataCASAndTerminal25Boundary": {
+    "reportedAt": "2026-11-27T19:23:00Z",
+    "recordType": "fifth-sdk-free-registered-metadata-cas-and-later-terminal25-host-boundary",
+    "metadataCAS": {
+      "evidence": {
+        "path": "/tmp/opencode/root-entry-receipt-sharing-cas-20261127/execution-c5e72695-8432-417b-94da-e889effb0dbb/metadata-cas-result.json",
+        "sha256": "f9b28afcb69918b66b87c6cebc9012952636208923f57bbcd8a93f0242f452e1",
+        "state": "NEW_HANDOFF_COMMITTED",
+        "shell": "sh_21e5069a50012W8NPiqQagL0aN",
+        "shellPid": 911937,
+        "terminal": "SUCCESS",
+        "SDK": 0,
+        "FusionStarted": false,
+        "historicalOutcome": "UNKNOWN_UNCHANGED"
+      },
+      "result": {
+        "status": "PASS",
+        "metadataCAS": {
+          "PASS": 5,
+          "denominator": 5,
+          "separateFromControllerAndCAD": true
+        },
+        "handoffId": "root-dead-registered-c5e72695-8432-417b-94da-e889effb0dbb",
+        "previousGeneration": {
+          "instance": "7e261c02-de00-4be6-9014-885b27e66f07",
+          "epoch": "513614ae-27ba-4500-b200-b200746d7c18"
+        },
+        "newGeneration": {
+          "instance": "721d7165-6c9c-4d6b-adff-6e0eb9b996b5",
+          "epoch": "b78f719f-d8ac-48aa-8016-5cf95cc5e791"
+        },
+        "committedState": "committed",
+        "requestSha256": "6471300b276431a339b08523413420575c29c0dd29790dc7ff4730e47d59b457",
+        "receiptSha256": "7ff59d2bacf55a870075f058c82b7205fb95b6b7a90968cfbe96a0356ed3ac9c",
+        "nativeChildCall": "real AdmissionStore CAS"
+      },
+      "postCASReadback": {
+        "sameDatabaseObject": true,
+        "databaseIdentity": "[4068485357,3670016,146502,31291900,2219675459,31293092,246998653,0,385024,1,32]",
+        "generation": {
+          "instance": "721d7165-6c9c-4d6b-adff-6e0eb9b996b5",
+          "epoch": "b78f719f-d8ac-48aa-8016-5cf95cc5e791"
+        },
+        "oldProcessObservation": {
+          "pid": 31844,
+          "birth": "134402788135897354",
+          "state": "dead"
+        },
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "SDK": 0,
+        "FusionStarted": false
+      },
+      "runtimeBoundary": {
+        "publicPackage": "107 / ecfb330aa31574ad5e1fa46b5643c0adc1337db1 / 385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617",
+        "installedNative": "149a268 / 107",
+        "meaning": "The qualified public package was used only for this SDK-free metadata CAS, not as controller/CAD fallback; public/native pins unchanged."
+      }
+    },
+    "later119Boundary": {
+      "ownerTask": "119",
+      "ownerStatus": "SELF-CLOSED; administrative closure confirmed",
+      "summaryEvidence": {
+        "path": "/tmp/opencode/luna-current-31844-boundary-20261127/boundary-31844.final.results.json",
+        "sha256": "ea18f0e300ee61c68c3db24a1a60bbbd9d1b21f2c69cf5e61246b9c4a02da5db",
+        "status": "PASS_REQUIRED_BOUNDARY_CRITERIA",
+        "target": {
+          "pid": 31844,
+          "birth": "134402788135897354"
+        },
+        "historicalTerminal": {
+          "state": "UNKNOWN",
+          "transcriptSha256": "e9c4a3fac20b0def44408e73f584df2c9322cee127dc9f15d2de3835fe5b29d9"
+        }
+      },
+      "normalClose": {
+        "path": "/tmp/opencode/luna-current-31844-boundary-20261127/normal-close-31844.result.json",
+        "sha256": "d8db983d2ced6f6f9c112547cddf10dc288cae5d3f80950ca054cdf6217128ed",
+        "stdoutSha256": "239ae87b90613b26172e4cac797a577afbc50842e8e523a9b90da8bdec8b6003",
+        "normalCloseMessages": 1,
+        "sameHandleExit": true,
+        "forceUsed": false,
+        "canonicalWrites": 0
+      },
+      "postCloseCapture": {
+        "path": "/tmp/opencode/luna-current-31844-boundary-20261127/postclose-capture-31844.results.json",
+        "sha256": "a595127fb1277a482cef6f1e394010c99197c23e6f1893ba4bbb236318ef8201",
+        "rawPath": "/tmp/opencode/luna-current-31844-boundary-20261127/postclose-capture-31844.raw.json",
+        "rawSha256": "345d98f254292fd87a41740264271c76fedd790c16962b3f4bcc547335cf09f1",
+        "exactOriginalAbsent": true,
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "mailboxRequest": false,
+        "databaseGeneration": {
+          "instance": "7e261c02-de00-4be6-9014-885b27e66f07",
+          "epoch": "513614ae-27ba-4500-b200-b200746d7c18"
+        }
+      },
+      "postCloseProfile": {
+        "path": "/tmp/opencode/luna-current-31844-boundary-20261127/postclose-profile-31844.results.json",
+        "sha256": "b9067c047e1c376cfc20705004b5cb713fb997833a04cf890971c9c3df949570",
+        "currentProfileSha256": "978a9c0774c6693a5e8748a79115e12193ccbdeda7c5171f13f2c4e0f79d008f",
+        "matchesHistoricalTranscriptReference": false,
+        "SDK": 0,
+        "lifecycle": "NOTRUN",
+        "writesToOriginals": 0
+      },
+      "historicalBoundary": {
+        "terminal25HostExitAtTerminal": "UNVERIFIED",
+        "terminal25ControllerOutcome": "UNKNOWN_UNCHANGED",
+        "meaning": "Later verified ordinary close and exact-process exit do not rewrite terminal25 UNKNOWN or prove its receipt validity, READY, CAD or global host cleanliness."
+      }
+    },
+    "runtimeAndNextWork": {
+      "publicPackage107Use": "Metadata CAS only; no controller/CAD fallback.",
+      "sourceCA9c8d40f5180478e3be2d664d13e9fc324eb84f": {
+        "remoteIntegrated": true,
+        "reportedTests": "27 PASS; SDK-free Windows",
+        "sourceAPP": "122",
+        "qualification": "Not a live controller/CAD pass."
+      },
+      "package123": "BUILDING; not yet qualified or reported live.",
+      "newControllerStartAfter25": "NOT_REPORTED"
+    },
+    "aggregateCounts": {
+      "metadataCAS": {
+        "PASS": 5,
+        "denominator": 5
+      },
+      "terminalControllerRuns": {
+        "UNKNOWN": 25,
+        "denominator": 25,
+        "RUNNING": 0
       },
       "separatePreparation": {
         "UNKNOWN": 2,
