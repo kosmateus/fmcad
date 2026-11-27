@@ -511,6 +511,7 @@ export function createOwnedFusionBootstrap(
           bound.startupAudit,
           startup.expected,
           startup.files,
+          expected.executable.path,
         );
         const rebound = await ports.observeNativeRebound({
           old: oldProcess,

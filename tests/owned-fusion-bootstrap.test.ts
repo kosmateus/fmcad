@@ -48,6 +48,7 @@ function fixture(
     | "foreign-startup"
     | "native-unknown"
     | "vendor-format"
+    | "bundled-internal"
     | "lease",
 ) {
   const f = controlledFusionBootstrapFixture({ captureStartupInputs: true });
@@ -92,6 +93,20 @@ function fixture(
     audit.scripts.items[0]!.folder = native.installedDirectory;
     audit.scripts.items[0]!.isRunOnStartup = true;
     audit.scripts.items[0]!.isRunning = true;
+    if (fault === "bundled-internal") {
+      Object.assign(audit.scripts.items[1]!, {
+        folder: path.win32.join(
+          path.win32.dirname(intent.executable.path),
+          "Api",
+          "InternalAddins",
+          "BundledComponent",
+        ),
+        location: { name: "InternalScriptSourceLocation", value: 3 },
+        isAddIn: true,
+        isRunOnStartup: true,
+        isRunning: true,
+      });
+    }
     if (fault === "foreign-startup") {
       audit.scripts.items[1]!.isAddIn = true;
       audit.scripts.items[1]!.isRunOnStartup = true;
@@ -325,6 +340,14 @@ function fixture(
     },
   };
 }
+
+test("owned controller binds bundled-component policy to its original verified executable", async () => {
+  const f = fixture("bundled-internal");
+  const transcript = await f.owned.run();
+  assert.equal(transcript.state, "COMPLETED", transcript.error ?? "");
+  const witness = await f.owned.prepareOriginalWitness(transcript);
+  witness.fence();
+});
 
 test("owned controller accepts receipt binding after post-resume vendor formatting with original raw provenance", async () => {
   const f = fixture("vendor-format");

@@ -10,6 +10,7 @@ export interface StartupPolicyAudit {
     readonly countAfter: number;
     readonly items: readonly {
       readonly folder: string;
+      readonly location?: { readonly name: string };
       readonly isAddIn: boolean;
       readonly isRunOnStartup: boolean | null;
       readonly isRunning: boolean;
@@ -72,14 +73,17 @@ export function assertControlledStartupData(
   assertStartupData(audit, expected, autorun, "manual");
 }
 
-/** Separate byte/data policy for the owned pre-resume producer. This does not
- * grant authority or make manual v2 evidence valid for autoload. */
+/** Separate byte/data policy for the owned pre-resume producer. The optional
+ * host path must come from the original verified launch/intent, not the audit.
+ * Bundled components are trusted with that host, not content-attested here.
+ * This grants neither authority nor a global host-isolation proof. */
 export function assertOwnedBootstrapStartupData(
   audit: StartupPolicyAudit,
   expected: StartupPolicyExpected,
   autorun: readonly StartupAutorunOriginal[],
+  hostExecutable?: string,
 ): void {
-  assertStartupData(audit, expected, autorun, "owned-autoload");
+  assertStartupData(audit, expected, autorun, "owned-autoload", hostExecutable);
 }
 
 function assertStartupData(
@@ -87,6 +91,7 @@ function assertStartupData(
   expected: StartupPolicyExpected,
   autorun: readonly StartupAutorunOriginal[],
   mode: "manual" | "owned-autoload",
+  hostExecutable?: string,
 ): void {
   try {
     if (!/^[a-f0-9]{64}$/.test(expected.installedManifestHash)) deny();
@@ -96,6 +101,16 @@ function assertStartupData(
     )
       deny();
     const self = native(expected.installedDirectory);
+    const internalRoot =
+      mode === "owned-autoload" && hostExecutable !== undefined
+        ? native(
+            path.win32.join(
+              path.win32.dirname(native(hostExecutable)),
+              "Api",
+              "InternalAddins",
+            ),
+          )
+        : undefined;
     const collection = audit.scripts;
     if (
       !Number.isSafeInteger(collection.countBefore) ||
@@ -113,8 +128,9 @@ function assertStartupData(
         folders.has(folder) ||
         typeof row.isRunning !== "boolean" ||
         typeof row.isAddIn !== "boolean" ||
-        row.isRunOnStartup !==
-          (row.isAddIn ? mode === "owned-autoload" && folder === self : null)
+        (row.isAddIn
+          ? typeof row.isRunOnStartup !== "boolean"
+          : row.isRunOnStartup !== null)
       )
         deny();
       folders.add(folder);
@@ -124,11 +140,20 @@ function assertStartupData(
         // Only the separate owned-autoload policy permits its startup flag.
         if (
           !row.isAddIn ||
+          row.isRunOnStartup !== (mode === "owned-autoload") ||
           (mode === "owned-autoload" && !row.isRunning) ||
           row.manifest.sha256 !== expected.installedManifestHash
         )
           deny();
-      } else if (row.isRunning) {
+      } else if (
+        internalRoot !== undefined &&
+        row.location?.name === "InternalScriptSourceLocation" &&
+        folder.startsWith(internalRoot + "\\")
+      ) {
+        // Match the native audit's exact SDK classification AND host subtree.
+        // The original native audit separately checks canonical filesystem paths.
+        continue;
+      } else if (row.isRunning || (row.isAddIn && row.isRunOnStartup)) {
         deny();
       }
     }

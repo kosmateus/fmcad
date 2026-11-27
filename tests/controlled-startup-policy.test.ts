@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   prepareControlledStartupInputs,
   assertControlledStartupInputs,
@@ -114,6 +115,111 @@ test("owned bootstrap data policy cannot be substituted for manual startup evide
     );
   }
 });
+
+test("owned startup accepts bundled internal rows only under the exact bound host", () => {
+  const f = fixture();
+  const host = "C:\\Fusion\\pinned\\Fusion360.exe";
+  const own = { ...f.audit.scripts.items[0]!, isRunOnStartup: true };
+  const bundled = {
+    folder: "C:/Fusion/pinned/Api/InternalAddins/VendorComponent",
+    location: { name: "InternalScriptSourceLocation" },
+    isAddIn: true,
+    isRunOnStartup: true,
+    isRunning: true,
+    manifest: { sha256: "b".repeat(64) },
+  };
+  const audit = {
+    ...f.audit,
+    scripts: { countBefore: 2, countAfter: 2, items: [own, bundled] },
+  };
+  assert.equal(
+    assertOwnedBootstrapStartupData(audit, f.expected, f.autorun, host),
+    undefined,
+  );
+  assert.throws(() =>
+    assertOwnedBootstrapStartupData(audit, f.expected, f.autorun),
+  );
+  assert.throws(() =>
+    assertControlledStartupData(audit, f.expected, f.autorun),
+  );
+  for (const row of [
+    { ...bundled, location: { name: "UserScriptSourceLocation" } },
+    {
+      ...bundled,
+      folder: "C:/Fusion/other/Api/InternalAddins/VendorComponent",
+    },
+    {
+      ...bundled,
+      folder: "C:/Fusion/pinned/Api/InternalAddinsEvil/VendorComponent",
+    },
+    { ...bundled, folder: "C:/Fusion/pinned/Api/InternalAddins" },
+    { ...bundled, folder: "C:/Fusion/pinned/Api/InternalAddins/../Foreign" },
+  ]) {
+    assert.throws(
+      () =>
+        assertOwnedBootstrapStartupData(
+          {
+            ...audit,
+            scripts: { ...audit.scripts, items: [own, row] },
+          },
+          f.expected,
+          f.autorun,
+          host,
+        ),
+      { code: "CONTROLLED_STARTUP_UNPROVEN" },
+    );
+  }
+  assert.throws(() =>
+    assertOwnedBootstrapStartupData(
+      {
+        ...audit,
+        scripts: {
+          ...audit.scripts,
+          items: [{ ...own, manifest: { sha256: "c".repeat(64) } }, bundled],
+        },
+      },
+      f.expected,
+      f.autorun,
+      host,
+    ),
+  );
+});
+
+test(
+  "owned policy replays the actual complete saved SDK inventory",
+  {
+    skip:
+      !process.env["FMCAD_STARTUP_POLICY_SDK_INVENTORY"] &&
+      "NOTRUN: saved original SDK inventory required for this replay",
+  },
+  () => {
+    const saved: { startupAudit: StartupPolicyAudit } = JSON.parse(
+      readFileSync(process.env["FMCAD_STARTUP_POLICY_SDK_INVENTORY"]!, "utf8"),
+    );
+    const audit = saved.startupAudit;
+    assert.equal(audit.scripts.items.length, 27);
+    const own = audit.scripts.items.find((row) =>
+      row.folder.endsWith("/AutodeskFusionMCP"),
+    );
+    const internal = audit.scripts.items.find(
+      (row) => row.location?.name === "InternalScriptSourceLocation",
+    );
+    assert(own && internal);
+    const host =
+      internal.folder.split("/Api/InternalAddins/")[0] + "/Fusion360.exe";
+    const f = fixture();
+    const expected = {
+      ...f.expected,
+      defaultApiParent: audit.preferences.defaultPathForScriptsAndAddIns,
+      installedDirectory: own.folder,
+      installedManifestHash: own.manifest.sha256,
+    };
+    assert.equal(
+      assertOwnedBootstrapStartupData(audit, expected, f.autorun, host),
+      undefined,
+    );
+  },
+);
 for (const fault of [
   "parent",
   "manifest",
