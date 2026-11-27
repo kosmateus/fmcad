@@ -38009,4 +38009,135 @@
       "noRuntimeOrSourceChanges": true
     }
   }
+,
+  "latestRootScriptStoreStartUnknown": {
+    "reportedAt": "2026-11-27T14:57:00Z",
+    "recordType": "actual-owned-autoload-launch-controller-unknown-registered-runtime-mismatch",
+    "terminalController": {
+      "shell21ExitCode": 1,
+      "transcript": "/tmp/opencode/root-script-store-start-20261127/execution-9223a359-70ee-487d-843d-445a5ff561e8/bootstrap-result.json",
+      "sha256": "37d1be178e134e6410e15d4c3c1b80a0c344dda485c8ebb5696a8852be028a2b",
+      "state": "UNKNOWN",
+      "action": "owned-autoload-launch",
+      "authority": "NONE",
+      "process": null,
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held"
+      ],
+      "error": "Original registered physical runtime/source/build/database differs",
+      "replay": "FORBIDDEN"
+    },
+    "diagnostic": {
+      "path": "/tmp/opencode/root-script-store-start-20261127/execution-9223a359-70ee-487d-843d-445a5ff561e8/bootstrap-diagnostics.original.json",
+      "sha256": "8925fe7b51bc7fab93b6d3d79483873e48ce8509cfe44801fddfb35d27630a1b",
+      "observation": "DIAGNOSTIC_READBACK_UNVERIFIED",
+      "authority": "NONE",
+      "receiptsChanged": false,
+      "SDK": 0,
+      "historicalOutcome": "UNKNOWN_UNCHANGED",
+      "interpretation": "Diagnostic readback is unverified; it does not establish READY, receipt validity, absence of a host, or settlement."
+    },
+    "laterReadOnlyCapture": {
+      "path": "/tmp/opencode/root-registered-successor-20261127/current-capture.original.json",
+      "sha256": "c40f50c3ed2c3447d0f9e15a67c90b78b4a949f02a254b552b25486be7fa298e",
+      "timeRelation": "Separate later observation; does not alter terminal controller outcome.",
+      "authority": "NONE",
+      "SDK": 0,
+      "historicalOutcome": "UNKNOWN_UNCHANGED",
+      "databaseIdentity": "[4068485357,3670016,146502,31291900,2219675459,31293045,2639349200,0,385024,1,32]",
+      "database": {
+        "generation": {
+          "instance": "e44fa4fa-804c-4e9e-ad8b-557a3bf6c407",
+          "epoch": "35f4bd0d-a431-4fca-94af-f2e97627cd04"
+        },
+        "activeAdmission": false,
+        "unreleasedTurn": false,
+        "currentOwner": false,
+        "runtimeBindingJson": "{\"database\":{\"device\":4824059094287526125,\"inode\":15762598695943238,\"path\":\"C:\\\\Users\\\\kamil\\\\AppData\\\\Local\\\\fmcad\\\\addin-admission\\\\admission.sqlite3\"},\"endpointURL\":\"http://127.0.0.1:8765/mcp\",\"generation\":{\"epoch\":\"35f4bd0d-a431-4fca-94af-f2e97627cd04\",\"instance\":\"e44fa4fa-804c-4e9e-ad8b-557a3bf6c407\"},\"physicalRuntime\":{\"birth\":\"134402607350031858\",\"build\":\"ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35\",\"pid\":17616,\"source\":\"4d99a7f9ce5f54008ea43670d9d6dceb257e4c97\",\"version\":\"2706.1.17\"},\"protocol\":\"fmcad-provision-fence-v1\"}",
+        "totalChanges": 0
+      },
+      "processObservation": {
+        "kind": "PID_ABSENT",
+        "original": {
+          "pid": 17616,
+          "birth": "134402607350031858"
+        },
+        "authority": "NONE",
+        "processControl": 0
+      },
+      "explicitImageBytesRead": 0,
+      "sqliteBudget": "current singleton pointers and active-row existence; no history or fingerprints",
+      "interpretation": "Confirms exact prior PID 17616/birth absent at capture, same recorded database file object/binding, and no active admission, unreleased turn, current owner or mailbox request in this bounded capture. Not global clean-host proof and not settlement."
+    },
+    "runtimePins": {
+      "publicSource": "562aa210087e6534198376e3b6a86959375a601b",
+      "publicBuild": "f3d681ee2db12b35e8480f56c545f0c8269a53135a0a57dff3d6c3e872d4abaf",
+      "installedNativeSource": "149a268",
+      "installedNativeBuild": "3cd811d782dc37b2c838a21c5830c8babe19f2d281f32ba4211f9552ea120eb2",
+      "operator": "b21376",
+      "operatorSourceApp": "95"
+    },
+    "qualification": {
+      "READY": false,
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "replay": 0,
+      "settlement": false,
+      "meaning": "No runtime qualification or success is inferred from the transcript, diagnostics, or later capture."
+    },
+    "counts": {
+      "thisControllerRun": {
+        "UNKNOWN": 1,
+        "denominator": 1
+      },
+      "controlledStartupControllerRuns": {
+        "UNKNOWN": 21,
+        "denominator": 21,
+        "meaning": "Twenty prior controller UNKNOWN outcomes plus this terminal attempt."
+      },
+      "separatePreparationHarnessFailures": {
+        "UNKNOWN": 2,
+        "denominator": 2,
+        "excludedFromControllerDenominator": true
+      },
+      "separateHistoricalHarnessInterruption": {
+        "INTERRUPTED": 1,
+        "denominator": 1,
+        "excludedFromControllerDenominator": true
+      },
+      "fullLiveProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "preserved": {
+      "priorTwentyControllerUnknownsUnchanged": true,
+      "historicalUnknownsUnchanged": true,
+      "terminalUnknownNotSettled": true,
+      "noReplay": true
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noSDK": true,
+      "noNewCaptureByReporter": true,
+      "noRestartOrNativeProbe": true,
+      "noCI": true
+    }
+  }
 }
