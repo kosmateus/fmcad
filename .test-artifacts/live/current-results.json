@@ -40058,4 +40058,163 @@
       "noReplay": true
     }
   }
+,
+  "latestOwnedStartup28BrokerResumeOutcome": {
+    "reportedAt": "2026-11-27T23:16:00Z",
+    "recordType": "owned-start-28-bootstrap-carrier-and-broker-resume-unknown",
+    "execution": {
+      "mainShell": "sh_21f24b77b001xLA7uw6FeyzI8S",
+      "mainOutcome": "TERMINAL_FAILURE",
+      "mainExitCode": 1,
+      "watcher": "START_FAILURE"
+    },
+    "bootstrap": {
+      "result": "COMPLETED",
+      "qualification": "PASS",
+      "path": "/tmp/opencode/root-current-preservation-start-20261127/execution-78d2d0e4-5a06-4301-b88d-fb4b0f017c5c/bootstrap-result.json",
+      "sha256": "49a7ccd666cc2a827be0a6dcc3bcf52470d06334e52db9c9b2c8b6cb9d0efc23",
+      "process": {
+        "pid": 2084,
+        "birth": "134402924852366984"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound",
+        "owned-entry-audit-return-and-native-generation-bound"
+      ],
+      "error": null
+    },
+    "carrier": {
+      "result": "CREATED",
+      "path": "/tmp/opencode/root-current-preservation-start-20261127/execution-78d2d0e4-5a06-4301-b88d-fb4b0f017c5c/carrier-result.json",
+      "sha256": "b10e1ed97987101e8f1f6af0480667614d4a247ffd7688aa9f3c2e1c8ae97c38",
+      "sdk": false,
+      "authority": "NONE",
+      "referenceSha256": "08e2cbfe6e2079f4f4c241d85d5d6beab815c9397a6754fb625f39ada2157f63"
+    },
+    "rootResult": {
+      "path": "/tmp/opencode/root-current-preservation-start-20261127/execution-78d2d0e4-5a06-4301-b88d-fb4b0f017c5c/root-result.json",
+      "sha256": "ba24be59906db1f922dd489fa2c784bc0df8485535954928745387500b561ad6",
+      "carriedExposures": 5,
+      "history": "preserved_unproven",
+      "grantIssued": false,
+      "sdkSubmitted": false
+    },
+    "brokerResumeFailure": {
+      "result": "FAIL",
+      "outcome": "UNKNOWN",
+      "replay": "FORBIDDEN",
+      "path": "/tmp/opencode/root-current-preservation-start-20261127/execution-78d2d0e4-5a06-4301-b88d-fb4b0f017c5c/failure.json",
+      "sha256": "e50db1d31952288752553615eef79d1f68d8c261de4dd9d4271f12c280b6ca38",
+      "phase": "broker-resume",
+      "code": "INVALID_REQUEST",
+      "message": "Control fence is required"
+    },
+    "preservedRowsReadOnlyBaseline": {
+      "path": "/tmp/opencode/root-current-preservation-start-20261127/execution-78d2d0e4-5a06-4301-b88d-fb4b0f017c5c/preserved-rows.original.json",
+      "sha256": "cb919e0b28e080cabb429e9c3af66b1de722d6db5bd9561916728018cf2e1e19",
+      "scope": "Read-only pre-BEGIN row comparison; not host or SDK authority",
+      "allOldAdmissionRowsPreserved": true,
+      "allOldHistoryRowsPreserved": true,
+      "exactlyOneCommittedHandoffRow": true,
+      "grantIssued": false,
+      "sdkProgramSubmitted": false,
+      "meaning": "Bounded row comparison does not settle broker-resume UNKNOWN or prove host/CAD state."
+    },
+    "qualification": {
+      "READY": "ABSENT",
+      "fullCAD": "NOTRUN",
+      "profile": "NOTRUN",
+      "resume": "UNKNOWN",
+      "hostExitAtTerminal": "UNVERIFIED",
+      "meaning": "Broker handle closure does not establish physical Fusion process exit."
+    },
+    "sourcePins": {
+      "source": "ca9c8d40f5180478e3be2d664d13e9fc324eb84f",
+      "build": "60236c68d8b985b77da8e668388360488e45fd3fb538155c16620c14082641ec",
+      "native": "149a268",
+      "manifestAPP": "17",
+      "manifestReviewSha256": "6b905048f127e84babc07395d1bc895bb5623269c67d6ff3e2889aae30acc091",
+      "manifestSha256": "6eab6faace23a9a353d7e6d419054d35acd43f2c93cf676e0518b1a04a55e3a3",
+      "manifestPinnedFiles": 106,
+      "interpretation": "Provenance, not runtime/full CAD qualification."
+    },
+    "separateWindowsFixture135": {
+      "path": "/tmp/opencode/luna-preservation-windows-fixture-20261127/runs/fixture-e20e009c-5101-4386-b211-59f3e8846443/results.json",
+      "sha256": "14b8a1f6ab59c5fb4cf3ffa8fd9aea7b06e08f437fdb0a044ccfc4c9aaa1cdeb",
+      "counts": {
+        "PASS": 26,
+        "FAIL": 0,
+        "NOTRUN": 0,
+        "denominator": 26
+      },
+      "scope": "Windows seven-table SQLite WAL fixture; simulated binding/committed handoff only, not actual store/CAS7/Fusion/SDK",
+      "keyResults": {
+        "ownedProcessAndHandle": "PASS",
+        "newRuntimeAlive": "PASS",
+        "nativeCaptureThroughFixtureCaller": "PASS",
+        "guardAndTamperRefusals": "PASS",
+        "cleanup": "PASS"
+      },
+      "meaning": "Fixture is separate from live store and CAD qualification."
+    },
+    "countsUnchanged": {
+      "historicalControllerRunsThrough25": {
+        "UNKNOWN": 25,
+        "denominator": 25
+      },
+      "terminal26": {
+        "bootstrap": "COMPLETED",
+        "fullStart": "FAIL",
+        "carrier": "NOT_STARTED"
+      },
+      "terminal27": {
+        "bootstrap": "COMPLETED",
+        "carrier": "CREATED",
+        "fullStart": "FAIL",
+        "preservation": "UNKNOWN",
+        "replay": "FORBIDDEN"
+      },
+      "terminal28": {
+        "bootstrap": "COMPLETED",
+        "carrier": "CREATED",
+        "brokerResume": "FAIL",
+        "brokerResumeOutcome": "UNKNOWN",
+        "replay": "FORBIDDEN"
+      },
+      "metadataCAS": {
+        "PASS": 7,
+        "denominator": 7,
+        "separate": true
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "newStart29": "NOT_REPORTED"
+    },
+    "scope": {
+      "onlyCanonicalCurrentReportsEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true,
+      "noReplay": true
+    }
+  }
 }
