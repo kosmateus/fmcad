@@ -1243,3 +1243,10 @@ This is a supplemental run, not a historical required profile-replica cell. The 
 - Następny pakiet zarejestrowanej generacji `42065fea… / 70c4d74d…` ma manifest `f713e3fd…`; jego piny pozostają **SOURCE REVIEW PENDING**. Rzeczywisty start pozostaje **NOTRUN** do normalnego wyniku APP. ROOT prowadzi dalsze wykonanie SDK po review; wpis nie zmienia ani nie ocenia operatorów/helperów.
 - Liczniki startów pozostają **21 UNKNOWN / 21**; osobno **2 UNKNOWN / 2** przygotowania i **1 INTERRUPTED / 1**. Profile **11 NOTRUN / 11**, pojedynczy box **1 NOTRUN / 1**, **0 READY**; SDK/CAD **NOTRUN**. PASS `1/1` dotyczy wyłącznie metadata CAS i nie jest dodawany do tych liczników.
 - Szczegóły CAS, request/receipt, post-CAS readback i piny zapisano w `latestRegisteredMetadataHandoff` JSON. Zmieniono tylko dwa canonical reports; bez CI, SDK, native probes i restartu.
+
+## 2026-11-27 15:40 UTC — Zarejestrowana próba startu w toku; wynik terminalny jeszcze niedostępny
+
+- ROOT potwierdził review source pins dla manifestu `f713e3fd…` / operatora `80`. Astra17 uruchomiła tryb NORMAL APP; etap ROOT to `REGISTERED_NO_REPLACEMENT_ONE_START_RUNNING`. Przyjęto pojedynczy watcher `sh_21da91469001QM4HZ9SC7HEC1` i run `sh_21da947590019YRGbYObrfMNPX` (Node 24).
+- Bieżący stan to **RUNNING_UNVERIFIED**. Nie ma jeszcze wyniku terminalnego. To jest aktywna próba kontrolera, nie wynik nr 22 i nie status RUNNING profilu CAD/Fusion: profil nie został wykonany, pozostaje **NOTRUN**. Nie deklarujemy READY.
+- Liczniki terminalne bez zmian: **21 UNKNOWN / 21** kontrolerów; osobno **2 UNKNOWN / 2** przygotowania i **1 INTERRUPTED / 1**. Pełne profile **11 NOTRUN / 11**; box **1 NOTRUN / 1**, **0 READY**; SDK/CAD **NOTRUN**. Aktywna próba kontrolera jest odrębnie **1 RUNNING_UNVERIFIED / 1**. Metadata CAS pozostaje osobnym **1 PASS / 1**.
+- Poprzedni wpis o oczekującym source review/start został skorygowany: review jest potwierdzony, a normalny start APP jest w toku. Dane CAS, wcześniejsze wyniki oraz piny obecnego runtime pozostają bez zmian. Oczekiwany jest zwykły wynik terminalny ROOT; nie odczytywano run logów ani nie sprawdzano hosta.

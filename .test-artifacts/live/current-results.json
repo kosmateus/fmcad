@@ -38215,8 +38215,8 @@
     "nextRegisteredPacket": {
       "manifest": "f713e3fd4f89fa1c6048c06250d40f1ead98a8f32d2f54d1f272bf14d8617be9",
       "operator": "80",
-      "pins": "SOURCE_REVIEW_PENDING",
-      "actualNewStart": "NOTRUN_UNTIL_NORMAL_RESULT_APP",
+      "pins": "SOURCE_REVIEWED",
+      "actualNewStart": "RUNNING_UNVERIFIED",
       "meaning": "New generation metadata is committed; no startup result or runtime replacement is implied. ROOT handles SDK execution after source review."
     },
     "countsUnchanged": {
@@ -38265,5 +38265,76 @@
       "noNativeProbe": true,
       "noFusionRestart": true
     }
+  }
+,
+  "latestRegisteredStartInProgress": {
+    "reportedAt": "2026-11-27T15:40:00Z",
+    "recordType": "registered-packet-start-current-in-progress-context",
+    "source": "Current execution state reported by ROOT; no terminal run artifact supplied yet.",
+    "sourceReview": {
+      "status": "CONFIRMED",
+      "manifest": "f713e3fd4f89fa1c6048c06250d40f1ead98a8f32d2f54d1f272bf14d8617be9",
+      "operator": "80"
+    },
+    "runtimeStage": {
+      "actor": "Astra17",
+      "mode": "NORMAL_APP",
+      "rootStage": "REGISTERED_NO_REPLACEMENT_ONE_START_RUNNING"
+    },
+    "acceptedExecution": {
+      "watcher": "sh_21da91469001QM4HZ9SC7HEC1",
+      "run": "sh_21da947590019YRGbYObrfMNPX",
+      "runtime": "Node 24"
+    },
+    "status": "RUNNING_UNVERIFIED",
+    "terminalOutcome": "NOT_YET_AVAILABLE",
+    "qualification": {
+      "READY": false,
+      "CAD": "NOTRUN",
+      "FusionProfile": "NOTRUN",
+      "meaning": "Controller start is in progress; the CAD/live profile has not run."
+    },
+    "counts": {
+      "completedControllerRuns": {
+        "UNKNOWN": 21,
+        "denominator": 21
+      },
+      "activeControllerAttempts": {
+        "RUNNING_UNVERIFIED": 1,
+        "denominator": 1
+      },
+      "metadataCAS": {
+        "PASS": 1,
+        "denominator": 1
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "interpretation": "The 21 completed controller UNKNOWN results remain unchanged. This distinct accepted attempt is currently RUNNING_UNVERIFIED; it is not a 22nd terminal result and must not be presented as a running Fusion/CAD profile."
   }
 }
