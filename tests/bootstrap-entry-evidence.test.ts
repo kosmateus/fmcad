@@ -224,6 +224,72 @@ function resignOwnedFixture(f: ReturnType<typeof ownedFixture>) {
   f.originals.returned.bytes = encode(returned);
 }
 
+test("owned receipts retain SDK slash spelling and trailing separators in observed audit paths", () => {
+  const f = ownedFixture();
+  const entry = JSON.parse(f.originals.entry.bytes.toString());
+  const audit = entry.startupAudit;
+  audit.preferences.defaultPathForScriptsAndAddIns =
+    audit.preferences.defaultPathForScriptsAndAddIns.replaceAll("\\", "/") +
+    "/";
+  for (const item of audit.scripts.items)
+    item.folder = item.folder.replaceAll("\\", "/") + "/";
+  f.originals.entry.bytes = encode(entry);
+  resignOwnedFixture(f);
+  const originalEntry = Buffer.from(f.originals.entry.bytes);
+  const bound = bindOwnedBootstrapEntryEvidence(
+    f.expected,
+    f.originals,
+    f.fork,
+  );
+  assert(
+    bound,
+    "Real SDK observations must not require authority-path spelling",
+  );
+  assert.deepEqual(bound.startupAudit, audit);
+  assert.deepEqual(f.originals.entry.bytes, originalEntry);
+});
+
+test("observed audit paths still reject traversal, relative paths, aliases and NUL", () => {
+  for (const invalid of [
+    "C:/Api/../foreign",
+    "C:/Api/./owned",
+    "relative/Api",
+    "C:relative",
+    "//server/share/Api",
+    "\\\\server\\share\\Api",
+    "C:/Api/\0owned",
+  ]) {
+    for (const field of ["default", "folder"]) {
+      const f = ownedFixture();
+      const entry = JSON.parse(f.originals.entry.bytes.toString());
+      if (field === "default")
+        entry.startupAudit.preferences.defaultPathForScriptsAndAddIns = invalid;
+      else entry.startupAudit.scripts.items[0].folder = invalid;
+      f.originals.entry.bytes = encode(entry);
+      resignOwnedFixture(f);
+      assert.equal(
+        bindOwnedBootstrapEntryEvidence(f.expected, f.originals, f.fork),
+        null,
+      );
+    }
+  }
+});
+
+test("SDK observation normalization does not relax executable authority paths", () => {
+  const f = ownedFixture();
+  f.expected.executable.path = f.expected.executable.path.replaceAll("\\", "/");
+  for (const name of ["entry", "returned"] as const) {
+    const value = JSON.parse(f.originals[name].bytes.toString());
+    value.executable = f.expected.executable;
+    f.originals[name].bytes = encode(value);
+  }
+  resignOwnedFixture(f);
+  assert.equal(
+    bindOwnedBootstrapEntryEvidence(f.expected, f.originals, f.fork),
+    null,
+  );
+});
+
 test("owned v3 explicit semantic profile survives vendor whitespace but keeps original raw SHA", () => {
   const f = ownedSemanticFixture(),
     rawHash = f.expected.profile.sha256;

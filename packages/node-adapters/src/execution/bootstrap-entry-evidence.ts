@@ -215,6 +215,13 @@ function canonicalNativePath(value: string): string {
   if (canonical !== value) throw new Error("Canonical native path required");
   return normalized;
 }
+function observedSdkPath(value: string): void {
+  // SDK observations use slash spelling/trailing separators that are not
+  // canonical authority paths. Validate without rewriting signed receipt data.
+  if (value.split(/[\\/]/).some((part) => part === "." || part === ".."))
+    throw new Error("Traversal in observed SDK path");
+  nativePath(value);
+}
 function joinNative(directory: string, name: string): string {
   return /^[A-Za-z]:[\\/]/.test(directory)
     ? path.win32.join(directory, name)
@@ -288,7 +295,7 @@ function validStartupAudit(value: unknown): value is BootstrapStartupAudit {
   if (typeof defaultPath !== "string" || !utf8(defaultPath, 65536))
     return false;
   try {
-    canonicalNativePath(defaultPath);
+    observedSdkPath(defaultPath);
   } catch {
     return false;
   }
@@ -348,7 +355,7 @@ function validStartupAudit(value: unknown): value is BootstrapStartupAudit {
     )
       return false;
     try {
-      canonicalNativePath(folder);
+      observedSdkPath(folder);
     } catch {
       return false;
     }
