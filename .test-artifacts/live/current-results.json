@@ -38549,11 +38549,7 @@
         "PASS": 2,
         "denominator": 2
       },
-      "terminalControllerRuns": {
-        "UNKNOWN": 22,
-        "denominator": 22,
-        "RUNNING": 0
-      },
+      "terminalControllerRuns": {"UNKNOWN": 23, "denominator": 23, "RUNNING": 0},
       "separatePreparation": {
         "UNKNOWN": 2,
         "denominator": 2
@@ -38587,6 +38583,125 @@
       "noSDK": true,
       "noHostControlByReporter": true,
       "noCI": true
+    }
+  }
+,
+  "latestRegisteredStartTerminal23": {
+    "reportedAt": "2026-11-27T16:55:00Z",
+    "recordType": "registered-start-terminal-controller-unknown-23",
+    "sourceReview": {
+      "manifest": "c29c",
+      "operator": "83",
+      "sourceApp": "17"
+    },
+    "acceptedExecution": {
+      "watcher": "sh_21dea9379002a7n3XXZoAd2dOj",
+      "watcherResult": "START_FAILURE",
+      "main": "sh_21deaa5ac001swHj4sRc91inXe",
+      "mainExitCode": 1
+    },
+    "terminalOutcome": "UNKNOWN",
+    "transcript": {
+      "path": "/tmp/opencode/root-owned-receipt-start-20261127/execution-aaae948a-9ecd-4585-a73d-8c851811bdb1/bootstrap-result.json",
+      "sha256": "bfdb27119529da58ff73e3d014f120e93c7e4d0610bda1c16e060a38947df02b",
+      "state": "UNKNOWN",
+      "authority": "NONE",
+      "process": {
+        "pid": 15952,
+        "birth": "134402719034582573"
+      },
+      "phases": [
+        "old-death-os-confirmed",
+        "original-startup-source-observations-held",
+        "owned-suspended-provision-intent-origin-bound"
+      ],
+      "error": "Owned audit must not alias lifecycle originals",
+      "replay": "FORBIDDEN"
+    },
+    "diagnostic": {
+      "path": "/tmp/opencode/root-owned-receipt-start-20261127/execution-aaae948a-9ecd-4585-a73d-8c851811bdb1/bootstrap-diagnostics.original.json",
+      "sha256": "32ade2e51d4b9aa75dea07d83b124a6b2ed7f5ca35eaeb8689535b3ded48e180",
+      "observation": "NO_VALID_DIAGNOSTIC_OBSERVED",
+      "meaning": "Not proof of absence."
+    },
+    "qualification": {
+      "hostExitAtTerminal": "UNVERIFIED",
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN",
+      "FusionProfile": "NOTRUN",
+      "READY": false,
+      "meaning": "The controller attempt is terminal UNKNOWN. No SDK/CAD functional qualification occurred; do not count this as a failed CAD profile."
+    },
+    "runtimePins": {
+      "source": "ecfb330aa31574ad5e1fa46b5643c0adc1337db1",
+      "build": "385bf41ef8e7409cdf7cc647d2a79fcc4c419001392645c55a609641f13cf617",
+      "package": "107 qualified install-final",
+      "manifest": "c29c",
+      "operator": "83",
+      "sourceApp": "17",
+      "installedNativeSource": "149a268",
+      "installedNativeBuild": "3cd811d782dc37b2c838a21c5830c8babe19f2d281f32ba4211f9552ea120eb2",
+      "legacyProvision": "4d99a7f9ce5f54008ea43670d9d6dceb257e4c97 / ed336029c8960f4809b5bef7651db354db6cfdcc759dc6acba8e45e2bd967e35",
+      "meaning": "These are recorded source/package/native pins; they do not establish CAD or SDK success."
+    },
+    "counts": {
+      "terminalControllerRuns": {
+        "UNKNOWN": 23,
+        "denominator": 23
+      },
+      "activeControllerAttempts": {
+        "RUNNING": 0,
+        "denominator": 0
+      },
+      "metadataCAS": {
+        "PASS": 2,
+        "denominator": 2,
+        "separate": true
+      },
+      "separatePreparation": {
+        "UNKNOWN": 2,
+        "denominator": 2
+      },
+      "separateHistoricalHarness": {
+        "INTERRUPTED": 1,
+        "denominator": 1
+      },
+      "fullProfiles": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 11,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "denominator": 11
+      },
+      "singleBox": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOTRUN": 1,
+        "RUNNING": 0,
+        "UNKNOWN": 0,
+        "READY": 0,
+        "denominator": 1
+      },
+      "SDK": "NOTRUN",
+      "CAD": "NOTRUN"
+    },
+    "otherActiveBoundary": {
+      "task": "110",
+      "state": "ACTIVE_WORKER",
+      "meaning": "Separate boundary worker only; its result is not available and is not inferred from this terminal event."
+    },
+    "nextOwnedWork": {
+      "task": "109",
+      "scope": "first guard fix; pure SDK-free",
+      "meaning": "No new host or SDK activity while task 110 is active."
+    },
+    "scope": {
+      "onlyCanonicalCurrentResultsJsonAndMarkdownEdited": true,
+      "noSDK": true,
+      "noHostControlOrProbe": true,
+      "noCI": true,
+      "noCatalogRun": true
     }
   }
 }
