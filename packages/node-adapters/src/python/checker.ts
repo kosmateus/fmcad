@@ -24,6 +24,9 @@ import { preparePythonArtifact, verifyPythonArtifact } from "./artifact.js";
 import { cadBundleUnits } from "./bundle.js";
 import { mapPythonOrigin } from "./context-binding.js";
 import { prepareWireArtifact } from "./source-units.js";
+import { reconstructCamera } from "./camera-save-payload.js";
+import { cameraReceiptSource, type CameraReceiptBinding } from "../execution/camera-receipt.js";
+import { eraseRegisteredPython } from "./registered-erasure.js";
 import {
   checkerHash,
   checkerObject,
@@ -933,6 +936,24 @@ export function createPythonChecker(
         let analysisBytes = 0;
         const decodedEntrypoints = new Map<number, number>();
         const decodedTargets = new Set<number>();
+        const registeredContext = artifact.context && typeof artifact.context === "object" ?
+          (artifact.context as Record<string,unknown>)["origin"] : null;
+        const resourceRoot=resolve(options.typingRoot,"../../..");
+        const canonicalRoot=basename(resourceRoot)==="dist"?resolve(resourceRoot,".."):resourceRoot;
+        const camera = reconstructCamera(canonicalRoot, registeredContext ?? artifact);
+        let receiptSource: string | undefined;
+        const receiptHint=artifact.context && typeof artifact.context==="object" ?
+          (artifact.context as Record<string,unknown>)["cameraReceipt"]:undefined;
+        if (receiptHint) {
+          const hint=checkerObject(receiptHint);
+          const code=camera?.addin ? camera.source+"\n\nrun()\n" : null;
+          if (!code || hint["version"]!==1 || typeof hint["mappedPath"]!=="string" ||
+              checkerObject(artifact.request)["sourceHash"]!==checkerHash(code))
+            throw new Error("Registered camera receipt lacks a canonical input binding");
+          receiptSource=cameraReceiptSource(code,hint["mappedPath"],artifact.request as unknown as CameraReceiptBinding);
+          if (eraseRegisteredPython(canonicalRoot,receiptSource)!==artifact.script)
+            throw new Error("Registered camera receipt is not the checked program");
+        }
         for (const [index, unit] of units.entries()) {
           if (unit.decodedSource === undefined) continue;
           const decoded = unit.decodedSource;
@@ -1376,7 +1397,21 @@ export function createPythonChecker(
               prelude.push(`from unit_${decodedIndex} import run`);
             prelude.push(entrypointImport);
           }
-          const lines = unit.source.split("\n");
+          let checkedSource = unit.source;
+          if (receiptSource && unit.id==="wire" && unit.sha256===artifact.sha256) {
+            checkedSource=receiptSource;
+            unit.analysisSourceHash=checkerHash(checkedSource);
+          }
+          if (camera) {
+            for (const suffix of ["", '\n\nrun("")\n', "\n\nrun()\n"]) {
+              if (checkedSource === camera.source + suffix) {
+                checkedSource = camera.typed + suffix;
+                unit.analysisSourceHash = checkerHash(checkedSource);
+                break;
+              }
+            }
+          }
+          const lines = checkedSource.split("\n");
           lines.splice(unit.insert, 0, ...prelude);
           if (checksEntrypoint(unit)) lines.push(entrypointDeclaration);
           const name = decodedTargets.has(index) ? `unit_${index}.py` : `unit-${index}.py`;

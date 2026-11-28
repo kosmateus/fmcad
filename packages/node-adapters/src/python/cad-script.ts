@@ -4,6 +4,7 @@ import {
   type CadContext,
   type CadData,
   type CadPrivateReadback,
+  type CameraAliasObservation,
   type OperationDeclaration,
 } from "@fmcad/core";
 import { pythonLiteral } from "./artifact.js";
@@ -117,6 +118,7 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
     pathMapper: (value: unknown) => string = fusionPath,
     checkpointGuard?: ParamCheckpointGuardV1,
     privateReadback?: CadPrivateReadback,
+    cameraAlias?: CameraAliasObservation,
   ) {
     if (Object.hasOwn(data, PARAM_CHECKPOINT_FIELD))
       throw new Error("Parameter checkpoint guard is compiler-owned");
@@ -148,12 +150,15 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
       entry,
       pythonLiteral,
       privateReadback,
+      cameraAlias,
     );
     return prepareCadBundle(
       resolveRuntimePaths({ anchor: __filename }).installation,
       plan.wrapper,
       { request: plan.request, context: plan.context },
       plan.profile,
+      [],
+      cameraAlias,
     );
   }
   function buildCadScript(

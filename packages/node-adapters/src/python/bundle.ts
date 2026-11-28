@@ -3,6 +3,7 @@ import { cadBundleUnits } from "./bundle-inventory.js";
 import { selectRunBundle } from "./source-selection.js";
 import { prepareCameraSavePayload } from "./camera-save-payload.js";
 import type { PreparedPythonArtifact } from "../../../core/src/domain/python-artifact.js";
+import type { CameraAliasObservation } from "@fmcad/core";
 
 export * from "./bundle-inventory.js";
 
@@ -12,11 +13,12 @@ export function prepareCadBundle(
   metadata: { readonly context?: unknown; readonly request?: unknown } = {},
   profile: "full" | "document-status" | "camera-save" = "full",
   embedded: readonly SourceInput[] = [],
+  cameraAlias?: CameraAliasObservation,
 ): PreparedPythonArtifact {
   if (profile === "camera-save") {
     if (embedded.length)
       throw new Error("Registered camera reads cannot embed user code");
-    return prepareCameraSavePayload(root, wrapper, metadata);
+    return prepareCameraSavePayload(root, wrapper, metadata, cameraAlias);
   }
   return preparePythonArtifact(
     [

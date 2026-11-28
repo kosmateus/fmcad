@@ -1,5 +1,5 @@
 import type { OperationDeclaration } from "../../catalog";
-import type { CadContext, CadData } from "./contracts";
+import type { CadContext, CadData, CameraAliasObservation } from "./contracts";
 
 /** Compiler-only selection, never decoded from a public CAD invocation. */
 export type CadPrivateReadback = "param-checkpoint";
@@ -18,7 +18,18 @@ export function planCadScript(
   entry: OperationDeclaration,
   pythonLiteral: (value: unknown) => string,
   privateReadback?: CadPrivateReadback,
+  cameraAlias?: CameraAliasObservation,
 ): CadScriptPlan {
+  if (
+    cameraAlias &&
+    (operation !== "camera.save" ||
+      context.component !== cameraAlias.name ||
+      !cameraAlias.docId ||
+      (context.docId != null && context.docId !== cameraAlias.docId))
+  )
+    throw new Error(
+      "Camera alias continuation does not match the requested target",
+    );
   if (
     privateReadback !== undefined &&
     (privateReadback !== "param-checkpoint" ||
@@ -78,11 +89,59 @@ if _FMCAD_TYPE_CHECKING:
     // activation, result-status dispatch, or SDK-object projection is reachable.
     const args = [
       context.doc,
-      context.component,
+      null,
       context.projectId,
-      context.docId,
+      cameraAlias?.docId ?? context.docId,
       context.docFileId,
     ].map((value) => pythonLiteral(value ?? null));
+    const selector =
+      typeof context.component === "string"
+        ? pythonLiteral(context.component)
+        : null;
+    const selection = !selector
+      ? ""
+      : cameraAlias
+        ? `    _camera_resume_component_name(ctx, ${selector}, ${pythonLiteral(cameraAlias.raw)}, lambda raw: _camera_resolve_alias(ctx, raw))\n`
+        : `    alias = _camera_try_component_name(ctx, ${selector})
+    if alias is not None:
+        print('FMCAD_RESULT ' + json.dumps({'operation': 'camera.save', 'document': ctx.doc.name, '_cameraAlias': {'name': ${selector}, 'raw': alias, 'docId': ctx.doc.creationId}}))
+        return
+`;
+    if (Object.keys(data).length)
+      throw new Error(
+        "Unknown CAD inputs: " + Object.keys(data).sort().join(", "),
+      );
+    const name = pythonLiteral(context.doc ?? null);
+    if (typeof context.doc !== "string" || !context.doc.trim())
+      throw new Error("doc_name must be an explicit document name");
+    const docId = cameraAlias?.docId ?? context.docId;
+    const pinChecks = (
+      [
+        [docId, "doc-id", "doc.creationId"],
+        [context.docFileId, "doc-file-id", "_document_file_pin(doc)"],
+      ] as const
+    )
+      .filter(([value]) => value != null)
+      .map(([value, label, actual]) => {
+        if (!value || /\s/.test(value) || value.startsWith("-"))
+          throw new Error(
+            label + " requires a nonempty identity without whitespace",
+          );
+        return `    _document_check_pin(doc, '${label}', ${pythonLiteral(value)}, ${actual})\n`;
+      })
+      .join("");
+    const locate = selector
+      ? `    ctx = CadContext(${args.join(", ")})
+${selection}    ctx.assert_identity()
+    app, doc = ctx.app, ctx.doc
+`
+      : `    app = adsk.core.Application.get()
+    collection = app.documents
+    docs = _document_named_top_level([collection.item(i) for i in range(collection.count)], ${name})
+${context.projectId == null ? "" : `    docs = [doc for doc in docs if doc.dataFile and doc.dataFile.parentProject.id == ${pythonLiteral(context.projectId)}]\n`}    doc = _cad_cast('adsk.core.Document', _document_unique_name(docs, ${name}))
+${pinChecks}    if _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType')) is None:
+        raise ValueError('Document has no Fusion Design product: ' + ${name})
+`;
     return {
       request,
       context,
@@ -90,12 +149,10 @@ if _FMCAD_TYPE_CHECKING:
       wrapper: `def run(_context: str):
 ${streamGuard}
     import json
-    ctx = CadContext(${args.join(", ")})
-    ctx.assert_identity()
-    print('FMCAD_PROGRESS ' + json.dumps({'operation': 'camera.save', 'document': ctx.doc.name, 'state': 'started'}))
-    result = _io_camera_save(ctx, ${pythonLiteral(data)})
+${locate}    print('FMCAD_PROGRESS ' + json.dumps({'operation': 'camera.save', 'document': doc.name, 'state': 'started'}))
+    result = _camera_read(app, doc)
     try:
-        encoded = json.dumps({'success': True, 'operation': 'camera.save', 'document': ctx.doc.name, 'result': result, 'created': ctx.created}, allow_nan=False)
+        encoded = json.dumps({'success': True, 'operation': 'camera.save', 'document': doc.name, 'result': result, 'created': []}, allow_nan=False)
     except ValueError as error:
         raise ValueError('Non-finite value cannot be serialized') from error
     print('FMCAD_RESULT ' + encoded)

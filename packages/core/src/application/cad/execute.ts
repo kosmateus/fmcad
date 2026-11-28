@@ -4,6 +4,7 @@ import {
   type CadData,
   type CadOutput,
   type CadServices,
+  type CameraAliasObservation,
 } from "./contracts";
 import { parseNativeResult, unknownNativeOutcome } from "./native-result";
 
@@ -54,26 +55,55 @@ export async function executeCad(
       entry.offline === true,
       services.sketchValidates(operation),
     );
-  const artifact = services.prepare(operation, data, context);
-  const out = await services.execution.execute({
-    operation,
-    context: { ...context },
-    artifact,
-    readOnly:
-      entry.readOnly ||
-      (operation === "document.clear" && data["dryRun"] === true),
-  });
-  const text = out.text || "";
-  if (
-    out.failed ||
-    !text.split(/\r?\n/).some((value) => value.startsWith("FMCAD_RESULT "))
-  )
-    throw unknownNativeOutcome(
-      new Error(
-        `${operation} failed; model may contain partial changes. Inspect before retry. ${text}`,
-      ),
-    );
-  const output = parseNativeResult(text);
+  if (operation === "camera.save" && typeof context.component === "string")
+    data = { ...data }; // camera.save has no accepted input fields
+  const send = async (alias?: CameraAliasObservation) => {
+    const artifact = services.prepare(operation, data, context, alias);
+    const out = await services.execution.execute({
+      operation,
+      context: { ...context },
+      artifact,
+      readOnly:
+        entry.readOnly ||
+        (operation === "document.clear" && data["dryRun"] === true),
+    });
+    const text = out.text || "";
+    if (
+      out.failed ||
+      !text.split(/\r?\n/).some((value) => value.startsWith("FMCAD_RESULT "))
+    )
+      throw unknownNativeOutcome(
+        new Error(
+          `${operation} failed; model may contain partial changes. Inspect before retry. ${text}`,
+        ),
+      );
+    return parseNativeResult(text);
+  };
+  let output = await send();
+  if (operation === "camera.save" && Object.hasOwn(output, "_cameraAlias")) {
+    const observed = output["_cameraAlias"];
+    if (
+      typeof context.component !== "string" ||
+      output["operation"] !== operation ||
+      output["document"] !== context.doc ||
+      !record(observed) ||
+      observed["name"] !== context.component ||
+      typeof observed["raw"] !== "string" ||
+      typeof observed["docId"] !== "string" ||
+      !observed["docId"] ||
+      (context.docId != null && observed["docId"] !== context.docId)
+    )
+      throw unknownNativeOutcome(
+        new Error("Camera selector returned a mismatched continuation"),
+      );
+    output = await send({
+      name: context.component,
+      raw: observed["raw"],
+      docId: observed["docId"],
+    });
+    if (Object.hasOwn(output, "_cameraAlias"))
+      throw new Error("Unresolved nested camera alias continuation");
+  }
   if (services.failed(output)) output["success"] = false;
   const result = output["result"];
   if (!record(result)) return output;

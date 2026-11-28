@@ -62,13 +62,32 @@ export function planCameraSaveContext(
       {
         symbol: "_document_target",
         sourceId: "camera.context.target",
-        dependencies: [],
+        dependencies: [
+          { symbol: "_document_named_top_level" },
+          { symbol: "_document_unique_name" },
+        ],
       },
       {
         symbol: "_document_assert_identity",
         sourceId: "camera.context.assert",
-        dependencies: [{ symbol: "_document_data_file" }],
+        dependencies: [
+          { symbol: "_document_file_pin" },
+          { symbol: "_document_check_pin" },
+        ],
       },
+      ...[
+        "_document_named_top_level",
+        "_document_unique_name",
+        "_document_file_pin",
+        "_document_check_pin",
+      ].map((symbol) => ({
+        symbol,
+        sourceId: "camera.context." + symbol,
+        dependencies:
+          symbol === "_document_file_pin"
+            ? [{ symbol: "_document_data_file" }]
+            : [],
+      })),
       {
         symbol: "_document_data_file",
         sourceId: "camera.context.data-file",
@@ -76,6 +95,16 @@ export function planCameraSaveContext(
       },
     ],
     references: [
+      ...[
+        "_document_named_top_level",
+        "_document_unique_name",
+        "_document_file_pin",
+        "_document_check_pin",
+      ].map((symbol) => ({
+        symbol,
+        id: "camera.context." + symbol,
+        filename: identity,
+      })),
       {
         id: "camera.context.class",
         filename: core,

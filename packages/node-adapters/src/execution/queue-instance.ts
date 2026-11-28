@@ -23,6 +23,7 @@ import {
 } from "./admission-json";
 import type { BootstrapStartupAudit } from "./bootstrap-entry-evidence";
 import { receiptIdentitySource } from "./receipt-identity.js";
+import { eraseRegisteredPython } from "../python/registered-erasure.js";
 import {
   cameraReceiptSource,
   type CameraReceiptBinding,
@@ -1547,11 +1548,11 @@ finally:
                 "INVALID_CAMERA_RECEIPT",
                 "Camera receipt requires an ordinary non-capture ADDIN script",
               );
-            return cameraReceiptSource(
+            return eraseRegisteredPython(resolveRuntimePaths({anchor}).installation,cameraReceiptSource(
               code,
               cameraReceiptPath!,
               binding as CameraReceiptBinding,
-            );
+            ));
           })()
         : receiptWrapper(
             code,

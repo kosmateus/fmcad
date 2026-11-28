@@ -78,6 +78,8 @@ export interface BrokerRpcPreparationPorts {
   };
   readonly prepareBrokerScript: typeof prepareBrokerScript;
   readonly prepareReceiptScript: ReceiptPreparation;
+  /** Compares the physical input with a canonical compiled ADDIN invocation. */
+  readonly registeredCamera?: (source:string, origin:P.Origin, request:P.Request)=>boolean;
   retainPythonOrigin(
     artifact: ReturnType<ReceiptPreparation>,
     origin: P.Origin,
@@ -313,6 +315,10 @@ export function createBrokerRpcPreparation(ports: BrokerRpcPreparationPorts) {
               binding,
               {
                 ...ports.nativePaths,
+                ...(!official && !nativePublicPython && origin && job.request &&
+                  (!view.epoch || view.admissionMode === "normal-multidocument") && Object.keys(binding).length === 5 &&
+                  ports.registeredCamera?.(executable,origin,job.request)
+                  ? {receiptProfile:"doc-camera-v1" as const} : {}),
                 ...(nativePublicPython
                   ? { capturePublicPythonResult: true }
                   : {}),

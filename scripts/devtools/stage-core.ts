@@ -146,7 +146,8 @@ export function stageCore(root: string, identityOnly = false): void {
     const file = path.join(root, "src/dist/python", name);
     fs.writeFileSync(
       file,
-      fs.readFileSync(file, "utf8").replaceAll('"@fmcad/core"', '"../core"'),
+      fs.readFileSync(file, "utf8").replaceAll('"@fmcad/core"', '"../core"')
+        .replaceAll('require("../execution/', 'require("../node-adapters/execution/'),
     );
   }
   fs.cpSync(

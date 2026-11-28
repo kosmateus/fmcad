@@ -7,47 +7,39 @@ const fields = "runtime/python/fmcad/domain/values.py";
 
 /** Projection is live camera state: all three supported projections are reachable. */
 export const cameraSaveHandlerPlan = {
-  roots: ["_io_camera_save"],
+  roots: ["_camera_read"],
   conditions: {},
   definitions: [
     {
-      symbol: "_io_camera_save",
+      symbol: "_camera_read",
       sourceId: "camera.save",
       dependencies: [
-        { symbol: "_cad_fields" },
-        { symbol: "_io_camera_viewport" },
-        { symbol: "_io_camera_state" },
+        { symbol: "_camera_active_viewport" },
+        { symbol: "_camera_pose" },
         { symbol: "_cad_cast" },
       ],
     },
     {
-      symbol: "_io_camera_viewport",
+      symbol: "_camera_active_viewport",
       sourceId: "camera.viewport",
       dependencies: [],
     },
     {
-      symbol: "_io_camera_identity",
+      symbol: "_camera_document_identity",
       sourceId: "camera.identity",
       dependencies: [],
     },
     {
-      symbol: "_io_camera_state",
+      symbol: "_camera_pose",
       sourceId: "camera.state",
       dependencies: [
-        { symbol: "_io_camera_identity" },
+        { symbol: "_camera_document_identity" },
         { symbol: "_cad_xyz" },
-        { symbol: "_cad_require_result" },
         { symbol: "_cad_cast" },
         { symbol: "adsk" },
       ],
     },
-    { symbol: "_cad_fields", sourceId: "camera.fields", dependencies: [] },
     { symbol: "_cad_xyz", sourceId: "camera.xyz", dependencies: [] },
-    {
-      symbol: "_cad_require_result",
-      sourceId: "camera.require-result",
-      dependencies: [],
-    },
     { symbol: "_cad_cast", sourceId: "camera.cast", dependencies: [] },
     { symbol: "adsk", sourceId: "camera.adsk", dependencies: [] },
   ],
@@ -58,17 +50,19 @@ export const cameraSaveHandlerPlan = {
 };
 
 export const cameraSaveCanonicalSources = [
-  { id: "camera.save", filename: camera, symbol: "_io_camera_save" },
-  { id: "camera.viewport", filename: camera, symbol: "_io_camera_viewport" },
-  { id: "camera.identity", filename: camera, symbol: "_io_camera_identity" },
-  { id: "camera.state", filename: camera, symbol: "_io_camera_state" },
-  { id: "camera.fields", filename: fields, symbol: "_cad_fields" },
-  { id: "camera.xyz", filename: core, symbol: "_cad_xyz" },
+  { id: "camera.save", filename: camera, symbol: "_camera_read" },
   {
-    id: "camera.require-result",
-    filename: core,
-    symbol: "_cad_require_result",
+    id: "camera.viewport",
+    filename: camera,
+    symbol: "_camera_active_viewport",
   },
+  {
+    id: "camera.identity",
+    filename: camera,
+    symbol: "_camera_document_identity",
+  },
+  { id: "camera.state", filename: camera, symbol: "_camera_pose" },
+  { id: "camera.xyz", filename: core, symbol: "_cad_xyz" },
   {
     id: "camera.cast",
     filename: core,
@@ -152,7 +146,7 @@ export const cameraSaveTypingSources: readonly CanonicalPayloadDefinition[] = [
     importName: "typing.NotRequired",
     guard: "_CAD_TYPE_CHECKING",
   },
-  ...["_IoCameraReadContext", "_IoCameraState"].map((symbol) => ({
+  ...["_IoCameraState"].map((symbol) => ({
     id: "typing." + symbol,
     filename: camera,
     symbol,

@@ -98,6 +98,13 @@ def _document_target(app: '_IdentityApplication', doc_name: object, project_id: 
     collection = app.documents
     documents: list['_IdentityDocument'] | tuple['_IdentityDocument', ...] = (collection if isinstance(collection, (list, tuple)) else
                  [collection.item(i) for i in range(collection.count)])
+    docs = _document_named_top_level(documents, doc_name)
+    if project_id is not None:
+        docs = [d for d in docs if d.dataFile and d.dataFile.parentProject.id == project_id]
+    return _document_unique_name(docs, doc_name)
+
+
+def _document_named_top_level(documents: 'list[_IdentityDocument] | tuple[_IdentityDocument, ...]', doc_name: str) -> 'list[_IdentityDocument]':
     docs: list['_IdentityDocument'] = []
     for doc in documents:
         if doc.name != doc_name:
@@ -114,11 +121,27 @@ def _document_target(app: '_IdentityApplication', doc_name: object, project_id: 
             if 'Failed to get temporary file' not in str(error):
                 raise
         docs.append(doc)
-    if project_id is not None:
-        docs = [d for d in docs if d.dataFile and d.dataFile.parentProject.id == project_id]
+    return docs
+
+
+def _document_unique_name(docs: 'list[_IdentityDocument]', doc_name: str) -> '_IdentityDocument':
     if len(docs) != 1:
         raise ValueError('Document %s: expected one match, found %d' % (doc_name, len(docs)))
     return docs[0]
+
+
+def _document_file_pin(doc: '_IdentityDocument') -> 'str | None':
+    file, error = _document_data_file(doc)
+    if error:
+        raise ValueError('doc-file-id cannot be verified for document %s: %s' %
+                         (doc.name, error['message']))
+    return file.id if file else None
+
+
+def _document_check_pin(doc: '_IdentityDocument', label: str, expected: str, actual: 'str | None') -> None:
+    if actual != expected:
+        raise ValueError('%s mismatch for document %s: expected %s, got %s' %
+                         (label, doc.name, expected, actual))
 
 
 def _document_assert_identity(doc: '_IdentityDocument', doc_id: object=None, doc_file_id: object=None) -> None:
@@ -132,14 +155,8 @@ def _document_assert_identity(doc: '_IdentityDocument', doc_id: object=None, doc
         if label == 'doc-id':
             actual = doc.creationId
         else:
-            file, error = _document_data_file(doc)
-            if error:
-                raise ValueError('doc-file-id cannot be verified for document %s: %s' %
-                                 (doc.name, error['message']))
-            actual = file.id if file else None
-        if actual != expected:
-            raise ValueError('%s mismatch for document %s: expected %s, got %s' %
-                             (label, doc.name, expected, actual))
+            actual = _document_file_pin(doc)
+        _document_check_pin(doc, label, expected, actual)
 
 
 def _document_activate_target(app: '_IdentityApplication', doc: '_IdentityDocument', doc_id: object=None, doc_file_id: object=None) -> None:

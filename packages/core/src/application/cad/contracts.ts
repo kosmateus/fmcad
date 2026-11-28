@@ -14,6 +14,12 @@ export interface CadContext {
 }
 export type CadData = Record<string, unknown>;
 export type CadOutput = Record<string, unknown>;
+/** Private readback; never decoded as an input to the public operation. */
+export interface CameraAliasObservation {
+  readonly name: string;
+  readonly raw: string;
+  readonly docId: string;
+}
 export interface CadExecutionRequest {
   operation: string;
   context: Readonly<CadContext>;
@@ -34,6 +40,7 @@ export interface CadServices {
     operation: string,
     data: CadData,
     context: CadContext,
+    cameraAlias?: CameraAliasObservation,
   ): PreparedPythonArtifact;
   execution: CadExecutionPort;
   /** Route selection is synchronous; a selected coordinator may be asynchronous.

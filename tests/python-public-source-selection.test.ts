@@ -113,7 +113,7 @@ const operations = [
   {
     operation: "camera.save",
     data: {},
-    dependencies: ["camera.save", "camera.context.class"],
+    dependencies: ["camera.save"],
   },
   {
     operation: "assembly.sequence",

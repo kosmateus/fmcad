@@ -125,12 +125,15 @@ export const executeCad: Execute = async (
 ) =>
   core.executeCad(operation, data, context, {
     validate: validateCad,
-    prepare: (operation, data, context) =>
+    prepare: (operation, data, context, cameraAlias) =>
       preparation.prepareCadScript(
         operation,
         data,
         context,
         internal.fusionPath,
+        undefined,
+        undefined,
+        cameraAlias,
       ),
     execution: {
       execute: ({ artifact, readOnly }) =>

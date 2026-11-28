@@ -1922,6 +1922,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
     prepareBrokerScript,
     prepareReceiptScript,
+    ...(normalRuntime ? {
+      registeredCamera:(source:string, origin:P.Origin, request:P.Request) => {
+        const invocation=request.payload?.kind === "cad-command" ? request.payload.invocation : request.payload;
+        if (invocation?.kind !== "cad" || invocation.operation !== "camera.save") return false;
+        const compiler=runtimeRequire("./dist/python/camera-save-payload") as
+          typeof import("../../packages/node-adapters/src/python/camera-save-payload");
+        return compiler.matchesCameraInvocation(
+          resolveRuntimePaths({anchor:runtimeAnchor}).installation,source,origin,invocation);
+      },
+    } : {}),
     retainPythonOrigin,
     prepareMetadataWire,
     pythonAdmission,

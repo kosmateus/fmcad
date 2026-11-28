@@ -34,13 +34,11 @@ const prepare = () =>
 
 // This oracle is intentionally independent of the registry and its planner.
 const requiredFunctions = [
-  "_io_camera_save",
-  "_io_camera_viewport",
-  "_io_camera_identity",
-  "_io_camera_state",
-  "_cad_fields",
+  "_camera_read",
+  "_camera_active_viewport",
+  "_camera_document_identity",
+  "_camera_pose",
   "_cad_xyz",
-  "_cad_require_result",
 ];
 
 function execute(script: string, remove?: string, extra = "") {
@@ -81,18 +79,11 @@ for kind in range(3):
             raise AssertionError('camera.save must never write to the viewport')
     viewport = Viewport()
     ctx = types.SimpleNamespace(doc=doc, app=types.SimpleNamespace(activeDocument=doc, activeViewport=viewport))
-    state = namespace['_io_camera_save'](ctx, {})['state']
+    state = namespace['_camera_read'](ctx.app, ctx.doc)['state']
     states.append(state)
-    for bad in ({'fit': True}, {'state': {}}, {'unknown': 1}):
-        try:
-            namespace['_io_camera_save'](ctx, bad)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError('unknown inputs accepted')
     ctx.app.activeDocument = object()
     try:
-        namespace['_io_camera_save'](ctx, {})
+        namespace['_camera_read'](ctx.app, ctx.doc)
     except ValueError:
         pass
     else:
@@ -100,7 +91,7 @@ for kind in range(3):
     ctx.app.activeDocument = doc
     viewport.__dict__['parentDocument'] = object()
     try:
-        namespace['_io_camera_save'](ctx, {})
+        namespace['_camera_read'](ctx.app, ctx.doc)
     except ValueError:
         pass
     else:
@@ -115,7 +106,7 @@ print(json.dumps(states))
 
 test("camera.save registry executes only its exact canonical handler closure", () => {
   const artifact = prepare();
-  assert.equal(artifact.units.length, 10);
+  assert.equal(artifact.units.length, 8);
   const result = execute(artifact.script);
   assert.equal(result.status, 0, result.stderr);
   const states = JSON.parse(result.stdout);
