@@ -70,6 +70,19 @@ function prepareCamera(document, component) {
   );
 }
 
+function checkReceipt(job, requestId, sourceHash, jobId) {
+  if (
+    typeof job?.id !== "string" ||
+    !job.id.trim() ||
+    job.requestId !== requestId ||
+    job.sourceHash !== sourceHash ||
+    (jobId !== undefined && job.id !== jobId)
+  )
+    throw new Error(
+      `Mismatched swarm receipt for ${requestId}; do not resubmit`,
+    );
+}
+
 async function runCamera(document, component, dispatch) {
   document = Object.freeze({ ...document });
   const output = await executeCad(
@@ -79,13 +92,9 @@ async function runCamera(document, component, dispatch) {
         const expected = createHash("sha256")
           .update(request.code)
           .digest("hex");
-        const job = await dispatch(request);
-        if (
-          job.requestId !== request.requestId ||
-          job.sourceHash !== expected ||
-          job.state !== "succeeded" ||
-          typeof job.result?.stdout !== "string"
-        )
+        const job = await dispatch(request, expected);
+        checkReceipt(job, request.requestId, expected);
+        if (job.state !== "succeeded" || typeof job.result?.stdout !== "string")
           throw new Error(
             `No matching terminal success for ${request.requestId}: ${job.state}; do not resubmit`,
           );
@@ -162,24 +171,31 @@ async function main([mode, pinFile, output, ...rest]) {
         },
       ),
     );
-  const result = await runCamera(document, rest[0], async (request) => {
-    const file = join(output, request.requestId + ".json");
-    save(file, request);
-    const first = cli("execute", file);
-    let job = first;
-    const deadline = Date.now() + 180000;
-    while (["preparing", "queued", "running", "sending"].includes(job.state)) {
-      if (job.requestId !== request.requestId || Date.now() >= deadline)
-        throw new Error(
-          `Inspect original request ${request.requestId}; do not resubmit`,
-        );
-      await delay(250);
-      job = cli("get", request.requestId);
-      if (job.id !== first.id) throw new Error("Swarm job identity changed");
-    }
-    save(join(output, request.requestId + ".result.json"), job);
-    return job;
-  });
+  const result = await runCamera(
+    document,
+    rest[0],
+    async (request, sourceHash) => {
+      const file = join(output, request.requestId + ".json");
+      save(file, request);
+      const first = cli("execute", file);
+      checkReceipt(first, request.requestId, sourceHash);
+      let job = first;
+      const deadline = Date.now() + 180000;
+      while (
+        ["preparing", "queued", "running", "sending"].includes(job.state)
+      ) {
+        if (Date.now() >= deadline)
+          throw new Error(
+            `Inspect original request ${request.requestId}; do not resubmit`,
+          );
+        await delay(250);
+        job = cli("get", request.requestId);
+        checkReceipt(job, request.requestId, sourceHash, first.id);
+      }
+      save(join(output, request.requestId + ".result.json"), job);
+      return job;
+    },
+  );
   save(join(output, "camera-result.json"), result);
   console.log(JSON.stringify(result));
 }

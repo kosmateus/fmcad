@@ -4,7 +4,13 @@ const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const { spawnSync } = require("node:child_process");
-const { mkdtempSync, writeFileSync, readFileSync, rmSync } = require("node:fs");
+const {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  existsSync,
+} = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const {
@@ -20,7 +26,7 @@ const runPython = (source) =>
     { input: source, encoding: "utf8" },
   );
 
-test("runner sends execute and get to the same configured directory without splitting its path", (t) => {
+function runCliFixture(t, phase, override) {
   const dir = mkdtempSync(join(tmpdir(), "camera runner "));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const cli = join(dir, "capture.cjs"),
@@ -32,8 +38,17 @@ test("runner sends execute and get to the same configured directory without spli
 const fs=require("node:fs"), args=process.argv.slice(2);
 fs.appendFileSync(process.env.CALLS,JSON.stringify(args)+"\\n");
 const first=args[0]==="execute";
-const requestId=first?JSON.parse(fs.readFileSync(args[1])).requestId:args[1];
-console.log(JSON.stringify({requestId,id:"same-job",state:first?"queued":"failed"}));
+const file=first?args[1]:require("node:path").join(process.env.EVIDENCE,args[1]+".json");
+const request=JSON.parse(fs.readFileSync(file));
+const job={requestId:request.requestId,sourceHash:require("node:crypto").createHash("sha256").update(request.code).digest("hex"),id:"same-job",state:first?"queued":"failed"};
+if(args[0]===process.env.PHASE){
+  const [key,value]=JSON.parse(process.env.OVERRIDE);
+  if(value===null) delete job[key]; else job[key]=value;
+  job.state="queued";
+}
+// A bad intermediate GET followed by a valid one must still stop at the bad GET.
+if(fs.readFileSync(process.env.CALLS,"utf8").trim().split("\\n").length>2)process.exit(17);
+console.log(JSON.stringify(job));
 `,
     { mode: 0o700 },
   );
@@ -47,15 +62,34 @@ console.log(JSON.stringify({requestId,id:"same-job",state:first?"queued":"failed
     ],
     {
       encoding: "utf8",
-      env: { ...process.env, SWARM_DIRECTORY: dir, SWARM_CLI: cli, CALLS: log },
+      env: {
+        ...process.env,
+        SWARM_DIRECTORY: dir,
+        SWARM_CLI: cli,
+        CALLS: log,
+        EVIDENCE: evidence,
+        PHASE: phase ?? "",
+        OVERRIDE: JSON.stringify(override ?? []),
+      },
     },
   );
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /failed; do not resubmit/);
-  const [submit, get, ...others] = readFileSync(log, "utf8")
+  const calls = readFileSync(log, "utf8")
     .trimEnd()
     .split("\n")
     .map((s) => JSON.parse(s));
+  assert.equal(existsSync(join(evidence, "camera-result.json")), false);
+  return { calls, run, evidence, dir };
+}
+
+test("runner sends execute and get to the same configured directory without splitting its path", (t) => {
+  const {
+    calls: [submit, get, ...others],
+    run,
+    evidence,
+    dir,
+  } = runCliFixture(t);
+  assert.match(run.stderr, /failed; do not resubmit/);
   const { requestId } = JSON.parse(readFileSync(submit[1], "utf8"));
   assert.deepEqual(submit, [
     "execute",
@@ -66,6 +100,25 @@ console.log(JSON.stringify({requestId,id:"same-job",state:first?"queued":"failed
   assert.deepEqual(get, ["get", requestId, "--directory", dir]);
   assert.equal(others.length, 0);
 });
+
+for (const phase of ["execute", "get"]) {
+  for (const override of [
+    ["requestId", "foreign"],
+    ["sourceHash", "wrong"],
+    ["id", null],
+    ["id", "  "],
+    ...(phase === "get" ? [["id", "other-job"]] : []),
+  ]) {
+    test(`${phase} rejects ${override[0]}=${JSON.stringify(override[1])} before any further poll`, (t) => {
+      const { calls, run } = runCliFixture(t, phase, override);
+      assert.match(run.stderr, /Mismatched swarm receipt.*do not resubmit/);
+      assert.deepEqual(
+        calls.map((args) => args[0]),
+        phase === "execute" ? ["execute"] : ["execute", "get"],
+      );
+    });
+  }
+}
 
 test("fresh pinned raw requests use source definitions, without a legacy broker envelope", () => {
   const saved = { ...pin, fileId: "file-from-test", version: 1 };
@@ -88,6 +141,7 @@ test("camera reads and token alias continuations execute through the public host
     assert.ok(!ids.has(request.requestId));
     ids.add(request.requestId);
     return {
+      id: "job-" + request.requestId,
       requestId: request.requestId,
       sourceHash: digest(request.code),
       state: "succeeded",
@@ -113,6 +167,7 @@ test("unknown outcomes and mismatched source identities do not start another sta
       runCamera(pin, "alias", async (request) => {
         calls++;
         return {
+          id: "job-" + request.requestId,
           requestId: request.requestId,
           sourceHash: digest(request.code),
           state: "succeeded",
@@ -143,6 +198,7 @@ if (process.env.SWARM_OFFLINE_ROOT)
       cert.fence(wrap.code);
       const stdout = runPython(wrap.code);
       return {
+        id: "job-" + request.requestId,
         requestId: request.requestId,
         sourceHash: wrap.sourceHash,
         state: "succeeded",
