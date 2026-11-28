@@ -257,6 +257,21 @@ const needs: Readonly<Record<string, string>> = {
   _entity_vector: "math",
 };
 
+// Projected methods are executable roots too. Their globals must never be
+// supplied accidentally by a separate outer selector or a sibling callback.
+const memberNeeds: Readonly<Record<string, string>> = {
+  _cad_resolve_basic_reference:
+    "_CAD_ALIAS_GROUP _CAD_ORIGINS _cad_cast _cad_items _cad_kind _cad_owner _cad_unique json",
+  _entities: "_CAD_KINDS _cad_cast _cad_items",
+  _proxy: "_cad_cast _cad_kind _cad_require_result",
+  resolve: "_cad_cast _entity_resolve_reference",
+  ref: "_cad_cast _cad_kind _cad_owner",
+  describe:
+    "_cad_cast _cad_geometry _cad_json _cad_kind _cad_parameter_info _cad_xyz adsk",
+  _expression: "_CAD_UNITLESS _cad_cast math re",
+  point: "_cad_cast adsk",
+};
+
 export function planCameraAlias(
   raw: string,
   observed: readonly { name: string; raw: string }[] = [],
@@ -584,11 +599,14 @@ export function planCameraAlias(
     for (const dependency of entry.dependencies)
       required.add(dependency.symbol);
   }
-  // Remaining roots are callable entrypoints and dependencies accessed by
-  // selected canonical context methods.
-  const roots = definitions
-    .map((d) => d.symbol)
-    .filter((s) => !required.has(s));
+  const roots = [
+    ...new Set([
+      ...definitions.map((d) => d.symbol).filter((s) => !required.has(s)),
+      ...contextMembers
+        .flatMap((m) => memberNeeds[m]?.split(" ") ?? [])
+        .filter((s) => !erased.has(s)),
+    ]),
+  ];
   return {
     resolverSymbol,
     aliasBindings,

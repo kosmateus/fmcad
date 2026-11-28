@@ -50,14 +50,14 @@ const cases: {
     raw: attr("root"),
     status: "ok",
     check: true,
-    absent: ["_camera_alias_token", "_entity_query"],
+    absent: ["_camera_alias_token", "_entity_query", "_cad_items"],
   },
   {
     label: "token",
     raw: part,
     status: "ok",
     check: true,
-    absent: ["_camera_alias_complex_name", "_entity_query"],
+    absent: ["_camera_alias_complex_name", "_entity_query", "_cad_items"],
   },
   {
     label: "occurrence path",
@@ -109,6 +109,18 @@ const cases: {
     label: "profile sketch/index",
     raw: attr({ kind: "profile", sketch: "Section", index: 1 }),
     status: "ok",
+    check: true,
+  },
+  {
+    label: "token path in named component scope",
+    raw: attr({
+      kind: "occurrence",
+      token: "occ-token",
+      path: "Part:1",
+      component: { name: "Part", kind: "component" },
+    }),
+    status: "ok",
+    check: true,
   },
   {
     label: "query scope",
@@ -130,6 +142,7 @@ const cases: {
       "_cad_context_proxy",
       "_cad_context_scope",
       "_cad_dedup",
+      "_cad_items",
       "_cad_parameter_info",
       "_cad_geometry",
       "_cad_direction",
@@ -370,7 +383,8 @@ for (const c of cases)
         "adsk.fusion",
         ...plan.roots,
         ...ctx.roots,
-        ...component.roots,
+        // This wrapper directly invokes the callback. An enclosing name
+        // lookup must not mask missing globals of CadContext methods.
         ...h.roots,
       ],
       {},
