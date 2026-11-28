@@ -1,4 +1,47 @@
 {
+  "latestOrdinaryPublicWorkflow": {
+    "recordedAt": "2026-11-28T02:40:00Z",
+    "scope": "Single public CLI CAD workflow with same-Fusion broker restart; not a full live profile",
+    "status": "PASS",
+    "counts": { "PASS": 1, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 1 },
+    "source": "9eda002269a97a9b69bc6a5718a118288154003d",
+    "build": "bc9c78119948ef747356d3debcad2eef5f2df236b9114d5a3c50f0c1d482bc90",
+    "nativeSource": "6df813600f76d7b23bdf4d4ccf48b3d8fa84d70f",
+    "physicalRuntimeBuild": "76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
+    "fusion": { "pid": 10956, "birth": "134403064912001981", "unchanged": true },
+    "brokerRestart": {
+      "status": "PASS",
+      "before": "6f337d6e-3056-47ac-923e-a5ec74bc4ec8",
+      "after": "ce2a70a1-143c-40bc-9a88-7b9a42019bfe",
+      "publicSteps": ["queue stop", "queue submit -- doc list", "queue resume", "entity.inspect", "measure.volume"],
+      "sameBuild": true
+    },
+    "document": { "name": "PublicBox-6e26abe3-0a0c-4c0b-bbba-c3ab797570ff", "creationId": "8d23736b-e765-463c-ae8c-457f0eb62661" },
+    "dimensionsMm": [40, 20, 10],
+    "measuredVolumeMm3": 8000,
+    "cleanup": "CLOSED",
+    "evidence": "/tmp/opencode/normal-public-smoke-20261128/box-6e26abe3-0a0c-4c0b-bbba-c3ab797570ff/",
+    "earlierPublicMcp": {
+      "status": "PASS",
+      "counts": { "PASS": 1, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 1 },
+      "source": "c1f38d96a3a21c1e6100dba3ff4eb3cc092a3575",
+      "nativeSource": "c5baa461310611df069bf159bda789132b9404b1",
+      "measuredVolumeMm3": 8000,
+      "cleanup": "CLOSED",
+      "evidence": "/tmp/opencode/luna-current-public-cad-20261126/live-evidence/public-mcp-fd3a88d4-4e6c-4604-93f2-4ed80e5d64dd/"
+    },
+    "fullProfiles": { "PASS": 0, "FAIL": 0, "NOTRUN": 11, "RUNNING": 0, "UNKNOWN": 0, "denominator": 11 },
+    "limitations": ["Not a full catalog qualification", "No new owner-case, marker or replica qualification", "Historical UNKNOWN unchanged", "MCP result applies only to its recorded earlier source"],
+    "preservedHarnessFailure": {
+      "evidence": "/tmp/opencode/normal-public-smoke-20261128/box-23db5b29-cee0-4f3b-844c-a60099cc050e/",
+      "jobId": "3ee577e8-ca73-40ca-be65-ce09f43d16ca",
+      "cause": "Test omitted explicit public resume after intentional stop pause",
+      "terminalCode": "DOCUMENT_CHANGED",
+      "executionOutcome": "not_started",
+      "mayHaveMutated": false,
+      "replayed": false
+    }
+  },
   "latestPublicReadQualification": {
     "status": "PASS",
     "counts": {

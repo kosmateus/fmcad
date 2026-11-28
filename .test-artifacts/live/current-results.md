@@ -1,3 +1,13 @@
+## 2026-11-28 02:40 UTC — Publiczne CAD i restart brokera PASS
+
+- **Końcowy workflow CLI: 1/1 PASS.** Na źródle `9eda002269a97a9b69bc6a5718a118288154003d`, buildzie `bc9c78119948ef747356d3debcad2eef5f2df236b9114d5a3c50f0c1d482bc90` i Native `6df813600f76d7b23bdf4d4ccf48b3d8fa84d70f` utworzono bryłę 40 × 20 × 10 mm. Po publicznym stop → submit/autostart → resume odczyt tej samej bryły potwierdził solid, wymiary 4 × 2 × 1 cm i objętość 8000 mm³. Cleanup: **CLOSED**.
+- **Restart: 1/1 PASS.** Broker zmienił instanceId z `6f337d6e-3056-47ac-923e-a5ec74bc4ec8` na `ce2a70a1-143c-40bc-9a88-7b9a42019bfe`, zachowując buildHash. Fusion pozostał procesem `10956`, birth `134403064912001981`; porównano pełne `physicalRuntime` przed i po odczycie. Normalny SQLite zachowano. Bez prywatnego operatora, profilu i CAS; publiczny stop celowo zachowuje pauzę, a publiczne resume wykonuje sprawdzenie gotowości.
+- **Wcześniejsze publiczne MCP: 1/1 PASS**, cleanup **CLOSED**, na źródle `c1f38d96a3a21c1e6100dba3ff4eb3cc092a3575` i Native `c5baa461310611df069bf159bda789132b9404b1`: MCP stdio → box → niezależne inspect/volume 8000 mm³. Ten wynik nie jest kwalifikacją MCP na późniejszym źródle.
+- **Granice:** pierwszy harness restartu pominął publiczne resume i zakończył się timeoutem. Oryginalny job `3ee577e8-ca73-40ca-be65-ce09f43d16ca` zachowano; po resume zakończył się `DOCUMENT_CHANGED`, `not_started`, `mayHaveMutated=false`. Nie ponowiono mutacji. Pełne profile pozostają **0 PASS / 0 FAIL / 11 NOTRUN z 11**; powyższe pojedyncze workflow nie zaliczają pełnego katalogu, owner cases, markerów ani replik.
+- **Dowody:** `/tmp/opencode/normal-public-smoke-20261128/box-6e26abe3-0a0c-4c0b-bbba-c3ab797570ff/` (`source.json`, `acceptance.json`, `broker-restart.json`, `broker-restart-readback.json`, `cleanup.json`) oraz `/tmp/opencode/luna-current-public-cad-20261126/live-evidence/public-mcp-fd3a88d4-4e6c-4604-93f2-4ed80e5d64dd/`. Historyczne UNKNOWN i poniższe wyniki pozostają bez zmian.
+
+---
+
 ## 2026-11-26 16:52 UTC — Kontrolowany start zakończył się UNKNOWN przed READY
 
 - **Wynik terminalny:** nowy kontroler `owned-cold-bootstrap` został uruchomiony i zakończył się kodem 1; watcher potwierdził failure. Transkrypt ma `state=UNKNOWN`, `authority=NONE`, `process=null` i wyłącznie fazę `old-death-os-confirmed`. Nie osiągnięto `READY`; nie ponawiano próby.
