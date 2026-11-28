@@ -174,6 +174,35 @@ test("ordinary discovery bounds retries for a journal-confirmed startup", async 
   assert.ok(calls < 5, `expected bounded metadata retries, got ${calls}`);
 });
 
+test("ordinary discovery rejects ready metadata returned after the remaining startup budget", async t => {
+  const f = fixture(t);
+  const next = nextRuntimeConfig(f);
+  const startup = { config: next, previous: f.config };
+  let calls = 0;
+  let readTimeoutMs: number | undefined;
+  let nativeReads = 0;
+  await assert.rejects(discoverNormalNativeRuntime(f.root, {
+    environment: { WSL_DISTRO_NAME: "owned-fixture" },
+    mapPath: f.mapPath,
+    startupTimeoutMs: 250,
+    async run(file, _args, _input, _env, _cwd, timeoutMs?: number) {
+      calls++;
+      if (file === f.python) {
+        nativeReads++;
+        return JSON.stringify(next);
+      }
+      if (calls === 1)
+        return startingMetadata(f.config, startup, f.config.installedForkDirectory);
+      readTimeoutMs = timeoutMs;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      return JSON.stringify({ ...f.metadata, config: next });
+    },
+  }), { code: "NATIVE_RUNTIME_DISCOVERY_REJECTED" });
+  assert.equal(calls, 2);
+  assert.equal(nativeReads, 0);
+  assert.ok(readTimeoutMs !== undefined && readTimeoutMs > 0 && readTimeoutMs < 250);
+});
+
 test("ordinary discovery does not retry an absent process without its startup journal", async t => {
   const f = fixture(t);
   let calls = 0;

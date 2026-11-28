@@ -112,12 +112,16 @@ export function mapWindowsRuntimePath(value: string): string {
     refused();
   return "/mnt/" + value[0]!.toLowerCase() + "/" + value.slice(3).replaceAll("\\", "/");
 }
-async function invoke(file: string, args: string[], input: string, env: NodeJS.ProcessEnv, cwd?: string) {
+async function invoke(file: string, args: string[], input: string, env: NodeJS.ProcessEnv, cwd?: string, timeoutMs?: number) {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(file, args, { env, cwd, stdio: ["pipe", "pipe", "ignore"] });
     const chunks: Buffer[] = [];
     let size = 0;
-    const timer = setTimeout(() => child.kill(), 15000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs ?? 15000);
     child.stdout.on("data", (bytes: Buffer) => {
       size += bytes.length;
       if (size > 4 * 1024 * 1024) child.kill();
@@ -126,7 +130,13 @@ async function invoke(file: string, args: string[], input: string, env: NodeJS.P
     child.on("error", reject);
     child.on("close", (status) => {
       clearTimeout(timer);
-      if (status !== 0 || size > 4 * 1024 * 1024) reject(new Error("Native discovery process failed"));
+      if (timedOut && timeoutMs !== undefined)
+        reject(Object.assign(new Error("Normal native runtime discovery failed"), {
+          code: "NATIVE_RUNTIME_DISCOVERY_REJECTED",
+          notStarted: true,
+        }));
+      else if (status !== 0 || size > 4 * 1024 * 1024)
+        reject(new Error("Native discovery process failed"));
       else resolve(Buffer.concat(chunks).toString("utf8").trim());
     });
     child.stdin.on("error", () => {});
@@ -151,12 +161,16 @@ export async function discoverNormalNativeRuntime(
   const retryTimeoutMs = dependencies.startupTimeoutMs ?? normalStartupTimeoutMs;
   if (!Number.isSafeInteger(retryTimeoutMs) || retryTimeoutMs < 0 ||
       retryTimeoutMs > normalStartupTimeoutMs) refused();
+  const startupDeadline = Date.now() + retryTimeoutMs;
   let expectedStartupConfig: Record<string, unknown> | undefined;
-  let startupDeadline: number | undefined;
   let metadata: Record<string, unknown>;
   while (true) {
-    const raw = decodeAdmissionJson(await run(powershell,
-      ["-NoProfile", "-NonInteractive", "-Command", discoverPaths], "", environment));
+    const remaining = startupDeadline - Date.now();
+    if (remaining <= 0) refused();
+    const response = await run(powershell,
+      ["-NoProfile", "-NonInteractive", "-Command", discoverPaths], "", environment, undefined, remaining);
+    if (Date.now() >= startupDeadline) refused();
+    const raw = decodeAdmissionJson(response);
     if (raw === null) {
       if (expectedStartupConfig) refused();
       return undefined;
@@ -165,17 +179,13 @@ export async function discoverNormalNativeRuntime(
     if ("state" in metadata) {
       const next = startingConfig(metadata, mapPath);
       if (expectedStartupConfig && !isDeepStrictEqual(expectedStartupConfig, next)) refused();
-      if (!expectedStartupConfig) {
-        expectedStartupConfig = next;
-        startupDeadline = Date.now() + retryTimeoutMs;
-      }
-      if (startupDeadline === undefined) refused();
-      const remaining = startupDeadline - Date.now();
-      if (remaining <= 0) refused();
-      await new Promise(resolve => setTimeout(resolve, Math.min(normalStartupRetryIntervalMs, remaining)));
-      if (Date.now() >= startupDeadline) refused();
+      expectedStartupConfig ??= next;
+      const remainingAfterRead = startupDeadline - Date.now();
+      if (remainingAfterRead <= 0) refused();
+      await new Promise(resolve => setTimeout(resolve, Math.min(normalStartupRetryIntervalMs, remainingAfterRead)));
       continue;
     }
+    if (Date.now() >= startupDeadline) refused();
     if (expectedStartupConfig && !isDeepStrictEqual(metadata["config"], expectedStartupConfig)) refused();
     break;
   }
