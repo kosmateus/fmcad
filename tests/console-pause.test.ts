@@ -296,7 +296,7 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
       armedPing = undefined;
       pingIds.push(payload["id"]);
       sent++;
-      if (requestId === "first")
+      if (requestId === "first" || requestId === "third")
         await new Promise<void>((resolve) => {
           finishPing = resolve;
         });
@@ -373,15 +373,24 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
         ? {
             success: true,
             stdout:
-              "FMCAD_RESULT " +
-              JSON.stringify({
-                success: true,
-                result: {
-                  status: "complete",
-                  name: documentName,
-                  creationId,
-                },
-              }),
+                "FMCAD_RESULT " +
+                JSON.stringify({
+                  success: true,
+                  result: {
+                    name: documentName,
+                    creationId,
+                    saved: false,
+                    modified: false,
+                    fileId: null,
+                    fileName: null,
+                    version: null,
+                    versionId: null,
+                    isComplete: null,
+                    isReadOnly: null,
+                    folderId: null,
+                    projectId: null,
+                  },
+                }),
             stderr: "",
           }
         : { success: true, stdout: "", stderr: "" };
@@ -553,7 +562,9 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   });
   assert.equal(paused["phase"], "PAUSING");
   const second = await submit("second");
-  finishPing();
+  const releaseFirstPing = present(finishPing);
+  finishPing = undefined;
+  releaseFirstPing();
   for (
     let i = 0;
     (await call("control-status"))["phase"] !== "PAUSED" && i < 100;
@@ -577,6 +588,10 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   const foreignStatusRead = await submitCommand(
     "foreign-status-after-resume",
     ["doc", "status", "--doc", documentName, "--doc-id", "foreign-creation"],
+  );
+  const changedTargetStatusRead = await submitCommand(
+    "changed-target-status-after-resume",
+    ["doc", "status", "--doc", "ChangedBox", "--doc-id", creationId],
   );
   const unpinnedStatusRead = await submitCommand("unpinned-status-after-resume", [
     "doc",
@@ -625,6 +640,7 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   const pendingJobs = [
     statusRead,
     foreignStatusRead,
+    changedTargetStatusRead,
     unpinnedStatusRead,
     staleMutation,
   ];
@@ -658,14 +674,16 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
       productScripts,
     }),
   );
-  assert.match(text(at(statusResult, "stdout")), /"status":"complete"/);
-  assert.match(text(at(statusResult, "stdout")), /"name":"PublicBox"/);
-  assert.match(
+  const statusOutput = JSON.parse(
     text(at(statusResult, "stdout")),
-    /"creationId":"public-box-creation"/,
-  );
+  ) as Record<string, unknown>;
+  const statusData = record(statusOutput["result"]);
+  assert.equal(statusOutput["success"], true);
+  assert.equal(statusData["name"], documentName);
+  assert.equal(statusData["creationId"], creationId);
   for (const rejectedJob of [
     foreignStatusRead,
+    changedTargetStatusRead,
     unpinnedStatusRead,
     staleMutation,
   ]) {
@@ -699,7 +717,9 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     "--doc",
     "OldModel",
   ]);
-  finishPing();
+  const releaseThirdPing = finishPing;
+  assert.ok(releaseThirdPing);
+  releaseThirdPing();
   for (
     let i = 0;
     (await call("control-status"))["phase"] !== "PAUSED" && i < 100;

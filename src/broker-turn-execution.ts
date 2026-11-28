@@ -342,6 +342,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
   const probeBoundary = new AsyncLocalStorage<ProbeBoundary>();
   const contexts = new Map<ProductGrant, Context>();
   const startedRuns = new WeakSet<ProductGrant>();
+  const resumedPinnedStatusReadEpoch = new WeakMap<ProductGrant, number>();
   const plans = new Map<string, PreparedProductPlan>();
   const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
   const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
@@ -400,6 +401,7 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     }
   };
   const finish = (grant: ProductGrant, details: QueueDetails) => {
+    resumedPinnedStatusReadEpoch.delete(grant);
     lane.settle(grant, () => {
       queue.finish(grant.jobId, details);
       documents.continuation.forget(grant.jobId, grant.turn);
@@ -982,9 +984,15 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
               "DOCUMENT_CHANGED",
               "Context changed during local preparation or pause",
             );
+          const currentContextEpoch = queue.data.contextEpoch || 0;
+          const resumedStatusReadEpoch =
+            resumedPinnedStatusReadEpoch.get(grant);
+          const verifiedResumedStatusRead =
+            resumedStatusReadEpoch === currentContextEpoch;
           if (
             !prepared.metadataOnly &&
-            prepared.contextEpoch !== context.contextEpoch
+            prepared.contextEpoch !== context.contextEpoch &&
+            !verifiedResumedStatusRead
           )
             fail(
               "DOCUMENT_CHANGED",
@@ -1054,6 +1062,8 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
           const physical = bindPhysical(context, prepared);
+          if (verifiedResumedStatusRead)
+            resumedPinnedStatusReadEpoch.delete(grant);
           const journal = records.createRpcIntent(context.job.id, record);
           context.turnRpcs.push({ record, journal });
           const dispatch = {
@@ -2269,53 +2279,45 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     let previousTurn: P.Instance["documentState"] | null = null;
     let observed: P.Instance | undefined;
     let selector: Selector;
-    let inspectedPinnedStatusCandidate = false;
-    let inspectPreparedError: string | null = null;
     let allowsBusyAfter = false;
     return execution.runBrokerProductTurn({
       inspectPrepared() {
         let changed = false;
-        inspectedPinnedStatusCandidate = pinnedStatusReadCandidate(job);
-        try {
-          if (!inspectedPinnedStatusCandidate) {
-            flights?.preflight.send.fence();
-            flights?.postflight.send.fence();
-          }
-          if (job.request.phased) {
-            if (
-              plan?.kind !== "worker" ||
-              worker.phased.pending(job.id)?.message !== plan.message
-            )
-              fail(
-                "PREPARED_RPC_UNAVAILABLE",
-                "The prepared worker turn is gone",
-              );
-            plan.send.fence();
-          }
-          if (job.kind === "rpc") {
-            if (plan?.kind !== "raw")
-              fail(
-                "PREPARED_RPC_UNAVAILABLE",
-                "The original checked RPC is unavailable; it is never reconstructed for replay",
-              );
-            if (!!job.pythonStdout !== !!plan.compiledPayload)
-              fail(
-                "PYTHON_STDOUT_UNPROVEN",
-                "A compiled stdout RPC must retain its private original plan",
-              );
-            plan.turn.inspect((prepared) => {
-              assertStdoutPrepared(job, prepared);
-              (prepared.metadataProof ?? prepared.pythonCertificate).fence(
-                prepared.outgoing,
-              );
-              changed =
-                !prepared.metadataOnly &&
-                prepared.contextEpoch !== (queue.data.contextEpoch || 0);
-            });
-          }
-        } catch (cause) {
-          inspectPreparedError = errorInfo(cause).code || "UNKNOWN";
-          throw cause;
+        if (!resumedPinnedStatusReadRequest(job)) {
+          flights?.preflight.send.fence();
+          flights?.postflight.send.fence();
+        }
+        if (job.request.phased) {
+          if (
+            plan?.kind !== "worker" ||
+            worker.phased.pending(job.id)?.message !== plan.message
+          )
+            fail(
+              "PREPARED_RPC_UNAVAILABLE",
+              "The prepared worker turn is gone",
+            );
+          plan.send.fence();
+        }
+        if (job.kind === "rpc") {
+          if (plan?.kind !== "raw")
+            fail(
+              "PREPARED_RPC_UNAVAILABLE",
+              "The original checked RPC is unavailable; it is never reconstructed for replay",
+            );
+          if (!!job.pythonStdout !== !!plan.compiledPayload)
+            fail(
+              "PYTHON_STDOUT_UNPROVEN",
+              "A compiled stdout RPC must retain its private original plan",
+            );
+          plan.turn.inspect((prepared) => {
+            assertStdoutPrepared(job, prepared);
+            (prepared.metadataProof ?? prepared.pythonCertificate).fence(
+              prepared.outgoing,
+            );
+            changed =
+              !prepared.metadataOnly &&
+              prepared.contextEpoch !== (queue.data.contextEpoch || 0);
+          });
         }
         return changed;
       },
@@ -2498,13 +2500,23 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
             (baselineFile && fs.existsSync(baselineFile)
               ? files.readJson<P.Instance>(baselineFile).documentState
               : null);
-          const code = localChanged
-            ? "DOCUMENT_CHANGED"
-            : documents.compareDocumentState(baseline, observed?.documentState);
+          const comparison = documents.compareDocumentState(
+            baseline,
+            observed?.documentState,
+          );
           const seedsPinnedStatusBaseline =
             !baseline &&
             resumedPinnedStatusRead &&
-            code === "DOCUMENT_BASELINE_REQUIRED";
+            comparison === "DOCUMENT_BASELINE_REQUIRED";
+          if (seedsPinnedStatusBaseline)
+            resumedPinnedStatusReadEpoch.set(
+              grant,
+              queue.data.contextEpoch || 0,
+            );
+          const code =
+            localChanged && !seedsPinnedStatusBaseline
+              ? "DOCUMENT_CHANGED"
+              : comparison;
           if (code && !seedsPinnedStatusBaseline) {
             const refreshedStatePath = path.join(
               directory,
@@ -2517,10 +2529,6 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
                   ? "document_changed"
                   : "document_guard_rejected",
               code,
-              localContextChanged: localChanged,
-              resumedPinnedStatusRead,
-              inspectedPinnedStatusCandidate,
-              inspectPreparedError,
               operationSubmitted: false,
               mayHaveMutated: false,
               ...(job.physicalTurns
