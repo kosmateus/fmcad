@@ -32,11 +32,15 @@ export function prepareBrokerPhysicalGeneration(options: {
   let issuanceAttempted = false;
   let authorization:
     ReturnType<typeof createPhysicalGenerationAuthorization> | undefined;
-  function unavailable(): never {
+  function unavailable(guardCode?: string): never {
     throw Object.assign(
-      new Error("Physical generation has not been prepared"),
+      new Error(
+        "Physical generation has not been prepared" +
+          (guardCode === undefined ? "" : ` (${guardCode})`),
+      ),
       {
         code: "PHYSICAL_GENERATION_REJECTED",
+        ...(guardCode === undefined ? {} : { guardCode }),
         ...(issuanceAttempted
           ? { grantIssuance: "unknown" }
           : { notStarted: true }),
@@ -98,7 +102,11 @@ export function prepareBrokerPhysicalGeneration(options: {
           issuanceAttempted = false;
         // The operator may include credentials/private paths in its exception.
         // Preserve uncertainty by refusing retries, not by returning that error.
-        unavailable();
+        unavailable(
+          error instanceof PhysicalGenerationProvisionError
+            ? error.safeGuardCode()
+            : undefined,
+        );
       }
     },
     authorization: current,

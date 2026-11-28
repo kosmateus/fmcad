@@ -205,6 +205,7 @@ export function createQueueSession(
       const physical = rootProfile().physicalBrokerPortsFromEnvironment<
         import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot
       >(process.env, {
+        directory,
         runtimeRootFactory(profile) {
           physicalVersion = profile.runtime.physicalRuntime.version;
           return wiring.createRuntimeRootPhysicalWiring(profile);

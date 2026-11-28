@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import childProcess, { type SpawnOptions } from "node:child_process";
 import test from "node:test";
 import { physicalBrokerPortsFromEnvironment } from "../packages/node-adapters/src/execution/physical-generation-profile";
+import { PhysicalGenerationProvisionError } from "../packages/node-adapters/src/execution/physical-generation-provision";
 import type { PhysicalGenerationDescriptor } from "../packages/node-adapters/src/execution/physical-generation";
 import {
   DEFAULT_ADDIN_SETTINGS,
@@ -59,6 +60,81 @@ function fixture(t: { after(action: () => void): void }) {
   publish();
   return { root, profile, file, publish };
 }
+
+test("native runtime configuration is saved under the owner claim and reused without environment", linux, async t => {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.root, "runtime-rebaseline-head.json"), "{}");
+  const configured = path.join(f.root, "runtime-physical-profile.json");
+  let verified = false;
+  let ownerChecks = 0;
+  let provisions = 0;
+  const dependencies: NonNullable<Parameters<typeof physicalBrokerPortsFromEnvironment>[1]> = {
+    directory: f.root,
+    runtimeRootFactory(profile) {
+      return {
+        nativeProvision: profile.nativeProvision,
+        async verifyRuntimeRootBeforeRestore() { verified = true; return {}; },
+        assertVerifiedRoot(directory) { assert.equal(directory, f.root); assert.equal(verified, true); },
+        async getVerifiedActivation() { return undefined; },
+      };
+    },
+    provisionFactory() {
+      return { async provision() { provisions++; throw new PhysicalGenerationProvisionError("notStarted"); } };
+    },
+  };
+  const ports = physicalBrokerPortsFromEnvironment(
+    { FMCAD_PHYSICAL_OPERATOR_PROFILE: f.file }, dependencies,
+  );
+  assert.ok(ports);
+  assert.equal(fs.existsSync(configured), false, "loading a profile is not an owner claim");
+  await ports.verifyRuntimeRootBeforeRestore({ directory: f.root, buildHash: "a".repeat(64), configHash: "b".repeat(64) });
+  await assert.rejects(ports.preparePhysicalGeneration({
+    directory: f.root,
+    owner: { pid: process.pid, birth: "owned-broker-birth", nonce: "claimed-owner" },
+    buildHash: "a".repeat(64), configHash: "b".repeat(64),
+    assertBrokerOwner() { ownerChecks++; },
+  }), { code: "PHYSICAL_GENERATION_REJECTED", notStarted: true });
+  assert.ok(ownerChecks >= 2);
+  assert.equal(provisions, 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(configured, "utf8")), f.profile);
+  assert.equal(fs.statSync(configured).mode & 0o777, 0o600);
+  verified = false;
+  const restored = physicalBrokerPortsFromEnvironment({}, dependencies);
+  assert.ok(restored, "ordinary startup discovers the saved runtime configuration");
+  await restored.verifyRuntimeRootBeforeRestore({ directory: f.root, buildHash: "a".repeat(64), configHash: "b".repeat(64) });
+  assert.equal(verified, true, "saved configuration still needs authenticated root verification");
+  fs.chmodSync(configured, 0o644);
+  assert.throws(() => physicalBrokerPortsFromEnvironment({}, dependencies), {
+    code: "PHYSICAL_OPERATOR_PROFILE_REJECTED",
+  });
+});
+
+test("native runtime configuration is not published after losing the owner", linux, async t => {
+  const f = fixture(t);
+  const configured = path.join(f.root, "runtime-physical-profile.json");
+  const ports = physicalBrokerPortsFromEnvironment(
+    { FMCAD_PHYSICAL_OPERATOR_PROFILE: f.file },
+    {
+      runtimeRootFactory(profile) {
+        return {
+          nativeProvision: profile.nativeProvision,
+          async verifyRuntimeRootBeforeRestore() { return {}; },
+          assertVerifiedRoot() {},
+          async getVerifiedActivation() { return undefined; },
+        };
+      },
+      provisionFactory() { assert.fail("No provisioning after owner loss"); },
+    },
+  );
+  assert.ok(ports);
+  await assert.rejects(ports.preparePhysicalGeneration({
+    directory: f.root,
+    owner: { pid: process.pid, birth: "old-owner", nonce: "lost-owner" },
+    buildHash: "a".repeat(64), configHash: "b".repeat(64),
+    assertBrokerOwner() { throw new Error("Owner changed"); },
+  }), /Owner changed/);
+  assert.equal(fs.existsSync(configured), false);
+});
 
 test(
   "serve rejects an invalid private profile and mixed authority before backend creation",

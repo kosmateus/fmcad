@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { decodeAdmissionJson } from "./admission-json";
+import { durable } from "../persistence/records";
 import { prepareBrokerPhysicalGeneration } from "./physical-generation-broker";
 import {
   createNativePhysicalGenerationProvision,
@@ -161,11 +162,12 @@ function readProfile(file: string): unknown {
   }
 }
 
-/** Broker-only composition input. It is deliberately separate from public
- * fmcad configuration and cannot supply a broker owner, token or capability. */
+/** Native runtime settings, not an invocation DTO or capability. Saved settings
+ * still require authenticated root verification and an actual broker claim. */
 export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   dependencies: {
+    directory?: string;
     provisionFactory?: typeof createNativePhysicalGenerationProvision;
     runtimeRoot?: PhysicalRuntimeRootAuthorization<ApprovedRoot>;
     runtimeRootFactory?: (
@@ -173,7 +175,23 @@ export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
     ) => PhysicalRuntimeRootAuthorization<ApprovedRoot>;
   } = {},
 ) {
-  const file = environment["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+  let file = environment["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+  if (
+    file === undefined &&
+    dependencies.directory !== undefined &&
+    hasRuntimeRootEvidence(dependencies.directory)
+  ) {
+    const configured = path.join(
+      dependencies.directory,
+      "runtime-physical-profile.json",
+    );
+    try {
+      fs.lstatSync(configured);
+      file = configured;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") rejected();
+    }
+  }
   if (file === undefined) return undefined;
   try {
     const profile = object(readProfile(file));
@@ -316,6 +334,21 @@ export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
         context.assertBrokerOwner();
         if (runtimeRoot) {
           runtimeRoot.assertVerifiedRoot(context.directory);
+          const configured = path.join(
+            context.directory,
+            "runtime-physical-profile.json",
+          );
+          if (file !== configured) {
+            durable(configured, {
+              version: 1,
+              clientId,
+              transport,
+              runtime: descriptor,
+              nativeProvision: options,
+            });
+            context.assertBrokerOwner();
+            runtimeRoot.assertVerifiedRoot(context.directory);
+          }
           const assertBrokerOwner = () => {
             context.assertBrokerOwner();
             runtimeRoot.assertVerifiedRoot(context.directory);

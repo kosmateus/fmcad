@@ -44,6 +44,11 @@ export class PhysicalGenerationProvisionError extends Error {
     super(`Private physical grant provisioning failed (${grantIssuance})`);
     this.name = "PhysicalGenerationProvisionError";
   }
+  safeGuardCode(): string | undefined {
+    return this.guardCode !== undefined && nativeGuardCodes.has(this.guardCode)
+      ? this.guardCode
+      : undefined;
+  }
 }
 
 const nativeGuardCodes = new Set([

@@ -520,7 +520,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     fail("STARTUP_OBSERVATION_UNPROVEN", "Private startup observation capture must be a function");
   let runtimeRootWiring:
     import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
-  if (process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined) {
+  const physicalDirectory = path.resolve(options.dir || queueDirectory());
+  const nativeRuntimeRoot = hasRuntimeRootEvidence(physicalDirectory);
+  if (
+    process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined ||
+    nativeRuntimeRoot
+  ) {
     if ([
       options.bindPhysicalTurn,
       options.withPhysicalTurn,
@@ -536,8 +541,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "./dist/node-adapters/execution/physical-generation-profile",
     ).physicalBrokerPortsFromEnvironment<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot>(
       process.env,
-      hasRuntimeRootEvidence(path.resolve(options.dir || queueDirectory()))
-        ? {
+      {
+        directory: physicalDirectory,
+        ...(nativeRuntimeRoot
+          ? {
             runtimeRootFactory(profile) {
               const { createRuntimeRootPhysicalWiring } = runtimeRequire(
                 "./queue-runtime-physical-wiring",
@@ -545,11 +552,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               runtimeRootWiring = createRuntimeRootPhysicalWiring(profile);
               return runtimeRootWiring;
             },
-          }
-        : {},
+            }
+          : {}),
+      },
     );
     if (!physical)
-      fail("PHYSICAL_CAPABILITY_REQUIRED", "Private physical capabilities are unavailable");
+      fail(
+        nativeRuntimeRoot ? "RUNTIME_ROOT_AUTHORITY_REQUIRED" : "PHYSICAL_CAPABILITY_REQUIRED",
+        "Native runtime configuration is unavailable for this queue",
+      );
     options = {
       ...options,
       preparePhysicalGeneration: physical.preparePhysicalGeneration,
@@ -6573,6 +6584,7 @@ function reclaim(dir: string, cfg?: P.Config | (() => P.Config)) {
     load("./dist/node-adapters/execution/physical-generation-profile")
       .physicalBrokerPortsFromEnvironment<import("../queue-runtime-physical-wiring").ApprovedRuntimeRoot>(
         process.env, {
+          directory: path.resolve(dir),
           runtimeRootFactory(profile) {
             runtimeRoot = wiring.createRuntimeRootPhysicalWiring(profile);
             return runtimeRoot;

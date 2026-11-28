@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 import { prepareBrokerPhysicalGeneration } from "../packages/node-adapters/src/execution/physical-generation-broker";
+import { PhysicalGenerationProvisionError } from "../packages/node-adapters/src/execution/physical-generation-provision";
 import {
   createPhysicalTurnStatusRequest,
   createPhysicalTurnHistoryRequest,
@@ -13,6 +14,47 @@ import {
   createPhysicalGenerationAuthorization,
   type PhysicalGenerationDescriptor,
 } from "../packages/node-adapters/src/execution/physical-generation";
+
+for (const guard of ["NATIVE_CACHE_PRESENT", "private-secret-not-a-guard"]) {
+  test(`grant refusal exposes only a recognized native guard: ${guard === "NATIVE_CACHE_PRESENT" ? "recognized" : "redacted"}`, async (t) => {
+    const f = fixture(t);
+    let attempts = 0;
+    const prepared = prepareBrokerPhysicalGeneration({
+      runtime: f.expected,
+      clientId: f.expected.brokerOwner.clientId,
+      async provision() {
+        attempts++;
+        throw new PhysicalGenerationProvisionError("notStarted", guard);
+      },
+    });
+    const context = {
+      directory: f.root,
+      owner: f.expected.brokerOwner,
+      buildHash: "a".repeat(64),
+      configHash: "b".repeat(64),
+      assertBrokerOwner() {},
+    };
+    await assert.rejects(prepared.preparePhysicalGeneration(context), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(Reflect.get(error, "code"), "PHYSICAL_GENERATION_REJECTED");
+      assert.equal(Reflect.get(error, "notStarted"), true);
+      if (guard === "NATIVE_CACHE_PRESENT") {
+        assert.equal(Reflect.get(error, "guardCode"), guard);
+        assert.ok(error.message.includes(guard));
+      } else {
+        assert.equal(Reflect.get(error, "guardCode"), undefined);
+        assert.equal(error.message, "Physical generation has not been prepared");
+        assert.equal(JSON.stringify(error).includes(guard), false);
+        assert.equal(error.stack?.includes(guard), false);
+      }
+      return true;
+    });
+    await assert.rejects(prepared.preparePhysicalGeneration(context), {
+      code: "PHYSICAL_GENERATION_REJECTED",
+    });
+    assert.equal(attempts, 1, "reporting a refusal must not retry provisioning");
+  });
+}
 
 function pythonEvidence(
   binding: unknown,
