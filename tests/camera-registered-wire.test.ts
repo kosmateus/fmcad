@@ -14,6 +14,45 @@ const { registeredCameraForAddin, matchesCameraInvocation } = load(
 const { prepareReceiptScript } = load("./src/queue-instance");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
+test("the public camera composer strictly checks each component program with its own dependency closure", async () => {
+  const typingRoot = path.join(root, "dist/runtime/python/typing");
+  const checker = python.createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  const docId = "pinned-camera";
+  const token = { token: "abc", kind: "component" };
+  const query = { query: { kind: "component", scope: { component: "root" } } };
+  for (const [component, raw] of [
+    ["alias", undefined],
+    ["alias", token],
+    ["alias", query],
+    [token, undefined],
+    [{ name: "root" }, undefined],
+    [query, undefined],
+  ] as const) {
+    const artifact = prepareCadScript(
+      "camera.save",
+      {},
+      { doc: "Fixture", docId, component },
+      undefined,
+      undefined,
+      undefined,
+      raw ? { name: component, raw: JSON.stringify(raw), docId } : undefined,
+    );
+    const checked = await checker.check({
+      artifact,
+      context: { kind: "bundle" },
+    });
+    assert.equal(
+      checked.status,
+      "passed",
+      JSON.stringify({ component, raw, diagnostics: checked.diagnostics }),
+    );
+  }
+});
+
 test("component support preserves the independently reviewed document-only wire program", () => {
   // Pins and decoded SHA from the physical f87a0b43 capture under source 591208d.
   const artifact = prepareCadScript(
