@@ -174,9 +174,17 @@ export interface BrokerTurnServices {
     ): P.Reply | null;
     rpcPayload(value: unknown): P.Rpc;
     canonical(value: unknown): string;
-    commandEntry(
-      argv: string[],
-    ): { kind?: string; target?: string } | null | undefined;
+    commandEntry(argv: string[]):
+      | {
+          kind?: string;
+          target?: string;
+          contract?: {
+            operation: string;
+            declaration: { readOnly: boolean };
+          };
+        }
+      | null
+      | undefined;
   };
   transport: {
     client: P.Client;
@@ -340,6 +348,30 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
   const debugRawReceived = new WeakSet<P.PreparedCall>();
   const jobDir = (id: string) => path.join(config.directory, "jobs", id);
   const currentInstance = () => required(authority.current().instance);
+  const contextRefreshRequired = (job: P.Job) =>
+    job.contextRefreshRequired === true ||
+    queue.data.jobs[job.id]?.contextRefreshRequired === true;
+  const pinnedStatusReadCandidate = (job: P.Job) => {
+    const entry =
+      job.kind === "command"
+        ? protocol.commandEntry(required(job.request.argv))
+        : undefined;
+    const selector =
+      job.kind === "command"
+        ? documents.documentSelector(job)
+        : undefined;
+    return (
+      !job.physicalTurns &&
+      !job.sequenceParentId &&
+      entry?.kind === "cad" &&
+      entry.target === "document.status" &&
+      entry.contract?.operation === "document.status" &&
+      entry.contract.declaration.readOnly === true &&
+      !!selector?.creationId
+    );
+  };
+  const resumedPinnedStatusReadRequest = (job: P.Job) =>
+    contextRefreshRequired(job) && pinnedStatusReadCandidate(job);
   const contextFor = (grant: ProductGrant) => required(contexts.get(grant));
   const heldExecutionContext = () => {
     const held = lane.heldContext();
@@ -2044,21 +2076,24 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
       async postflight(settled) {
         if (!settled) return false;
         context.postflight = true;
-        const rpcId = flights?.postflight.binding.rpcId || randomUUID();
-        const binding = flights?.postflight.binding || {
+        const preparedPostflight = resumedPinnedStatusReadRequest(job)
+          ? undefined
+          : flights?.postflight;
+        const rpcId = preparedPostflight?.binding.rpcId || randomUUID();
+        const binding = preparedPostflight?.binding || {
           jobId: job.id,
           rpcId,
           requestHash: files.hash(`postflight:${job.id}:${rpcId}`),
           buildHash: config.buildHash,
         };
         const receipt =
-          flights?.postflight.receipt ||
+          preparedPostflight?.receipt ||
           path.join(directory, `postflight-${rpcId}.receipt.json`);
         try {
           const observation = await checkTurnInstance(
             grant,
             {
-              prepared: flights?.postflight,
+              prepared: preparedPostflight,
               requireIdle: !allowsBusyAfter,
               receiptPath: receipt,
               binding,
@@ -2234,43 +2269,53 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
     let previousTurn: P.Instance["documentState"] | null = null;
     let observed: P.Instance | undefined;
     let selector: Selector;
+    let inspectedPinnedStatusCandidate = false;
+    let inspectPreparedError: string | null = null;
     let allowsBusyAfter = false;
     return execution.runBrokerProductTurn({
       inspectPrepared() {
         let changed = false;
-        flights?.preflight.send.fence();
-        flights?.postflight.send.fence();
-        if (job.request.phased) {
-          if (
-            plan?.kind !== "worker" ||
-            worker.phased.pending(job.id)?.message !== plan.message
-          )
-            fail(
-              "PREPARED_RPC_UNAVAILABLE",
-              "The prepared worker turn is gone",
-            );
-          plan.send.fence();
-        }
-        if (job.kind === "rpc") {
-          if (plan?.kind !== "raw")
-            fail(
-              "PREPARED_RPC_UNAVAILABLE",
-              "The original checked RPC is unavailable; it is never reconstructed for replay",
-            );
-          if (!!job.pythonStdout !== !!plan.compiledPayload)
-            fail(
-              "PYTHON_STDOUT_UNPROVEN",
-              "A compiled stdout RPC must retain its private original plan",
-            );
-          plan.turn.inspect((prepared) => {
-            assertStdoutPrepared(job, prepared);
-            (prepared.metadataProof ?? prepared.pythonCertificate).fence(
-              prepared.outgoing,
-            );
-            changed =
-              !prepared.metadataOnly &&
-              prepared.contextEpoch !== (queue.data.contextEpoch || 0);
-          });
+        inspectedPinnedStatusCandidate = pinnedStatusReadCandidate(job);
+        try {
+          if (!inspectedPinnedStatusCandidate) {
+            flights?.preflight.send.fence();
+            flights?.postflight.send.fence();
+          }
+          if (job.request.phased) {
+            if (
+              plan?.kind !== "worker" ||
+              worker.phased.pending(job.id)?.message !== plan.message
+            )
+              fail(
+                "PREPARED_RPC_UNAVAILABLE",
+                "The prepared worker turn is gone",
+              );
+            plan.send.fence();
+          }
+          if (job.kind === "rpc") {
+            if (plan?.kind !== "raw")
+              fail(
+                "PREPARED_RPC_UNAVAILABLE",
+                "The original checked RPC is unavailable; it is never reconstructed for replay",
+              );
+            if (!!job.pythonStdout !== !!plan.compiledPayload)
+              fail(
+                "PYTHON_STDOUT_UNPROVEN",
+                "A compiled stdout RPC must retain its private original plan",
+              );
+            plan.turn.inspect((prepared) => {
+              assertStdoutPrepared(job, prepared);
+              (prepared.metadataProof ?? prepared.pythonCertificate).fence(
+                prepared.outgoing,
+              );
+              changed =
+                !prepared.metadataOnly &&
+                prepared.contextEpoch !== (queue.data.contextEpoch || 0);
+            });
+          }
+        } catch (cause) {
+          inspectPreparedError = errorInfo(cause).code || "UNKNOWN";
+          throw cause;
         }
         return changed;
       },
@@ -2354,24 +2399,27 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
             ? transport.metadata.addinMetadataSelector(raw)
             : job.request.phased ||
                 job.sequenceMode === "automatic" ||
-                job.contextRefreshRequired ||
+                contextRefreshRequired(job) ||
                 documents.requiresPhysicalStageOwner(job.request.payload)
               ? documents.documentSelector(job)
               : undefined;
-        const rpcId = flights?.preflight.binding.rpcId || randomUUID();
-        const binding = flights?.preflight.binding || {
+        const preparedPreflight = resumedPinnedStatusReadRequest(job)
+          ? undefined
+          : flights?.preflight;
+        const rpcId = preparedPreflight?.binding.rpcId || randomUUID();
+        const binding = preparedPreflight?.binding || {
           jobId: job.id,
           rpcId,
           requestHash: files.hash(`preflight:${job.id}:${rpcId}`),
           buildHash: config.buildHash,
         };
         const receipt =
-          flights?.preflight.receipt ||
+          preparedPreflight?.receipt ||
           path.join(directory, `preflight-${rpcId}.receipt.json`);
         return checkTurnInstance(
           grant,
           {
-            prepared: flights?.preflight,
+            prepared: preparedPreflight,
             receiptPath: receipt,
             binding,
             requireIdle: !allowsBusy,
@@ -2426,11 +2474,21 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           );
       },
       verifyDocument(localChanged) {
+        const resumedPinnedStatusRead =
+          resumedPinnedStatusReadRequest(job) &&
+          !!selector?.creationId &&
+          observed?.documentState?.status === "complete" &&
+          observed.documentState.state?.identity?.creationId ===
+            selector.creationId &&
+          (!selector.name ||
+            observed.documentState.state?.identity?.name === selector.name) &&
+          (!selector.fileId ||
+            observed.documentState.state?.identity?.fileId === selector.fileId);
         if (
           localChanged ||
           (job.request.phased && job.physicalTurns) ||
           (job.sequenceMode === "automatic" && job.sequenceParentId) ||
-          (job.contextRefreshRequired && !selector?.metadataOnly)
+          (contextRefreshRequired(job) && !selector?.metadataOnly)
         ) {
           const baselineFile = job.sequenceParentId
             ? path.join(jobDir(job.sequenceParentId), "postflight.json")
@@ -2443,7 +2501,11 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
           const code = localChanged
             ? "DOCUMENT_CHANGED"
             : documents.compareDocumentState(baseline, observed?.documentState);
-          if (code) {
+          const seedsPinnedStatusBaseline =
+            !baseline &&
+            resumedPinnedStatusRead &&
+            code === "DOCUMENT_BASELINE_REQUIRED";
+          if (code && !seedsPinnedStatusBaseline) {
             const refreshedStatePath = path.join(
               directory,
               "refreshed-document-state.json",
@@ -2455,6 +2517,10 @@ export function createBrokerTurnExecution(services: BrokerTurnServices) {
                   ? "document_changed"
                   : "document_guard_rejected",
               code,
+              localContextChanged: localChanged,
+              resumedPinnedStatusRead,
+              inspectedPinnedStatusCandidate,
+              inspectPreparedError,
               operationSubmitted: false,
               mayHaveMutated: false,
               ...(job.physicalTurns

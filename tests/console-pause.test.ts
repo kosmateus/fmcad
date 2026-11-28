@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
+import { createHash } from "node:crypto";
 import { at, record, text, number } from "./integration/offline-cli";
 const runtimeRequire = createRequire(
   process.cwd() + "/tests/console-pause.test.js",
@@ -14,6 +15,11 @@ const { decodeNativeProgram, nativeReceipts } = runtimeRequire(
     instance: Record<string, unknown>,
   ): Array<{ file: string; value: Record<string, unknown> }>;
 };
+const releasedProof = runtimeRequire(
+  "./fixtures/physical-turn-fixture.cjs",
+) as (
+  binding: Readonly<import("../src/queue-broker-ports").PhysicalTurnBinding>,
+) => import("../src/queue-broker-ports").PhysicalTurnQuiescence;
 function present<T>(value: T | null | undefined): T {
   assert(value != null);
   return value;
@@ -225,7 +231,24 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   const { request } = runtimeRequire(
     "../src/queue-connection",
   ) as typeof import("../src/entrypoints/queue-connection");
-  const identity = {
+  const { buildHash } = runtimeRequire("../src/queue-instance") as {
+    buildHash(): string;
+  };
+  const currentBuildHash = buildHash();
+  const documentName = "PublicBox",
+    creationId = "public-box-creation";
+  const identity: {
+    pid: number;
+    birth: string;
+    version: string;
+    activeCommand: string;
+    documents: [];
+    documentState: {
+      status: string;
+      fingerprint?: string;
+      state?: { identity?: { name?: string; creationId?: string } };
+    };
+  } = {
     pid: 91,
     birth: "fake:91",
     version: "fake",
@@ -234,9 +257,12 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     documentState: { status: "unavailable" },
   };
   let finishPing: (() => void) | undefined,
+    armedPing: "first" | "second" | "third" | undefined,
     sent = 0,
     productScripts = 0,
     boundProbeReceipts = 0;
+  const pingIds: unknown[] = [];
+  const releasedTurns = new Set<string>();
   const { createBrokerTransport } = runtimeRequire(
     "../src/dist/fusion-transport/broker",
   ) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
@@ -265,9 +291,12 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
       };
     if (payload["method"] === "notifications/initialized")
       return { status: 202, raw: "" };
-    if (payload["method"] === "ping") {
+    if (payload["method"] === "ping" && armedPing) {
+      const requestId = armedPing;
+      armedPing = undefined;
+      pingIds.push(payload["id"]);
       sent++;
-      if (sent === 1)
+      if (requestId === "first")
         await new Promise<void>((resolve) => {
           finishPing = resolve;
         });
@@ -278,13 +307,54 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
         : undefined;
     const decodedScript =
       typeof script === "string" ? decodeNativeProgram(script) : "";
+    const wrappedSource = decodedScript.match(
+      /exec\(compile\(("(?:\\.|[^"\\])*")/,
+    );
+    const probeSource = wrappedSource
+      ? (JSON.parse(wrappedSource[1]!) as string)
+      : decodedScript;
+    let observed = identity;
+    if (probeSource.includes("FMCAD_QUEUE_INSTANCE")) {
+      const match = probeSource.match(
+        /_qi_json\.loads\(\s*("(?:\\.|[^"\\])*")\s*\)/,
+      );
+      if (probeSource.includes("_value['documentState']"))
+        assert.ok(
+          match,
+          "preflight must retain its requested document selector",
+        );
+      const selector = match
+        ? (JSON.parse(JSON.parse(match[1]!) as string) as {
+            name?: string;
+            creationId?: string;
+            fileId?: string;
+          })
+        : undefined;
+      if (selector) {
+        const exactTarget =
+          selector.name === documentName &&
+          (selector.creationId === undefined ||
+            selector.creationId === creationId) &&
+          selector.fileId === undefined;
+        observed = exactTarget
+          ? {
+              ...identity,
+              documentState: {
+                status: "complete",
+                fingerprint: "public-box-state-1",
+                state: { identity: { name: documentName, creationId } },
+              },
+            }
+          : { ...identity, documentState: { status: "unavailable" } };
+      }
+    }
     if (
       typeof script === "string" &&
       !decodedScript.includes("FMCAD_QUEUE_INSTANCE")
     )
       productScripts++;
     const receipts =
-      typeof script === "string" ? nativeReceipts(script, dir, identity) : [];
+      typeof script === "string" ? nativeReceipts(script, dir, observed) : [];
     for (const receipt of receipts) {
       fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
       fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
@@ -296,10 +366,25 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     const output = boundProbe
       ? {
           success: true,
-          stdout: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
+          stdout: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observed),
           stderr: "",
         }
-      : { success: true, stdout: "", stderr: "" };
+      : decodedScript.includes("_document_status_minimal")
+        ? {
+            success: true,
+            stdout:
+              "FMCAD_RESULT " +
+              JSON.stringify({
+                success: true,
+                result: {
+                  status: "complete",
+                  name: documentName,
+                  creationId,
+                },
+              }),
+            stderr: "",
+          }
+        : { success: true, stdout: "", stderr: "" };
     return {
       status: 200,
       raw: JSON.stringify({
@@ -338,17 +423,76 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
         physical as unknown as import("../src/queue-broker-ports").Client,
       nativePath: (file) => file,
       pollMs: 5,
+      bindPhysicalTurn(request) {
+        return {
+          version: 1,
+          generation: {
+            instance: "fixture-instance",
+            epoch: "fixture-epoch",
+          },
+          grantDigest: createHash("sha256")
+            .update("console-pause-physical-grant")
+            .digest("hex"),
+          physicalRuntime: {
+            pid: identity.pid,
+            birth: identity.birth,
+            version: identity.version,
+            source: "fixture-source",
+            build: "fixture-build",
+          },
+          turnId: request.physicalRequestId,
+          target: JSON.stringify(request.documentSelector ?? null),
+        };
+      },
+      async withPhysicalTurn(binding, send) {
+        try {
+          return await send();
+        } finally {
+          releasedTurns.add(binding.turnId);
+        }
+      },
+      async physicalTurnQuiescence(binding) {
+        return releasedTurns.has(binding.turnId)
+          ? releasedProof(binding)
+          : { state: "unknown", binding };
+      },
     },
   );
+  const auth = { clientId: "control-test", clientToken: "private-control" };
   t.after(async () => {
-    await broker.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    finishPing?.();
+    try {
+      for (let i = 0; i < 100; i++) {
+        const control = record(
+          await request(dir, { action: "control-status", auth }),
+        );
+        if (control["phase"] === "PAUSED") {
+          await request(dir, {
+            action: "resume",
+            auth,
+            control: {
+              requestId: "cleanup-resume",
+              expectedGeneration: control["generation"],
+              instanceId: control["instanceId"],
+            },
+          });
+          break;
+        }
+        if (control["phase"] !== "PAUSING") break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    } finally {
+      try {
+        await broker.close();
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
   });
   assert.ok(
     boundProbeReceipts > 0,
     "readiness must consume a source-bound Fusion instance receipt",
   );
-  const auth = { clientId: "control-test", clientToken: "private-control" };
   await request(dir, { action: "register", ...auth });
   const call = async (action: string, rest = {}) =>
     record(await request(dir, { action, auth, ...rest }));
@@ -361,15 +505,43 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
         requestId,
         timeoutMs: 30000,
         queueTimeoutMs: 5000,
+        backend: "addin",
+        buildHash: currentBuildHash,
         payload: { jsonrpc: "2.0", id: requestId, method: "ping" },
       },
     });
+  const { prepareRequest } = runtimeRequire(
+    "../src/dist/composition/execution-request",
+  ) as {
+    prepareRequest(job: {
+      request: Record<string, unknown>;
+    }): Record<string, unknown>;
+  };
+  const submitCommand = (requestId: string, argv: string[]) =>
+    call("submit", {
+      request: prepareRequest({
+        request: {
+          kind: "command",
+          requestId,
+          timeoutMs: 30000,
+          backend: "addin",
+          buildHash: currentBuildHash,
+          inputFiles: [],
+          argv,
+          cwd: dir,
+        },
+      }),
+    });
+  armedPing = "first";
   const first = await submit("first");
   for (let i = 0; !finishPing && i < 1000; i++)
     await new Promise((resolve) => setTimeout(resolve, 10));
   assert.ok(
     finishPing,
-    JSON.stringify(await call("result", { jobId: first["id"] })),
+    JSON.stringify({
+      first: await call("result", { jobId: first["id"] }),
+      pingIds,
+    }),
   );
   const before = await call("control-status");
   const paused = await call("pause", {
@@ -381,15 +553,6 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   });
   assert.equal(paused["phase"], "PAUSING");
   const second = await submit("second");
-  const stale = await call("submit", {
-    request: {
-      kind: "command",
-      requestId: "stale-context",
-      timeoutMs: 30000,
-      argv: ["stats", "--doc", "OldModel"],
-      cwd: dir,
-    },
-  });
   finishPing();
   for (
     let i = 0;
@@ -403,8 +566,42 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     "queued",
   );
   assert.equal(sent, 1);
+  const statusRead = await submitCommand("pinned-status-after-resume", [
+    "doc",
+    "status",
+    "--doc",
+    documentName,
+    "--doc-id",
+    creationId,
+  ]);
+  const foreignStatusRead = await submitCommand(
+    "foreign-status-after-resume",
+    ["doc", "status", "--doc", documentName, "--doc-id", "foreign-creation"],
+  );
+  const unpinnedStatusRead = await submitCommand("unpinned-status-after-resume", [
+    "doc",
+    "status",
+    "--doc",
+    documentName,
+  ]);
+  const staleMutation = await submitCommand("stale-mutation-after-resume", [
+    "shape",
+    "box",
+    "--doc",
+    documentName,
+    "--doc-id",
+    creationId,
+    "--data",
+    JSON.stringify({
+      name: "ResumeGuardBox",
+      width: "40 mm",
+      depth: "20 mm",
+      height: "10 mm",
+    }),
+  ]);
   const current = await call("control-status");
   assert.equal(current["phase"], "PAUSED");
+  armedPing = "second";
   await call("resume", {
     control: {
       requestId: "resume",
@@ -425,6 +622,99 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     record((await call("result", { jobId: second["id"] }))["job"])["state"],
     "succeeded",
   );
+  const pendingJobs = [
+    statusRead,
+    foreignStatusRead,
+    unpinnedStatusRead,
+    staleMutation,
+  ];
+  for (let i = 0; i < 2000; i++) {
+    const results = await Promise.all(
+      pendingJobs.map((pending) => call("result", { jobId: pending["id"] })),
+    );
+    if (
+      results.every((result) =>
+        ["succeeded", "failed"].includes(text(at(result, "job", "state"))),
+      )
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const statusResult = await call("result", { jobId: statusRead["id"] });
+  const queueStatus = await call("status");
+  assert.equal(
+    text(at(statusResult, "job", "state")),
+    "succeeded",
+    JSON.stringify({
+      statusResult,
+      quarantined: queueStatus["quarantined"],
+      jobs: Object.values(record(queueStatus["jobs"])).map((job) => ({
+        id: record(job)["id"],
+        state: record(job)["state"],
+        code: record(job)["code"],
+        requestId: record(job)["requestId"],
+      })),
+      boundProbeReceipts,
+      productScripts,
+    }),
+  );
+  assert.match(text(at(statusResult, "stdout")), /"status":"complete"/);
+  assert.match(text(at(statusResult, "stdout")), /"name":"PublicBox"/);
+  assert.match(
+    text(at(statusResult, "stdout")),
+    /"creationId":"public-box-creation"/,
+  );
+  for (const rejectedJob of [
+    foreignStatusRead,
+    unpinnedStatusRead,
+    staleMutation,
+  ]) {
+    const result = await call("result", { jobId: rejectedJob["id"] });
+    assert.equal(
+      text(at(result, "job", "state")),
+      "failed",
+      JSON.stringify(result),
+    );
+    assert.equal(
+      at(result, "job", "operationResult", "executionOutcome"),
+      "not_started",
+    );
+  }
+  armedPing = "third";
+  const third = await submit("third");
+  for (let i = 0; !finishPing && i < 1000; i++)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(finishPing, JSON.stringify(await call("result", { jobId: third["id"] })));
+  const beforeStalePause = await call("control-status");
+  const stalePause = await call("pause", {
+    control: {
+      requestId: "pause-before-stale-context",
+      instanceId: beforeStalePause["instanceId"],
+      expectedGeneration: beforeStalePause["generation"],
+    },
+  });
+  assert.equal(stalePause["phase"], "PAUSING");
+  const stale = await submitCommand("stale-context", [
+    "stats",
+    "--doc",
+    "OldModel",
+  ]);
+  finishPing();
+  for (
+    let i = 0;
+    (await call("control-status"))["phase"] !== "PAUSED" && i < 100;
+    i++
+  )
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  const beforeStaleResume = await call("control-status");
+  assert.equal(beforeStaleResume["phase"], "PAUSED");
+  await call("resume", {
+    control: {
+      requestId: "resume-after-status",
+      expectedGeneration: beforeStaleResume["generation"],
+      instanceId: beforeStaleResume["instanceId"],
+    },
+  });
   for (let i = 0; i < 2000; i++) {
     if (
       record((await call("result", { jobId: stale["id"] }))["job"])["state"] ===
@@ -435,6 +725,10 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   }
   const rejected = await call("result", { jobId: stale["id"] });
   assert.equal(record(rejected["job"])["state"], "failed");
+  assert.equal(
+    record((await call("result", { jobId: third["id"] }))["job"])["state"],
+    "succeeded",
+  );
   // Static admission is now covered by the real strict inspection gate. This
   // scenario must reach the stale-document guard after resume, never pass merely
   // because a generated program fails to typecheck before that guard is exercised.
@@ -453,8 +747,8 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   );
   assert.equal(
     productScripts,
-    0,
-    "Unversioned queued context must be refreshed before original execution",
+    1,
+    "Only the exact read-only pinned status may run after resume",
   );
-  assert.equal(sent, 2);
+  assert.equal(sent, 3);
 });

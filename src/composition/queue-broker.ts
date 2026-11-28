@@ -504,9 +504,13 @@ function privateDirectory(dir: string) {
   return fs.realpathSync(dir);
 }
 
-function commandEntry(argv: string[]) {
+function commandEntry(
+  argv: string[],
+): ReturnType<typeof import("./library-commands").findCommand> {
   const { rest } = load("./cli").parseFlags(argv);
-  return load("./commands").findCommand(rest);
+  return load("./commands").findCommand(rest) as ReturnType<
+    typeof import("./library-commands").findCommand
+  >;
 }
 
 function hasRuntimeRootEvidence(directory: string): boolean {
@@ -1359,6 +1363,25 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
     } else assertResetSubmissionOpen(dir);
   }
+  function isResumedPinnedStatusRead(job: P.Job | undefined) {
+    if (
+      !job ||
+      job.kind !== "command" ||
+      job.contextRefreshRequired !== true ||
+      job.physicalTurns ||
+      job.sequenceParentId
+    )
+      return false;
+    const entry = commandEntry(required(job.request.argv));
+    const selector = documentSelector(job);
+    return (
+      entry?.kind === "cad" &&
+      entry.target === "document.status" &&
+      entry.contract?.operation === "document.status" &&
+      entry.contract.declaration.readOnly === true &&
+      !!selector?.creationId
+    );
+  }
   function verifyPreparedJob(
     job:
       (Pick<P.Job, "id"> & Partial<Pick<P.Job, "request">>) | false | undefined,
@@ -1368,8 +1391,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if ((state.epoch || approvedRuntimeRoot) && job) admitEpochRequest(job.request);
     if (buildHash() !== codeHash)
       fail("BUILD_CHANGED", "Executable changed during local preparation");
-    if (job && expectedContextEpoch !== (state.data.contextEpoch || 0))
-      fail("DOCUMENT_CHANGED", "Context changed during local preparation");
+    if (job && expectedContextEpoch !== (state.data.contextEpoch || 0)) {
+      if (!isResumedPinnedStatusRead(state.data.jobs[job.id]))
+        fail("DOCUMENT_CHANGED", "Context changed during local preparation");
+    }
     for (const input of (job && job.request?.inputFiles) || []) {
       if (
         hash(
