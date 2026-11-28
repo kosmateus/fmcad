@@ -42,6 +42,8 @@ const cases: {
   status?: string;
   check?: boolean;
   absent?: string[];
+  emptyCollections?: boolean;
+  instanceBody?: boolean;
 }[] = [
   {
     label: "root",
@@ -118,7 +120,125 @@ const cases: {
       "_entity_attribute_owner",
       "_entity_frame_target",
       "_entity_find",
+      "_cad_resolve_basic_reference",
+      "resolve",
+      "_scope",
+      "_entities",
+      "_proxy",
+      "_camera_alias_target",
+      "_cad_context_entities",
+      "_cad_context_proxy",
+      "_cad_parameter_info",
+      "_cad_geometry",
+      "_cad_direction",
+      "_entity_owner_matrix",
+      "_entity_occurrence_matrix",
+      "_entity_matrix",
+      "point",
     ],
+  },
+  {
+    label: "unscoped component query",
+    raw: attr({ query: { kind: "component", filters: { name: "Part" } } }),
+    status: "ok",
+    check: true,
+    absent: [
+      "resolve",
+      "_scope",
+      "_entities",
+      "_proxy",
+      "_camera_alias_complex_name",
+      "_cad_parameter_info",
+      "point",
+    ],
+  },
+  {
+    label: "reference kind supplies query kind",
+    raw: attr({ kind: "component", query: { filters: { name: "Part" } } }),
+    status: "ok",
+    absent: ["resolve", "_scope", "_entities", "_proxy"],
+  },
+  {
+    label: "query rejects invalid filters before invalid scope",
+    raw: attr({
+      query: {
+        kind: "component",
+        filters: { bad: "filter" },
+        scope: { invalid: 1 },
+      },
+    }),
+    status: "ValueError",
+    absent: ["resolve", "_scope", "_entities", "_proxy"],
+  },
+  {
+    label: "null explicit component scope",
+    raw: attr({ query: { kind: "component", scope: { component: null } } }),
+    status: "ok",
+    absent: ["resolve", "_entities", "_cad_context_entities"],
+  },
+  {
+    label: "default face query",
+    raw: attr({ query: {} }),
+    status: "ValueError",
+    check: true,
+    absent: [
+      "_entities",
+      "edge",
+      "vertex",
+      "profile",
+      "resolve",
+      "_cad_resolve_basic_reference",
+      "_scope",
+      "_camera_alias_target",
+      "point",
+    ],
+  },
+  {
+    label: "instance body query creates the canonical proxy",
+    raw: attr({
+      query: {
+        kind: "body",
+        instances: true,
+        frame: "component",
+        filters: { name: "instance-body" },
+      },
+    }),
+    instanceBody: true,
+    status: "ok",
+    check: true,
+    absent: ["resolve", "_entities", "edge", "profile"],
+  },
+  ...[
+    "sketch",
+    "feature",
+    "plane",
+    "axis",
+    "point",
+    "edge",
+    "vertex",
+    "profile",
+  ].map((kind) => ({
+    label: `fixed ${kind} query`,
+    raw: attr({
+      query: { kind, frame: "component", filters: { name: "unmatched" } },
+    }),
+    emptyCollections: true,
+    status: "ValueError",
+    check: true,
+    absent: [
+      "resolve",
+      "_entities",
+      "_scope",
+      "_camera_alias_target",
+      "_cad_parameter_info",
+    ],
+  })),
+  {
+    label: "parameter query",
+    raw: attr({ kind: [], query: { kind: "parameter" } }),
+    status: "ValueError",
+    check: true,
+    absent: ["resolve", "_entities", "_proxy", "_cad_resolve_basic_reference"],
   },
   {
     label: "query expectation diagnostics",
@@ -202,7 +322,11 @@ for (const c of cases)
         ...refs,
         ...ctx.references.map((r: { members?: string[] }) =>
           r.members
-            ? { ...r, members: [...r.members, ...plan.contextMembers] }
+            ? {
+                ...r,
+                members: [...r.members, ...plan.contextMembers],
+                typingMembers: plan.contextTypingMembers,
+              }
             : r,
         ),
         ...component.references,
@@ -233,7 +357,11 @@ for (const c of cases)
     );
     const script: string = eraseRegisteredPython(root, artifact.script);
     for (const name of c.absent ?? [])
-      assert.ok(!script.includes(`def ${name}(`), name);
+      assert.doesNotMatch(
+        script,
+        new RegExp(`^(?:\\s*def ${name}\\(|${name} =)`, "m"),
+        name,
+      );
     const run = spawnSync("python3", ["-B", "tests/camera_alias_oracle.py"], {
       encoding: "utf8",
       input: JSON.stringify({

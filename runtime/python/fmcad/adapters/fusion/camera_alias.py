@@ -168,6 +168,10 @@ def _camera_alias_basic(ctx: "CadContext", raw: str) -> "adsk.core.Base":
     return _camera_alias_resolve_value(ctx, _cad_cast(object, json.loads(raw)))
 
 
+def _camera_alias_direct_query(ctx: "CadContext", raw: str) -> "adsk.core.Base":
+    return _entity_resolve_reference(ctx, _cad_cast('JsonObject', json.loads(raw)))
+
+
 def _camera_alias_query(ctx: "CadContext", raw: str) -> "adsk.core.Base":
     # A fresh context is private to this read. Query-internal scope, geometry
     # and filter references must take the same guarded recursive path.

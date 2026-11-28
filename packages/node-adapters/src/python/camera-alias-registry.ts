@@ -4,9 +4,34 @@ const values = "runtime/python/fmcad/domain/values.py";
 const entity = "runtime/python/fmcad/adapters/fusion/entity.py";
 const alias = "runtime/python/fmcad/adapters/fusion/camera_alias.py";
 const fusion = "runtime/python/fmcad/adapters/fusion/values.py";
+const rootScope = "runtime/python/fmcad/adapters/fusion/camera_query_root.py";
+const parameterCollection =
+  "runtime/python/fmcad/adapters/fusion/camera_query_parameters.py";
+const collections =
+  "runtime/python/fmcad/adapters/fusion/camera_query_collections.py";
+const collectionKinds = [
+  "component",
+  "parameter",
+  "body",
+  "sketch",
+  "feature",
+  "plane",
+  "axis",
+  "point",
+  "face",
+  "edge",
+  "vertex",
+  "profile",
+] as const;
 type Data = Record<string, unknown>;
 const record = (v: unknown): v is Data =>
   v != null && typeof v === "object" && !Array.isArray(v);
+const truthy = (v: unknown) =>
+  Array.isArray(v)
+    ? v.length > 0
+    : record(v)
+      ? Object.keys(v).length > 0
+      : Boolean(v);
 const only = (v: Data, keys: string[]) =>
   Object.keys(v).every((k) => keys.includes(k));
 const reservedRoot = (v: unknown) =>
@@ -61,12 +86,34 @@ function queries(ref: unknown, result: Data[]): void {
   }
 }
 
+/** These are the only places the query implementation resolves a reference.
+ * An explicit component root is already established by the pinned constructor. */
+function fixedQuery(q: Data): boolean {
+  const fixedScope = (s: Data) =>
+    s["occurrence"] == null &&
+    (s["component"] == null || reservedRoot(s["component"]));
+  const scope = record(q["scope"]) ? q["scope"] : {};
+  const frame = record(q["frame"]) ? q["frame"] : {};
+  const filters = record(q["filters"]) ? q["filters"] : {};
+  const adjacent = record(filters["adjacency"]) ? filters["adjacency"] : {};
+  return (
+    fixedScope(q) &&
+    fixedScope(scope) &&
+    fixedScope(frame) &&
+    !("body" in scope || "feature" in scope || "sketch" in frame) &&
+    !(Array.isArray(adjacent["refs"]) && adjacent["refs"].length > 0)
+  );
+}
+
 function callback(ref: unknown, query: boolean): string {
   if (!record(ref) && typeof ref !== "string") return "_camera_alias_invalid";
   if (reservedRoot(ref)) return "_camera_alias_root";
   if (typeof ref === "string")
     return ref ? "_camera_alias_name" : "_camera_alias_basic";
-  if (query) return "_camera_alias_query";
+  if (query)
+    return record(ref["query"]) && fixedQuery(ref["query"])
+      ? "_camera_alias_direct_query"
+      : "_camera_alias_query";
   if (only(ref, ["name"]) && typeof ref["name"] === "string" && ref["name"])
     return "_camera_alias_name";
   if (
@@ -104,6 +151,8 @@ interface Source {
   readonly id: string;
   readonly guard?: string;
   readonly importName?: string;
+  readonly members?: readonly string[];
+  readonly bindings?: Readonly<Record<string, Readonly<Record<string, null>>>>;
 }
 
 // Direct global dependencies, not whole source files. Context method calls
@@ -122,6 +171,7 @@ const needs: Readonly<Record<string, string>> = {
   _camera_alias_basic: "json _cad_cast _camera_alias_resolve_value",
   _camera_alias_query:
     "json _cad_cast _camera_alias_resolve_value _entity_resolve_reference",
+  _camera_alias_direct_query: "json _cad_cast _entity_resolve_reference",
   _camera_alias_resolve_value:
     "_cad_cast _CAD_ORIGINS _camera_alias_complex_name",
   _camera_alias_complex_name:
@@ -178,6 +228,7 @@ export function planCameraAlias(
   observed: readonly { name: string; raw: string }[] = [],
 ) {
   const queryShapes: Data[] = [];
+  const fixedQueries: { q: Data; kind: unknown }[] = [];
   const callbacks = new Set<string>();
   function route(text: string) {
     const shape = parseShape(text),
@@ -185,6 +236,19 @@ export function planCameraAlias(
     queries(shape, found);
     queryShapes.push(...found);
     const symbol = callback(shape, found.length > 0);
+    if (
+      symbol === "_camera_alias_direct_query" &&
+      record(shape) &&
+      record(shape["query"])
+    )
+      fixedQueries.push({
+        q: shape["query"],
+        kind: truthy(shape["kind"])
+          ? shape["kind"]
+          : "kind" in shape["query"]
+            ? shape["query"]["kind"]
+            : "face",
+      });
     callbacks.add(symbol);
     return symbol;
   }
@@ -195,8 +259,9 @@ export function planCameraAlias(
     seen.add(name);
     return { name, raw: text, resolverSymbol: route(text) };
   });
-  const query = callbacks.has("_camera_alias_query");
-  const basic = callbacks.has("_camera_alias_basic") || query;
+  const guardedQuery = callbacks.has("_camera_alias_query");
+  const query = guardedQuery || callbacks.has("_camera_alias_direct_query");
+  const basic = callbacks.has("_camera_alias_basic") || guardedQuery;
   const names =
     callbacks.has("_camera_alias_name") ||
     callbacks.has("_camera_alias_typed_name") ||
@@ -211,7 +276,13 @@ export function planCameraAlias(
   function source(
     filename: string,
     symbol: string,
-    options: { onlyType?: boolean; importName?: string; guard?: string } = {},
+    options: {
+      onlyType?: boolean;
+      importName?: string;
+      guard?: string;
+      members?: readonly string[];
+      bindings?: NonNullable<Source["bindings"]>;
+    } = {},
   ) {
     const { onlyType, ...ref } = options;
     const id = `camera.alias.${symbol}`;
@@ -233,6 +304,12 @@ export function planCameraAlias(
   if ([...callbacks].some((s) => s !== "_camera_alias_root"))
     source(core, "json", { importName: "json" });
   const contextMembers: string[] = [];
+  const contextTypingMembers: string[] = [];
+  if (basic || query)
+    source(core, "_cad_overload", {
+      importName: "typing.overload",
+      onlyType: true,
+    });
   if (basic) {
     source(alias, "_camera_alias_resolve_value");
     source(alias, "_camera_alias_complex_name");
@@ -240,10 +317,6 @@ export function planCameraAlias(
     source(entity, "_cad_context_proxy");
     for (const s of ["_entities", "_proxy", "_cad_resolve_basic_reference"])
       contextMembers.push(s);
-    source(core, "_cad_overload", {
-      importName: "typing.overload",
-      onlyType: true,
-    });
     source(core, "_CadBasicReferenceResolver", {
       onlyType: true,
       guard: "TYPE_CHECKING",
@@ -251,37 +324,109 @@ export function planCameraAlias(
     source(core, "_cad_require_result");
   }
   if (query) {
-    contextMembers.push(
-      "_scope",
-      "resolve",
-      "ref",
-      "describe",
-      "_expression",
-      "length",
-      "angle",
-      "point",
+    const filters = queryShapes.flatMap((q) => {
+      const f = record(q["filters"]) ? q["filters"] : {};
+      return [
+        f,
+        record(f["adjacency"]) && record(f["adjacency"]["filters"])
+          ? f["adjacency"]["filters"]
+          : {},
+      ];
+    });
+    const has = (field: string) => filters.some((f) => field in f);
+    // The SDK's Component, Parameter and Occurrence have no geometry
+    // property. Adjacency, however, can describe a second entity of another kind.
+    const geometry =
+      guardedQuery ||
+      has("adjacency") ||
+      fixedQueries.some(
+        ({ kind }) =>
+          kind !== "component" && kind !== "parameter" && kind !== "occurrence",
+      );
+    if (guardedQuery) contextMembers.push("_scope", "resolve");
+    else contextTypingMembers.push("resolve");
+    contextMembers.push("ref", "describe", "_expression", "length", "angle");
+    (has("position") || has("bbox")
+      ? contextMembers
+      : contextTypingMembers
+    ).push("point");
+
+    const enumerated = fixedQueries.filter(
+      ({ kind, q }) =>
+        kind !== "occurrence" &&
+        (kind !== "component" ||
+          (!q["instances"] &&
+            !(
+              "component" in q ||
+              "occurrence" in q ||
+              (record(q["scope"]) &&
+                ("component" in q["scope"] || "occurrence" in q["scope"]))
+            ))),
     );
+    if (!basic) {
+      const members = collectionKinds.filter((k) =>
+        enumerated.some(({ kind }) => kind === k),
+      );
+      const directCollection =
+        members.length === 1
+          ? members[0] === "component"
+            ? rootScope
+            : members[0] === "parameter"
+              ? parameterCollection
+              : null
+          : null;
+      const proxy =
+        has("adjacency") ||
+        fixedQueries.some(
+          ({ kind, q }) =>
+            kind === "body" ||
+            kind === "face" ||
+            kind === "edge" ||
+            kind === "vertex" ||
+            (q["instances"] === true &&
+              kind !== "component" &&
+              kind !== "occurrence" &&
+              kind !== "parameter"),
+        );
+      if (proxy) {
+        contextMembers.push("_proxy");
+        source(core, "_cad_require_result");
+      }
+      if (members.length && !directCollection)
+        source(collections, "_CameraQueryCollections", {
+          members: [...members, "enumerate"],
+          ...(enumerated.some(({ q }) => q["instances"] === true)
+            ? {}
+            : { bindings: { enumerate: { occurrence: null } } }),
+        });
+      source(
+        members.length ? (directCollection ?? collections) : entity,
+        "_cad_context_entities",
+        { onlyType: members.length === 0 },
+      );
+      source(entity, "_cad_context_proxy", { onlyType: !proxy });
+    }
+    source(guardedQuery ? entity : rootScope, "_cad_context_scope");
     source(core, "math", { importName: "math" });
     source(core, "re", { importName: "re" });
     source(values, "Iterable", {
       importName: "collections.abc.Iterable",
       onlyType: true,
     });
-    for (const symbol of [
-      "_CAD_PARAM_GROUP",
-      "_CAD_UNITLESS",
-      "_cad_geometry",
-      "_cad_parameter_info",
-    ])
-      source(core, symbol);
+    source(core, "_CAD_UNITLESS");
+    source(core, "_cad_geometry", { onlyType: !geometry });
+    const parameters =
+      guardedQuery || fixedQueries.some(({ kind }) => kind === "parameter");
+    for (const s of ["_CAD_PARAM_GROUP", "_cad_parameter_info"])
+      source(core, s, { onlyType: !parameters });
     source(values, "_cad_fields");
     source(values, "_value_math", { importName: "math" });
     source(values, "_value_enum", { importName: "enum" });
     source(values, "cast", { importName: "typing.cast" });
-    source(values, "direction");
+    source(values, "direction", { onlyType: !geometry && !has("axis") });
     source(values, "json_value");
     source(fusion, "fusion_json");
-    source(alias, "_cad_direction");
+    source(alias, "_cad_direction", { onlyType: !geometry && !has("axis") });
     source(alias, "_cad_json");
     source(entity, "_EntityNotRequired", {
       onlyType: true,
@@ -322,26 +467,25 @@ export function planCameraAlias(
       "_entity_quantity",
       "_entity_frame",
       "_entity_xyz",
-      "_cad_context_scope",
     ])
       source(entity, s);
-    const filters = queryShapes.flatMap((q) => {
-      const f = record(q["filters"]) ? q["filters"] : {};
-      return [
-        f,
-        record(f["adjacency"]) && record(f["adjacency"]["filters"])
-          ? f["adjacency"]["filters"]
-          : {},
-      ];
-    });
-    const has = (field: string) => filters.some((f) => field in f);
     const descriptor = queryShapes.some(
       (q) =>
         ![undefined, "component", "root", "context"].includes(
           q["frame"] as string | undefined,
         ),
     );
-    const rootFrame = queryShapes.some((q) => q["frame"] !== "component");
+    const rootFrame = guardedQuery
+      ? queryShapes.some((q) => q["frame"] !== "component")
+      : fixedQueries.some(
+          ({ q, kind }) =>
+            q["frame"] !== "component" &&
+            // Definitions and parameters have no assemblyContext. For them the
+            // implicit/context frame is component-local, regardless of instances.
+            ((q["frame"] !== undefined && q["frame"] !== "context") ||
+              (kind !== "component" && kind !== "parameter") ||
+              has("adjacency")),
+        );
     const sketch = queryShapes.some(
       (q) => record(q["frame"]) && "sketch" in q["frame"],
     );
@@ -369,7 +513,23 @@ export function planCameraAlias(
   const erased = new Set(typingReferences.map((r) => r.symbol));
   const required = new Set<string>();
   for (const entry of definitions) {
-    for (const dependency of needs[entry.symbol]?.split(" ") ?? []) {
+    const reference = references.find((r) => r.id === entry.sourceId);
+    const filename = reference?.filename;
+    const dependencies =
+      filename === collections
+        ? entry.symbol === "_cad_context_entities"
+          ? ["_CameraQueryCollections"]
+          : [
+              "_cad_items",
+              "_cad_cast",
+              ...(reference?.bindings ? [] : ["_cad_context_proxy"]),
+            ]
+        : filename === rootScope || filename === parameterCollection
+          ? entry.symbol === "_cad_context_entities"
+            ? ["_cad_items"]
+            : []
+          : (needs[entry.symbol]?.split(" ") ?? []);
+    for (const dependency of dependencies) {
       if (!erased.has(dependency)) {
         entry.dependencies.push({ symbol: dependency });
         required.add(dependency);
@@ -385,6 +545,7 @@ export function planCameraAlias(
     resolverSymbol,
     aliasBindings,
     contextMembers,
+    contextTypingMembers,
     definitions,
     roots,
     references,

@@ -16,6 +16,11 @@ def main():
     owner.register(owner.child, occ)
     owner.body('same')
     owner.profile_sketch(2)
+    if request.get('emptyCollections'):
+        owner.root.sketches.items.clear()
+        owner.root.bRepBodies.items.clear()
+    if request.get('instanceBody'):
+        owner.body('instance-body', owner.child)
     for name, value in request['attributes'].items():
         owner.root.attributes.add('fmcad.aliases', name, value)
     # The SDK is doubled, neither resolver is. Keep the generated namespace
