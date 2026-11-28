@@ -14,6 +14,7 @@ export interface CanonicalPayloadDefinition {
   readonly typeOnly?: boolean;
   readonly nullArguments?: readonly string[];
   readonly members?: readonly string[];
+  readonly typingMembers?: readonly string[];
   readonly bindings?: Readonly<Record<string, Readonly<Record<string, null>>>>;
 }
 
@@ -89,6 +90,7 @@ export function prepareCanonicalRegisteredPayload(
   wrapper: SourceInput,
   metadata: { readonly context?: unknown; readonly request?: unknown } = {},
   typing: readonly CanonicalPayloadDefinition[] = [],
+  projectedSources: readonly SourceInput[] = [],
 ) {
   const symbols = planPayloadDependencies(registry, roots, conditions);
   const byId = new Map<string, CanonicalPayloadDefinition>();
@@ -103,12 +105,27 @@ export function prepareCanonicalRegisteredPayload(
     const id = definitions.get(symbol)!.sourceId;
     if (sourceIds.has(id)) return [];
     sourceIds.add(id);
+    const projected = projectedSources.filter((unit) => unit.id === id);
+    if (projected.length) {
+      if (
+        projected.length !== 1 ||
+        byId.has(id) ||
+        projected[0]!.role !== "runtime"
+      )
+        throw new Error("Conflicting projected source: " + id);
+      return [];
+    }
     const reference = byId.get(id);
     if (!reference)
       throw new Error(`Missing canonical source reference: ${id}`);
     return [reference];
   });
-  const units = [...loadPayloadDefinitions(root, selected)];
+  const loaded = new Map(
+    [...loadPayloadDefinitions(root, selected), ...projectedSources].map(
+      (unit) => [unit.id, unit],
+    ),
+  );
+  const units = [...sourceIds].map((id) => loaded.get(id)!);
   if (typing.length) {
     const sources = loadPayloadDefinitions(
       root,

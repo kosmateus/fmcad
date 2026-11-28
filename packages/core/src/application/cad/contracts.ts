@@ -18,6 +18,7 @@ export type CadOutput = Record<string, unknown>;
 export interface CameraAliasObservation {
   readonly name: string;
   readonly raw: string;
+  readonly absent?: true;
   readonly docId: string;
   readonly observed?: readonly {
     readonly name: string;

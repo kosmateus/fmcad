@@ -2,6 +2,7 @@ export * from "./contracts";
 export * from "./execute";
 export * from "./dispatch";
 export * from "./prepare";
+export * from "./camera-selector";
 export * from "./input";
 export * from "./run";
 export * from "./native-result";

@@ -56,19 +56,20 @@ class NullSpecializer(ast.NodeTransformer):
         return self.generic_visit(node) if value is None else self.visit(node.body if value else node.orelse)
 
 
-def project_class(node, members, bindings, overloads):
+def project_class(node, members, bindings, overloads, typing_members=()):
     if not isinstance(node, ast.ClassDef) or not members or len(set(members)) != len(members):
         raise ValueError('Expected a class and unique requested methods')
-    if set(bindings) - set(members):
+    if set(bindings) - set(members) or set(members) & set(typing_members) or len(set(typing_members)) != len(typing_members):
         raise ValueError('Bindings for unselected class method')
     methods = []
+    typing_methods = []
     implemented = set()
     for method in node.body:
         if isinstance(method, ast.Expr) and isinstance(method.value, ast.Constant) and isinstance(method.value.value, str):
             continue
         if not isinstance(method, ast.FunctionDef):
             raise ValueError('Class initialization needs an explicit source plan')
-        if method.name not in members:
+        if method.name not in members and method.name not in typing_members:
             continue
         stub = (len(method.decorator_list) == 1
                 and isinstance(method.decorator_list[0], ast.Name)
@@ -81,9 +82,13 @@ def project_class(node, members, bindings, overloads):
         if stub:
             # Preserved for the checker. Only a real typing.overload stub may
             # precede the unique implementation; erasure removes these stubs.
-            methods.append(method)
+            (typing_methods if method.name in typing_members else methods).append(method)
             continue
         implemented.add(method.name)
+        if method.name in typing_members:
+            method.body = [ast.Expr(value=ast.Constant(value=Ellipsis))]
+            typing_methods.append(method)
+            continue
         names = bindings.get(method.name, {})
         if names:
             parameters = {arg.arg for arg in method.args.posonlyargs + method.args.args + method.args.kwonlyargs}
@@ -101,13 +106,15 @@ def project_class(node, members, bindings, overloads):
             if not method.body:
                 method.body = [ast.Pass()]
         methods.append(method)
-    if implemented != set(members):
+    if implemented != set(members) | set(typing_members):
         raise ValueError('Missing or ambiguous class member')
     node.body = methods
+    if typing_methods:
+        node.body.append(ast.If(test=ast.Name(id='TYPE_CHECKING', ctx=ast.Load()),body=typing_methods,orelse=[]))
     return ast.unparse(node) + '\n'
 
 
-def extract_definition(source, symbol, import_name=None, guard=None, members=None, bindings_plan=None, type_only=False, null_arguments=None):
+def extract_definition(source, symbol, import_name=None, guard=None, members=None, bindings_plan=None, type_only=False, null_arguments=None, typing_members=()):
     tree = ast.parse(source)
     if bindings_plan is not None and members is None or members is not None and import_name is not None:
         raise ValueError('Invalid class projection reference')
@@ -161,7 +168,7 @@ def extract_definition(source, symbol, import_name=None, guard=None, members=Non
             overloads = {alias.asname or 'overload' for statement in tree.body
                          if isinstance(statement, ast.ImportFrom) and statement.level == 0
                          and statement.module == 'typing' for alias in statement.names if alias.name == 'overload'}
-            return project_class(node, members, bindings_plan or {}, overloads)
+            return project_class(node, members, bindings_plan or {}, overloads, typing_members)
         decorators = getattr(node, 'decorator_list', [])
         first = min([node.lineno] + [item.lineno for item in decorators])
         lines = source.splitlines(keepends=True)
@@ -213,7 +220,7 @@ def main():
     json.dump([{'id': item['id'],
                 'source': extract_definition(item['source'], item['symbol'],
                                              item.get('importName'), item.get('guard'),
-                                             item.get('members'), item.get('bindings'), item.get('typeOnly', False), item.get('nullArguments'))}
+                                             item.get('members'), item.get('bindings'), item.get('typeOnly', False), item.get('nullArguments'), item.get('typingMembers', []))}
                for item in request['definitions']], sys.stdout)
 
 

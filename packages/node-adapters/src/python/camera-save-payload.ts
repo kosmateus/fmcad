@@ -1,5 +1,6 @@
 import {
   planCadScript,
+  cameraSelector,
   type CadContext,
   type CameraAliasObservation,
 } from "@fmcad/core";
@@ -17,6 +18,7 @@ import type { PythonArtifactManifest } from "@fmcad/core";
 import { eraseRegisteredPython } from "./registered-erasure.js";
 
 function aliasPlan(context: CadContext, alias?: CameraAliasObservation) {
+  if (alias?.absent) return null;
   const raw =
     alias?.raw ??
     (context.component != null && typeof context.component === "object"
@@ -33,6 +35,7 @@ export function cameraAliasRoute(
   return plan
     ? {
         resolverSymbol: plan.resolverSymbol,
+        simpleContext: plan.contextMembers.length === 0,
         aliasBindings: plan.aliasBindings,
         mayDiscover: plan.definitions.some(
           (entry) => entry.symbol === "_CameraAliasRequired",
@@ -62,7 +65,11 @@ export function typedCameraSavePayload(
   const context = metadata.context as CadContext;
   const named = typeof context.component === "string";
   const scoped = context.component != null;
+  const stage = cameraSelector(context, cameraAlias);
   const aliases = aliasPlan(context, cameraAlias);
+  const simple = aliases?.contextMembers.length === 0;
+  const complex =
+    (stage.kind === "alias" || stage.kind === "direct") && !simple;
   const target = planCameraSaveContext(
     scoped ? { ...context, component: null } : context,
   );
@@ -81,35 +88,50 @@ export function typedCameraSavePayload(
   ].filter(
     (ref) =>
       ref.importName !== "typing.TYPE_CHECKING" &&
-      (scoped ||
+      (complex ||
         !["_IdentityApplication", "_IdentityDocuments"].includes(ref.symbol)),
   );
   return prepareCanonicalRegisteredPayload(
     root,
     [
       ...cameraSaveHandlerPlan.definitions,
-      ...target.definitions,
+      ...target.definitions.map((entry) =>
+        simple && entry.symbol === "CadContext"
+          ? { ...entry, dependencies: [] }
+          : entry,
+      ),
       ...(component?.definitions ?? []),
       ...(aliases?.definitions ?? []),
     ],
     [
       ...cameraSaveCanonicalSources,
       ...target.references.map((ref) =>
-        !scoped &&
-        context.projectId == null &&
-        ref.symbol === "_document_unique_matching"
-          ? { ...ref, nullArguments: ["project_id"] }
-          : ref.symbol === "CadContext" && aliases?.contextMembers.length
-            ? {
-                ...ref,
-                members: [
-                  ...new Set([
-                    ...(ref.members ?? []),
-                    ...aliases.contextMembers,
-                  ]),
-                ],
-              }
-            : ref,
+        simple && ref.symbol === "CadContext"
+          ? {
+              id: ref.id,
+              filename:
+                "runtime/python/fmcad/adapters/fusion/camera_name_scope.py",
+              symbol: "CadContext",
+            }
+          : !complex &&
+              context.projectId == null &&
+              ref.symbol === "_document_unique_matching"
+            ? { ...ref, nullArguments: ["project_id"] }
+            : ref.symbol === "CadContext" && aliases
+              ? {
+                  ...ref,
+                  members: [
+                    ...new Set([
+                      ...(ref.members ?? []),
+                      ...aliases.contextMembers,
+                    ]),
+                  ],
+                  typingMembers:
+                    "contextTypingMembers" in aliases
+                      ? (aliases.contextTypingMembers as readonly string[])
+                      : [],
+                }
+              : ref,
       ),
       ...(component?.references ?? []),
       ...(aliases?.references ?? []),
@@ -117,15 +139,31 @@ export function typedCameraSavePayload(
     [
       "adsk",
       "adsk.fusion",
-      ...(scoped
+      ...(complex
         ? target.roots
         : [
             "_document_unique_matching",
             ...(context.docFileId != null ? ["_document_file_pin"] : []),
           ]),
-      ...(named ? component!.roots : scoped ? ["_camera_apply_component"] : []),
+      ...(stage.kind === "discover"
+        ? ["_camera_scope_attribute"]
+        : stage.kind === "reserved"
+          ? ["_camera_require_component"]
+          : stage.kind === "plain"
+            ? [
+                "_camera_scope_attribute",
+                "_camera_matching_names",
+                "_camera_require_component",
+                "_cad_unique",
+              ]
+            : named
+              ? ["_camera_check_resumed_name"]
+              : scoped
+                ? ["_camera_require_component"]
+                : []),
+      ...(simple ? ["CadContext"] : []),
       ...(aliases?.roots ?? []),
-      ...cameraSaveHandlerPlan.roots,
+      ...(stage.kind === "discover" ? [] : cameraSaveHandlerPlan.roots),
     ],
     target.conditions,
     {

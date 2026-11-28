@@ -102,7 +102,8 @@ export async function executeCad(
       !record(observed) ||
       typeof observed["name"] !== "string" ||
       (!nested && observed["name"] !== context.component) ||
-      typeof observed["raw"] !== "string" ||
+      (typeof observed["raw"] !== "string" &&
+        !(observed["raw"] === null && !nested)) ||
       typeof observed["docId"] !== "string" ||
       !observed["docId"] ||
       (context.docId != null && observed["docId"] !== context.docId) ||
@@ -111,11 +112,12 @@ export async function executeCad(
       throw unknownNativeOutcome(
         new Error("Camera selector returned a mismatched continuation"),
       );
-    const next = { name: observed["name"], raw: observed["raw"] };
+    const next = { name: observed["name"], raw: observed["raw"] ?? "" };
     if (!observation)
       observation = {
         name: direct ? "" : observed["name"],
-        raw: direct ? JSON.stringify(context.component) : observed["raw"],
+        raw: direct ? JSON.stringify(context.component) : next.raw,
+        ...(observed["raw"] === null ? { absent: true as const } : {}),
         docId: observed["docId"],
       };
     if (nested) {

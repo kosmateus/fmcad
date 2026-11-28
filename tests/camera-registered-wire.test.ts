@@ -14,6 +14,27 @@ const { registeredCameraForAddin, matchesCameraInvocation } = load(
 const { prepareReceiptScript } = load("./src/queue-instance");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
+test("component support preserves the independently reviewed document-only wire program", () => {
+  // Pins and decoded SHA from the physical f87a0b43 capture under source 591208d.
+  const artifact = prepareCadScript(
+    "camera.save",
+    {},
+    {
+      doc: "CameraRegistry-f87a0b43-eb16-4f5d-ac32-d578ccee2886",
+      docId: "6a9f3602-1cd3-4838-a156-644e03d515ea",
+    },
+  );
+  const addin = registeredCameraForAddin(
+    root,
+    artifact.script,
+    python.pythonArtifactManifest(artifact),
+  );
+  assert.equal(
+    sha(addin.script + "\nrun()\n"),
+    "2e4d4e8a9cab1ab28c6c2b6157b37d5771deb6a8f4e3a1a6e2190fc7ebb01ac9",
+  );
+});
+
 test("ADDIN camera wire and scoped receipt retain live guards and erase static-only code", async () => {
   const context = { doc: "CameraOracle", docId: "camera-read-id" };
   const logical = prepareCadScript("camera.save", {}, context);

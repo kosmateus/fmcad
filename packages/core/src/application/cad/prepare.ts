@@ -1,10 +1,14 @@
 import type { OperationDeclaration } from "../../catalog";
 import type { CadContext, CadData, CameraAliasObservation } from "./contracts";
+import { cameraSelector } from "./camera-selector";
 
 /** Compiler-only selection, never decoded from a public CAD invocation. */
 export type CadPrivateReadback = "param-checkpoint";
 
 export interface CameraAliasRoute {
+  readonly receiver?: "design" | "context";
+  readonly simpleContext?: boolean;
+  readonly alwaysEligibleAliasTarget?: boolean;
   readonly resolverSymbol: string;
   readonly aliasBindings: readonly {
     name: string;
@@ -100,6 +104,7 @@ if _FMCAD_TYPE_CHECKING:
             attributes = _FMCAD_CAST("dict[str, object]", object.__getattribute__(current, '__dict__'))
             current = attributes['_original']`;
   if (operation === "camera.save") {
+    const stage = cameraSelector(context, cameraAlias);
     // The validated invocation is immutable: no runtime registry lookup,
     // activation, result-status dispatch, or SDK-object projection is reachable.
     const args = [
@@ -115,15 +120,8 @@ if _FMCAD_TYPE_CHECKING:
         : null;
     const direct =
       context.component != null && typeof context.component === "object";
-    let selection =
-      selector && !cameraAlias
-        ? `    alias = _camera_try_component_name(ctx, ${selector})
-    if alias is not None:
-        print('FMCAD_RESULT ' + json.dumps({'operation': 'camera.save', 'document': ctx.doc.name, '_cameraAlias': {'name': ${selector}, 'raw': alias, 'docId': ctx.doc.creationId}}))
-        return
-`
-        : "";
-    if (cameraAlias || direct) {
+    let selection = "";
+    if (stage.kind === "alias" || direct) {
       if (
         !cameraRoute ||
         ![
@@ -136,18 +134,31 @@ if _FMCAD_TYPE_CHECKING:
         cameraAlias?.raw ?? JSON.stringify(context.component),
       );
       const resolveCall = selector
-        ? `_camera_resume_component_name(ctx, ${selector}, ${raw}, lambda raw: ${cameraRoute.resolverSymbol}(ctx, raw))`
-        : `_camera_apply_component(ctx, ${cameraRoute.resolverSymbol}(ctx, ${raw}))`;
-      if (cameraRoute.aliasBindings.length)
-        selection += `    setattr(ctx, '_camera_alias_bindings', {${cameraRoute.aliasBindings.map((b) => `${pythonLiteral(b.name)}: (${pythonLiteral(b.raw)}, ${b.resolverSymbol})`).join(", ")}})\n`;
-      selection += cameraRoute.mayDiscover
-        ? `    try:
+        ? `_camera_check_resumed_name(ctx, ${selector}, ${raw}, lambda raw: ${cameraRoute.resolverSymbol}(ctx, raw))`
+        : `_camera_require_component(${cameraRoute.resolverSymbol}(ctx, ${raw}))`;
+      if (cameraRoute.receiver === "design") {
+        selection = selector
+          ? `    root = design.rootComponent
+    name = ${selector}
+    if _camera_scope_attribute(root, name) != ${raw}:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: component alias changed during selection')
+    matches = _camera_matching_names(design, root, name)
+    ${cameraRoute.alwaysEligibleAliasTarget ? `matches.append(${cameraRoute.resolverSymbol}(design))` : `_camera_add_root_match(root, matches, ${cameraRoute.resolverSymbol}(design))`}
+    _camera_require_component(_cad_unique(matches, 'Reference ' + name))
+`
+          : `    _camera_require_component(${cameraRoute.resolverSymbol}(design))\n`;
+      } else {
+        if (cameraRoute.aliasBindings.length)
+          selection += `    setattr(ctx, '_camera_alias_bindings', {${cameraRoute.aliasBindings.map((b) => `${pythonLiteral(b.name)}: (${pythonLiteral(b.raw)}, ${b.resolverSymbol})`).join(", ")}})\n`;
+        selection += cameraRoute.mayDiscover
+          ? `    try:
         ${resolveCall}
     except _CameraAliasRequired as needed:
-        print('FMCAD_RESULT ' + json.dumps({'operation':'camera.save', 'document':ctx.doc.name, '_cameraAlias':{'name':needed.name, 'raw':needed.raw, 'docId':ctx.doc.creationId}}))
+        print('FMCAD_RESULT ' + json.dumps({'operation':'camera.save', 'document':doc.name, '_cameraAlias':{'name':needed.name, 'raw':needed.raw, 'docId':doc.creationId}}))
         return
 `
-        : `    ${resolveCall}\n`;
+          : `    ${resolveCall}\n`;
+      }
     }
     if (Object.keys(data).length)
       throw new Error(
@@ -177,27 +188,64 @@ if _FMCAD_TYPE_CHECKING:
 `;
       })
       .join("");
-    const locate =
-      selector || direct
-        ? `    ctx = CadContext(${args.join(", ")})
-${selection}    ctx.assert_identity()
+    const simple =
+      cameraRoute?.simpleContext && cameraRoute.receiver !== "design";
+    const complex =
+      (stage.kind === "alias" || direct) &&
+      !simple &&
+      cameraRoute?.receiver !== "design";
+    const locate = complex
+      ? `    ctx = CadContext(${args.join(", ")})
     app, doc = ctx.app, ctx.doc
+${selection}    ctx.assert_identity()
 `
-        : `    app = adsk.core.Application.get()
+      : `    app = adsk.core.Application.get()
     collection = app.documents
     doc_name = ${name}
     doc = _cad_cast('adsk.core.Document', _document_unique_matching((collection.item(i) for i in range(collection.count)), doc_name${context.projectId == null ? "" : ", " + pythonLiteral(context.projectId)}))
-${pinChecks}    if _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType')) is None:
+${pinChecks}    ${stage.kind === "none" ? "if _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType')) is None:" : "design = _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType'))\n    if design is None:"}
         raise ValueError('Document has no Fusion Design product: ' + doc_name)
 `;
+    const preamble = streamGuard.replace(
+      "for stream in (sys.stdout, sys.stderr):\n        current: object = stream",
+      "current: object\n    for current in (sys.stdout, sys.stderr):",
+    );
+    if (stage.kind === "discover")
+      return {
+        request,
+        context,
+        profile: "camera-save",
+        wrapper: `def run(_context: str):
+${preamble}
+    import json
+${locate}    name = ${selector}
+    alias = _camera_scope_attribute(design.rootComponent, name)
+    print('FMCAD_RESULT ' + json.dumps({'operation':'camera.save','document':doc.name,'_cameraAlias':{'name':name,'raw':alias,'docId':doc.creationId}}))
+`,
+      };
+    const confirm =
+      stage.kind === "reserved"
+        ? `    _camera_require_component(design.rootComponent${stage.property ? "." + stage.property : ""})\n`
+        : stage.kind === "plain"
+          ? `    root = design.rootComponent
+    name = ${selector}
+    if _camera_scope_attribute(root, name) is not None:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: component alias changed during selection')
+    _camera_require_component(_cad_unique(_camera_matching_names(design, root, name), 'Reference ' + name))
+`
+          : cameraRoute?.receiver === "design"
+            ? selection
+            : simple
+              ? "    ctx = CadContext(design)\n" + selection
+              : "";
     return {
       request,
       context,
       profile: "camera-save",
       wrapper: `def run(_context: str):
-${streamGuard.replace("for stream in (sys.stdout, sys.stderr):\n        current: object = stream", "current: object\n    for current in (sys.stdout, sys.stderr):")}
+${preamble}
     import json
-${locate}    print('FMCAD_PROGRESS ' + json.dumps({'operation': 'camera.save', 'document': doc.name, 'state': 'started'}))
+${locate}${confirm}    print('FMCAD_PROGRESS ' + json.dumps({'operation': 'camera.save', 'document': doc.name, 'state': 'started'}))
     result = {'state': _camera_pose(doc, _camera_active_viewport(app, doc).camera)}
     try:
         encoded = json.dumps({'success': True, 'operation': 'camera.save', 'document': doc.name, 'result': result, 'created': []}, allow_nan=False)

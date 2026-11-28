@@ -10,7 +10,7 @@ const { executeCad } = load(
   "./src/cad",
 ) as typeof import("../src/composition/cad-execution.js");
 const context = { doc: "Target", docId: "own-id", component: "selection" };
-const alias = (name: string, raw: string, docId = "own-id") => ({
+const alias = (name: string, raw: string | null, docId = "own-id") => ({
   operation: "camera.save",
   document: "Target",
   _cameraAlias: { name, raw, docId },
@@ -52,6 +52,22 @@ test("camera resumes from validated alias observations without exposing private 
   assert.match(attempt.scripts[1]!, /component alias changed/);
   assert.match(attempt.scripts[2]!, /findEntityByToken/);
   assert.match(attempt.scripts[2]!, /persisted-token/);
+});
+
+test("unknown names first discover only the attribute; missing aliases are revalidated before selection", async () => {
+  const testRun = simulate([alias("selection", null), success]);
+  assert.deepEqual(await testRun.pending, success);
+  assert.equal(testRun.scripts.length, 2);
+  assert.doesNotMatch(
+    testRun.scripts[0]!,
+    /_camera_pose|_camera_matching_names|allOccurrences/,
+  );
+  assert.match(testRun.scripts[1]!, /component alias changed/);
+  assert.doesNotMatch(
+    testRun.scripts[1]!,
+    /findEntityByToken|class CadContext/,
+  );
+  assert.match(testRun.scripts[1]!, /_camera_pose/);
 });
 
 test("camera refuses changed pins, unresolved cyclic aliases and missing results before any retry", async () => {
