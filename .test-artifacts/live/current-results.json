@@ -1,5 +1,15 @@
 {
   "latestRegisteredCameraSave": {
+    "source": "591208d59bf5eb87e0d488252d75985c8f5e07cf",
+    "broker": "78e858da9f2c0f2bafa316cc67f1e99f5b81348e4f94d0a53dcfd805a8a3f229",
+    "native": "76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
+    "transport": "public CLI via ADDIN 8765",
+    "scenarios": {
+      "withoutComponent": {"status":"PASS","review":"PASS","checkedReads":2,"physicalScripts":2,"pythonBytesPerRequest":6462,"docId":"6a9f3602-1cd3-4838-a156-644e03d515ea","cleanup":"CLOSED","evidence":".test-artifacts/camera-f87a0b43-eb16-4f5d-ac32-d578ccee2886/review/manifest.json"},
+      "componentTokenAlias": {"status":"PASS","review":"REQUESTED","checkedReads":2,"physicalScripts":4,"pythonBytesPerRead":[11887,13528],"docId":"f60c96c8-50ce-457a-aa3d-4958ccce97bf","cleanup":"CLOSED","evidence":".test-artifacts/camera-22561988-3ebf-4165-92fd-7b17eb41f7b3/review/manifest.json"}
+    }
+  },
+  "previousRegisteredCameraSaveCompactReceipt": {
     "source": "3194ff2b536f1d240de59a68fad747df8fbfb3e2",
     "broker": "577cee241a5b16996907ceaca5e2a40b7a126a074986b544c1fa6fc6b1af7dd2",
     "native": "76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",

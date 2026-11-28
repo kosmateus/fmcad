@@ -174,6 +174,42 @@ def extract_definition(source, symbol, import_name=None, guard=None, members=Non
 
 def main():
     request = json.load(sys.stdin)
+    if request.get('typingClosure') is True:
+        types = request['types']
+        def references(src):
+            tree = ast.parse(src)
+            found = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+            expressions = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.arg) and node.annotation:
+                    expressions.append(node.annotation)
+                if isinstance(node, ast.FunctionDef) and node.returns:
+                    expressions.append(node.returns)
+                if isinstance(node, ast.AnnAssign):
+                    expressions.append(node.annotation)
+                    if isinstance(node.annotation, ast.Name) and node.annotation.id.endswith('TypeAlias') and node.value:
+                        expressions.append(node.value)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.endswith('cast') and node.args:
+                    expressions.append(node.args[0])
+            for expr in expressions:
+                for n in ast.walk(expr):
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                        try:
+                            found.update(v.id for v in ast.walk(ast.parse(n.value, mode='eval')) if isinstance(v, ast.Name))
+                        except SyntaxError:
+                            pass
+            return found
+        reachable = set().union(*(references(src) for src in request['runtime']))
+        active = set()
+        while True:
+            new = [i for i, ref in enumerate(types) if i not in active and ref['symbol'] in reachable]
+            if not new:
+                break
+            for i in new:
+                reachable.update(references(types[i]['source']))
+                active.add(i)
+        json.dump(sorted(active), sys.stdout)
+        return
     json.dump([{'id': item['id'],
                 'source': extract_definition(item['source'], item['symbol'],
                                              item.get('importName'), item.get('guard'),

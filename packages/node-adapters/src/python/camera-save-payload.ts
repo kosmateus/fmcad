@@ -69,7 +69,9 @@ export function typedCameraSavePayload(
   if (!target)
     throw new Error("Camera read requires a registered component resolver");
   const component = scoped
-    ? cameraComponentNamePlan(cameraAlias ? "resume-alias" : "initial")
+    ? cameraComponentNamePlan(
+        cameraAlias || !named ? "resume-alias" : "initial",
+      )
     : null;
   const typing = [
     ...cameraSaveTypingSources,

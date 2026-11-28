@@ -116,7 +116,44 @@ export function prepareCanonicalRegisteredPayload(
     );
     // A single lexical guard preserves forward type references across source
     // files. None of these definitions or typing imports execute inside Fusion.
-    const declaration = sources
+    const selection = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-S",
+        "-B",
+        join(root, "runtime/python/entrypoints/payload_definitions.py"),
+      ],
+      {
+        input: JSON.stringify({
+          typingClosure: true,
+          runtime: [...units, wrapper].map((unit) => unit.source),
+          types: sources.map((unit, i) => ({
+            symbol: typing[i]!.symbol,
+            source: unit.source,
+          })),
+        }),
+        encoding: "utf8",
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    if (selection.error || selection.status !== 0)
+      throw new Error(
+        "Registered type closure failed: " +
+          (selection.error?.message ?? selection.stderr),
+      );
+    const indices: unknown = JSON.parse(selection.stdout);
+    if (
+      !Array.isArray(indices) ||
+      indices.some(
+        (i) => !Number.isInteger(i) || i < 0 || i >= sources.length,
+      ) ||
+      new Set(indices).size !== indices.length
+    )
+      throw new Error("Invalid registered type closure");
+    const declaration = indices
+      .map((i: number) => sources[i]!)
       .map((unit) =>
         unit.source
           .trimEnd()

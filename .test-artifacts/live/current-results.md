@@ -1,3 +1,10 @@
+## 2026-11-28 09:40 UTC — Kamera: zatwierdzony wariant podstawowy, działająca kontynuacja aliasu
+
+Na źródle `591208d59bf5eb87e0d488252d75985c8f5e07cf` wykonano dwa świeże publiczne scenariusze ADDIN 8765: **2 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (mianownik: dwa scenariusze jednej metody). W każdym dwukrotnie odczytano ten sam rzeczywisty snapshot i zamknięto własny dokument, potwierdzając jego brak na liście. Wyniki nie rozszerzają kwalifikacji katalogu.
+
+- **Bez komponentu:** oba fizyczne skrypty mają po 6 462 B (6 769 B JSON, 4 101 B wewnętrznego programu). Niezależna Astra potwierdziła minimalność obydwu, włącznie z wrapperem. [Manifest i dokładne pliki lokalne](../camera-f87a0b43-eb16-4f5d-ac32-d578ccee2886/review/manifest.json).
+- **Z aliasem wskazującym token komponentu:** utworzono rzeczywisty komponent i alias. Każde z dwóch wywołań wymagało dwóch etapów: początkowego odczytu (11 887 B Python) i kontynuacji z ponownym sprawdzeniem aliasu (13 528 B Python). Cztery fizyczne pliki i ich odkodowane jednostki powiązano z receiptami. Osobne review minimalności jest wymagane. [Manifest](../camera-22561988-3ebf-4165-92fd-7b17eb41f7b3/review/manifest.json).
+
 ## 2026-11-28 09:27 UTC — Kamera po pierwszych poprawkach minimalności
 
 **Wykonanie i pomiar fizycznego transportu: 1/1 scenariusz PASS. Minimalność: FAIL w ponownym review.** Na źródle `3194ff2b536f1d240de59a68fad747df8fbfb3e2` oba odczyty zwróciły identyczny stan kamery, a dokument `9bcb9f6a-77f0-4375-8a3a-f31ffc94f119` zamknięto i potwierdzono jego brak na liście. Dwa pliki wysłanego Pythona miały po 6 873 B, zamiast 25 745 B. Każde żądanie miało 7 187 B JSON i zawierało wewnętrzny program o rozmiarze 4 406 B.
