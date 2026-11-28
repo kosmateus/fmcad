@@ -168,6 +168,7 @@ export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   dependencies: {
     directory?: string;
+    normalRuntime?: VerifiedPhysicalOperatorProfile;
     provisionFactory?: typeof createNativePhysicalGenerationProvision;
     runtimeRoot?: PhysicalRuntimeRootAuthorization<ApprovedRoot>;
     runtimeRootFactory?: (
@@ -192,9 +193,12 @@ export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") rejected();
     }
   }
-  if (file === undefined) return undefined;
+  if (file === undefined && dependencies.normalRuntime === undefined) return undefined;
   try {
-    const profile = object(readProfile(file));
+    if (file !== undefined && dependencies.normalRuntime !== undefined) rejected();
+    const profile = object(file === undefined
+      ? { version: 1, ...dependencies.normalRuntime }
+      : readProfile(file));
     keys(profile, [
       "version",
       "clientId",
@@ -303,11 +307,12 @@ export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
           nativeProvision: options,
         }),
       ) ?? dependencies.runtimeRoot;
+    if (dependencies.normalRuntime && runtimeRoot) rejected();
     if (runtimeRoot && !isDeepStrictEqual(options, runtimeRoot.nativeProvision))
       rejected();
     // Legacy generations keep the existing path. An approved-root issuer is
     // constructed only under the actual post-claim owner.
-    let provider = runtimeRoot ? undefined : factory(options);
+    let provider = runtimeRoot || dependencies.normalRuntime ? undefined : factory(options);
     const preparedPhysical = prepareBrokerPhysicalGeneration({
       runtime: descriptor,
       clientId,
@@ -332,6 +337,11 @@ export function physicalBrokerPortsFromEnvironment<ApprovedRoot = unknown>(
         if (attempted) rejected();
         attempted = true;
         context.assertBrokerOwner();
+        if (!runtimeRoot) {
+          assertNoRootWithoutAuthority(context.directory);
+          if (dependencies.normalRuntime)
+            provider = factory({ ...options, assertBrokerOwner: context.assertBrokerOwner });
+        }
         if (runtimeRoot) {
           runtimeRoot.assertVerifiedRoot(context.directory);
           const configured = path.join(

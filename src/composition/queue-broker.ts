@@ -522,9 +522,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     import("../queue-runtime-physical-wiring").RuntimeRootPhysicalWiring | undefined;
   const physicalDirectory = path.resolve(options.dir || queueDirectory());
   const nativeRuntimeRoot = hasRuntimeRootEvidence(physicalDirectory);
+  const normalRuntime = cfg.backend === "addin" && !nativeRuntimeRoot &&
+    process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] === undefined &&
+    options.createBackend === undefined &&
+    options.preparePhysicalGeneration === undefined
+    ? await (runtimeRequire("./dist/node-adapters/execution/normal-native-runtime") as
+        typeof import("../../packages/node-adapters/src/execution/normal-native-runtime"))
+        .discoverNormalNativeRuntime(physicalDirectory)
+    : undefined;
+  if (normalRuntime && normalRuntime.runtime.endpointURL !== cfg["url"])
+    fail("NATIVE_RUNTIME_DISCOVERY_REJECTED", "Normal native runtime endpoint differs from configuration");
   if (
     process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] !== undefined ||
-    nativeRuntimeRoot
+    nativeRuntimeRoot || normalRuntime !== undefined
   ) {
     if ([
       options.bindPhysicalTurn,
@@ -543,6 +553,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       process.env,
       {
         directory: physicalDirectory,
+        ...(normalRuntime ? { normalRuntime } : {}),
         ...(nativeRuntimeRoot
           ? {
             runtimeRootFactory(profile) {
