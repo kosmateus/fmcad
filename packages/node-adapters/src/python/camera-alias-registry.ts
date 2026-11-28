@@ -607,6 +607,10 @@ export function planCameraAlias(
         .filter((s) => !erased.has(s)),
     ]),
   ];
+  // Unselected topology/frame function bodies are still checked offline.
+  // Their SDK collection reader is not executable for e.g. a root-only query.
+  if (query && !roots.includes("_cad_items") && !required.has("_cad_items"))
+    source(core, "_cad_items", { onlyType: true });
   return {
     resolverSymbol,
     aliasBindings,
