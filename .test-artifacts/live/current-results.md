@@ -1,3 +1,15 @@
+## 2026-11-28 06:35 UTC — Finalny normalny startup: CLI i MCP PASS
+
+- **Publiczny workflow CLI: 1/1 PASS.** Źródło `da2ff76a5ed0b883923807adc66e8870f10f46c1` jest kodowo równoważne reviewed `48bb53f`; build `e8052cba2a0058371241e91efa9f5562623684374d9b561834207973ae04b228`, Native `6df81360` / zintegrowany `main 71fbd09`. Utworzono bryłę 40 × 20 × 10 mm, a po publicznym stop/autostart/resume niezależne odczyty potwierdziły ten sam BRep solid, extents 4 × 2 × 1 cm i **8000 mm³**. Cleanup **CLOSED**.
+- **Naprawiony odczyt po resume: 2/2 PASS.** Pierwszy odczyt istniejącego czystego dokumentu po wdrożeniu oraz odczyt nowej bryły w pełnym scenariuszu były faktycznie `queued` z `sdkReadyAt` przed resume. Oba oryginalne żądania zakończyły się `succeeded`; ich zwykły stdout `document.status` wskazał dokładne name/creationId. Nie zastępowano ani nie ponawiano żądań.
+- **Restart brokera: 1/1 PASS.** InstanceId zmienił się z `ff733957-a58b-4ec0-b639-95df95925522` na `2b03879e-b794-4914-9bb0-97f1b66f591c`, build pozostał ten sam. Fusion zachował PID `10956`, birth `134403064912001981` i pełne `physicalRuntime`. Bez restartu Fusion, prywatnego operatora lub CAS; normalny SQLite zachowano.
+- **Publiczne MCP na finalnym kodzie: 1/1 PASS.** Wykonawca potwierdził osobną świeżą próbę MCP stdio → helpery → box → niezależny BRep/8000 mm³ → cleanup **CLOSED**, na tym samym `da2ff76/e805`. Bez stop/resume lub restartu podczas tej próby. Safe handback: RUNNING, brak aktywnych/nieterminalnych zadań i unresolved state. Zadania `138.4`, `138.5` i review `138.4.1` closed z właściwymi właścicielami.
+- **Dowody CLI:** `/tmp/opencode/normal-public-smoke-20261128/box-4e69e6ff-261e-400b-99ed-33f18533fff3/final-result.json`; `SHA256SUMS` zweryfikowano dla 127 plików. Oryginalny odczyt nowej bryły: request `263cbdf5-4e17-4587-b9db-fe2ff04b3960`, job `f5ca593b-f140-4f9a-947b-bfa812da4bdd`. Pierwszy odczyt po wdrożeniu: `/tmp/opencode/normal-public-smoke-20261128/pinned-fix-baseline-result.json`.
+- **Dowody MCP:** `/tmp/opencode/luna-current-public-cad-20261126/live-evidence/public-mcp-7db7a5c9-c61b-423a-9375-cd4309e05323/`; wykonawca zweryfikował `SHA256SUMS`. Wynik przyjęto bez powtarzania jego testów.
+- **Granice:** są to pojedyncze workflow, nie pełne profile. Pełny katalog nadal **0 PASS / 0 FAIL / 11 NOTRUN z 11**; owner cases, markery i repliki nie uzyskały tutaj nowej kwalifikacji. CI i macierz Node pozostają niewykonane w tej fazie. Historyczne FAIL/UNKNOWN i wcześniejsze wyniki poniżej zachowano; nie wnioskujemy globalnej izolacji ani walidacji fizycznego wyrobu.
+
+---
+
 ## 2026-11-28 04:57 UTC — Publiczne MCP na aktualnym Native PASS
 
 - **1/1 workflow PASS** na kodzie wykonawczym `9eda002`, buildzie `bc9c78119948ef747356d3debcad2eef5f2df236b9114d5a3c50f0c1d482bc90` i Native `6df81360`, zintegrowanym do `main` jako `71fbd09`. Publiczne MCP stdio utworzyło bryłę 40 × 20 × 10 mm; niezależne odczyty potwierdziły BRep solid oraz 8000 mm³. Cleanup: **CLOSED**.

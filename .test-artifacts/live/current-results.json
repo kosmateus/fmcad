@@ -1,4 +1,47 @@
 {
+  "latestNormalPublicStartup": {
+    "status": "PASS",
+    "scope": "Normal public CLI and MCP startup, exact-target queued read after resume, same-Fusion broker restart and CAD readback",
+    "source": "da2ff76a5ed0b883923807adc66e8870f10f46c1",
+    "reviewedCodeSource": "48bb53f7513c07bba8b35c3517b35bb3e51b381f",
+    "build": "e8052cba2a0058371241e91efa9f5562623684374d9b561834207973ae04b228",
+    "nativeSource": "6df813600f76d7b23bdf4d4ccf48b3d8fa84d70f",
+    "nativeIntegratedMain": "71fbd09dbe7bd466b7fc077dbf09e7413ec4f8d3",
+    "cliWorkflowCounts": { "PASS": 1, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 1 },
+    "mcpWorkflowCounts": { "PASS": 1, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 1 },
+    "queuedExactTargetReadCounts": { "PASS": 2, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 2 },
+    "brokerRestartCounts": { "PASS": 1, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 1 },
+    "geometry": { "solid": true, "dimensionsMm": [40, 20, 10], "extentsCm": [4, 2, 1], "volumeMm3": 8000 },
+    "cliCleanup": "CLOSED",
+    "mcpCleanup": "CLOSED",
+    "fusion": { "pid": 10956, "birth": "134403064912001981", "unchangedAcrossBrokerRestart": true },
+    "broker": { "before": "ff733957-a58b-4ec0-b639-95df95925522", "after": "2b03879e-b794-4914-9bb0-97f1b66f591c", "sameBuild": true },
+    "queuedRead": {
+      "requestId": "263cbdf5-4e17-4587-b9db-fe2ff04b3960",
+      "jobId": "f5ca593b-f140-4f9a-947b-bfa812da4bdd",
+      "beforeResume": "queued with sdkReadyAt",
+      "terminalState": "succeeded",
+      "ordinaryStdoutExactTarget": true,
+      "replayed": false
+    },
+    "firstPostDeployRead": {
+      "requestId": "62d10c15-54d8-4d29-b22a-5b6dbc9821fe",
+      "jobId": "0ce480a5-0133-49ce-9937-f6fd35f33f81",
+      "beforeResume": "queued with sdkReadyAt",
+      "terminalState": "succeeded",
+      "ordinaryStdoutExactTarget": true,
+      "replayed": false,
+      "evidence": "/tmp/opencode/normal-public-smoke-20261128/pinned-fix-baseline-result.json"
+    },
+    "cliEvidence": "/tmp/opencode/normal-public-smoke-20261128/box-4e69e6ff-261e-400b-99ed-33f18533fff3/final-result.json",
+    "cliEvidenceManifest": "SHA256SUMS verified for 127 files",
+    "mcpEvidence": "/tmp/opencode/luna-current-public-cad-20261126/live-evidence/public-mcp-7db7a5c9-c61b-423a-9375-cd4309e05323/",
+    "mcpEvidenceManifest": "SHA256SUMS verified by executor",
+    "safeHandback": "RUNNING; no active/nonterminal jobs or operations; unresolved false",
+    "privateOperatorOrCas": false,
+    "fullProfiles": { "PASS": 0, "FAIL": 0, "NOTRUN": 11, "RUNNING": 0, "UNKNOWN": 0, "denominator": 11 },
+    "limitations": ["Not a full live catalog qualification", "No new owner-case, marker or replica qualification", "CI and Node matrix not run", "Historical FAIL and UNKNOWN unchanged", "Not proof of global isolation or physical manufacturing validation"]
+  },
   "latestCurrentNativePublicMcp": {
     "status": "PASS",
     "scope": "Single ordinary public MCP stdio geometry workflow; no stop/resume",
