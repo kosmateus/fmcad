@@ -178,7 +178,16 @@ export function typedCameraSavePayload(
     : null;
   const typing = [
     ...cameraSaveTypingSources,
-    ...target.typingReferences,
+    ...target.typingReferences.map((ref) =>
+      !scoped &&
+      context.projectId == null &&
+      context.docFileId == null &&
+      ref.symbol === "_IdentityDocument"
+        ? // The unique-name selector reads only these properties. Pin and camera
+          // reads after selection operate on the concrete adsk.core.Document.
+          { ...ref, members: ["name", "allDocumentReferences"] }
+        : ref,
+    ),
     ...(component?.typingReferences ?? []),
     ...(aliases?.typingReferences ?? []),
   ].filter(

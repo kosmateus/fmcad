@@ -20,5 +20,7 @@ fixture.app.activeViewport = SimpleNamespace(parentDocument=fixture.doc, camera=
 fixture.child.entityToken = 'fixture-component-token'
 fixture.register(fixture.child)
 fixture.root.attributes.add('fmcad.aliases', 'alias', json.dumps(fixture.ctx.ref(fixture.child)))
+if sys.argv[1:] == ['no-design']:
+    fixture.doc.products.itemByProductType = lambda _: None
 with patch.dict(sys.modules, {'adsk': sdk, 'adsk.core': sdk.core, 'adsk.fusion': sdk.fusion}):
     exec(compile(sys.stdin.read(), '<offline-swarm-camera>', 'exec'), {})

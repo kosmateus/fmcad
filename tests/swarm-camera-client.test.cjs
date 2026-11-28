@@ -121,6 +121,35 @@ for (const phase of ["execute", "get"]) {
 }
 
 test("fresh pinned raw requests use source definitions, without a legacy broker envelope", () => {
+  const plain = prepareCamera(pin);
+  const refused = spawnSync(
+    "python3",
+    [
+      "-I",
+      "-S",
+      "-B",
+      join(__dirname, "fixtures/swarm-camera-python.py"),
+      "no-design",
+    ],
+    { input: plain.code, encoding: "utf8" },
+  );
+  assert.equal(refused.status, 1);
+  assert.match(
+    refused.stderr,
+    /ValueError: Document has no Fusion Design product: Test/,
+  );
+  assert.doesNotMatch(refused.stdout, /FMCAD_RESULT/);
+  assert.doesNotMatch(
+    plain.code,
+    /class _IdentityData(?:Project|Folder|File)\b/,
+  );
+  const selector = plain.code.match(
+    /class _IdentityDocument\(_IdentityProtocol\):([\s\S]*?)(?=\n    (?:class |from )|\n\S)/,
+  );
+  assert.deepEqual(
+    [...selector[1].matchAll(/def (\w+)\(/g)].map((match) => match[1]),
+    ["name", "allDocumentReferences"],
+  );
   const saved = { ...pin, fileId: "file-from-test", version: 1 };
   const a = prepareCamera(saved),
     b = prepareCamera(saved);
@@ -208,5 +237,6 @@ if (process.env.SWARM_OFFLINE_ROOT)
     const p = { ...pin, fileId: "file-from-test", version: 1 };
     const plain = await runCamera(p, undefined, dispatch);
     assert.deepEqual(plain.result.state.extents, [20, 10]);
+    assert.deepEqual(await runCamera(pin, undefined, dispatch), plain);
     assert.deepEqual(await runCamera(p, "alias", dispatch), plain);
   });
