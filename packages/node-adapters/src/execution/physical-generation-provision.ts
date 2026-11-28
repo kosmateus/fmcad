@@ -314,7 +314,7 @@ export function createNativePhysicalGenerationProvision(
                 LOCALAPPDATA: pinned.localAppData,
                 FUSION_MCP_ADMISSION_PROVISION: pinned.provisionPath,
                 WSLENV:
-                  "SystemRoot:LOCALAPPDATA:FUSION_MCP_ADMISSION_PROVISION",
+                  "SystemRoot:LOCALAPPDATA:FUSION_MCP_ADMISSION_PROVISION:WSL_DISTRO_NAME",
                 ...(process.env["WSL_INTEROP"]
                   ? { WSL_INTEROP: process.env["WSL_INTEROP"] }
                   : {}),

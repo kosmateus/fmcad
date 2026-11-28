@@ -181,7 +181,7 @@ test(
     assert.equal(env["LOCALAPPDATA"], f.options.localAppData);
     assert.equal(
       env["WSLENV"],
-      "SystemRoot:LOCALAPPDATA:FUSION_MCP_ADMISSION_PROVISION",
+      "SystemRoot:LOCALAPPDATA:FUSION_MCP_ADMISSION_PROVISION:WSL_DISTRO_NAME",
     );
     assert.equal(env["HOME"], undefined);
     assert.deepEqual(records[0]?.["startupFlags"], ["-I", "-S", "-B", "-c"]);
