@@ -8,7 +8,7 @@ export interface CadScriptPlan {
   wrapper: string;
   request: CadData;
   context: CadContext;
-  profile: "document-status" | "full";
+  profile: "document-status" | "full" | "camera-save";
 }
 /** Pure wrapper plan. Source loading, path mapping and bundling are adapters. */
 export function planCadScript(
@@ -60,13 +60,7 @@ if _FMCAD_TYPE_CHECKING:
         docId: _FMCADNotRequired[str | None]
         docFileId: _FMCADNotRequired[str | None]
 `;
-  const wrapper =
-    minimal +
-    `\n\n${requestType}
-_FMCAD_REQUEST: "_FMCADRequest" = ${pythonLiteral(request)}
-
-def run(_context: str):
-    # Fail before touching Fusion if the host has leaked nested output wrappers.
+  const streamGuard = `    # Fail before touching Fusion if the host has leaked nested output wrappers.
     # Keep all host sanitization in place; never replace or unwrap the streams.
     from typing import cast as _FMCAD_CAST
     import sys
@@ -78,7 +72,43 @@ def run(_context: str):
                 raise RuntimeError('FMCAD_MCP_STREAM_EXHAUSTED: the host has accumulated nested sanitized output writers. No CAD operation was started. Restart or repair the MCP add-in; output filtering has not been changed.')
             seen.add(id(current))
             attributes = _FMCAD_CAST("dict[str, object]", object.__getattribute__(current, '__dict__'))
-            current = attributes['_original']
+            current = attributes['_original']`;
+  if (operation === "camera.save") {
+    // The validated invocation is immutable: no runtime registry lookup,
+    // activation, result-status dispatch, or SDK-object projection is reachable.
+    const args = [
+      context.doc,
+      context.component,
+      context.projectId,
+      context.docId,
+      context.docFileId,
+    ].map((value) => pythonLiteral(value ?? null));
+    return {
+      request,
+      context,
+      profile: "camera-save",
+      wrapper: `def run(_context: str):
+${streamGuard}
+    import json
+    ctx = CadContext(${args.join(", ")})
+    ctx.assert_identity()
+    print('FMCAD_PROGRESS ' + json.dumps({'operation': 'camera.save', 'document': ctx.doc.name, 'state': 'started'}))
+    result = _io_camera_save(ctx, ${pythonLiteral(data)})
+    try:
+        encoded = json.dumps({'success': True, 'operation': 'camera.save', 'document': ctx.doc.name, 'result': result, 'created': ctx.created}, allow_nan=False)
+    except ValueError as error:
+        raise ValueError('Non-finite value cannot be serialized') from error
+    print('FMCAD_RESULT ' + encoded)
+`,
+    };
+  }
+  const wrapper =
+    minimal +
+    `\n\n${requestType}
+_FMCAD_REQUEST: "_FMCADRequest" = ${pythonLiteral(request)}
+
+def run(_context: str):
+${streamGuard}
     request = _FMCAD_REQUEST
     ctx = CadContext(request['doc'], request.get('component'), request.get('projectId'), request.get('docId'), request.get('docFileId'))
     if ${entry.readOnly || operation === "document.clear" || operation === "document.save_native" || operation === "selection.highlight" || (operation.startsWith("camera.") && operation !== "camera.set") || operation === "shot.pack" ? "False" : "True"}:

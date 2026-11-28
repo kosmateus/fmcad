@@ -111,6 +111,11 @@ const dynamicFallbackEncodedBytes = Buffer.byteLength(
 
 const operations = [
   {
+    operation: "camera.save",
+    data: {},
+    dependencies: ["camera.save", "camera.context.class"],
+  },
+  {
     operation: "assembly.sequence",
     data: catalog["assembly.sequence"]!.example,
     dependencies: ["sequence-application", "sequence-fusion"],
@@ -228,7 +233,8 @@ for (const { operation, data, dependencies, ...selection } of operations) {
         `${operation} retained unrelated ${unrelated}`,
       );
     assert.ok(
-      original.script.includes(JSON.stringify(operation)),
+      original.script.includes(JSON.stringify(operation)) ||
+        original.script.includes(`'${operation}'`),
       `${operation} was not preserved in the prepared source`,
     );
     if (operation === "shape.box")
@@ -515,9 +521,10 @@ test("public run selection keeps dynamic, initializer, and registry escape sourc
   }
 });
 
-test("CLI worker and MCP typed invocation prepare the same public CAD source", async () => {
+for (const selected of ["model.thread", "camera.save"] as const)
+test(`CLI worker and MCP typed invocation prepare the same public CAD source for ${selected}`, async () => {
   const operation = operations.find(
-    (entry) => entry.operation === "model.thread",
+    (entry) => entry.operation === selected,
   )!;
   const context = {
     doc: "PublicSelectionParity",
@@ -563,7 +570,7 @@ test("CLI worker and MCP typed invocation prepare the same public CAD source", a
   assert.equal(calls[1]?.[1], "fusion_mcp_execute");
   assert.deepEqual(calls[0]?.[0], calls[1]?.[0]);
   assert.deepEqual(calls[0]?.[2], calls[1]?.[2]);
-  assert.ok(calls[0]?.[0].object.script.includes("model.thread"));
-  assert.ok(calls[0]?.[2]?.units.some((unit) => unit.id === "thread-domain"));
-  assert.ok(calls[0]?.[2]?.units.some((unit) => unit.id === "thread-fusion"));
+  assert.ok(calls[0]?.[0].object.script.includes(selected));
+  for (const id of operation.dependencies)
+    assert.ok(calls[0]?.[2]?.units.some((unit) => unit.id === id), id);
 });

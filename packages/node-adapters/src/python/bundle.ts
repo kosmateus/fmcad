@@ -1,6 +1,7 @@
 import { preparePythonArtifact, type SourceInput } from "./artifact.js";
 import { cadBundleUnits } from "./bundle-inventory.js";
 import { selectRunBundle } from "./source-selection.js";
+import { prepareCameraSavePayload } from "./camera-save-payload.js";
 import type { PreparedPythonArtifact } from "../../../core/src/domain/python-artifact.js";
 
 export * from "./bundle-inventory.js";
@@ -9,9 +10,14 @@ export function prepareCadBundle(
   root: string,
   wrapper: string,
   metadata: { readonly context?: unknown; readonly request?: unknown } = {},
-  profile: "full" | "document-status" = "full",
+  profile: "full" | "document-status" | "camera-save" = "full",
   embedded: readonly SourceInput[] = [],
 ): PreparedPythonArtifact {
+  if (profile === "camera-save") {
+    if (embedded.length)
+      throw new Error("Registered camera reads cannot embed user code");
+    return prepareCameraSavePayload(root, wrapper, metadata);
+  }
   return preparePythonArtifact(
     [
       ...(profile === "full"

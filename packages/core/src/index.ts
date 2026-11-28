@@ -47,6 +47,7 @@ export * from "./domain/python-artifact";
 export * from "./domain/python-checker";
 export * from "./application/python-admission";
 export * from "./application/cad/source-selection";
+export * from "./application/cad/payload-dependencies";
 export * from "./application/engineering";
 export type {
   EngineeringRuntime,

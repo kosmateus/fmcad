@@ -339,6 +339,11 @@
           "dependencies": []
         },
         {
+          "id": "camera-read",
+          "path": "runtime/python/fmcad/adapters/fusion/camera_read.py",
+          "dependencies": ["core"]
+        },
+        {
           "id": "docio-io-rules",
           "path": "runtime/python/fmcad/domain/io.py",
           "dependencies": []
@@ -349,6 +354,7 @@
           "dependencies": [
             "core",
             "capture-integrity",
+            "camera-read",
             "docio-io-rules"
           ]
         }

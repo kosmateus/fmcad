@@ -82,6 +82,11 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
                   path: "runtime/python/fmcad/domain/capture_integrity.py",
                   dependencies: [],
                 },
+                {
+                  id: "camera-read",
+                  path: "runtime/python/fmcad/adapters/fusion/camera_read.py",
+                  dependencies: ["core"],
+                },
               ]
             : []),
           ...(hasRules
@@ -108,6 +113,7 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
             dependencies: [
               "core",
               ...(family === "io" ? ["capture-integrity"] : []),
+              ...(family === "io" ? ["camera-read"] : []),
               ...(hasRules ? [rules] : []),
               ...(hasUsecase ? [usecase] : []),
             ],

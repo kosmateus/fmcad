@@ -11,16 +11,6 @@ from typing import NotRequired as _io_NotRequired
 
 
 if _CAD_TYPE_CHECKING:
-    class _IoCameraState(_CadTypedDict):
-        document: JsonRecord
-        eye: list[float]
-        target: list[float]
-        up: list[float]
-        cameraType: Literal['OrthographicCameraType', 'PerspectiveCameraType', 'PerspectiveWithOrthoFacesCameraType']
-        units: Literal['cm']
-        extents: _io_NotRequired[list[float]]
-        perspectiveAngle: _io_NotRequired[float]
-
     class _IoVisibilityRow(_CadTypedDict):
         ref: JsonValue
         isLightBulbOn: bool
@@ -135,17 +125,11 @@ def _io_file(path: _IoPath) -> "JsonRecord":
 
 
 def _io_viewport(ctx: "CadContext") -> "adsk.core.Viewport":
-    if ctx.app.activeDocument != ctx.doc:
-        raise ValueError('View operations require the explicitly scoped document to already be active; activate it first')
-    viewport = ctx.app.activeViewport
-    if viewport.parentDocument != ctx.doc:
-        raise ValueError('Active viewport does not belong to the scoped document')
-    return viewport
+    return _io_camera_viewport(ctx)
 
 
 def _io_identity(ctx: "CadContext") -> "JsonRecord":
-    return {'creationId': ctx.doc.creationId, 'name': ctx.doc.name,
-            'dataFileId': ctx.doc.dataFile.id if ctx.doc.dataFile else None}
+    return _io_camera_identity(ctx)
 
 
 def _io_state_doc(ctx: "CadContext", state: "_IoVisibilityState | _IoCameraState") -> None:
@@ -189,27 +173,6 @@ def _io_visibility(ctx: "CadContext", data: "JsonObject", action: str) -> "JsonR
          'isVisible': getattr(entity, 'isVisible', None)}
         for entity, target in zip(entities, targets)],
         'limitations': ['Only specified light bulbs change; ancestor and folder visibility can still hide entities.']}
-
-
-def _io_camera_state(ctx: "CadContext", camera: "adsk.core.Camera") -> "_IoCameraState":
-    types = adsk.core.CameraTypes
-    names = ('OrthographicCameraType', 'PerspectiveCameraType', 'PerspectiveWithOrthoFacesCameraType')
-    name = next((n for n in names if _cad_cast("adsk.core.CameraTypes", getattr(types, n)) == camera.cameraType), None)
-    if name is None:
-        raise ValueError('Unsupported camera type; cannot provide a restorable snapshot')
-    camera_type_name = _cad_cast("Literal['OrthographicCameraType', 'PerspectiveCameraType', 'PerspectiveWithOrthoFacesCameraType']", name)
-    state = _cad_cast("_IoCameraState", {'document': _io_identity(ctx), 'eye': _cad_xyz(camera.eye),
-             'target': _cad_xyz(camera.target), 'up': _cad_xyz(camera.upVector),
-             'cameraType': camera_type_name, 'units': 'cm'})
-    if name == 'OrthographicCameraType':
-        if not hasattr(camera, 'getExtents'):
-            raise ValueError('Installed API lacks Camera.getExtents; update Fusion to capture restorable orthographic views')
-        ok, width, height = camera.getExtents()
-        _cad_require_result(ok, 'Read camera extents')
-        state['extents'] = [width, height]
-    else:
-        state['perspectiveAngle'] = camera.perspectiveAngle
-    return state
 
 
 def _io_camera_from_state(ctx: "CadContext", value: "JsonValue | _IoCameraState",
@@ -309,9 +272,6 @@ def _io_camera_apply(ctx: "CadContext", state: "_IoCameraState",
 
 
 def _io_camera(ctx: "CadContext", data: "JsonObject", action: str) -> "JsonRecord":
-    if action == 'save':
-        _cad_fields(data)
-        return {'state': _cad_cast("JsonRecord", _io_camera_state(ctx, _io_viewport(ctx).camera))}
     _cad_fields(data, ('state',) if action == 'restore' else (),
                 () if action == 'restore' else ('orientation', 'eye', 'target', 'up', 'projection', 'extents', 'perspectiveAngle', 'fit'))
     viewport = _io_viewport(ctx)
@@ -1311,11 +1271,6 @@ def _io_visibility_restore(c: "CadContext", d: "JsonObject") -> "JsonValue":
 @_io_legacy_callable
 def _io_visibility_isolate(c: "CadContext", d: "JsonObject") -> "JsonValue":
     return _io_visibility(c, d, 'isolate')
-
-
-@_io_legacy_callable
-def _io_camera_save(c: "CadContext", d: "JsonObject") -> "JsonValue":
-    return _io_camera(c, d, 'save')
 
 
 @_io_legacy_callable

@@ -63,7 +63,7 @@ def json_value(value: object) -> JsonValue:
     raise TypeError('DTO cannot contain an opaque object')
 
 
-def _cad_fields(data: Mapping[str, object], required: tuple[str, ...]=(), optional: tuple[str, ...]=()) -> None:
+def _cad_fields(data: "Mapping[str, object]", required: tuple[str, ...]=(), optional: tuple[str, ...]=()) -> None:
     missing = set(required) - data.keys()
     unknown = data.keys() - set(required) - set(optional)
     if missing or unknown:
