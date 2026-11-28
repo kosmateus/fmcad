@@ -151,6 +151,7 @@ if _FMCAD_TYPE_CHECKING:
         const nested = !chain
           ? ""
           : `    inner = ${inner}
+    inner_matches = _camera_matching_names(design, root, inner)
     inner_raw = _camera_scope_attribute(root, inner)
 ${
   chain.expected === undefined
@@ -161,13 +162,12 @@ ${
     : `    if inner_raw != ${pythonLiteral(chain.expected)}:
         raise RuntimeError('DOCUMENT_STATE_CHANGED: component alias changed during selection')
 `
-}    inner_matches = _camera_matching_names(design, root, inner)
-${
-  chain.expected === undefined
-    ? ""
-    : `    ${cameraRoute.alwaysEligibleAliasTarget ? `inner_matches.append(${cameraRoute.resolverSymbol}(design))` : `_camera_add_root_match(root, inner_matches, ${cameraRoute.resolverSymbol}(design))`}
+}${
+              chain.expected === undefined
+                ? ""
+                : `    ${cameraRoute.alwaysEligibleAliasTarget ? `inner_matches.append(${cameraRoute.resolverSymbol}(design))` : `_camera_add_root_match(root, inner_matches, ${cameraRoute.resolverSymbol}(design))`}
 `
-}`;
+            }`;
         const target = chain
           ? "_cad_unique(inner_matches, 'Reference ' + inner)"
           : cameraRoute.rootQuery

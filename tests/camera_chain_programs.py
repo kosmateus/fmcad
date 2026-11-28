@@ -14,8 +14,8 @@ def check(case, stage, expected):
     def attr(name, raw):
         fixture.root.attributes.add('fmcad.aliases', name, raw)
     attr('outer', '"changed"' if case == 'stale outer' else request['raw'])
-    if stage or case == 'discover':
-        attr('inner', '"changed"' if case == 'stale inner' else request['inner'])
+    if stage or case in ('discover','scan fails'):
+        attr('inner', '"changed"' if case in ('stale inner','scan fails') else request['inner'])
     if case == 'plain success':
         fixture.child.name = 'inner'
     if case == 'wrong kind':
@@ -31,6 +31,13 @@ def check(case, stage, expected):
         exec(request['programs'][stage], space)
     # Camera behavior is separately covered; reaching its read is success here.
     space['_camera_active_viewport'] = lambda *_: (_ for _ in ()).throw(RuntimeError('camera reached'))
+    if case == 'scan fails':
+        scan = space['_camera_matching_names']
+        def failing_scan(design, root, name):
+            if name == 'inner':
+                raise ValueError('SDK enumeration failed')
+            return scan(design, root, name)
+        space['_camera_matching_names'] = failing_scan
     output = io.StringIO()
     try:
         with contextlib.redirect_stdout(output):
@@ -55,3 +62,5 @@ check('token missing', 1, 'Entity token: expected one match, found 0')
 check('token conflict', 1, 'Entity token: expected one match, found 2')
 check('stale outer', 1, stale)
 check('stale inner', 1, stale)
+check('scan fails', 0, 'SDK enumeration failed')
+check('scan fails', 1, 'SDK enumeration failed')

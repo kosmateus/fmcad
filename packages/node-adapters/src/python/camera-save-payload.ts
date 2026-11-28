@@ -157,6 +157,11 @@ export function typedCameraSavePayload(
   const scoped = context.component != null;
   const stage = cameraSelector(context, cameraAlias);
   const aliases = aliasPlan(root, context, cameraAlias);
+  const chainDiscovery =
+    aliases &&
+    "chain" in aliases &&
+    aliases.chain &&
+    aliases.chain.expected === undefined;
   const design = aliases?.receiver === "design";
   const simple = !design && aliases?.contextMembers.length === 0;
   const complex =
@@ -191,7 +196,16 @@ export function typedCameraSavePayload(
           ? { ...entry, dependencies: [] }
           : entry,
       ),
-      ...(component?.definitions ?? []),
+      ...(component?.definitions ?? []).map((entry) =>
+        chainDiscovery && entry.symbol === "_cad_kind"
+          ? {
+              ...entry,
+              dependencies: entry.dependencies.filter(
+                (dep) => dep.symbol === "_cad_type",
+              ),
+            }
+          : entry,
+      ),
       ...(aliases?.definitions ?? []),
     ],
     [
@@ -224,7 +238,15 @@ export function typedCameraSavePayload(
                 }
               : ref,
       ),
-      ...(component?.references ?? []),
+      ...(component?.references ?? []).map((ref) =>
+        chainDiscovery && ref.symbol === "_cad_kind"
+          ? {
+              ...ref,
+              filename:
+                "runtime/python/fmcad/adapters/fusion/camera_owner_kind.py",
+            }
+          : ref,
+      ),
       ...(aliases?.references ?? []),
     ],
     [
