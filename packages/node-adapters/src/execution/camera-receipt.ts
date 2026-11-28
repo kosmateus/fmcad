@@ -39,8 +39,7 @@ _qr_path = ${JSON.stringify(mappedPath)}
 _qr_outcome = 'failed'
 _qr_error: dict[str, str] | None = None
 try:
-    _qr_namespace: dict[str, object] = {'__name__':'__main__', '__file__':'<fmcad-queue>'}
-    exec(compile(${JSON.stringify(code)}, '<fmcad-queue>', 'exec'), _qr_namespace, _qr_namespace)
+    exec(compile(${JSON.stringify(code)}, '<fmcad-queue>', 'exec'), {})
     _qr_outcome = 'succeeded'
 except BaseException as _qr_exception:
     _qr_error = {'type':type(_qr_exception).__name__, 'message':str(_qr_exception),

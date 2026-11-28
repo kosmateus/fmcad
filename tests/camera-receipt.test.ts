@@ -51,7 +51,7 @@ test("ordinary camera receipt is deterministic and excludes unrelated workflows"
 test("Windows receipt preserves ABI, terminal errors, atomic writes and host refusal", () => {
   const sources = {
     success: cameraReceiptSource(
-      "assert '__fmcad_native_lifecycle__' not in globals()\nprint('camera')",
+      "assert '__fmcad_native_lifecycle__' not in globals()\nassert '__name__' not in globals() and '__file__' not in globals()\nassert '_qi_identity' not in globals()\nprint('camera')",
       "C:\\success.json",
       binding,
     ),
