@@ -11,6 +11,8 @@ def main():
     owner = fixture.CoreTests()
     owner.setUp()
     occ = owner.occurrence()
+    occ.transform2 = fixture.Matrix.create()
+    occ.transform2.values = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     owner.child.entityToken = 'part-token'
     occ.entityToken = 'occ-token'
     owner.register(owner.child, occ)

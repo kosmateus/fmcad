@@ -64,3 +64,8 @@ class _CameraQueryCollections:
 
 
 _cad_context_entities = _CameraQueryCollections.enumerate
+
+
+def _entity_candidates(ctx: "CadContext", data: "JsonObject") -> "list[adsk.core.Base]":
+    kind = _cad_cast(str, data.get('kind', 'face'))
+    return _cad_dedup(list(_cad_context_entities(ctx, kind, ctx.root, None)))

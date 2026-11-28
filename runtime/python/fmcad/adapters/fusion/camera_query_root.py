@@ -8,3 +8,7 @@ def _cad_context_scope(ctx: "CadContext", data: "JsonObject") -> "tuple[adsk.fus
 def _cad_context_entities(ctx: "CadContext", kind: "str | None", component: "adsk.fusion.Component | None",
                           occurrence: "adsk.fusion.Occurrence | None") -> "Sequence[CadEntity]":
     return _cad_items(ctx.design.allComponents)
+
+
+def _entity_candidates(ctx: "CadContext", data: "JsonObject") -> "list[adsk.core.Base]":
+    return [ctx.root]

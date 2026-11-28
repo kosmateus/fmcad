@@ -128,6 +128,8 @@ const cases: {
       "_camera_alias_target",
       "_cad_context_entities",
       "_cad_context_proxy",
+      "_cad_context_scope",
+      "_cad_dedup",
       "_cad_parameter_info",
       "_cad_geometry",
       "_cad_direction",
@@ -192,6 +194,37 @@ const cases: {
       "_camera_alias_target",
       "point",
     ],
+  },
+  {
+    label: "invalid root scope guard",
+    raw: attr({ query: { kind: "component", scope: { unexpected: "x" } } }),
+    status: "ValueError",
+  },
+  {
+    label: "conflicting root scopes",
+    raw: attr({ query: { kind: "component", scope: {}, component: "root" } }),
+    status: "ValueError",
+  },
+  {
+    label: "unscoped occurrence query",
+    raw: attr({ query: { kind: "occurrence", frame: "component" } }),
+    status: "ok",
+    check: true,
+    absent: [
+      "resolve",
+      "_entities",
+      "_cad_context_entities",
+      "_cad_context_scope",
+    ],
+  },
+  {
+    label: "assembly instances query",
+    raw: attr({
+      query: { kind: "component", instances: true, filters: { name: "Part" } },
+    }),
+    status: "ok",
+    check: true,
+    absent: ["resolve", "_entities", "_cad_context_scope"],
   },
   {
     label: "instance body query creates the canonical proxy",

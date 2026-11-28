@@ -7,6 +7,10 @@ const fusion = "runtime/python/fmcad/adapters/fusion/values.py";
 const rootScope = "runtime/python/fmcad/adapters/fusion/camera_query_root.py";
 const parameterCollection =
   "runtime/python/fmcad/adapters/fusion/camera_query_parameters.py";
+const occurrences =
+  "runtime/python/fmcad/adapters/fusion/camera_query_occurrences.py";
+const instances =
+  "runtime/python/fmcad/adapters/fusion/camera_query_instances.py";
 const collections =
   "runtime/python/fmcad/adapters/fusion/camera_query_collections.py";
 const collectionKinds = [
@@ -104,6 +108,36 @@ function fixedQuery(q: Data): boolean {
     !(Array.isArray(adjacent["refs"]) && adjacent["refs"].length > 0)
   );
 }
+
+function fixedCandidateSource(q: Data, kind: unknown): string {
+  const scope = q["scope"];
+  if (
+    q["instances"] === true ||
+    ("scope" in q &&
+      (!record(scope) ||
+        !only(scope, ["component", "occurrence"]) ||
+        "component" in q ||
+        "occurrence" in q))
+  )
+    return instances;
+  if (kind === "occurrence") return occurrences;
+  if (
+    kind === "component" &&
+    ("component" in q ||
+      "occurrence" in q ||
+      (record(scope) && ("component" in scope || "occurrence" in scope)))
+  )
+    return rootScope;
+  return collections;
+}
+
+const candidateDependencies: Record<string, string> = {
+  [rootScope]: "",
+  [occurrences]: "_cad_cast _cad_items _cad_dedup",
+  [collections]: "_cad_cast _cad_dedup _cad_context_entities",
+  [instances]:
+    "_cad_cast _cad_fields _cad_items _entity_json_object _cad_context_entities",
+};
 
 function callback(ref: unknown, query: boolean): string {
   if (!record(ref) && typeof ref !== "string") return "_camera_alias_invalid";
@@ -278,13 +312,14 @@ export function planCameraAlias(
     symbol: string,
     options: {
       onlyType?: boolean;
+      uses?: string | undefined;
       importName?: string;
       guard?: string;
       members?: readonly string[];
       bindings?: NonNullable<Source["bindings"]>;
     } = {},
   ) {
-    const { onlyType, ...ref } = options;
+    const { onlyType, uses, ...ref } = options;
     const id = `camera.alias.${symbol}`;
     (onlyType ? typingReferences : references).push({
       id,
@@ -293,7 +328,12 @@ export function planCameraAlias(
       ...ref,
     });
     if (!onlyType) {
-      definitions.push({ symbol, sourceId: id, dependencies: [] });
+      const deps = uses ?? needs[symbol];
+      definitions.push({
+        symbol,
+        sourceId: id,
+        dependencies: deps ? deps.split(" ").map((symbol) => ({ symbol })) : [],
+      });
     }
   }
   for (const symbol of callbacks) source(alias, symbol);
@@ -392,21 +432,47 @@ export function planCameraAlias(
         contextMembers.push("_proxy");
         source(core, "_cad_require_result");
       }
-      if (members.length && !directCollection)
+      if (members.length && !directCollection) {
+        const proxied = enumerated.some(({ q }) => q["instances"] === true);
         source(collections, "_CameraQueryCollections", {
           members: [...members, "enumerate"],
-          ...(enumerated.some(({ q }) => q["instances"] === true)
-            ? {}
-            : { bindings: { enumerate: { occurrence: null } } }),
+          uses: proxied
+            ? "_cad_items _cad_cast _cad_context_proxy"
+            : "_cad_items _cad_cast",
+          ...(proxied ? {} : { bindings: { enumerate: { occurrence: null } } }),
         });
+      }
       source(
         members.length ? (directCollection ?? collections) : entity,
         "_cad_context_entities",
-        { onlyType: members.length === 0 },
+        {
+          onlyType: members.length === 0,
+          uses: directCollection ? "_cad_items" : "_CameraQueryCollections",
+        },
       );
       source(entity, "_cad_context_proxy", { onlyType: !proxy });
     }
-    source(guardedQuery ? entity : rootScope, "_cad_context_scope");
+    const candidatePlans = new Set(
+      fixedQueries.map(({ q, kind }) => fixedCandidateSource(q, kind)),
+    );
+    const candidate = guardedQuery
+      ? entity
+      : candidatePlans.size === 1
+        ? [...candidatePlans][0]!
+        : instances;
+    source(candidate, "_entity_candidates", {
+      uses: candidateDependencies[candidate],
+    });
+    if (candidate === collections || candidate === occurrences)
+      source(core, "_cad_dedup");
+    source(guardedQuery ? entity : rootScope, "_cad_context_scope", {
+      uses: guardedQuery ? undefined : "",
+      onlyType:
+        !guardedQuery &&
+        !queryShapes.some(
+          (q) => record(q["frame"]) && !("sketch" in q["frame"]),
+        ),
+    });
     source(core, "math", { importName: "math" });
     source(core, "re", { importName: "re" });
     source(values, "Iterable", {
@@ -456,7 +522,6 @@ export function planCameraAlias(
       "_entity_attribute_occurrence_context",
       "_entity_attribute_predicates",
       "_entity_in",
-      "_entity_candidates",
       "_entity_describe",
       "_entity_reasons",
       "_entity_stats",
@@ -513,28 +578,11 @@ export function planCameraAlias(
   const erased = new Set(typingReferences.map((r) => r.symbol));
   const required = new Set<string>();
   for (const entry of definitions) {
-    const reference = references.find((r) => r.id === entry.sourceId);
-    const filename = reference?.filename;
-    const dependencies =
-      filename === collections
-        ? entry.symbol === "_cad_context_entities"
-          ? ["_CameraQueryCollections"]
-          : [
-              "_cad_items",
-              "_cad_cast",
-              ...(reference?.bindings ? [] : ["_cad_context_proxy"]),
-            ]
-        : filename === rootScope || filename === parameterCollection
-          ? entry.symbol === "_cad_context_entities"
-            ? ["_cad_items"]
-            : []
-          : (needs[entry.symbol]?.split(" ") ?? []);
-    for (const dependency of dependencies) {
-      if (!erased.has(dependency)) {
-        entry.dependencies.push({ symbol: dependency });
-        required.add(dependency);
-      }
-    }
+    entry.dependencies = entry.dependencies.filter(
+      (d) => !erased.has(d.symbol),
+    );
+    for (const dependency of entry.dependencies)
+      required.add(dependency.symbol);
   }
   // Remaining roots are callable entrypoints and dependencies accessed by
   // selected canonical context methods.
