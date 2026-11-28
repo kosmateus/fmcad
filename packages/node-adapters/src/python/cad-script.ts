@@ -152,7 +152,13 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
       pythonLiteral,
       privateReadback,
       cameraAlias,
-      operation === "camera.save" ? cameraAliasRoute(context,cameraAlias) : undefined,
+      operation === "camera.save"
+        ? cameraAliasRoute(
+            resolveRuntimePaths({ anchor: __filename }).installation,
+            context,
+            cameraAlias,
+          )
+        : undefined,
     );
     return prepareCadBundle(
       resolveRuntimePaths({ anchor: __filename }).installation,

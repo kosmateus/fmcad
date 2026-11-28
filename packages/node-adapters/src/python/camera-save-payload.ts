@@ -12,30 +12,61 @@ import {
 import { planCameraSaveContext } from "./camera-context-registry.js";
 import { cameraComponentNamePlan } from "./camera-component-registry.js";
 import { planCameraAlias } from "./camera-alias-registry.js";
+import { planCameraToken } from "./camera-token-registry.js";
 import { prepareCanonicalRegisteredPayload } from "./registered-payload.js";
 import { preparePythonArtifact, pythonLiteral } from "./artifact.js";
 import type { PythonArtifactManifest } from "@fmcad/core";
 import { eraseRegisteredPython } from "./registered-erasure.js";
 
-function aliasPlan(context: CadContext, alias?: CameraAliasObservation) {
+function aliasPlan(
+  root: string,
+  context: CadContext,
+  alias?: CameraAliasObservation,
+) {
   if (alias?.absent) return null;
   const raw =
     alias?.raw ??
     (context.component != null && typeof context.component === "object"
       ? JSON.stringify(context.component)
       : undefined);
-  return raw === undefined ? null : planCameraAlias(raw, alias?.observed);
+  if (raw === undefined) return null;
+  const token = !alias?.observed?.length && planCameraToken(root, raw);
+  if (token) {
+    // Eligibility is certified by the canonical projector; do not infer it
+    // merely because the requested JSON says "component".
+    const kind = token.alwaysEligibleAliasTarget
+      ? (JSON.parse(raw) as { kind: string }).kind
+      : undefined;
+    return {
+      ...token,
+      validComponent: kind === "component" || kind === "occurrence",
+      contextMembers: [] as string[],
+      aliasBindings: [] as ReturnType<typeof planCameraAlias>["aliasBindings"],
+    };
+  }
+  return {
+    ...planCameraAlias(raw, alias?.observed),
+    receiver: "context" as const,
+    alwaysEligibleAliasTarget: false,
+    validComponent: false,
+    projectedSources: [],
+  };
 }
 
 export function cameraAliasRoute(
+  root: string,
   context: CadContext,
   alias?: CameraAliasObservation,
 ) {
-  const plan = aliasPlan(context, alias);
+  const plan = aliasPlan(root, context, alias);
   return plan
     ? {
         resolverSymbol: plan.resolverSymbol,
-        simpleContext: plan.contextMembers.length === 0,
+        receiver: plan.receiver,
+        alwaysEligibleAliasTarget: plan.alwaysEligibleAliasTarget,
+        validComponent: plan.validComponent,
+        simpleContext:
+          plan.receiver === "context" && plan.contextMembers.length === 0,
         aliasBindings: plan.aliasBindings,
         mayDiscover: plan.definitions.some(
           (entry) => entry.symbol === "_CameraAliasRequired",
@@ -66,10 +97,11 @@ export function typedCameraSavePayload(
   const named = typeof context.component === "string";
   const scoped = context.component != null;
   const stage = cameraSelector(context, cameraAlias);
-  const aliases = aliasPlan(context, cameraAlias);
-  const simple = aliases?.contextMembers.length === 0;
+  const aliases = aliasPlan(root, context, cameraAlias);
+  const design = aliases?.receiver === "design";
+  const simple = !design && aliases?.contextMembers.length === 0;
   const complex =
-    (stage.kind === "alias" || stage.kind === "direct") && !simple;
+    (stage.kind === "alias" || stage.kind === "direct") && !simple && !design;
   const target = planCameraSaveContext(
     scoped ? { ...context, component: null } : context,
   );
@@ -156,11 +188,25 @@ export function typedCameraSavePayload(
                 "_camera_require_component",
                 "_cad_unique",
               ]
-            : named
-              ? ["_camera_check_resumed_name"]
-              : scoped
-                ? ["_camera_require_component"]
-                : []),
+            : design && named
+              ? [
+                  "_camera_scope_attribute",
+                  "_camera_matching_names",
+                  "_cad_unique",
+                  ...(aliases.validComponent
+                    ? []
+                    : ["_camera_require_component"]),
+                  ...(aliases.alwaysEligibleAliasTarget
+                    ? []
+                    : ["_camera_add_root_match"]),
+                ]
+              : named
+                ? ["_camera_check_resumed_name"]
+                : scoped
+                  ? design && aliases.validComponent
+                    ? []
+                    : ["_camera_require_component"]
+                  : []),
       ...(simple ? ["CadContext"] : []),
       ...(aliases?.roots ?? []),
       ...(stage.kind === "discover" ? [] : cameraSaveHandlerPlan.roots),
@@ -174,6 +220,7 @@ export function typedCameraSavePayload(
     },
     metadata,
     typing,
+    aliases?.projectedSources ?? [],
   );
 }
 
@@ -285,7 +332,7 @@ function canonicalCamera(
     pythonLiteral,
     undefined,
     alias,
-    cameraAliasRoute(context, alias),
+    cameraAliasRoute(root, context, alias),
   );
   const addin = addinOverride ?? descriptor["addin"] === true;
   const wrapper = addin

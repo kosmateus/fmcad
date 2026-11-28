@@ -9,6 +9,7 @@ export interface CameraAliasRoute {
   readonly receiver?: "design" | "context";
   readonly simpleContext?: boolean;
   readonly alwaysEligibleAliasTarget?: boolean;
+  readonly validComponent?: boolean;
   readonly resolverSymbol: string;
   readonly aliasBindings: readonly {
     name: string;
@@ -127,7 +128,9 @@ if _FMCAD_TYPE_CHECKING:
         ![
           cameraRoute.resolverSymbol,
           ...cameraRoute.aliasBindings.map((b) => b.resolverSymbol),
-        ].every((symbol) => /^_camera_alias_[a-z_]+$/.test(symbol))
+        ].every((symbol) =>
+          /^_camera_(?:alias_[a-z_]+|token_[a-f0-9]{16})$/.test(symbol),
+        )
       )
         throw new Error("Missing canonical camera alias callback");
       const raw = pythonLiteral(
@@ -144,9 +147,9 @@ if _FMCAD_TYPE_CHECKING:
         raise RuntimeError('DOCUMENT_STATE_CHANGED: component alias changed during selection')
     matches = _camera_matching_names(design, root, name)
     ${cameraRoute.alwaysEligibleAliasTarget ? `matches.append(${cameraRoute.resolverSymbol}(design))` : `_camera_add_root_match(root, matches, ${cameraRoute.resolverSymbol}(design))`}
-    _camera_require_component(_cad_unique(matches, 'Reference ' + name))
+    ${cameraRoute.validComponent ? "_cad_unique(matches, 'Reference ' + name)" : "_camera_require_component(_cad_unique(matches, 'Reference ' + name))"}
 `
-          : `    _camera_require_component(${cameraRoute.resolverSymbol}(design))\n`;
+          : `    ${cameraRoute.validComponent ? `${cameraRoute.resolverSymbol}(design)` : `_camera_require_component(${cameraRoute.resolverSymbol}(design))`}\n`;
       } else {
         if (cameraRoute.aliasBindings.length)
           selection += `    setattr(ctx, '_camera_alias_bindings', {${cameraRoute.aliasBindings.map((b) => `${pythonLiteral(b.name)}: (${pythonLiteral(b.raw)}, ${b.resolverSymbol})`).join(", ")}})\n`;
