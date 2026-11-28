@@ -24,10 +24,12 @@ test("the public camera composer strictly checks each component program with its
   const docId = "pinned-camera";
   const token = { token: "abc", kind: "component" };
   const query = { query: { kind: "component", scope: { component: "root" } } };
-  for (const [component, raw] of [
+  for (const [component, raw, observed] of [
     ["alias", undefined],
     ["alias", token],
     ["alias", query],
+    ["alias", "nested"],
+    ["alias", "nested", [{ name: "nested", raw: JSON.stringify(token) }]],
     [token, undefined],
     [{ name: "root" }, undefined],
     [query, undefined],
@@ -39,7 +41,14 @@ test("the public camera composer strictly checks each component program with its
       undefined,
       undefined,
       undefined,
-      raw ? { name: component, raw: JSON.stringify(raw), docId } : undefined,
+      raw
+        ? {
+            name: component,
+            raw: JSON.stringify(raw),
+            docId,
+            ...(observed ? { observed } : {}),
+          }
+        : undefined,
     );
     const checked = await checker.check({
       artifact,
