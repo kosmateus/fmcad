@@ -408,6 +408,41 @@ export async function ensureBroker(
     const brokerOwner = readRecord(marker);
     if (brokerOwner) {
       const owner = brokerOwner;
+      const nonce = owner["nonce"];
+      if (typeof nonce === "string" && /^[a-f0-9-]{36}$/.test(nonce)) {
+        const lifecycle = readRecord(
+          path.join(dir, `broker-lifecycle-${nonce}.json`),
+        );
+        // A prior starter may have released autostart.lock while retaining an
+        // uncertain physical grant. Its bound failure is authoritative even if
+        // the process is still alive; it does not authorize reclaim or replay.
+        if (
+          lifecycle?.["stage"] === "failed" &&
+          lifecycle["safeToRecover"] === false &&
+          isRecord(lifecycle["owner"]) &&
+          lifecycle["owner"]["pid"] === owner["pid"] &&
+          lifecycle["owner"]["birth"] === owner["birth"] &&
+          lifecycle["owner"]["nonce"] === nonce
+        ) {
+          const currentOwner = readRecord(marker);
+          if (
+            !currentOwner ||
+            currentOwner["pid"] !== owner["pid"] ||
+            currentOwner["birth"] !== owner["birth"] ||
+            currentOwner["nonce"] !== nonce
+          )
+            continue;
+          const code =
+            typeof lifecycle["code"] === "string" &&
+            /^[A-Z][A-Z0-9_]{0,127}$/.test(lifecycle["code"])
+              ? lifecycle["code"]
+              : "BROKER_STARTUP_FAILED";
+          queue.fail(
+            code,
+            `Broker startup failed (${code}); ownership and unresolved physical evidence were retained. No command was submitted; reconciliation is required before replacement.`,
+          );
+        }
+      }
       let alive: boolean;
       try {
         alive = queue.processBirth(owner["pid"] as number) === owner["birth"];
