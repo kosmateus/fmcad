@@ -1,3 +1,13 @@
+## Kamera `b55ec56` — odczyt w Fusion przez CLI i MCP
+
+**7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (mianownik: siedem publicznych odczytów kamery). Sześć odczytów wykonano przez CLI, jeden przez publiczne MCP; wszystkie dotarły do Fusion przez ADDIN 8765. Dwa odczyty aliasu tokenowego, zwykła nazwa, `root`, alias zagnieżdżony, zapytanie i odczyt bez komponentu zwróciły identyczny stan. Sprawdzono tożsamość dokumentu, jednostki i parametry kamery. Własny dokument zamknięto i potwierdzono jego brak na liście.
+
+Wszystkie **13/13** fizycznych skryptów skojarzono z receiptami oraz skrótami wewnętrznych programów. Odczyt MCP bez komponentu miał 6 462 B; największa kontynuacja (zapytanie) miała 50 212 B. Przekazano dokładne pliki do oceny minimalności. [Manifest przechwyconych bajtów](../camera-405f4c2e-022b-4196-b645-30d503e14005/review/manifest.json).
+
+## Kamera `b55ec56` — próba przerwana przed odczytem
+
+Offline: **57/57 PASS**. Pierwszy start (`b766e5da`) zatrzymał się podczas sprawdzania tożsamości brokera: plik z oczekiwanym skrótem zapisano przed zakończeniem kompilacji testów. **Kamera: NOTRUN (1 scenariusz)**; nie powstał dokument testowy. Pierwotny przyjęty odczyt listy zakończył się `DOCUMENT_CHANGED` / `not_started`, bez mutacji i powtórzenia. [Końcowy stan pierwotnego żądania](../camera-b766e5da-97e4-4eef-8748-857757979d80/startup-final.json). Po odświeżeniu samego pliku tożsamości odczytany i wyliczony skrót brokera były identyczne.
+
 ## 2026-11-28 09:40 UTC — Kamera: zatwierdzony wariant podstawowy, działająca kontynuacja aliasu
 
 Na źródle `591208d59bf5eb87e0d488252d75985c8f5e07cf` wykonano dwa świeże publiczne scenariusze ADDIN 8765: **2 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (mianownik: dwa scenariusze jednej metody). W każdym dwukrotnie odczytano ten sam rzeczywisty snapshot i zamknięto własny dokument, potwierdzając jego brak na liście. Wyniki nie rozszerzają kwalifikacji katalogu.

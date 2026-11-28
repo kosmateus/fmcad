@@ -1,4 +1,26 @@
 {
+  "latestRegisteredCameraMatrix": {
+    "source":"b55ec56d220ae05338e312948872137dac1a8017",
+    "broker":"d91ae2225cc96a6c325de83107e5b3408b8bc464cd8bde42fb39ad0060a7a573",
+    "transport":"ADDIN 8765",
+    "tests":{"offlinePassed":57,"offlineTotal":57,"publicReads":{"PASS":7,"FAIL":0,"NOTRUN":0,"RUNNING":0,"UNKNOWN":0},"cli":6,"mcp":1,"capturedAndReceiptVerified":13},
+    "physicalPythonBytes":{"tokenAliasTwice":[4686,8817],"plainName":[4679,8273],"root":[6793],"nestedAlias":[4681,12318,12820],"query":[4681,50212],"mcpDocumentOnly":[6462]},
+    "readback":"All seven camera states equal; finite and valid snapshot; verified document creationId",
+    "docId":"bc25fa97-9a23-45a3-b0fb-2eeb98b27ba1",
+    "cleanup":"CLOSED",
+    "review":"REQUESTED",
+    "evidence":".test-artifacts/camera-405f4c2e-022b-4196-b645-30d503e14005/review/manifest.json"
+  },
+  "registeredCameraSetupFailure": {
+    "source":"b55ec56d220ae05338e312948872137dac1a8017",
+    "setup":"FAIL: staged fingerprint was refreshed before rather than after the test compilation",
+    "camera":"NOTRUN",
+    "ownedDocumentCreated":false,
+    "acceptedListJob":"03c60d65-2d65-4553-acc6-40af35a63d05",
+    "listJobFinal":"failed; DOCUMENT_CHANGED; not_started; mayHaveMutated=false",
+    "resolvedBuild":"d91ae2225cc96a6c325de83107e5b3408b8bc464cd8bde42fb39ad0060a7a573",
+    "evidence":".test-artifacts/camera-b766e5da-97e4-4eef-8748-857757979d80/startup-final.json"
+  },
   "latestRegisteredCameraSave": {
     "source": "591208d59bf5eb87e0d488252d75985c8f5e07cf",
     "broker": "78e858da9f2c0f2bafa316cc67f1e99f5b81348e4f94d0a53dcfd805a8a3f229",
