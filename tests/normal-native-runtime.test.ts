@@ -45,7 +45,7 @@ function fixture(t: test.TestContext) {
   const config = {
     kind: "fmcad-normal-native-runtime", version: 1,
     installedForkDirectory: "C:\\AddIns\\AutodeskFusionMCP",
-    provisionPath: "C:\\Local\\AutodeskFusionMCP\\physical\\normal-provisions\\current.json",
+    provisionPath: "C:\\Local\\AutodeskFusionMCP\\physical\\normal-provisions\\instance.json",
     nativePrivateDirectory: "C:\\Local\\AutodeskFusionMCP\\clients",
     descriptor: {
       handoffId: "normal-start-instance-epoch",
@@ -62,6 +62,130 @@ function fixture(t: test.TestContext) {
     ? installed : value === metadata.nativePython ? python : path.join(root, "clients");
   return { root, installed, python, config, metadata, mapPath };
 }
+
+function nextRuntimeConfig(current: ReturnType<typeof fixture>) {
+  const next = structuredClone(current.config);
+  next.provisionPath = "C:\\Local\\AutodeskFusionMCP\\physical\\normal-provisions\\instance-2.json";
+  next.descriptor = {
+    ...next.descriptor,
+    handoffId: "normal-start-instance-2-epoch-2",
+    generation: { instance: "instance-2", epoch: "epoch-2" },
+    physicalRuntime: { ...next.descriptor.physicalRuntime, pid: 43, birth: "birth-2" },
+  };
+  return next;
+}
+
+function startingMetadata(config: unknown, starting: unknown, installedForkDirectory: string) {
+  return JSON.stringify({ state: "starting", config, starting, localAppData: "C:\\Local", installedForkDirectory });
+}
+
+test("ordinary discovery waits only for a journal-bound normal startup before native verification", async t => {
+  const f = fixture(t);
+  const next = nextRuntimeConfig(f);
+  const startup = { config: next, previous: f.config };
+  const calls: string[] = [];
+  let metadataReads = 0;
+  const dependencies = {
+    environment: { WSL_DISTRO_NAME: "owned-fixture" },
+    mapPath: f.mapPath,
+    startupTimeoutMs: 1000,
+    async run(file: string, args: string[], _input: string, _env: NodeJS.ProcessEnv, cwd?: string) {
+      calls.push(file === f.python ? "native" : "metadata");
+      if (file === f.python) {
+        assert.equal(metadataReads, 2, "native verification starts only after ready metadata");
+        assert.equal(cwd, f.installed);
+        return JSON.stringify(next);
+      }
+      assert.deepEqual(args.slice(0, 2), ["-NoProfile", "-NonInteractive"]);
+      assert.equal(args[2], "-Command");
+      assert.match(args[3] ?? "", /normal-starting\.json/);
+      assert.match(args[3] ?? "", /NoProcessFoundForGivenId/);
+      if (++metadataReads === 1)
+        return startingMetadata(f.config, startup, f.config.installedForkDirectory);
+      return JSON.stringify({ ...f.metadata, config: next });
+    },
+  };
+  const profile = await discoverNormalNativeRuntime(f.root, dependencies);
+  assert.ok(profile);
+  assert.deepEqual(calls, ["metadata", "metadata", "native"]);
+  assert.equal(profile.runtime.physicalRuntime.pid, 43);
+});
+
+test("ordinary discovery refuses an unbound, malformed or foreign startup journal without retry", async t => {
+  const f = fixture(t);
+  const next = nextRuntimeConfig(f);
+  const sameGeneration = structuredClone(f.config);
+  sameGeneration.descriptor.endpointURL = "http://127.0.0.1:8766/mcp";
+  const cases = [
+    { config: next, previous: { ...f.config, provisionPath: "C:\\Foreign\\old.json" } },
+    { config: next, previous: null },
+    { config: { ...next, version: 2 }, previous: f.config },
+    { config: { ...next, installedForkDirectory: "D:\\Foreign\\AddIns\\AutodeskFusionMCP" }, previous: f.config },
+    { config: sameGeneration, previous: f.config },
+    { config: next, previous: f.config, extra: true },
+  ];
+  for (const startup of cases) {
+    let calls = 0;
+    await assert.rejects(discoverNormalNativeRuntime(f.root, {
+      environment: { WSL_DISTRO_NAME: "owned-fixture" },
+      mapPath: f.mapPath,
+      async run() {
+        calls++;
+        return startingMetadata(f.config, startup, f.config.installedForkDirectory);
+      },
+    }), { code: "NATIVE_RUNTIME_DISCOVERY_REJECTED" });
+    assert.equal(calls, 1);
+  }
+});
+
+test("ordinary discovery rejects a changed config after confirming startup", async t => {
+  const f = fixture(t);
+  const startup = { config: nextRuntimeConfig(f), previous: f.config };
+  let calls = 0;
+  await assert.rejects(discoverNormalNativeRuntime(f.root, {
+    environment: { WSL_DISTRO_NAME: "owned-fixture" },
+    mapPath: f.mapPath,
+    async run() {
+      calls++;
+      return calls === 1
+        ? startingMetadata(f.config, startup, f.config.installedForkDirectory)
+        : JSON.stringify(f.metadata);
+    },
+  }), { code: "NATIVE_RUNTIME_DISCOVERY_REJECTED" });
+  assert.equal(calls, 2);
+});
+
+test("ordinary discovery bounds retries for a journal-confirmed startup", async t => {
+  const f = fixture(t);
+  const startup = { config: nextRuntimeConfig(f), previous: f.config };
+  let calls = 0;
+  const dependencies = {
+    environment: { WSL_DISTRO_NAME: "owned-fixture" },
+    startupTimeoutMs: 250,
+    async run() {
+      calls++;
+      return startingMetadata(f.config, startup, f.config.installedForkDirectory);
+    },
+  };
+  await assert.rejects(discoverNormalNativeRuntime(f.root, dependencies), {
+    code: "NATIVE_RUNTIME_DISCOVERY_REJECTED",
+  });
+  assert.ok(calls > 1);
+  assert.ok(calls < 5, `expected bounded metadata retries, got ${calls}`);
+});
+
+test("ordinary discovery does not retry an absent process without its startup journal", async t => {
+  const f = fixture(t);
+  let calls = 0;
+  await assert.rejects(discoverNormalNativeRuntime(f.root, {
+    environment: { WSL_DISTRO_NAME: "owned-fixture" },
+    async run() {
+      calls++;
+      throw new Error("Native discovery process failed");
+    },
+  }), /Native discovery process failed/);
+  assert.equal(calls, 1);
+});
 
 test("ordinary discovery composes a deferred claimed grant without profile environment or SDK execution", async t => {
   const f = fixture(t);
