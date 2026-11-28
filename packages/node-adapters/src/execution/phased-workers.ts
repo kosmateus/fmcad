@@ -272,6 +272,7 @@ export class PhasedWorkers {
         "XDG_DATA_HOME",
         "FMCAD_CONFIG",
         "FMCAD_PYTHON",
+        "FMCAD_TEST_WIRE_DIRECTORY",
         "WSL_DISTRO_NAME",
         "TMPDIR",
         "SYSTEMROOT",

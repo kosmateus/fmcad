@@ -225,6 +225,7 @@ function launch(
       "FMCAD_CONFIG",
       "FMCAD_PHYSICAL_OPERATOR_PROFILE",
       "FMCAD_PYTHON",
+      "FMCAD_TEST_WIRE_DIRECTORY",
       "WSL_DISTRO_NAME",
       "TMPDIR",
       "SYSTEMROOT",

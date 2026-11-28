@@ -101,12 +101,15 @@ test("one owned process receives the exact accepted intent and sanitized capabil
   const f = fixture(t);
   const oldSecret = process.env["FMCAD_UNRELATED_SECRET"];
   const oldNodeOptions = process.env["NODE_OPTIONS"];
+  const oldWireDirectory = process.env["FMCAD_TEST_WIRE_DIRECTORY"];
   process.env["FMCAD_UNRELATED_SECRET"] = "not-for-worker";
   process.env["NODE_OPTIONS"] = "--trace-warnings";
+  process.env["FMCAD_TEST_WIRE_DIRECTORY"] = f.directory;
   t.after(() => {
     for (const [key, old] of [
       ["FMCAD_UNRELATED_SECRET", oldSecret],
       ["NODE_OPTIONS", oldNodeOptions],
+      ["FMCAD_TEST_WIRE_DIRECTORY", oldWireDirectory],
     ] as const) {
       if (old === undefined) delete process.env[key];
       else process.env[key] = old;
@@ -132,6 +135,7 @@ test("one owned process receives the exact accepted intent and sanitized capabil
   assert.equal(output.env["FMCAD_QUEUE_WORKER_JOB"], f.input.intent.id);
   assert.equal(output.env["FMCAD_UNRELATED_SECRET"], undefined);
   assert.equal(output.env["NODE_OPTIONS"], undefined);
+  assert.equal(output.env["FMCAD_TEST_WIRE_DIRECTORY"], f.directory);
   const config = JSON.parse(output.env["FMCAD_QUEUE_WORKER_CONFIG"]!) as object;
   assert.partialDeepStrictEqual(config, {
     url: "http://queue.invalid",
