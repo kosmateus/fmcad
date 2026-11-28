@@ -1,3 +1,11 @@
+## 2026-11-28 09:07 UTC — Odczyt kamery z zapisem rzeczywistych bajtów
+
+**Scenariusz: 1 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN**, dla jednego wariantu `camera.save` bez selektora komponentu. Oba odczyty w Fusion przez ADDIN 8765 zwróciły identyczny widok ortograficzny oraz poprawną tożsamość nowego dokumentu. Po zamknięciu wyłącznie własnego dokumentu potwierdzono jego brak na publicznej liście.
+
+Zapisano oba rzeczywiste żądania. Każde zawierało **25 745 B kodu Python** (w tym opakowanie potwierdzenia) w **26 546 B JSON**. Dla obu żądań zawartość pola `code` jest identyczna z zapisanym plikiem `.py`, a jego SHA-256 odpowiada potwierdzeniu checkera przed wysyłką. Wyodrębniony wewnętrzny program ma 12 157 B; jego SHA-256 odpowiada potwierdzeniu z Fusion. Przekazano te bajty do niezależnego review; minimalność nie została jeszcze zatwierdzona.
+
+Źródło: `def488f172ed8d2635a64c66c6a2f91a1bebbf8c`. [Lokalny manifest dowodów](../camera-0309a49f-d8ac-42b9-b8da-d7f5fb84074a/review/manifest.json). Poprzednia próba bez logu transportowego pozostaje odrębnym wynikiem FAIL.
+
 ## 2026-11-28 09:02 UTC — Odczyt kamery z rejestru, bez selektora komponentu
 
 `camera.save` przez publiczne CLI i rzeczywisty ADDIN 8765 zwrócił poprawny wynik w **2/2 wywołaniach**. Odczyt kontrolny zwrócił tę samą pozycję, cel, wektor pionu i rozmiary widoku ortograficznego. Oba wyniki wskazały dokument `865f030a-ad2f-405d-a4bd-6eb5361657c2`. Po zamknięciu własnego dokumentu `doc list` potwierdził jego brak (**cleanup 1/1 PASS**).
