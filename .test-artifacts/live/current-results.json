@@ -9,7 +9,8 @@
     "changedDecodedStagesAfterNormalizingDocumentPins":["registry-chain#2","registry-chain#3"],
     "nestedAliasPythonBytes":[4681,10235,8951],
     "docId":"3f32ddc0-28c2-49e4-89cb-c40384aca6d8","cleanup":"CLOSED",
-    "review":"REQUESTED","evidence":".test-artifacts/camera-ba3e732c-0639-4f6f-af44-e0b86d601f54/review/manifest.json"
+    "review":{"PASS":13,"FAIL":0,"totalPhysicalScripts":13,"reviewer":"astra-camera-wire-review","record":"fmcad-vns.15.23.4","scope":"Complete physical Python including the executed receipt wrappers for this camera.save run."},
+    "evidence":".test-artifacts/camera-ba3e732c-0639-4f6f-af44-e0b86d601f54/review/manifest.json"
   },
   "registeredCameraMatrixR5": {
     "source":"f076f7c2e5caa4bb2ce527a0a50f5b1584681e8a",

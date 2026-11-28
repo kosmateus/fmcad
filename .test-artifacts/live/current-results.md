@@ -1,6 +1,6 @@
 ## Kamera `e52c4189` — zachowana kolejność błędów SDK
 
-Docelowe testy offline **8/8 PASS**. Live **7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (sześć odczytów CLI, jeden publicznym MCP); wszystkie zwróciły identyczny stan kamery. Dokument zamknięto. Potwierdzono **13/13 fizycznych skryptów**. Po podstawieniu pinów dokumentu tylko dwa programy różnią się od poprzedniego przebiegu: etapy 2 i 3 zagnieżdżonej nazwy (10 235 i 8 951 B wraz z wrapperem). Zostały przekazane do ponownej oceny. [Manifest](../camera-ba3e732c-0639-4f6f-af44-e0b86d601f54/review/manifest.json).
+Docelowe testy offline **8/8 PASS**. Live **7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (sześć odczytów CLI, jeden publicznym MCP); wszystkie zwróciły identyczny stan kamery. Dokument zamknięto. Niezależna Astra zatwierdziła minimalność **13/13 fizycznych skryptów wraz z wrapperami**. Po podstawieniu pinów dokumentu tylko dwa programy różnią się od poprzedniego przebiegu: etapy 2 i 3 zagnieżdżonej nazwy (10 235 i 8 951 B wraz z wrapperem). Obie uwagi poprzedniego przeglądu rozliczono w `fmcad-vns.15.23.4`. [Manifest](../camera-ba3e732c-0639-4f6f-af44-e0b86d601f54/review/manifest.json).
 
 ## Kamera `f076f7c2` — ponowny odczyt w Fusion po pięciu poprawkach minimalności
 
