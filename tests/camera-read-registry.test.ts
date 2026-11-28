@@ -58,6 +58,9 @@ tree = ast.parse(source)
 expected = set(${JSON.stringify(requiredFunctions)})
 observed = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
 assert observed == expected, (observed, expected)
+imports = sorted(ast.unparse(node) for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom)))
+assert imports == ['from typing import cast as _cad_cast', 'import adsk.core'], imports
+assert len(tree.body) == len(expected) + len(imports), 'unexpected initialization'
 sdk = types.ModuleType('adsk')
 sdk.core = types.ModuleType('adsk.core')
 sdk.core.CameraTypes = types.SimpleNamespace(OrthographicCameraType=0, PerspectiveCameraType=1, PerspectiveWithOrthoFacesCameraType=2)
@@ -136,6 +139,8 @@ test("independent oracle detects foreign definitions and every missing helper", 
     execute(artifact.script + "\ndef _io_camera_restore(): pass\n").status,
     0,
   );
+  for (const addition of ["import os", "_UNUSED = 1"])
+    assert.notEqual(execute(artifact.script + "\n" + addition).status, 0);
   for (const symbol of [...requiredFunctions, "_cad_cast", "adsk"]) {
     const result = execute(artifact.script, symbol);
     assert.notEqual(result.status, 0, `Missing ${symbol} was not detected`);

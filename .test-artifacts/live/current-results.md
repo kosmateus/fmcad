@@ -1,3 +1,11 @@
+## 2026-11-28 09:02 UTC — Odczyt kamery z rejestru, bez selektora komponentu
+
+`camera.save` przez publiczne CLI i rzeczywisty ADDIN 8765 zwrócił poprawny wynik w **2/2 wywołaniach**. Odczyt kontrolny zwrócił tę samą pozycję, cel, wektor pionu i rozmiary widoku ortograficznego. Oba wyniki wskazały dokument `865f030a-ad2f-405d-a4bd-6eb5361657c2`. Po zamknięciu własnego dokumentu `doc list` potwierdził jego brak (**cleanup 1/1 PASS**).
+
+Pełna próba kwalifikacyjna: **0 PASS / 1 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (mianownik: jeden scenariusz). Jedyna niezaliczona asercja: fizyczny katalog zapisu wysłanego żądania był pusty. Z dowodów obu zakończonych operacji odtworzono później skrypty zgodne bajt w bajt z SHA-256 sprawdzonymi przed wysyłką; to odtworzenie, nie zapis z transportu. Review jeszcze nie wykonano.
+
+Źródło `e6252c1025cc999fc81b3226a7a290b538a02ce2`, broker `74f131393ffb1395b8da3511514db7726f0a63aa04ff43812861ab751ce9e950`, Native `76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb`. Dowody lokalne: `.test-artifacts/camera-1ad4d74f-8173-445a-afa8-1eb7f8682e84/`. Ten test jednej metody nie zmienia wyników katalogu.
+
 ## 2026-11-28 06:35 UTC — Finalny normalny startup: CLI i MCP PASS
 
 - **Publiczny workflow CLI: 1/1 PASS.** Źródło `da2ff76a5ed0b883923807adc66e8870f10f46c1` jest kodowo równoważne reviewed `48bb53f`; build `e8052cba2a0058371241e91efa9f5562623684374d9b561834207973ae04b228`, Native `6df81360` / zintegrowany `main 71fbd09`. Utworzono bryłę 40 × 20 × 10 mm, a po publicznym stop/autostart/resume niezależne odczyty potwierdziły ten sam BRep solid, extents 4 × 2 × 1 cm i **8000 mm³**. Cleanup **CLOSED**.
