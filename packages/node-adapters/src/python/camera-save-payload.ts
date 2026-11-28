@@ -30,22 +30,77 @@ function aliasPlan(
       ? JSON.stringify(context.component)
       : undefined);
   if (raw === undefined) return null;
-  const token = !alias?.observed?.length && planCameraToken(root, raw);
+  let chain: { name: string; expected?: string } | undefined;
+  if (alias && typeof context.component === "string") {
+    let ref: unknown;
+    try {
+      ref = JSON.parse(raw);
+    } catch {
+      /* malformed values retain their canonical diagnostic */
+    }
+    const inner =
+      typeof ref === "string"
+        ? ref
+        : ref &&
+            typeof ref === "object" &&
+            Object.keys(ref).length === 1 &&
+            "name" in ref
+          ? ref.name
+          : null;
+    if (
+      typeof inner === "string" &&
+      inner &&
+      cameraSelector({ component: inner }).kind === "discover"
+    ) {
+      if (!alias.observed?.length) chain = { name: inner };
+      else if (alias.observed.length === 1 && alias.observed[0]!.name === inner)
+        chain = { name: inner, expected: alias.observed[0]!.raw };
+    }
+  }
+  if (chain && chain.expected === undefined)
+    return {
+      chain,
+      receiver: "design" as const,
+      resolverSymbol: "",
+      alwaysEligibleAliasTarget: false,
+      validComponent: false,
+      contextMembers: [],
+      aliasBindings: [],
+      definitions: [],
+      references: [],
+      roots: [],
+      typingReferences: [],
+      projectedSources: [],
+    };
+  const token =
+    (chain || !alias?.observed?.length) &&
+    planCameraToken(root, chain?.expected ?? raw);
   if (token) {
     // Eligibility is certified by the canonical projector; do not infer it
     // merely because the requested JSON says "component".
     const kind = token.alwaysEligibleAliasTarget
-      ? (JSON.parse(raw) as { kind: string }).kind
+      ? (JSON.parse(chain?.expected ?? raw) as { kind: string }).kind
       : undefined;
     return {
       ...token,
+      chain,
       validComponent: kind === "component" || kind === "occurrence",
       contextMembers: [] as string[],
       aliasBindings: [] as ReturnType<typeof planCameraAlias>["aliasBindings"],
     };
   }
+  const general = planCameraAlias(raw, alias?.observed);
+  if ("rootQuery" in general && general.rootQuery === true)
+    return {
+      ...general,
+      rootQuery: true,
+      receiver: "design" as const,
+      alwaysEligibleAliasTarget: true,
+      validComponent: true,
+      projectedSources: [],
+    };
   return {
-    ...planCameraAlias(raw, alias?.observed),
+    ...general,
     receiver: "context" as const,
     alwaysEligibleAliasTarget: false,
     validComponent: false,
@@ -62,6 +117,10 @@ export function cameraAliasRoute(
   return plan
     ? {
         resolverSymbol: plan.resolverSymbol,
+        ...("rootQuery" in plan && plan.rootQuery === true
+          ? { rootQuery: true }
+          : {}),
+        ...("chain" in plan && plan.chain ? { chain: plan.chain } : {}),
         receiver: plan.receiver,
         alwaysEligibleAliasTarget: plan.alwaysEligibleAliasTarget,
         validComponent: plan.validComponent,

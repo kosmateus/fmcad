@@ -8,7 +8,7 @@
     "readback":"All seven camera states equal; finite and valid snapshot; verified document creationId",
     "docId":"bc25fa97-9a23-45a3-b0fb-2eeb98b27ba1",
     "cleanup":"CLOSED",
-    "review":"REQUESTED",
+    "review":{"PASS":8,"FAIL":5,"totalPhysicalScripts":13,"findings":"Two token continuations duplicate uniqueness; two nested-name stages retain generic routing; one fixed root query ships unrelated query paths and context initialization. Shared wrapper passed."},
     "evidence":".test-artifacts/camera-405f4c2e-022b-4196-b645-30d503e14005/review/manifest.json"
   },
   "registeredCameraSetupFailure": {

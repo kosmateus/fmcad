@@ -2,7 +2,7 @@
 
 **7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (mianownik: siedem publicznych odczytów kamery). Sześć odczytów wykonano przez CLI, jeden przez publiczne MCP; wszystkie dotarły do Fusion przez ADDIN 8765. Dwa odczyty aliasu tokenowego, zwykła nazwa, `root`, alias zagnieżdżony, zapytanie i odczyt bez komponentu zwróciły identyczny stan. Sprawdzono tożsamość dokumentu, jednostki i parametry kamery. Własny dokument zamknięto i potwierdzono jego brak na liście.
 
-Wszystkie **13/13** fizycznych skryptów skojarzono z receiptami oraz skrótami wewnętrznych programów. Odczyt MCP bez komponentu miał 6 462 B; największa kontynuacja (zapytanie) miała 50 212 B. Przekazano dokładne pliki do oceny minimalności. [Manifest przechwyconych bajtów](../camera-405f4c2e-022b-4196-b645-30d503e14005/review/manifest.json).
+Wszystkie **13/13** fizycznych skryptów skojarzono z receiptami oraz skrótami wewnętrznych programów. Odczyt MCP bez komponentu miał 6 462 B; największa kontynuacja (zapytanie) miała 50 212 B. Niezależne review minimalności: **8/13 PASS, 5/13 FAIL**. Dwa odczyty tokenu powielały sprawdzenie jednoznaczności, dwa etapy zagnieżdżonej nazwy zachowały ogólną obsługę aliasów, a zapytanie o root zawierało nieosiągalną obsługę filtrów/geometrii i zbędną inicjalizację kontekstu. Wspólny wrapper zatwierdzono. [Manifest przechwyconych bajtów](../camera-405f4c2e-022b-4196-b645-30d503e14005/review/manifest.json).
 
 ## Kamera `b55ec56` — próba przerwana przed odczytem
 

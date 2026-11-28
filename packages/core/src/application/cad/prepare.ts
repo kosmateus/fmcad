@@ -6,6 +6,8 @@ import { cameraSelector } from "./camera-selector";
 export type CadPrivateReadback = "param-checkpoint";
 
 export interface CameraAliasRoute {
+  readonly rootQuery?: boolean;
+  readonly chain?: { readonly name: string; readonly expected?: string };
   readonly receiver?: "design" | "context";
   readonly simpleContext?: boolean;
   readonly alwaysEligibleAliasTarget?: boolean;
@@ -126,10 +128,14 @@ if _FMCAD_TYPE_CHECKING:
       if (
         !cameraRoute ||
         ![
-          cameraRoute.resolverSymbol,
+          ...(cameraRoute.chain && cameraRoute.chain.expected === undefined
+            ? []
+            : [cameraRoute.resolverSymbol]),
           ...cameraRoute.aliasBindings.map((b) => b.resolverSymbol),
         ].every((symbol) =>
-          /^_camera_(?:alias_[a-z_]+|token_[a-f0-9]{16})$/.test(symbol),
+          /^_camera_(?:alias_[a-z_]+|token_[a-f0-9]{16}|bound_root_query)$/.test(
+            symbol,
+          ),
         )
       )
         throw new Error("Missing canonical camera alias callback");
@@ -140,16 +146,43 @@ if _FMCAD_TYPE_CHECKING:
         ? `_camera_check_resumed_name(ctx, ${selector}, ${raw}, lambda raw: ${cameraRoute.resolverSymbol}(ctx, raw))`
         : `_camera_require_component(${cameraRoute.resolverSymbol}(ctx, ${raw}))`;
       if (cameraRoute.receiver === "design") {
+        const chain = cameraRoute.chain;
+        const inner = chain && pythonLiteral(chain.name);
+        const nested = !chain
+          ? ""
+          : `    inner = ${inner}
+    inner_raw = _camera_scope_attribute(root, inner)
+${
+  chain.expected === undefined
+    ? `    if inner_raw is not None:
+        print('FMCAD_RESULT ' + json.dumps({'operation':'camera.save','document':doc.name,'_cameraAlias':{'name':inner,'raw':inner_raw,'docId':doc.creationId}}))
+        return
+`
+    : `    if inner_raw != ${pythonLiteral(chain.expected)}:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: component alias changed during selection')
+`
+}    inner_matches = _camera_matching_names(design, root, inner)
+${
+  chain.expected === undefined
+    ? ""
+    : `    ${cameraRoute.alwaysEligibleAliasTarget ? `inner_matches.append(${cameraRoute.resolverSymbol}(design))` : `_camera_add_root_match(root, inner_matches, ${cameraRoute.resolverSymbol}(design))`}
+`
+}`;
+        const target = chain
+          ? "_cad_unique(inner_matches, 'Reference ' + inner)"
+          : cameraRoute.rootQuery
+            ? `${cameraRoute.resolverSymbol}(design, ${selector ? "root" : "design.rootComponent"}, doc, assert_identity)`
+            : `${cameraRoute.resolverSymbol}(design)`;
         selection = selector
           ? `    root = design.rootComponent
     name = ${selector}
     if _camera_scope_attribute(root, name) != ${raw}:
         raise RuntimeError('DOCUMENT_STATE_CHANGED: component alias changed during selection')
     matches = _camera_matching_names(design, root, name)
-    ${cameraRoute.alwaysEligibleAliasTarget ? `matches.append(${cameraRoute.resolverSymbol}(design))` : `_camera_add_root_match(root, matches, ${cameraRoute.resolverSymbol}(design))`}
+${nested}    ${cameraRoute.alwaysEligibleAliasTarget ? `matches.append(${target})` : `_camera_add_root_match(root, matches, ${target})`}
     ${cameraRoute.validComponent ? "_cad_unique(matches, 'Reference ' + name)" : "_camera_require_component(_cad_unique(matches, 'Reference ' + name))"}
 `
-          : `    ${cameraRoute.validComponent ? `${cameraRoute.resolverSymbol}(design)` : `_camera_require_component(${cameraRoute.resolverSymbol}(design))`}\n`;
+          : `    ${cameraRoute.validComponent ? target : `_camera_require_component(${target})`}\n`;
       } else {
         if (cameraRoute.aliasBindings.length)
           selection += `    setattr(ctx, '_camera_alias_bindings', {${cameraRoute.aliasBindings.map((b) => `${pythonLiteral(b.name)}: (${pythonLiteral(b.raw)}, ${b.resolverSymbol})`).join(", ")}})\n`;
@@ -191,6 +224,19 @@ if _FMCAD_TYPE_CHECKING:
 `;
       })
       .join("");
+    const checksAtEntry = cameraRoute?.rootQuery
+      ? `    def assert_identity() -> None:\n${
+          pinChecks
+            ? pinChecks
+                .trimEnd()
+                .split("\n")
+                .map((line) => "    " + line)
+                .join("\n")
+            : "        pass"
+        }\n${pinChecks ? "    assert_identity()\n" : ""}`
+      : pinChecks;
+    if (cameraRoute?.rootQuery && pinChecks)
+      selection += "    assert_identity()\n";
     const simple =
       cameraRoute?.simpleContext && cameraRoute.receiver !== "design";
     const complex =
@@ -206,7 +252,7 @@ ${selection}    ctx.assert_identity()
     collection = app.documents
     doc_name = ${name}
     doc = _cad_cast('adsk.core.Document', _document_unique_matching((collection.item(i) for i in range(collection.count)), doc_name${context.projectId == null ? "" : ", " + pythonLiteral(context.projectId)}))
-${pinChecks}    ${stage.kind === "none" ? "if _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType')) is None:" : "design = _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType'))\n    if design is None:"}
+${checksAtEntry}    ${stage.kind === "none" ? "if _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType')) is None:" : "design = _cad_cast('_DesignCaster', adsk.fusion.Design).cast(doc.products.itemByProductType('DesignProductType'))\n    if design is None:"}
         raise ValueError('Document has no Fusion Design product: ' + doc_name)
 `;
     const preamble = streamGuard.replace(

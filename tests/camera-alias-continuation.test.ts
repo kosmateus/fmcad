@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
@@ -52,6 +53,13 @@ test("camera resumes from validated alias observations without exposing private 
   assert.match(attempt.scripts[1]!, /component alias changed/);
   assert.match(attempt.scripts[2]!, /findEntityByToken/);
   assert.match(attempt.scripts[2]!, /persisted-token/);
+  for (const script of attempt.scripts.slice(1))
+    assert.doesNotMatch(
+      script,
+      /json\.loads|_camera_alias_bindings|_CameraAliasRequired|class CadContext/,
+    );
+  assert.match(attempt.scripts[1]!, /if inner_raw is not None/);
+  assert.doesNotMatch(attempt.scripts[2]!, /if inner_raw is not None/);
 });
 
 test("unknown names first discover only the attribute; missing aliases are revalidated before selection", async () => {
@@ -68,6 +76,29 @@ test("unknown names first discover only the attribute; missing aliases are reval
     /findEntityByToken|class CadContext/,
   );
   assert.match(testRun.scripts[1]!, /_camera_pose/);
+});
+
+test("bound chain programs retain both name ambiguities, token errors, and stale-attribute refusals", () => {
+  const { prepareCadScript } = load("./src/cad");
+  const raw = JSON.stringify("inner"),
+    inner = JSON.stringify({ kind: "component", token: "part" });
+  const programs = [[], [{ name: "inner", raw: inner }]].map(
+    (observed) =>
+      prepareCadScript(
+        "camera.save",
+        {},
+        { doc: "Test", docId: "document-from-test", component: "outer" },
+        undefined,
+        undefined,
+        undefined,
+        { name: "outer", docId: "document-from-test", raw, observed },
+      ).script,
+  );
+  const run = spawnSync("python3", ["-B", "tests/camera_chain_programs.py"], {
+    input: JSON.stringify({ programs, raw, inner }),
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 0, run.stderr);
 });
 
 test("camera refuses changed pins, unresolved cyclic aliases and missing results before any retry", async () => {
