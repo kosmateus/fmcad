@@ -89,7 +89,7 @@ export async function discoverNormalNativeRuntime(
   const provisionPath = text(config["provisionPath"]);
   const nativePrivateDirectory = text(config["nativePrivateDirectory"]);
   if (path.win32.dirname(provisionPath) !== path.win32.join(nativeDirectory, "normal-provisions") ||
-      nativePrivateDirectory !== path.win32.join(nativeDirectory, "clients"))
+      nativePrivateDirectory !== path.win32.join(localAppData, "AutodeskFusionMCP", "clients"))
     refused();
   const files: Record<string, string> = {};
   function digest(file: string) {

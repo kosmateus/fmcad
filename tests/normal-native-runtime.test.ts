@@ -46,7 +46,7 @@ function fixture(t: test.TestContext) {
     kind: "fmcad-normal-native-runtime", version: 1,
     installedForkDirectory: "C:\\AddIns\\AutodeskFusionMCP",
     provisionPath: "C:\\Local\\AutodeskFusionMCP\\physical\\normal-provisions\\current.json",
-    nativePrivateDirectory: "C:\\Local\\AutodeskFusionMCP\\physical\\clients",
+    nativePrivateDirectory: "C:\\Local\\AutodeskFusionMCP\\clients",
     descriptor: {
       handoffId: "normal-start-instance-epoch",
       generation: { instance: "instance", epoch: "epoch" },
@@ -107,10 +107,12 @@ test("ordinary discovery composes a deferred claimed grant without profile envir
 
 test("discovery refuses a changed native projection and foreign namespace", async t => {
   const f = fixture(t);
-  for (const mode of ["changed", "foreign"]) {
+  for (const mode of ["changed", "foreign", "protected-output"]) {
     let calls = 0;
     const metadata = structuredClone(f.metadata);
     if (mode === "foreign") metadata.config.provisionPath = "C:\\Foreign\\provision.json";
+    if (mode === "protected-output")
+      metadata.config.nativePrivateDirectory = "C:\\Local\\AutodeskFusionMCP\\physical\\clients";
     await assert.rejects(discoverNormalNativeRuntime(f.root, {
       environment: { WSL_DISTRO_NAME: "fixture" }, mapPath: f.mapPath,
       async run() {
@@ -118,7 +120,7 @@ test("discovery refuses a changed native projection and foreign namespace", asyn
         return JSON.stringify(calls === 1 ? metadata : { ...f.config, version: 2 });
       },
     }), { code: "NATIVE_RUNTIME_DISCOVERY_REJECTED" });
-    assert.equal(calls, mode === "foreign" ? 1 : 2);
+    assert.equal(calls, mode === "changed" ? 2 : 1);
   }
 });
 
