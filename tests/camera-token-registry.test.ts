@@ -42,6 +42,17 @@ test("known token plans bind only canonical source and guarantee eligibility pre
       plan.projectedSources[0]!.source,
       /json|loads|raw|ctx|_CAD_KINDS|_cad_kind|_cad_cast/,
     );
+    assert.match(
+      plan.projectedSources[0]!.source,
+      /_cad_unique\(candidates, 'Entity token'\)/,
+    );
+    assert.doesNotMatch(
+      plan.projectedSources[0]!.source,
+      /len\(unique\)|list\(design\.findEntityByToken/,
+    );
+    assert.deepEqual(plan.definitions[0]!.dependencies, [
+      { symbol: "_cad_unique" },
+    ]);
     assert.deepEqual(plan, planCameraToken(root, raw));
   }
   assert.equal(planCameraToken(root, '"name"'), null);
@@ -101,7 +112,7 @@ def outcome(action):
     except Exception as error: return (type(error).__name__, str(error))
 count = 0
 for plan in json.loads(${JSON.stringify(JSON.stringify(plans))}):
-    local = {}
+    local = {"_cad_unique": ns["_cad_unique"]}
     exec("from __future__ import annotations\\n" + plan["source"], local)
     callback = local[plan["symbol"]]
     for labels in ([], ["Component"], ["Occurrence"], ["UserParameter"], ["BRepBody"],

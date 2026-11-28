@@ -29,7 +29,6 @@ def project(request):
         raise ValueError('Not an unscoped token reference')
     source, core = ast.parse(request['source']), ast.parse(request['core'])
     fn = one(source, '_camera_alias_token', ast.FunctionDef)
-    unique = one(core, '_cad_unique', ast.FunctionDef)
     kind_fn = one(core, '_cad_kind', ast.FunctionDef)
     type_fn = one(core, '_cad_type', ast.FunctionDef)
     kinds = ast.literal_eval(one(core, '_CAD_KINDS', ast.Assign).value)
@@ -41,7 +40,7 @@ def project(request):
         "if kind:\n candidates = [entity for entity in candidates if _cad_kind(entity) == kind]",
         "return _cad_unique(candidates, 'Entity token')",
     )
-    if (fn.decorator_list or unique.decorator_list or type_fn.decorator_list or
+    if (fn.decorator_list or type_fn.decorator_list or
             len(kind_fn.body) != 2 or
             ast.dump(kind_fn.body[0], include_attributes=False) !=
             ast.dump(ast.parse("name = _cad_type(entity)").body[0], include_attributes=False) or
@@ -57,6 +56,7 @@ def project(request):
     call = candidates.value.args[0]
     call.func.value = receiver
     call.args = [ast.Constant(ref['token'])]
+    candidates.value = call
     body = [candidates]
     if kind:
         entity = ast.Name(id='entity', ctx=ast.Load())
@@ -89,13 +89,8 @@ def project(request):
             filtered = copy.deepcopy(fn.body[3].body[0])
             filtered.value.generators[0].ifs = [test]
             body.append(filtered)
-    # Inline the canonical uniqueness operation with its constant call arguments.
-    replace = Replace({
-        'entities': ast.Name(id='candidates', ctx=ast.Load()),
-        'label': ast.Constant('Entity token'),
-        '_CadItem': ast.Attribute(value=ast.Attribute(value=ast.Name(id='adsk', ctx=ast.Load()), attr='core', ctx=ast.Load()), attr='Base', ctx=ast.Load()),
-    })
-    body.extend(replace.visit(node) for node in unique.body)
+    # Name and token selection share the same canonical uniqueness operation.
+    body.append(copy.deepcopy(fn.body[4]))
     fn.name = request['symbol']
     fn.args.args = [ast.arg(arg='design', annotation=ast.Constant('adsk.fusion.Design'))]
     fn.body = body

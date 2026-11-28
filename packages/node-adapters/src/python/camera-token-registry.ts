@@ -78,7 +78,9 @@ export function planCameraToken(root: string, raw: string) {
     alwaysEligibleAliasTarget: result.alwaysEligibleAliasTarget,
     roots: [symbol],
     conditions: {},
-    definitions: [{ symbol, sourceId: id, dependencies: [] }],
+    definitions: [
+      { symbol, sourceId: id, dependencies: [{ symbol: "_cad_unique" }] },
+    ],
     references: [],
     typingReferences: [
       {
