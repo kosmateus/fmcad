@@ -3,7 +3,14 @@ import { createTypeScriptImportResolver } from "eslint-import-resolver-typescrip
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "**/.test-artifacts/**"] },
+  {
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/.test-artifacts/**",
+      "src/**/*.d.ts",
+    ],
+  },
   ...tseslint.configs.recommended,
   {
     files: ["packages/**/*.ts", "src/opencode/*.ts"],
@@ -66,14 +73,6 @@ export default tseslint.config(
       // This private CommonJS compatibility edge delegates to retained JS
       // command/help/pipeline adapters and does not create another service.
       "@typescript-eslint/no-require-imports": "off",
-    },
-  },
-  {
-    files: ["src/opencode/execution.ts"],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unused-vars": "off",
-      "prefer-const": "off",
     },
   },
 );

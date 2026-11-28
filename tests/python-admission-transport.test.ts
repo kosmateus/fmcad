@@ -1,0 +1,378 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import http from "node:http";
+import path from "node:path";
+import { createRequire } from "node:module";
+const load = createRequire(
+  path.resolve("tests/python-admission-transport.test.js"),
+);
+test.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
+const { assertCurrentDocumentStatusAdmission } = load(
+  "../dist/tests/fixtures/document-status-admission",
+) as typeof import("./fixtures/document-status-admission");
+const { createBrokerTransport } = load(
+  "../src/dist/fusion-transport/broker",
+) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
+const {
+  createPythonChecker,
+  createPythonRpcAdmission,
+  classifyPythonRpc,
+  prepareWireArtifact,
+  pythonArtifactManifest,
+  retainPythonOrigin,
+} = load(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/checker") &
+  typeof import("../packages/node-adapters/src/python/admission") &
+  typeof import("../packages/node-adapters/src/python/source-units") &
+  typeof import("../packages/node-adapters/src/python/context-binding");
+const { createProductionQueueAdmission } = load(
+  "../src/queue-admission",
+) as typeof import("../src/queue-admission");
+const { validateInvocation } = load(
+  "../src/catalog",
+) as typeof import("../src/composition/library-catalog-registry");
+const { prepareCadScript } = load(
+  "../src/cad",
+) as typeof import("../src/composition/cad-execution");
+const documentStatusAdmission = load(
+  "./fixtures/document-status-admission-current.json",
+);
+const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
+  typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+>;
+
+// Real private adapter, real receipt builder and real distributed checker.
+// Only HTTP/SDK execution is synthetic; no input Python is ever executed here.
+test("mcp backend is rejected before transport", () => {
+  assert.throws(
+    () =>
+      createBrokerTransport(
+        {
+          backend: "mcp",
+          tool: "fusion_mcp_execute",
+          url: "http://127.0.0.1",
+          timeoutMs: 5000,
+        },
+        {
+          version: "test",
+          requestTimeout: () => 5000,
+          bridgeSource: () => {
+            throw new Error("No bridge requested");
+          },
+        },
+      ),
+    (error) => field(error, "code") === "UNSUPPORTED_BACKEND",
+  );
+});
+
+for (const backend of ["addin"])
+  test(`${backend}: final receipt checked before session, negative zero admission and positive exactly once`, async (t) => {
+    const requests: Record<string, unknown>[] = [];
+    const endpoint = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const payload = record(JSON.parse(body));
+        requests.push(payload);
+        if (payload["method"] === "notifications/initialized") {
+          res.writeHead(202);
+          res.end();
+          return;
+        }
+        const result =
+          payload["method"] === "initialize"
+            ? { protocolVersion: record(payload["params"])["protocolVersion"] }
+            : {
+                structuredContent: {
+                  success: true,
+                  stdout: "checked",
+                  stderr: "",
+                },
+              };
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result }));
+      });
+    });
+    await new Promise<void>((resolve) =>
+      endpoint.listen(0, "127.0.0.1", resolve),
+    );
+    t.after(async () => {
+      endpoint.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        endpoint.close((error) => (error ? reject(error) : resolve())),
+      );
+    });
+    const runtime = path.resolve("dist/runtime/python");
+    const admission = createPythonRpcAdmission({
+      runtime,
+      checker: createPythonChecker({
+        typingRoot: path.join(runtime, "typing"),
+        definitionsRoot: path.join(runtime, "typing"),
+        pythonPlatform: "Windows",
+      }),
+    });
+    const client = createBrokerTransport(
+      {
+        backend,
+        tool: "fusion_mcp_execute",
+        url: `http://127.0.0.1:${port(endpoint)}`,
+        timeoutMs: 5000,
+      },
+      {
+        version: "test",
+        requestTimeout: (value) => {
+          assert.ok(typeof value.timeoutMs === "number");
+          return value.timeoutMs;
+        },
+        bridgeSource: () => {
+          throw new Error("No bridge requested");
+        },
+      },
+    );
+    let admissions = 0,
+      expected: unknown;
+    const post = client._post.bind(client);
+    client._post = (...args) => {
+      admissions++;
+      return post(...args);
+    };
+    client.preparePost = async (payload) => {
+      const outgoing = structuredClone(payload);
+      const classified = classifyPythonRpc(outgoing);
+      assert.equal(classified.kind, "python");
+      const artifact = prepareReceiptScript(
+        classified.source,
+        classified.official,
+        "/offline/receipt.json",
+        { jobId: "test" },
+        { mapPath: (p) => p },
+      );
+      if (classified.official)
+        record(record(record(outgoing["params"])["arguments"])["object"])[
+          "script"
+        ] = artifact.script;
+      else
+        record(record(outgoing["params"])["arguments"])["code"] =
+          artifact.script;
+      const certificate = await admission.check(outgoing, artifact);
+      expected = outgoing;
+      return {
+        fence: () => certificate.fence(outgoing),
+        send(sessionId) {
+          certificate.fence(outgoing);
+          return client._post(outgoing, sessionId);
+        },
+      };
+    };
+    const request = (script: string) => ({
+      featureType: "script",
+      object: { script, readOnly: true },
+    });
+    await assert.rejects(
+      client.callTool(
+        request('def run(context: object) -> None:\n    x: int = "bad"'),
+      ),
+      (error) =>
+        field(error, "code") === "PYTHON_CHECK_REJECTED" &&
+        field(field(error, "pythonCheck"), "status") === "failed",
+    );
+    assert.equal(admissions, 0);
+    assert.deepEqual(requests, []);
+    const prepared = await client.prepareCallTool(
+      request(
+        "def run(context: object) -> None:\n    import adsk.core\n    p = adsk.core.Point3D.create(0, 0, 0)\n    if p is not None:\n        print(p.x)",
+      ),
+    );
+    assert.equal(prepared.dispatchBoundary, "broker-post");
+    assert.equal(admissions, 0);
+    assert.deepEqual(requests, []);
+    const result = await prepared();
+    assert.equal(result.failed, false);
+    assert.deepEqual(
+      requests.map((p) => p["method"]),
+      ["initialize", "notifications/initialized", "tools/call"],
+    );
+    assert.deepEqual(requests[2], expected);
+    await assert.rejects(prepared(), /already consumed/);
+    assert.equal(admissions, 3);
+  });
+
+test("public document.status admits the exact prepared light artifact before one physical send", async (t) => {
+  const requests: Record<string, unknown>[] = [];
+  const endpoint = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const payload = record(JSON.parse(body));
+      requests.push(payload);
+      if (payload["method"] === "notifications/initialized") {
+        res.writeHead(202);
+        res.end();
+        return;
+      }
+      const result =
+        payload["method"] === "initialize"
+          ? { protocolVersion: record(payload["params"])["protocolVersion"] }
+          : {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    success: true,
+                    stdout: "checked",
+                    stderr: "",
+                  }),
+                },
+              ],
+            };
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result }));
+    });
+  });
+  await new Promise<void>((resolve) =>
+    endpoint.listen(0, "127.0.0.1", resolve),
+  );
+  t.after(async () => {
+    endpoint.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      endpoint.close((error) => (error ? reject(error) : resolve())),
+    );
+  });
+
+  const runtime = path.resolve("dist/runtime/python");
+  const production = createProductionQueueAdmission(runtime);
+  const client = createBrokerTransport(
+    {
+      backend: "addin",
+      tool: "fusion_mcp_execute",
+      url: `http://127.0.0.1:${port(endpoint)}`,
+      timeoutMs: 5000,
+    },
+    {
+      version: "test",
+      requestTimeout: (value) => {
+        assert.ok(typeof value.timeoutMs === "number");
+        return value.timeoutMs;
+      },
+      bridgeSource: () => {
+        throw new Error("No bridge requested");
+      },
+    },
+  );
+  let physicalCalls = 0;
+  const post = client._post.bind(client);
+  client._post = (payload, ...args) => {
+    if (payload["method"] === "tools/call") physicalCalls++;
+    return post(payload, ...args);
+  };
+
+  const invocation = validateInvocation({
+    version: 1,
+    kind: "cad",
+    operation: "document.status",
+    data: {},
+    doc: "Model",
+    docId: "creation",
+    docFileId: "file",
+    purpose: "Inspect owned model",
+  });
+  assert.equal(invocation.kind, "cad");
+  const artifact = prepareCadScript(invocation.operation, invocation.data, {
+    ...(invocation.doc !== undefined ? { doc: invocation.doc } : {}),
+    ...(invocation.docId !== undefined ? { docId: invocation.docId } : {}),
+    ...(invocation.docFileId !== undefined
+      ? { docFileId: invocation.docFileId }
+      : {}),
+    ...(invocation.component !== undefined
+      ? { component: invocation.component }
+      : {}),
+    ...(invocation.projectId !== undefined
+      ? { projectId: invocation.projectId }
+      : {}),
+    preview: invocation.preview === true,
+  });
+  assertCurrentDocumentStatusAdmission(artifact);
+  const origin = pythonArtifactManifest(artifact);
+  client.preparePost = async (payload, receivedOrigin) => {
+    const outgoing = structuredClone(payload);
+    const args = record(record(outgoing["params"])["arguments"]);
+    assert.equal(args["persistent"], false);
+    assert.equal(args["code"], `${artifact.script}\n\nrun("")\n`);
+    assert.ok(
+      receivedOrigin,
+      "ADDIN transport must preserve the original artifact manifest",
+    );
+    assert.equal(receivedOrigin.artifactHash, artifact.artifactHash);
+    assert.equal(receivedOrigin.sha256, artifact.sha256);
+    assert.deepEqual(receivedOrigin, origin);
+    const wireArtifact = retainPythonOrigin(
+      prepareWireArtifact(runtime, String(args["code"])),
+      receivedOrigin,
+    );
+    const certificate = await production.admission.check(
+      outgoing,
+      wireArtifact,
+    );
+    assert.ok(certificate.report);
+    assert.ok(certificate.artifact);
+    assert.equal(certificate.report.status, "passed");
+    assert.equal(certificate.report.diagnostics.length, 0);
+    assert.equal(certificate.artifact.sha256, wireArtifact.sha256);
+    assert.equal(certificate.artifact.artifactHash, wireArtifact.artifactHash);
+    assert.equal(wireArtifact.script, args["code"]);
+    const certifiedOrigin = record(
+      record(certificate.artifact.context)["origin"],
+    );
+    assert.equal(certifiedOrigin["artifactHash"], artifact.artifactHash);
+    assert.equal(certifiedOrigin["sha256"], artifact.sha256);
+    return {
+      fence: () => certificate.fence(outgoing),
+      send: (sessionId) => {
+        certificate.fence(outgoing);
+        return client._post(outgoing, sessionId);
+      },
+    };
+  };
+
+  const prepared = await client.prepareCallTool(
+    {
+      featureType: "script",
+      object: { script: artifact.script, readOnly: true },
+    },
+    undefined,
+    origin,
+  );
+  const result = await prepared();
+  assert.equal(result.failed, false);
+  assert.equal(
+    physicalCalls,
+    documentStatusAdmission.fences.physicalTransportToolsCallsPerValidArtifact,
+  );
+  assert.deepEqual(
+    requests.map((request) => request["method"]),
+    ["initialize", "notifications/initialized", "tools/call"],
+  );
+  assert.equal(
+    record(record(requests[2]!["params"])["arguments"])["code"],
+    `${artifact.script}\n\nrun("")\n`,
+  );
+});
+
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function field(value: unknown, key: string): unknown {
+  return record(value)[key];
+}
+
+function port(endpoint: http.Server): number {
+  const address = endpoint.address();
+  assert.ok(address && typeof address !== "string");
+  return address.port;
+}

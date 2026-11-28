@@ -1,0 +1,6 @@
+{
+  "commit": "a26222f",
+  "source": "assets/cad/thread.py",
+  "symbols": ["_ISO_METRIC_COARSE", "_ISO_COARSE_PITCH", "thread_catalog"],
+  "sha256": "abe5cb4af72f190db865f360eacf575b132787106bf94695935b4cb2679ff244"
+}

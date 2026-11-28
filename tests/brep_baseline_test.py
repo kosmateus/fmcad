@@ -178,6 +178,9 @@ class BaselineTests(unittest.TestCase):
         body.isValid = False
         with self.assertRaises(RuntimeError):
             serializer.restore(manifest, 'owned.smt', lambda *args: args)
+        manager.createFromFile = lambda path: None
+        with self.assertRaisesRegex(RuntimeError, 'Exact BRep import count mismatch'):
+            serializer.restore(manifest, 'owned.smt', lambda *args: args)
         manager.exportToFile = lambda *args: False
         with self.assertRaises(RuntimeError):
             serializer.export([], 'owned.smt')

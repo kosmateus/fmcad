@@ -1,5 +1,12 @@
 /** Existing v1 snapshot, kept byte-compatible with the broker's durable store. */
 export type SequenceMode = "automatic" | "exclusive";
+export interface QueueDebugTrace {
+  version: 1;
+  traceId: string;
+  rootSpanId: string;
+  source: "cli" | "mcp";
+  requestId: string;
+}
 export interface QueueRequest {
   requestId: string;
   clientId: string;
@@ -10,6 +17,7 @@ export interface QueueRequest {
   clientContext?: McpQueueContext | undefined;
   ownerToken?: string | undefined;
   buildHash?: string | undefined;
+  debugTrace?: QueueDebugTrace | undefined;
   description?: string | undefined;
   argv?: string[] | undefined;
   cwd?: string | undefined;
@@ -66,6 +74,12 @@ export interface QueueDetails {
   rpcState?: string | undefined;
 }
 export interface QueueJob {
+  documentInspection?: import("./document-checkpoint").DocumentInspection;
+  documentContinuation?: import("./document-continuation").DocumentContinuation;
+  documentMetadataRead?: import("./document-metadata-read").DocumentMetadataRead;
+  documentCreation?: import("./document-creation").DocumentCreation;
+  protocolMetadata?: import("./protocol-metadata").ProtocolMetadata;
+  pythonStdout?: import("./python-stdout").PythonStdout;
   id: string;
   requestId: string;
   clientId: string;
@@ -106,6 +120,9 @@ export interface QueueJob {
     | undefined;
   /** Present only on the one broker-authorized observer for the blocked atomic job. */
   workflowObservation?: AtomicWorkflowObservation | undefined;
+  /** Broker-authored complete catalog, registered durably before SDK dispatch. */
+  physicalDispatches?: QueuePhysicalDispatch[];
+  physicalDispatchCount?: number;
 }
 export interface QueueLease {
   id: string;
@@ -122,6 +139,62 @@ export interface QueueBlock {
   reason: unknown;
   at: number;
 }
+/** Retained UNKNOWN outcome whose physical dispatch has been permanently revoked. */
+export interface QueueIsolationTarget {
+  creationId?: string;
+  fileId?: string;
+}
+export interface QueuePhysicalBinding {
+  version: 1;
+  grantDigest: string;
+  generation: { instance: string; epoch: string };
+  physicalRuntime: {
+    pid: number;
+    birth: string;
+    version: string;
+    source: string;
+    build: string;
+  };
+  turnId: string;
+  target: string;
+}
+export interface QueuePhysicalDispatch {
+  catalogIndex?: number;
+  request: {
+    kind?: "product" | "system-read";
+    brokerNonce?: string;
+    jobId: string;
+    requestId: string;
+    requestHash: string;
+    clientId: string;
+    grantGeneration: number;
+    physicalRequestId: string;
+    documentSelector:
+      | {
+          metadataOnly?: true;
+          name?: string;
+          creationId?: string;
+          fileId?: string;
+          version?: number;
+        }
+      | undefined;
+  };
+  physical: QueuePhysicalBinding;
+  target: QueueIsolationTarget | null;
+  intentReference: string;
+  intentDigest: string;
+}
+export interface QueueQuarantine {
+  jobId: string;
+  requestId: string;
+  clientId: string;
+  jobHash: string;
+  target: QueueIsolationTarget | null;
+  evidenceReference: string;
+  evidenceDigest: string;
+  binding: Record<string, unknown>;
+  catalogDigest: string;
+}
 export interface QueueSnapshot {
   version: 1;
   paused: boolean;
@@ -132,6 +205,15 @@ export interface QueueSnapshot {
   lease: QueueLease | null;
   jobs: Record<string, QueueJob>;
   lastClient: string | null;
+  quarantined?: Record<string, QueueQuarantine>;
+  documentCheckpoints?: import("./document-checkpoint").DocumentCheckpoints;
+  appliedRuntimeRetirement?: import("./runtime-retirement").AppliedRuntimeRetirement;
+  runtimeRetiredExposures?: Record<string, import("./runtime-retirement").RuntimeRetiredExposure>;
+  documentUnlockIntents?: Record<string, {
+    actorClientId: string;
+    requestId: string;
+    requestHash: string;
+  }>;
   localUnknown?: QueueBlock | undefined;
   controlBlocked?: unknown;
   controlGeneration?: number | undefined;
@@ -142,6 +224,7 @@ export interface QueueSnapshot {
   lastInstanceTransitionId?: string | undefined;
 }
 export interface QueueDomainOptions {
+  runtimeRetirement?: import("./runtime-retirement").RuntimeRetirementAuthority;
   /** False only when continuing a live in-memory snapshot, not restoring after restart. */
   recover?: boolean;
   snapshot?: QueueSnapshot | undefined;

@@ -92,7 +92,24 @@ interface Grant {
   savedFirstSave?: unknown;
   nativeFixture?: { kind: string };
 }
-type Facade = QueueDomain & {
+type Facade = Omit<QueueDomain, "summary"> & {
+  verifyCurrentEpoch(): Pointer | null;
+  historical: QueueSnapshot | null;
+  lookup(id: string): QueueSnapshot["jobs"][string] | undefined;
+  installEpoch(
+    pointer: Pointer,
+    identity: Identity,
+    initialization: { createdAtMs: number; bindingHash: string },
+  ): void;
+  summary(): ReturnType<QueueDomain["summary"]> & {
+    admissionEpoch?: string;
+    admissionScope?: string;
+    qualifiedDocument?: DocumentIdentity;
+    historicalUnknownJobCount?: number;
+    retiredEpochCount?: number;
+    historicalOutcome?: string;
+    historicalModelValidation?: string;
+  };
   epoch: Pointer | null;
   admissionMode: string;
   assertEpoch(normal?: boolean): void;
@@ -102,8 +119,9 @@ type Facade = QueueDomain & {
     requestId: string,
   ): Record<string, unknown> | null;
 };
+type HostState = QueueDomain & { assertDurableSnapshot(): void };
 const { QueueState } = runtimeRequire("./queue-state") as {
-  QueueState: new (root: string, options: StateOptions) => QueueDomain;
+  QueueState: new (root: string, options: StateOptions) => HostState;
 };
 const {
   durable,
@@ -195,7 +213,8 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
   );
   let current = historical;
   const oldRequests = new Map<string, string>();
-  const retired = new Map<string, { store: QueueDomain; epochId: string }>();
+  const retired = new Map<string, { store: HostState; epochId: string }>();
+  const retiredStores = new Set<HostState>();
   function validate(p: Pointer) {
     const qualificationRoot = epochControlDirectory(root, p);
     if (
@@ -328,18 +347,27 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     directory(dir);
     if (fs.realpathSync(dir) !== dir)
       fail("EPOCH_PROOF_INVALID", "Epoch data directory is not canonical");
-    // A lost physical epoch is metadata-only. Do not rewrite in-flight states
-    // while merely restoring access to their original receipts.
+    // Verify authenticated process continuation against the untouched snapshot
+    // before allowing startup recovery to classify interrupted current work.
+    const snapshot = new QueueState(dir, { ...stateOptions, recover: false });
+    const processIdentity =
+      stateOptions.recover !== false &&
+      admissionMode(p) === "normal-multidocument"
+        ? normalProcessIdentity(p, snapshot.data)
+        : p.currentInstance;
+    // A lost physical epoch is metadata-only. Explicit inspection and historical
+    // queues must not rewrite in-flight states or claim a terminal outcome.
     const unavailable =
       priorProcessAlive(p.originalInstance) !== false ||
-      priorProcessAlive(p.currentInstance) !== true;
-    current = new QueueState(
-      dir,
-      unavailable ? { ...stateOptions, recover: false } : stateOptions,
-    );
+      priorProcessAlive(processIdentity) !== true;
+    current =
+      stateOptions.recover === false || unavailable
+        ? snapshot
+        : new QueueState(dir, stateOptions);
     pointer = p;
     oldRequests.clear();
     retired.clear();
+    retiredStores.clear();
     for (const job of Object.values(historical.data.jobs))
       oldRequests.set(job.clientId + "\0" + job.requestId, job.id);
     for (const previous of epochLineage(root, p)) {
@@ -348,6 +376,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
         recover: false,
         expectedSnapshotHash: previous.authority.predecessor.state.sha256,
       });
+      retiredStores.add(store);
       for (const job of Object.values(store.data.jobs)) {
         const key = job.clientId + "\0" + job.requestId;
         if (
@@ -368,7 +397,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     isolatedEpochDirectory(root);
     activate(pointer);
   }
-  function admissionMode(): string {
+  function admissionMode(epoch = pointer): string {
     const port = runtimeRequire(
       "./dist/node-adapters/broker-ipc/normal-admission",
     ) as {
@@ -378,7 +407,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
         verify: (file: string) => void,
       ): string;
     };
-    return port.readAdmissionMode(pointer?.root, read, (file) =>
+    return port.readAdmissionMode(epoch?.root, read, (file) =>
       (
         runtimeRequire("./queue-closed-epoch-proof") as {
           closedEpochProof(
@@ -387,17 +416,68 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
             reference: Reference,
           ): unknown;
         }
-      ).closedEpochProof(root, pointer, {
+      ).closedEpochProof(root, epoch, {
         path: file,
         sha256: fileHash(file).sha256,
       }),
     );
+  }
+  function normalProcessIdentity(
+    epoch: Pointer,
+    snapshot: QueueSnapshot,
+  ): ProcessIdentity {
+    const backendScope = (
+      runtimeRequire("./queue-backend-transition") as {
+        resolveBackendHead(
+          root: string,
+          readState: () => { epoch: Pointer },
+        ): {
+          current: { identity: Identity } | null;
+        };
+      }
+    ).resolveBackendHead(root, () => ({ epoch }));
+    return (backendScope.current?.identity.instance ??
+      (
+        runtimeRequire(
+          "./dist/node-adapters/broker-ipc/normal-restart",
+        ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart")
+      ).normalRestartInstance(
+        root,
+        epoch,
+        read(path.join(epoch.root, "instance.json")),
+        snapshot,
+      )) as ProcessIdentity;
   }
   const facade = new Proxy(
     {},
     {
       get(_target, key) {
         if (key === "epoch") return pointer;
+        if (key === "verifyCurrentEpoch")
+          return () => {
+            // The live host already decoded/validated these exact durable bytes.
+            // Re-read them (including pending-write/path guards), never trust a
+            // pointer id, stat cache or a caller-supplied verification marker.
+            historical.assertDurableSnapshot();
+            if (!pointer) {
+              if (fs.existsSync(pointerFile))
+                fail(
+                  "EPOCH_PROOF_INVALID",
+                  "Durable admission epoch pointer changed",
+                );
+              return null;
+            }
+            if (canonicalHash(read(pointerFile)) !== canonicalHash(pointer))
+              fail(
+                "EPOCH_PROOF_INVALID",
+                "Durable admission epoch pointer changed",
+              );
+            isolatedEpochDirectory(root);
+            validate(pointer);
+            current.assertDurableSnapshot();
+            for (const store of retiredStores) store.assertDurableSnapshot();
+            return pointer;
+          };
         if (key === "admissionMode") return admissionMode();
         if (key === "assertEpoch")
           return (normal = false) => {
@@ -410,9 +490,13 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
                 "Durable admission epoch pointer changed",
               );
             validate(pointer!);
+            let processIdentity = pointer!.currentInstance;
+            if (normal && admissionMode() === "normal-multidocument") {
+              processIdentity = normalProcessIdentity(pointer!, current.data);
+            }
             if (
               priorProcessAlive(pointer!.originalInstance) !== false ||
-              priorProcessAlive(pointer!.currentInstance) !== true
+              priorProcessAlive(processIdentity) !== true
             )
               fail(
                 "INSTANCE_CHANGED",
@@ -645,6 +729,10 @@ function epochAdmission(
   request: QueueRequest,
   clients: Record<string, string> = {},
 ) {
+  const { admitRuntimeRootRequest } = runtimeRequire(
+    "./queue-runtime-root-state",
+  ) as typeof import("./queue-runtime-root-state");
+  if (admitRuntimeRootRequest(state, request, clients)) return;
   const epoch = state.epoch;
   if (!epoch) return;
   const normal = state.admissionMode === "normal-multidocument";

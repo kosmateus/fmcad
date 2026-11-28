@@ -1,3 +1,7 @@
+import type {
+  ConsoleInput,
+  OpenControlCenter,
+} from "../composition/library-console";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -38,6 +42,10 @@ interface CadInput extends Omit<
 }
 type LocalCommand = (argv: string[], deps: CliDependencies) => Promise<number>;
 export interface CliDependencies extends CliApplicationPorts {
+  cwd?: string;
+  stdin?: ConsoleInput;
+  signals?: unknown;
+  openControlCenter?: OpenControlCenter;
   stdout?: Sink;
   stderr?: Sink;
   setExitCode?: (code: number) => void;
@@ -159,17 +167,15 @@ function context(
   payload?: CadWorkerInvocation,
 ): FmcadOptions["context"] {
   const cwd = process.cwd();
+  // Display names remain in the invocation; they are not durable document IDs.
   const documentId = !payload
     ? undefined
     : payload.kind === "cad"
-      ? (payload.docId ?? payload.docFileId ?? payload.doc)
+      ? (payload.docId ?? payload.docFileId)
       : payload.kind === "cad-command"
-        ? (payload.invocation.docId ??
-          payload.invocation.docFileId ??
-          payload.invocation.doc)
+        ? (payload.invocation.docId ?? payload.invocation.docFileId)
         : (payload.request.identity.docId ??
-          payload.request.identity.docFileId ??
-          payload.request.doc);
+          payload.request.identity.docFileId);
   return {
     clientId:
       stringOption(opts, "client") ??
@@ -257,6 +263,17 @@ export async function main(
         ["console"],
       );
     }
+    if (argv[0] === "debug" && argv[1] === "trace")
+      return await local(
+        (words, ports) =>
+          (
+            require("../../queue-cli") as {
+              debugTraceCommand: LocalCommand;
+            }
+          ).debugTraceCommand(words, ports),
+        argv.slice(2),
+        ["debug", "trace"],
+      );
     if (argv[0] === "queue" && argv[1])
       return await local(
         (require("../../queue-cli") as { queueCommand: LocalCommand })
@@ -415,7 +432,10 @@ export async function main(
           toWindowsPath(value: string, facts: unknown): string;
         } = require("../../dist/config-platform");
         const windowsPath = (value: string) =>
-          platform.toWindowsPath(path.resolve(value), platform.detectPlatform());
+          platform.toWindowsPath(
+            path.resolve(value),
+            platform.detectPlatform(),
+          );
         if (entry.kind === "upload") windowsPath(args[0]!);
         else {
           const document = String(flags["--doc"]).replace(
@@ -456,9 +476,11 @@ export async function main(
         }
       }
     }
+    const configOptions = { ...opts };
+    delete configOptions.timeoutMs;
     cfg = localOnly
       ? localConfig()
-      : (deps.loadConfig ?? configuration.loadConfig)(opts).cfg;
+      : (deps.loadConfig ?? configuration.loadConfig)(configOptions).cfg;
     assertBrokerRouting(cfg);
     const runContext = context(opts, payload);
     return await invocation.context.run(
@@ -568,7 +590,15 @@ export async function main(
               }) +
               "\n",
           );
-        const code = receiptExitCode(receipt);
+        const code = receiptExitCode(
+          receipt,
+          payload.kind === "cad"
+            ? payload.operation
+            : payload.kind === "cad-command"
+              ? payload.invocation.operation
+              : undefined,
+          cad?.preview === true,
+        );
         return fail(code);
       },
     );
@@ -586,7 +616,7 @@ export async function main(
             language.locale(),
           )
         : error instanceof Error &&
-            error.message.includes('routing=direct is no longer supported')
+            error.message.includes("routing=direct is no longer supported")
           ? renderMessage("direct", {}, language.locale())
           : error instanceof SyntaxError &&
               /^\s+at JSON\.parse \(/m.test(error.stack ?? "")

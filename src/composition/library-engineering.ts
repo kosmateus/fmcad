@@ -12,7 +12,7 @@ const { checkPublishTarget, publishComplete } = load(
 
 interface EngineeringResult {
   status: string;
-  provenance: { inputPath?: string | null };
+  provenance: { inputPath?: string | null; [key: string]: unknown };
 }
 export interface EngineeringMethod {
   fields: string;

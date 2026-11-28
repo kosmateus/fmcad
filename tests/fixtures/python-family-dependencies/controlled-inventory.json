@@ -1,0 +1,27 @@
+{
+  "roots": ["shape-specialized"],
+  "expectedOrder": ["core", "geometry-predecessor", "shape-specialized"],
+  "foreignFamily": "animation-family",
+  "units": [
+    {
+      "id": "core",
+      "path": "runtime/python/fmcad/domain/family-contract-core.py",
+      "dependencies": []
+    },
+    {
+      "id": "geometry-predecessor",
+      "path": "runtime/python/fmcad/application/family-contract-geometry.py",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "shape-specialized",
+      "path": "runtime/python/fmcad/application/family-contract-specialized.py",
+      "dependencies": ["geometry-predecessor"]
+    },
+    {
+      "id": "animation-family",
+      "path": "runtime/python/fmcad/application/family-contract-animation.py",
+      "dependencies": ["core"]
+    }
+  ]
+}

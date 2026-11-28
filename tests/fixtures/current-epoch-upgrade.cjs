@@ -2,13 +2,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-module.exports = function fixture(base, root) {
+module.exports = function fixture(base, root, { currentInstance, sourceConfig, historicalBuildHash = "historical" } = {}) {
   const api = require(root + '/src/queue-instance'), { QueueState } = require(root + '/src/queue-state');
   const { fileHash } = require(root + '/src/queue-atomic-migration-files');
   const dir = path.join(base, 'queue'); fs.mkdirSync(dir);
   const q = new QueueState(dir), clientId = 'synthetic-original-owner', token = 'a'.repeat(64), tokenHash = api.hash(token);
   const req = (id, operation) => ({ kind: 'command', requestId: id, clientId, timeoutMs: 1000, cwd: base,
-    backend: 'addin', buildHash: 'historical', argv: ['cad', 'batch'], payload: { kind: 'cad', version: 1,
+    backend: 'addin', buildHash: historicalBuildHash, argv: ['cad', 'batch'], payload: { kind: 'cad', version: 1,
       operation, doc: 'Historical', docId: 'old-doc-id', data: {} } });
   const target = q.submit(req('historical-request', 'batch.run')); q.next(); q.block(target.id, { code: 'UNKNOWN' });
   const observation = req('historical-observer', 'batch.reconcile');
@@ -17,15 +17,15 @@ module.exports = function fixture(base, root) {
   const observer = q.submit(observation);
   q.armWorkflowObservation(observer.id, { version: 1, kind: 'atomic-holder-status', targetJobId: target.id,
     targetRequestId: target.requestId, targetClientId: clientId, targetJobHash: q.data.jobs[target.id].hash,
-    observerJobHash: q.data.jobs[observer.id].hash, targetBuildHash: 'historical', observerBuildHash: 'historical',
+    observerJobHash: q.data.jobs[observer.id].hash, targetBuildHash: historicalBuildHash, observerBuildHash: historicalBuildHash,
     projectDirectory: base, paused: false, controlGeneration: 0, contextEpoch: 0,
     reportPath: path.join(base, 'report'), reportFingerprint: 'd'.repeat(64), commandId: observation.payload.data.commandId,
     sessionNonce: observation.payload.data.sessionNonce, docId: 'old-doc-id' });
   q.next(); q._commit(d => { d.jobs[observer.id].state = 'needs_reconciliation'; d.paused = true; return null; });
-  const cfg = { backend: 'addin', url: 'http://never-send.invalid', headers: {}, tool: 'execute_python', transport: 'node',
+  const cfg = sourceConfig || { backend: 'addin', url: 'http://never-send.invalid', headers: {}, tool: 'execute_python', transport: 'node',
     protocolVersion: '2025-06-18', timeoutMs: 180000, routing: 'queue', queue: {} };
-  const current = { pid: process.pid, birth: api.processBirth(), version: 'fixture' }, historical = { pid: 2147483646, birth: 'dead:fixture', version: 'fixture' };
-  api.durable(path.join(dir, 'instance.json'), { buildHash: 'historical', configHash: api.brokerConfigHash(cfg), instance: historical }, true);
+  const current = currentInstance || { pid: process.pid, birth: api.processBirth(), version: 'fixture' }, historical = { pid: 2147483646, birth: 'dead:fixture', version: 'fixture' };
+  api.durable(path.join(dir, 'instance.json'), { buildHash: historicalBuildHash, configHash: api.brokerConfigHash(cfg), instance: historical }, true);
   api.durable(path.join(dir, 'clients.json'), { [clientId]: tokenHash }, true);
   const epochId = randomUUID(), epochDir = path.join(dir, 'admission-epochs', epochId);
   const document = { name: 'FMCAD_ISOLATED_' + epochId, creationId: 'really-new-synthetic-id', fileId: null };

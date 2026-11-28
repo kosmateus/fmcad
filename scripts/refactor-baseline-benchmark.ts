@@ -1,7 +1,25 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- The benchmark keeps CommonJS loading so child-process instrumentation observes the same module instances as historical workers. */
+const data =
+  require("./refactor-benchmark-data.ts") as typeof import("./refactor-benchmark-data");
+import type {
+  Run,
+  Workload,
+  Sample,
+  Report,
+  Fields,
+  FinalRuntime,
+} from "./refactor-benchmark-data";
+
 const { createRequire } =
   require("node:module") as typeof import("node:module");
-const { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } =
-  require("node:fs") as typeof import("node:fs");
+const {
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  existsSync,
+} = require("node:fs") as typeof import("node:fs");
 const { resolve, join, dirname, isAbsolute, relative, sep } =
   require("node:path") as typeof import("node:path");
 const { cpus, release, platform, tmpdir } =
@@ -14,12 +32,43 @@ const { performance } =
 const { PassThrough } = require("node:stream") as typeof import("node:stream");
 const { command } =
   require("./refactor-baseline.ts") as import("./refactor-baseline").Harness;
-const fixture = JSON.parse(
-  readFileSync(
-    join(__dirname, "../tests/fixtures/refactor-final-benchmark.json"),
-    "utf8",
+const fixtureInput = data.record(
+  data.json(
+    readFileSync(
+      join(__dirname, "../tests/fixtures/refactor-final-benchmark.json"),
+      "utf8",
+    ),
   ),
 );
+const fixtureConfig = data.record(fixtureInput["config"]);
+const fixture = {
+  ...fixtureInput,
+  nodeEnv: data.text(fixtureInput["nodeEnv"]),
+  samples: data.number(fixtureInput["samples"]),
+  warmIterations: data.number(fixtureInput["warmIterations"]),
+  clients: data.number(fixtureInput["clients"]),
+  protocolVersion: data.text(fixtureInput["protocolVersion"]),
+  config: {
+    ...fixtureConfig,
+    backend: data.text(fixtureConfig["backend"]),
+    routing: data.text(fixtureConfig["routing"]),
+    timeoutMs: data.number(fixtureConfig["timeoutMs"]),
+    queueAutoStart: fixtureConfig["queueAutoStart"],
+  },
+};
+function moduleFunction(
+  root: string,
+  module: string,
+  name: string,
+): (...args: unknown[]) => unknown {
+  const exports = data.record(
+    createRequire(join(root, "package.json"))(module),
+  );
+  const fn = exports[name];
+  if (typeof fn !== "function")
+    throw new TypeError(`Missing ${module}.${name}`);
+  return (...args) => Reflect.apply(fn, exports, args);
+}
 export type BenchmarkWorker =
   "import" | "help" | "prepare-bundle" | "mcp-startup";
 
@@ -86,10 +135,18 @@ function isWithin(parent: string, child: string): boolean {
   );
 }
 
-function summarizeSamples(values: number[]) {
-  if (!values.length || values.some((value) => !Number.isFinite(value)))
+function summarizeSamples(values: readonly unknown[]) {
+  if (
+    !values.length ||
+    values.some((value) => typeof value !== "number" || !Number.isFinite(value))
+  )
     return null;
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = values
+    .map((value) => {
+      if (typeof value !== "number") throw new TypeError("Invalid measurement");
+      return value;
+    })
+    .sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   const median =
     sorted.length % 2 === 0
@@ -106,7 +163,13 @@ function summarizeSamples(values: number[]) {
   };
 }
 
-function isCompleteFinalRuntime(runtime: any): boolean {
+function isCompleteFinalRuntime(value: unknown): boolean {
+  let runtime: FinalRuntime;
+  try {
+    runtime = data.finalRuntime(value);
+  } catch {
+    return false;
+  }
   const names = [
     "api-import",
     "help",
@@ -118,22 +181,23 @@ function isCompleteFinalRuntime(runtime: any): boolean {
   if (
     runtime?.version !== 1 ||
     typeof runtime.fixtureSha256 !== "string" ||
-    runtime.isolation?.rootUnderOsTemp !== true ||
-    runtime.isolation?.uniqueOwnedSubdirectories !== true ||
-    runtime.isolation?.xdgRootsPerClient !== true ||
-    runtime.isolation?.noGlobalBrokerOrSdk !== true ||
+    runtime.isolation?.["rootUnderOsTemp"] !== true ||
+    runtime.isolation?.["uniqueOwnedSubdirectories"] !== true ||
+    runtime.isolation?.["xdgRootsPerClient"] !== true ||
+    runtime.isolation?.["noGlobalBrokerOrSdk"] !== true ||
     !names.every((name) => runtime.workloads?.[name])
   )
     return false;
   return names.every((name) => {
     const workload = runtime.workloads[name];
+    if (!workload) return false;
     if (
       workload.coldRuns?.length !== fixture.samples ||
       workload.warmRuns?.length !== fixture.samples
     )
       return false;
     const passed = [...workload.coldRuns, ...workload.warmRuns].every(
-      (run: any) => {
+      (run: Run) => {
         if (run.status !== "pass" || !run.data) return false;
         if (!run.data.clients) {
           if (
@@ -144,9 +208,9 @@ function isCompleteFinalRuntime(runtime: any): boolean {
             return false;
           return (
             name !== "api-import" ||
-            (run.data.first.processLaunchCalls === 0 &&
-              run.data.first.newActiveResources.length === 0 &&
-              run.data.first.newActiveHandles.length === 0)
+            (run.data.first?.processLaunchCalls === 0 &&
+              run.data.first?.newActiveResources?.length === 0 &&
+              run.data.first?.newActiveHandles?.length === 0)
           );
         }
         const phase = workload.coldRuns.includes(run) ? "cold" : "warm";
@@ -156,20 +220,20 @@ function isCompleteFinalRuntime(runtime: any): boolean {
           run.data.status === "pass" &&
           run.data.clients.length === fixture.clients &&
           run.data.clients.every(
-            (client: any) =>
+            (client: Run) =>
               client.status === "pass" &&
               client.data?.processCount === 1 &&
               client.data?.childProcessLaunchCalls === 0 &&
               client.data?.first?.fakeQueue?.registerCalls === 1 &&
               client.data.first.fakeQueue.queueSummaryCalls ===
                 expectedStatusCalls &&
-              client.data.warmSamples.length ===
+              client.data?.warmSamples?.length ===
                 (phase === "cold" ? 0 : fixture.warmIterations),
           ) &&
           run.processCount === 1 &&
           run.data.processCount === fixture.clients &&
-          run.data.fakeQueue.registerCalls === fixture.clients &&
-          run.data.fakeQueue.queueSummaryCalls ===
+          run.data.fakeQueue?.registerCalls === fixture.clients &&
+          run.data.fakeQueue?.queueSummaryCalls ===
             fixture.clients * expectedStatusCalls
         );
       },
@@ -186,7 +250,16 @@ function commandAsync(
   env: NodeJS.ProcessEnv,
 ) {
   const started = performance.now();
-  return new Promise<any>((resolveResult) => {
+  return new Promise<{
+    processCount: number;
+    status: string;
+    elapsedMs: number;
+    stdout: string;
+    stderr: string;
+    error?: string;
+    exitCode?: number | null;
+    signal?: string | null;
+  }>((resolveResult) => {
     let stdout = "",
       stderr = "",
       timedOut = false;
@@ -234,9 +307,11 @@ function commandAsync(
 async function runHelp(root: string) {
   let output = "";
   const started = performance.now();
-  const code = await createRequire(join(root, "package.json"))(
+  const code = await moduleFunction(
+    root,
     "./src/cli",
-  ).main(["--help"], {
+    "main",
+  )(["--help"], {
     stdout: {
       write(text: string) {
         output += text;
@@ -262,18 +337,18 @@ async function runHelp(root: string) {
 
 async function runBundle(root: string) {
   const started = performance.now();
-  const { buildCadScript } = createRequire(join(root, "package.json"))(
-    "./src/cad",
-  );
-  const script = buildCadScript(
-    "status",
-    {},
-    {
-      doc: "Synthetic Model",
-      docId: "creation-fixture",
-      docFileId: "urn:fixture:file",
-      projectId: "project-fixture",
-    },
+  const buildCadScript = moduleFunction(root, "./src/cad", "buildCadScript");
+  const script = data.text(
+    buildCadScript(
+      "status",
+      {},
+      {
+        doc: "Synthetic Model",
+        docId: "creation-fixture",
+        docFileId: "urn:fixture:file",
+        projectId: "project-fixture",
+      },
+    ),
   );
   return {
     operationMs: performance.now() - started,
@@ -283,7 +358,7 @@ async function runBundle(root: string) {
 }
 
 async function runApiImport(root: string) {
-  const childProcess = require("node:child_process");
+  const childProcess = data.record(require("node:child_process"));
   const names = [
     "spawn",
     "spawnSync",
@@ -293,28 +368,40 @@ async function runApiImport(root: string) {
     "execFileSync",
     "fork",
   ];
-  const originals = new Map<string, Function>();
+  const originals = new Map<string, unknown>();
   let processLaunchCalls = 0;
   for (const name of names) {
-    const original = childProcess[name] as Function;
+    const original = childProcess[name];
+    if (typeof original !== "function")
+      throw new TypeError("Missing process launcher " + name);
     originals.set(name, original);
-    childProcess[name] = function (...args: unknown[]) {
+    childProcess[name] = function (this: unknown, ...args: unknown[]) {
       processLaunchCalls++;
-      return original.apply(this, args);
+      return Reflect.apply(original, this, args);
     };
   }
   const resourceNames = () => process.getActiveResourcesInfo().sort();
-  const handleNames = () =>
-    ((process as any)._getActiveHandles() as unknown[])
-      .map((handle: any) => handle.constructor?.name ?? "unknown")
+  const handleNames = () => {
+    if (
+      !("_getActiveHandles" in process) ||
+      typeof process._getActiveHandles !== "function"
+    )
+      throw new Error("Node active handle observation unavailable");
+    return data
+      .array(Reflect.apply(process._getActiveHandles, process, []))
+      .map((handle) => {
+        if (handle === null || typeof handle !== "object") return "unknown";
+        return handle.constructor?.name ?? "unknown";
+      })
       .sort();
+  };
   const resourcesBefore = resourceNames();
   const handlesBefore = handleNames();
   const started = performance.now();
   let exports: string[];
   try {
     exports = Object.keys(
-      createRequire(join(root, "package.json"))("./src/dist/api"),
+      data.record(createRequire(join(root, "package.json"))("./src/dist/api")),
     ).sort();
   } finally {
     for (const [name, original] of originals) childProcess[name] = original;
@@ -361,7 +448,7 @@ async function runMcp(
   let nextId = 0;
   const waiters = new Map<
     string,
-    (value: { frame: any; frameBytes: number }) => void
+    (value: { frame: Fields; frameBytes: number }) => void
   >();
   const input = new PassThrough();
   const output = new PassThrough();
@@ -372,11 +459,11 @@ async function runMcp(
       if (newline < 0) break;
       const line = outputBuffer.slice(0, newline);
       outputBuffer = outputBuffer.slice(newline + 1);
-      const frame = JSON.parse(line);
-      if (frame.id !== undefined) {
-        const waiter = waiters.get(String(frame.id));
+      const frame = data.record(data.json(line));
+      if (frame["id"] !== undefined) {
+        const waiter = waiters.get(String(frame["id"]));
         if (waiter) {
-          waiters.delete(String(frame.id));
+          waiters.delete(String(frame["id"]));
           waiter({ frame, frameBytes: Buffer.byteLength(line) + 1 });
         }
       }
@@ -419,64 +506,64 @@ async function runMcp(
   }
 
   const importStarted = performance.now();
-  const { startStdio } = createRequire(join(root, "package.json"))(
-    "./src/mcp-stdio",
-  );
+  const startStdio = moduleFunction(root, "./src/mcp-stdio", "startStdio");
   const importMs = performance.now() - importStarted;
-  const server = startStdio(
-    [
-      "--backend",
-      "mcp",
-      "--routing",
-      "queue",
-      "--client",
-      clientId,
-      "--project-directory",
-      projectDirectory,
-    ],
-    {
-      loadConfig() {
-        configReads++;
-        return {
-          cfg: {
-            backend: fixture.config.backend,
-            routing: fixture.config.routing,
-            timeoutMs: fixture.config.timeoutMs,
-            queue: {
-              autoStart: fixture.config.queueAutoStart,
-              waitTimeoutMs: 1000,
+  const server = data.record(
+    startStdio(
+      [
+        "--backend",
+        "mcp",
+        "--routing",
+        "queue",
+        "--client",
+        clientId,
+        "--project-directory",
+        projectDirectory,
+      ],
+      {
+        loadConfig() {
+          configReads++;
+          return {
+            cfg: {
+              backend: fixture.config.backend,
+              routing: fixture.config.routing,
+              timeoutMs: fixture.config.timeoutMs,
+              queue: {
+                autoStart: fixture.config.queueAutoStart,
+                waitTimeoutMs: 1000,
+              },
             },
-          },
-        };
-      },
-      QueueClient: FakeQueueClient as any,
-      stdin: input,
-      stdout: output,
-      stderr: {
-        write(text: string) {
-          stderrText += text;
+          };
         },
-      } as any,
-    },
+        QueueClient: FakeQueueClient,
+        stdin: input,
+        stdout: output,
+        stderr: {
+          write(text: string) {
+            stderrText += text;
+          },
+        },
+      },
+    ),
   );
   if (!server) throw new Error("MCP server did not start");
 
   async function request(method: string, params: Record<string, unknown> = {}) {
     const id = ++nextId;
     const started = performance.now();
-    const response = new Promise<{ frame: any; frameBytes: number }>(
+    const response = new Promise<{ frame: Fields; frameBytes: number }>(
       (resolve) => waiters.set(String(id), resolve),
     );
     input.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     const value = await response;
-    if (value.frame.error)
+    if (value.frame["error"])
       throw new Error(
-        `${method} returned MCP error: ${JSON.stringify(value.frame.error)}`,
+        `${method} returned MCP error: ${JSON.stringify(value.frame["error"])}`,
       );
     return {
       elapsedMs: performance.now() - started,
       frameBytes: value.frameBytes,
-      result: value.frame.result,
+      result: data.record(value.frame["result"]),
     };
   }
 
@@ -489,26 +576,29 @@ async function runMcp(
     JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) +
       "\n",
   );
-  let catalogResult: any;
-  let statusResult: any;
+  type RpcResult = Awaited<ReturnType<typeof request>>;
+  let catalogResult: RpcResult | undefined;
+  let statusResult: RpcResult | undefined;
+  let catalogTools: unknown[] | undefined;
   if (kind !== "mcp") {
     catalogResult = await request("tools/list");
-    if (!Array.isArray(catalogResult.result?.tools))
-      throw new Error("MCP tools/list did not return a tool array");
+    catalogTools = data.array(catalogResult.result["tools"]);
   }
   if (kind === "multi-client") {
-    const tools = catalogResult.result.tools;
-    if (!tools.some((tool: any) => tool.name === "fmcad_queue_status"))
+    const tools = catalogTools ?? [];
+    if (
+      !tools.some((tool) => data.record(tool)["name"] === "fmcad_queue_status")
+    )
       throw new Error("queue status helper missing from local catalog");
     statusResult = await request("tools/call", {
       name: "fmcad_queue_status",
       arguments: {},
     });
-    if (statusResult.result?.isError)
+    if (statusResult.result?.["isError"])
       throw new Error("fake broker status request was rejected");
   }
 
-  const warmSamples: any[] = [];
+  const warmSamples: Sample[] = [];
   for (let i = 0; i < warmIterations; i++) {
     if (kind === "mcp") {
       const sample = await request("initialize", {
@@ -531,15 +621,17 @@ async function runMcp(
           name: "fmcad_queue_status",
           arguments: {},
         });
-        if (status.result?.isError)
+        if (status.result?.["isError"])
           throw new Error("warm fake broker status request was rejected");
-        warmSamples.at(-1).fakeRpcOperationMs = status.elapsedMs;
+        const last = warmSamples.at(-1);
+        if (!last) throw new Error("Missing warm sample");
+        last.fakeRpcOperationMs = status.elapsedMs;
       }
     }
   }
   input.end();
-  const settled = await server.closed;
-  if (settled.some((result: any) => result.status === "rejected"))
+  const settled = data.array(await server["closed"]);
+  if (settled.some((result) => data.record(result)["status"] === "rejected"))
     throw new Error("MCP server close rejected");
   if (stderrText) throw new Error(`MCP wrote diagnostics: ${stderrText}`);
 
@@ -554,9 +646,9 @@ async function runMcp(
     initializeMs: initialize.elapsedMs,
     catalogMs: catalogResult?.elapsedMs ?? null,
     statusMs: statusResult?.elapsedMs ?? null,
-    catalogTools: catalogResult?.result.tools.length ?? null,
+    catalogTools: catalogTools?.length ?? null,
     catalogBytes: catalogResult
-      ? Buffer.byteLength(JSON.stringify(catalogResult.result.tools))
+      ? Buffer.byteLength(JSON.stringify(catalogTools))
       : null,
     catalogFrameBytes: catalogResult?.frameBytes ?? null,
     warmSamples,
@@ -590,9 +682,9 @@ async function runFinalWorker(
   warmIterations: number,
 ) {
   const started = performance.now();
-  let first: any;
-  let warmSamples: any[] = [];
-  const childProcess = require("node:child_process");
+  let first: Sample;
+  let warmSamples: Sample[] = [];
+  const childProcess = data.record(require("node:child_process"));
   const processMethods = [
     "spawn",
     "spawnSync",
@@ -603,14 +695,16 @@ async function runFinalWorker(
     "fork",
   ];
   const processLaunchCounts: Record<string, number> = {};
-  const originals = new Map<string, Function>();
+  const originals = new Map<string, unknown>();
   for (const name of processMethods) {
-    const original = childProcess[name] as Function;
+    const original = childProcess[name];
+    if (typeof original !== "function")
+      throw new TypeError("Missing process launcher " + name);
     originals.set(name, original);
     processLaunchCounts[name] = 0;
-    childProcess[name] = function (...args: unknown[]) {
+    childProcess[name] = function (this: unknown, ...args: unknown[]) {
       processLaunchCounts[name] = processLaunchCounts[name]! + 1;
-      return original.apply(this, args);
+      return Reflect.apply(original, this, args);
     };
   }
   try {
@@ -627,14 +721,15 @@ async function runFinalWorker(
           warmSamples.push(await run(root));
       }
     } else {
-      first = await runMcp(
+      const mcpFirst = await runMcp(
         root,
         kind,
         projectDirectory,
         clientId,
         phase === "warm" ? warmIterations : 0,
       );
-      warmSamples = first.warmSamples;
+      first = mcpFirst;
+      warmSamples = mcpFirst.warmSamples;
     }
   } finally {
     for (const [name, original] of originals) childProcess[name] = original;
@@ -674,6 +769,7 @@ async function runMultiClientSample(
       const result = await commandAsync(
         process.execPath,
         [
+          "--experimental-strip-types",
           __filename,
           "--final-worker",
           root,
@@ -691,8 +787,15 @@ async function runMultiClientSample(
         clientId,
         ...result,
         processCount:
-          result.status === "pass" ? JSON.parse(result.stdout).processCount : 0,
-        data: result.status === "pass" ? JSON.parse(result.stdout) : null,
+          result.status === "pass"
+            ? data.number(
+                data.workerData(data.json(result.stdout)).processCount,
+              )
+            : 0,
+        data:
+          result.status === "pass"
+            ? data.workerData(data.json(result.stdout))
+            : null,
         stdout: undefined,
       };
     }),
@@ -711,14 +814,26 @@ async function runMultiClientSample(
     clients,
     fakeQueue: {
       mode: "injected QueueClient; no broker process or IPC",
-      wrapperCalls: rpc.reduce((sum, calls) => sum + calls.wrapperCalls, 0),
-      registerCalls: rpc.reduce((sum, calls) => sum + calls.registerCalls, 0),
-      queueSummaryCalls: rpc.reduce(
-        (sum, calls) => sum + calls.queueSummaryCalls,
+      wrapperCalls: rpc.reduce(
+        (sum, calls) => sum + data.number(calls.wrapperCalls),
         0,
       ),
-      requestBytes: rpc.reduce((sum, calls) => sum + calls.requestBytes, 0),
-      responseBytes: rpc.reduce((sum, calls) => sum + calls.responseBytes, 0),
+      registerCalls: rpc.reduce(
+        (sum, calls) => sum + data.number(calls.registerCalls),
+        0,
+      ),
+      queueSummaryCalls: rpc.reduce(
+        (sum, calls) => sum + data.number(calls.queueSummaryCalls),
+        0,
+      ),
+      requestBytes: rpc.reduce(
+        (sum, calls) => sum + data.number(calls.requestBytes),
+        0,
+      ),
+      responseBytes: rpc.reduce(
+        (sum, calls) => sum + data.number(calls.responseBytes),
+        0,
+      ),
     },
   };
 }
@@ -726,7 +841,7 @@ async function runMultiClientSample(
 async function measureFinalRuntime(root: string, directory: string) {
   const finalDirectory = join(directory, "final-runtime");
   mkdirSync(finalDirectory, { recursive: true });
-  const workloads: Record<string, any> = {};
+  const workloads: Record<string, Workload> = {};
   for (const kind of [
     "api-import",
     "help",
@@ -749,6 +864,7 @@ async function measureFinalRuntime(root: string, directory: string) {
         const result = command(
           process.execPath,
           [
+            "--experimental-strip-types",
             __filename,
             "--final-worker",
             root,
@@ -766,7 +882,10 @@ async function measureFinalRuntime(root: string, directory: string) {
         runs.push({
           ...result,
           stdout: undefined,
-          data: result.status === "pass" ? JSON.parse(result.stdout) : null,
+          data:
+            result.status === "pass"
+              ? data.workerData(data.json(result.stdout))
+              : null,
         });
       }
     }
@@ -789,6 +908,7 @@ async function measureFinalRuntime(root: string, directory: string) {
       const result = await commandAsync(
         process.execPath,
         [
+          "--experimental-strip-types",
           __filename,
           "--multi-worker",
           root,
@@ -803,7 +923,10 @@ async function measureFinalRuntime(root: string, directory: string) {
       runs.push({
         ...result,
         stdout: undefined,
-        data: result.status === "pass" ? JSON.parse(result.stdout) : null,
+        data:
+          result.status === "pass"
+            ? data.workerData(data.json(result.stdout))
+            : null,
       });
     }
   }
@@ -826,7 +949,10 @@ async function measureFinalRuntime(root: string, directory: string) {
   };
 }
 
-function paired(valuesBefore: number[], valuesAfter: number[]) {
+function paired(
+  valuesBefore: readonly unknown[] = [],
+  valuesAfter: readonly unknown[] = [],
+) {
   const baseline = summarizeSamples(valuesBefore);
   const candidate = summarizeSamples(valuesAfter);
   const compact = (value: ReturnType<typeof summarizeSamples>) =>
@@ -856,7 +982,7 @@ function paired(valuesBefore: number[], valuesAfter: number[]) {
   };
 }
 
-function workloadMetrics(report: any, name: string) {
+function workloadMetrics(report: Report, name: string) {
   const workload = report.finalRuntime?.workloads?.[name] ?? {
     coldRuns: [],
     warmRuns: [],
@@ -864,48 +990,50 @@ function workloadMetrics(report: any, name: string) {
   const multi = name === "multi-client";
   const cold = workload.coldRuns;
   const warm = workload.warmRuns;
-  const values = (runs: any[], selector: (run: any) => number[]) =>
+  const values = (runs: Run[], selector: (run: Run) => unknown[]) =>
     runs.flatMap((run) => selector(run));
   const coldRss = multi
     ? values(cold, (run) =>
-        (run.data?.clients ?? []).map((client: any) => client.data?.rssBytes),
+        (run.data?.clients ?? []).map((client: Run) => client.data?.rssBytes),
       )
-    : cold.map((run: any) => run.data?.rssBytes);
+    : cold.map((run: Run) => run.data?.rssBytes);
   const warmRss = multi
     ? values(warm, (run) =>
-        (run.data?.clients ?? []).map((client: any) => client.data?.rssBytes),
+        (run.data?.clients ?? []).map((client: Run) => client.data?.rssBytes),
       )
-    : warm.map((run: any) => run.data?.rssBytes);
+    : warm.map((run: Run) => run.data?.rssBytes);
   const coldOperations = multi
     ? values(cold, (run) =>
         (run.data?.clients ?? []).map(
-          (client: any) => client.data?.operationMs,
+          (client: Run) => client.data?.operationMs,
         ),
       )
-    : cold.map((run: any) => run.data?.operationMs);
+    : cold.map((run: Run) => run.data?.operationMs);
   const warmOperations = multi
     ? values(warm, (run) =>
-        (run.data?.clients ?? []).flatMap((client: any) =>
+        (run.data?.clients ?? []).flatMap((client: Run) =>
           (client.data?.warmSamples ?? []).map(
-            (sample: any) => sample.operationMs,
+            (sample: Sample) => sample.operationMs,
           ),
         ),
       )
-    : warm.flatMap((run: any) =>
-        (run.data?.warmSamples ?? []).map((sample: any) => sample.operationMs),
+    : warm.flatMap((run: Run) =>
+        (run.data?.warmSamples ?? []).map(
+          (sample: Sample) => sample.operationMs,
+        ),
       );
-  const processCounts = (runs: any[]) =>
-    runs.map((run: any) => run.data?.processCount);
-  const childProcessCalls = (runs: any[]) =>
+  const processCounts = (runs: Run[]) =>
+    runs.map((run: Run) => run.data?.processCount);
+  const childProcessCalls = (runs: Run[]) =>
     multi
       ? values(runs, (run) =>
           (run.data?.clients ?? []).map(
-            (client: any) => client.data?.childProcessLaunchCalls,
+            (client: Run) => client.data?.childProcessLaunchCalls,
           ),
         )
-      : runs.map((run: any) => run.data?.childProcessLaunchCalls);
-  const result: any = {
-    coldWallMs: cold.map((run: any) => run.elapsedMs),
+      : runs.map((run: Run) => run.data?.childProcessLaunchCalls);
+  const result: Record<string, unknown[]> = {
+    coldWallMs: cold.map((run: Run) => run.elapsedMs),
     coldOperationMs: coldOperations,
     warmOperationMs: warmOperations,
     coldRssBytesPerProcess: coldRss,
@@ -916,27 +1044,27 @@ function workloadMetrics(report: any, name: string) {
     warmChildProcessLaunchCalls: childProcessCalls(warm),
   };
   if (multi) {
-    result.coldStatusOperationMs = values(cold, (run) =>
+    result["coldStatusOperationMs"] = values(cold, (run) =>
       (run.data?.clients ?? []).map(
-        (client: any) => client.data?.first?.statusMs,
+        (client: Run) => client.data?.first?.statusMs,
       ),
     );
-    result.warmStatusOperationMs = values(warm, (run) =>
-      (run.data?.clients ?? []).flatMap((client: any) =>
+    result["warmStatusOperationMs"] = values(warm, (run) =>
+      (run.data?.clients ?? []).flatMap((client: Run) =>
         (client.data?.warmSamples ?? []).map(
-          (sample: any) => sample.fakeRpcOperationMs,
+          (sample: Sample) => sample.fakeRpcOperationMs,
         ),
       ),
     );
-    result.coldRssBytesAggregate = cold.map((run: any) =>
+    result["coldRssBytesAggregate"] = cold.map((run: Run) =>
       (run.data?.clients ?? []).reduce(
-        (sum: number, client: any) => sum + (client.data?.rssBytes ?? 0),
+        (sum: number, client: Run) => sum + (client.data?.rssBytes ?? 0),
         0,
       ),
     );
-    result.warmRssBytesAggregate = warm.map((run: any) =>
+    result["warmRssBytesAggregate"] = warm.map((run: Run) =>
       (run.data?.clients ?? []).reduce(
-        (sum: number, client: any) => sum + (client.data?.rssBytes ?? 0),
+        (sum: number, client: Run) => sum + (client.data?.rssBytes ?? 0),
         0,
       ),
     );
@@ -944,56 +1072,61 @@ function workloadMetrics(report: any, name: string) {
       ["cold", cold],
       ["warm", warm],
     ] as const) {
-      const rpc = runs.map((run: any) => run.data?.fakeQueue ?? {});
+      const rpc = runs.map((run: Run) => run.data?.fakeQueue ?? {});
       result[`${phase}FakeRpcCalls`] = rpc.map(
-        (entry: any) => entry.wrapperCalls,
+        (entry: import("./refactor-benchmark-data").FakeQueue) =>
+          entry.wrapperCalls,
       );
       result[`${phase}FakeRpcRequestBytes`] = rpc.map(
-        (entry: any) => entry.requestBytes,
+        (entry: import("./refactor-benchmark-data").FakeQueue) =>
+          entry.requestBytes,
       );
       result[`${phase}FakeRpcResponseBytes`] = rpc.map(
-        (entry: any) => entry.responseBytes,
+        (entry: import("./refactor-benchmark-data").FakeQueue) =>
+          entry.responseBytes,
       );
       result[`${phase}ClientCount`] = runs.map(
-        (run: any) => run.data.processCount,
+        (run: Run) => run.data?.processCount,
       );
     }
   }
   if (name === "catalog") {
-    result.catalogToolCount = cold.map(
-      (run: any) => run.data?.first?.catalogTools,
+    result["catalogToolCount"] = cold.map(
+      (run: Run) => run.data?.first?.catalogTools,
     );
-    result.catalogPayloadBytes = cold.map(
-      (run: any) => run.data?.first?.catalogBytes,
+    result["catalogPayloadBytes"] = cold.map(
+      (run: Run) => run.data?.first?.catalogBytes,
     );
-    result.catalogFrameBytes = cold.map(
-      (run: any) => run.data?.first?.catalogFrameBytes,
+    result["catalogFrameBytes"] = cold.map(
+      (run: Run) => run.data?.first?.catalogFrameBytes,
     );
   }
   if (name === "api-import") {
-    result.apiExportCount = cold.map(
-      (run: any) => run.data?.first?.exportCount,
+    result["apiExportCount"] = cold.map(
+      (run: Run) => run.data?.first?.exportCount,
     );
-    result.apiProcessLaunchCalls = cold.map(
-      (run: any) => run.data?.first?.processLaunchCalls,
+    result["apiProcessLaunchCalls"] = cold.map(
+      (run: Run) => run.data?.first?.processLaunchCalls,
     );
-    result.apiActiveResourceDelta = cold.map(
-      (run: any) => run.data?.first?.newActiveResources,
+    result["apiActiveResourceDelta"] = cold.map(
+      (run: Run) => run.data?.first?.newActiveResources,
     );
-    result.apiActiveHandleDelta = cold.map(
-      (run: any) => run.data?.first?.newActiveHandles,
+    result["apiActiveHandleDelta"] = cold.map(
+      (run: Run) => run.data?.first?.newActiveHandles,
     );
   }
   if (name === "prepare-bundle") {
-    result.bundleBytes = cold.map((run: any) => run.data?.first?.bytes);
-    result.bundleHashes = [
-      ...new Set(cold.map((run: any) => run.data?.first?.sha256)),
+    result["bundleBytes"] = cold.map((run: Run) => run.data?.first?.bytes);
+    result["bundleHashes"] = [
+      ...new Set(cold.map((run: Run) => run.data?.first?.sha256)),
     ];
   }
   return result;
 }
 
-function compareFinal(baseline: any, candidate: any) {
+function compareFinal(baselineInput: unknown, candidateInput: unknown) {
+  const baseline = data.report(baselineInput),
+    candidate = data.report(candidateInput);
   const environmentKeys = [
     "node",
     "npm",
@@ -1021,119 +1154,125 @@ function compareFinal(baseline: any, candidate: any) {
     "prepare-bundle",
     "multi-client",
   ];
-  const measurements: Record<string, any> = {};
+  const measurements: Record<string, Record<string, unknown>> = {};
   for (const name of workloadNames) {
     const before = workloadMetrics(baseline, name);
     const after = workloadMetrics(candidate, name);
     measurements[name] = {
-      coldWallMs: paired(before.coldWallMs, after.coldWallMs),
-      coldOperationMs: paired(before.coldOperationMs, after.coldOperationMs),
-      warmOperationMs: paired(before.warmOperationMs, after.warmOperationMs),
+      coldWallMs: paired(before["coldWallMs"], after["coldWallMs"]),
+      coldOperationMs: paired(
+        before["coldOperationMs"],
+        after["coldOperationMs"],
+      ),
+      warmOperationMs: paired(
+        before["warmOperationMs"],
+        after["warmOperationMs"],
+      ),
       coldRssBytesPerProcess: paired(
-        before.coldRssBytesPerProcess,
-        after.coldRssBytesPerProcess,
+        before["coldRssBytesPerProcess"],
+        after["coldRssBytesPerProcess"],
       ),
       warmRssBytesPerProcess: paired(
-        before.warmRssBytesPerProcess,
-        after.warmRssBytesPerProcess,
+        before["warmRssBytesPerProcess"],
+        after["warmRssBytesPerProcess"],
       ),
       runtimeProcessesPerSample: paired(
-        before.runtimeProcessesPerSample,
-        after.runtimeProcessesPerSample,
+        before["runtimeProcessesPerSample"],
+        after["runtimeProcessesPerSample"],
       ),
       warmRuntimeProcessesPerSample: paired(
-        before.warmRuntimeProcessesPerSample,
-        after.warmRuntimeProcessesPerSample,
+        before["warmRuntimeProcessesPerSample"],
+        after["warmRuntimeProcessesPerSample"],
       ),
       childProcessLaunchCalls: {
         cold: paired(
-          before.coldChildProcessLaunchCalls,
-          after.coldChildProcessLaunchCalls,
+          before["coldChildProcessLaunchCalls"],
+          after["coldChildProcessLaunchCalls"],
         ),
         warm: paired(
-          before.warmChildProcessLaunchCalls,
-          after.warmChildProcessLaunchCalls,
+          before["warmChildProcessLaunchCalls"],
+          after["warmChildProcessLaunchCalls"],
         ),
       },
     };
     if (name === "multi-client") {
-      measurements[name].coldStatusOperationMs = paired(
-        before.coldStatusOperationMs,
-        after.coldStatusOperationMs,
+      measurements[name]["coldStatusOperationMs"] = paired(
+        before["coldStatusOperationMs"],
+        after["coldStatusOperationMs"],
       );
-      measurements[name].warmStatusOperationMs = paired(
-        before.warmStatusOperationMs,
-        after.warmStatusOperationMs,
+      measurements[name]["warmStatusOperationMs"] = paired(
+        before["warmStatusOperationMs"],
+        after["warmStatusOperationMs"],
       );
-      measurements[name].coldRssBytesAggregate = paired(
-        before.coldRssBytesAggregate,
-        after.coldRssBytesAggregate,
+      measurements[name]["coldRssBytesAggregate"] = paired(
+        before["coldRssBytesAggregate"],
+        after["coldRssBytesAggregate"],
       );
-      measurements[name].warmRssBytesAggregate = paired(
-        before.warmRssBytesAggregate,
-        after.warmRssBytesAggregate,
+      measurements[name]["warmRssBytesAggregate"] = paired(
+        before["warmRssBytesAggregate"],
+        after["warmRssBytesAggregate"],
       );
-      measurements[name].coldFakeRpcCalls = paired(
-        before.coldFakeRpcCalls,
-        after.coldFakeRpcCalls,
+      measurements[name]["coldFakeRpcCalls"] = paired(
+        before["coldFakeRpcCalls"],
+        after["coldFakeRpcCalls"],
       );
-      measurements[name].warmFakeRpcCalls = paired(
-        before.warmFakeRpcCalls,
-        after.warmFakeRpcCalls,
+      measurements[name]["warmFakeRpcCalls"] = paired(
+        before["warmFakeRpcCalls"],
+        after["warmFakeRpcCalls"],
       );
-      measurements[name].coldFakeRpcRequestBytes = paired(
-        before.coldFakeRpcRequestBytes,
-        after.coldFakeRpcRequestBytes,
+      measurements[name]["coldFakeRpcRequestBytes"] = paired(
+        before["coldFakeRpcRequestBytes"],
+        after["coldFakeRpcRequestBytes"],
       );
-      measurements[name].warmFakeRpcRequestBytes = paired(
-        before.warmFakeRpcRequestBytes,
-        after.warmFakeRpcRequestBytes,
+      measurements[name]["warmFakeRpcRequestBytes"] = paired(
+        before["warmFakeRpcRequestBytes"],
+        after["warmFakeRpcRequestBytes"],
       );
-      measurements[name].coldFakeRpcResponseBytes = paired(
-        before.coldFakeRpcResponseBytes,
-        after.coldFakeRpcResponseBytes,
+      measurements[name]["coldFakeRpcResponseBytes"] = paired(
+        before["coldFakeRpcResponseBytes"],
+        after["coldFakeRpcResponseBytes"],
       );
-      measurements[name].warmFakeRpcResponseBytes = paired(
-        before.warmFakeRpcResponseBytes,
-        after.warmFakeRpcResponseBytes,
+      measurements[name]["warmFakeRpcResponseBytes"] = paired(
+        before["warmFakeRpcResponseBytes"],
+        after["warmFakeRpcResponseBytes"],
       );
     }
     if (name === "catalog") {
-      measurements[name].toolCount = paired(
-        before.catalogToolCount,
-        after.catalogToolCount,
+      measurements[name]["toolCount"] = paired(
+        before["catalogToolCount"],
+        after["catalogToolCount"],
       );
-      measurements[name].metadataBytes = paired(
-        before.catalogPayloadBytes,
-        after.catalogPayloadBytes,
+      measurements[name]["metadataBytes"] = paired(
+        before["catalogPayloadBytes"],
+        after["catalogPayloadBytes"],
       );
-      measurements[name].frameBytes = paired(
-        before.catalogFrameBytes,
-        after.catalogFrameBytes,
+      measurements[name]["frameBytes"] = paired(
+        before["catalogFrameBytes"],
+        after["catalogFrameBytes"],
       );
     }
     if (name === "api-import") {
-      measurements[name].apiProcessLaunchCalls = paired(
-        before.apiProcessLaunchCalls,
-        after.apiProcessLaunchCalls,
+      measurements[name]["apiProcessLaunchCalls"] = paired(
+        before["apiProcessLaunchCalls"],
+        after["apiProcessLaunchCalls"],
       );
-      measurements[name].apiExportCount = paired(
-        before.apiExportCount,
-        after.apiExportCount,
+      measurements[name]["apiExportCount"] = paired(
+        before["apiExportCount"],
+        after["apiExportCount"],
       );
-      measurements[name].activeResources = {
-        baseline: before.apiActiveResourceDelta,
-        candidate: after.apiActiveResourceDelta,
+      measurements[name]["activeResources"] = {
+        baseline: before["apiActiveResourceDelta"],
+        candidate: after["apiActiveResourceDelta"],
       };
-      measurements[name].activeHandles = {
-        baseline: before.apiActiveHandleDelta,
-        candidate: after.apiActiveHandleDelta,
+      measurements[name]["activeHandles"] = {
+        baseline: before["apiActiveHandleDelta"],
+        candidate: after["apiActiveHandleDelta"],
       };
     }
     if (name === "prepare-bundle")
-      measurements[name].bundleBytes = paired(
-        before.bundleBytes,
-        after.bundleBytes,
+      measurements[name]["bundleBytes"] = paired(
+        before["bundleBytes"],
+        after["bundleBytes"],
       );
   }
   const beforePackage = baseline.measurements?.package?.data?.[0] ?? null;
@@ -1147,10 +1286,10 @@ function compareFinal(baseline: any, candidate: any) {
     Object.keys(baseline.suites ?? {}).length > 0 &&
     Object.keys(candidate.suites ?? {}).length > 0 &&
     Object.values(baseline.suites ?? {}).every(
-      (suite: any) => suite.status === "pass",
+      (suite: { status?: string | undefined }) => suite.status === "pass",
     ) &&
     Object.values(candidate.suites ?? {}).every(
-      (suite: any) => suite.status === "pass",
+      (suite: { status?: string | undefined }) => suite.status === "pass",
     ) &&
     baseline.measurements?.package?.status === "pass" &&
     candidate.measurements?.package?.status === "pass";
@@ -1178,11 +1317,13 @@ function compareFinal(baseline: any, candidate: any) {
       baseline: beforePackage,
       candidate: afterPackage,
       sizeDelta:
-        beforePackage && afterPackage
+        typeof beforePackage?.size === "number" &&
+        typeof afterPackage?.size === "number"
           ? afterPackage.size - beforePackage.size
           : null,
       unpackedSizeDelta:
-        beforePackage && afterPackage
+        typeof beforePackage?.unpackedSize === "number" &&
+        typeof afterPackage?.unpackedSize === "number"
           ? afterPackage.unpackedSize - beforePackage.unpackedSize
           : null,
       wallMs: paired(
@@ -1200,14 +1341,16 @@ function compareFinal(baseline: any, candidate: any) {
     },
     suites: {
       baseline: Object.fromEntries(
-        Object.entries(baseline.suites ?? {}).map(
-          ([name, suite]: [string, any]) => [name, suite.status],
-        ),
+        Object.entries(baseline.suites ?? {}).map(([name, suite]) => [
+          name,
+          suite.status,
+        ]),
       ),
       candidate: Object.fromEntries(
-        Object.entries(candidate.suites ?? {}).map(
-          ([name, suite]: [string, any]) => [name, suite.status],
-        ),
+        Object.entries(candidate.suites ?? {}).map(([name, suite]) => [
+          name,
+          suite.status,
+        ]),
       ),
     },
   };
@@ -1221,8 +1364,8 @@ async function main() {
     if (!output || !comparisonOutput)
       throw new Error("compare-final BASELINE CANDIDATE OUTPUT");
     const result = compareFinal(
-      JSON.parse(readFileSync(rootArg, "utf8")),
-      JSON.parse(readFileSync(output, "utf8")),
+      data.json(readFileSync(rootArg, "utf8")),
+      data.json(readFileSync(output, "utf8")),
     );
     mkdirSync(dirname(resolve(comparisonOutput)), { recursive: true });
     writeFileSync(comparisonOutput, JSON.stringify(result, null, 2) + "\n");
@@ -1287,7 +1430,11 @@ async function main() {
       const started = performance.now();
       if (name === "import") require("./src/cli");
       else if (name === "help") {
-        const code = await require("./src/cli").main(["--help"], {
+        const code = await moduleFunction(
+          root,
+          "./src/cli",
+          "main",
+        )(["--help"], {
           stdout: { write() {} },
           stderr: { write() {} },
           setExitCode() {},
@@ -1297,24 +1444,30 @@ async function main() {
         });
         if (code !== 0) throw new Error(`help exited ${code}`);
       } else if (name === "prepare-bundle") {
-        require("./src/cad").buildCadScript(
+        moduleFunction(root, "./src/cad", "buildCadScript")(
           "status",
           {},
           { doc: "Synthetic", docId: "fixture" },
         );
       } else if (name === "mcp-startup") {
         const stdin = new PassThrough();
-        const { closed } = require("./src/mcp-stdio").startStdio([], {
-          stdin,
-          stdout: { write() {} },
-          stderr: {
-            write(s: string) {
-              throw new Error(s);
+        const server = data.record(
+          moduleFunction(
+            root,
+            "./src/mcp-stdio",
+            "startStdio",
+          )([], {
+            stdin,
+            stdout: { write() {} },
+            stderr: {
+              write(s: string) {
+                throw new Error(s);
+              },
             },
-          },
-        });
+          }),
+        );
         stdin.end('{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
-        await closed;
+        await server["closed"];
       } else throw new Error(`unknown worker ${name}`);
       samples.push({
         elapsedMs: performance.now() - started,
@@ -1337,7 +1490,7 @@ async function main() {
     mkdirSync(environmentRoot);
     const env = isolatedEnvironment(environmentRoot);
     try {
-      const report: any = {
+      const report: Report = {
         version: 1,
         measuredAt: new Date().toISOString(),
         source: command("git", ["rev-parse", "HEAD"], root).stdout.trim(),
@@ -1384,7 +1537,7 @@ async function main() {
         for (let i = 0; i < 3; i++) {
           const result = command(
             process.execPath,
-            [__filename, "--worker", root, name],
+            ["--experimental-strip-types", __filename, "--worker", root, name],
             directory,
             30000,
             undefined,
@@ -1393,7 +1546,10 @@ async function main() {
           runs.push({
             ...result,
             stdout: undefined,
-            data: result.status === "pass" ? JSON.parse(result.stdout) : null,
+            data:
+              result.status === "pass"
+                ? data.workerData(data.json(result.stdout))
+                : null,
           });
         }
         report.measurements[name] = runs;
@@ -1406,10 +1562,10 @@ async function main() {
         undefined,
         env,
       );
-      report.measurements.queueIdle = {
+      report.measurements["queueIdle"] = {
         ...idle,
         stdout: undefined,
-        data: idle.status === "pass" ? JSON.parse(idle.stdout) : null,
+        data: idle.status === "pass" ? data.json(idle.stdout) : null,
       };
       const pack = command(
         "npm",
@@ -1431,11 +1587,7 @@ async function main() {
         stdout: undefined,
         data:
           pack.status === "pass"
-            ? JSON.parse(pack.stdout).map((p: any) => ({
-                size: p.size,
-                unpackedSize: p.unpackedSize,
-                entryCount: p.entryCount,
-              }))
+            ? data.packageData(data.json(pack.stdout))
             : null,
       };
       const suites = [
@@ -1457,7 +1609,10 @@ async function main() {
         const args = [
           "--test",
           ...(selection ? ["--test-name-pattern", selection] : []),
-          `tests/${suite}.test.js`,
+          !existsSync(join(root, `tests/${suite}.test.js`)) &&
+          existsSync(join(root, `tests/${suite}.test.ts`))
+            ? `dist/tests/${suite}.test.js`
+            : `tests/${suite}.test.js`,
         ];
         const result = command(
           process.execPath,
@@ -1487,7 +1642,7 @@ async function main() {
       mkdirSync(dirname(resolve(output)), { recursive: true });
       writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
       const failed = Object.entries(report.suites)
-        .filter(([, x]: any) => x.status !== "pass")
+        .filter(([, x]) => x.status !== "pass")
         .map(([name]) => name);
       console.log(
         JSON.stringify({
@@ -1499,10 +1654,10 @@ async function main() {
       );
       process.exitCode =
         failed.length ||
-        Object.values(report.measurements).some((x: any) =>
+        Object.values(report.measurements).some((x: unknown) =>
           Array.isArray(x)
-            ? x.some((r) => r.status !== "pass")
-            : x.status !== "pass",
+            ? x.some((r: unknown) => data.record(r)["status"] !== "pass")
+            : data.record(x)["status"] !== "pass",
         ) ||
         report.finalRuntime.status !== "pass"
           ? 1

@@ -1,0 +1,186 @@
+{
+  "historicalSource": "bd88f3b^",
+  "mappings": [
+    {
+      "family": "model",
+      "historicalDigest": "5dad30a97708d3ecb4f8e88948868427304231bbec37fb8ec53a83e1363c31c1",
+      "historicalFile": "runtime/python/fmcad/application/geometry_model.py",
+      "historicalRange": [24, 26],
+      "role": "model operation registrations",
+      "registrations": {
+        "model.extrude": "model_extrude",
+        "model.revolve": "model_revolve",
+        "model.sweep": "model_sweep",
+        "model.loft": "model_loft",
+        "model.hole": "model_hole",
+        "model.shell": "model_shell",
+        "model.thicken": "model_thicken",
+        "model.combine": "model_combine",
+        "model.split": "model_split",
+        "model.fillet": "model_fillet",
+        "model.chamfer": "model_chamfer",
+        "model.draft": "model_draft",
+        "model.thread": "model_thread",
+        "model.mirror": "model_mirror"
+      }
+    },
+    {
+      "family": "model",
+      "historicalDigest": "1898374b4cabdaf64378fc48e9770de4008f58839111a752def0b4a8dcaf623b",
+      "historicalFile": "runtime/python/fmcad/application/geometry_model.py",
+      "historicalRange": [29, 29],
+      "role": "pattern operation registrations",
+      "registrations": {
+        "pattern.circular": "model_pattern_circular",
+        "pattern.rectangular": "model_pattern_rectangular",
+        "pattern.path": "model_pattern_path"
+      }
+    },
+    {
+      "family": "shapes",
+      "historicalDigest": "c033837038951e71b0cc8cfd1cda3fca6d0cb489a835b0396c42befb263ff407",
+      "historicalFile": "runtime/python/fmcad/adapters/fusion/geometry_shapes.py",
+      "historicalRange": [489, 535],
+      "role": "primitive input, plane, and construction paths"
+    },
+    {
+      "family": "shapes",
+      "historicalDigest": "52404029dde7fed5c99c39eb60594377403c633cdfab8d6f43214e7d811ceec8",
+      "historicalFile": "runtime/python/fmcad/application/geometry_shapes.py",
+      "historicalRange": [76, 78],
+      "role": "primitive and recipe registrations",
+      "registrations": {
+        "shape.box": "shape_box",
+        "shape.cylinder": "shape_cylinder",
+        "shape.tube": "shape_tube",
+        "shape.ring": "shape_ring",
+        "shape.cone": "shape_cone",
+        "shape.revolved_profile": "shape_revolved_profile",
+        "shape.bolt_circle": "shape_bolt_circle",
+        "shape.slot": "shape_slot",
+        "shape.slot_pattern": "shape_slot_pattern",
+        "shape.rib": "shape_rib",
+        "shape.web": "shape_web",
+        "shape.route": "shape_route",
+        "shape.helix": "_shapes_helix_handler"
+      }
+    },
+    {
+      "family": "shapes",
+      "historicalDigest": "a923bc9313b9a359d0728c68d1ac2f4048ba6f9e8eaf89ff0f722e65cf2c4406",
+      "historicalFile": "runtime/python/fmcad/application/geometry_shapes.py",
+      "historicalRange": [81, 82],
+      "role": "GM10 shape registrations",
+      "registrations": {
+        "shape.annular_segment": "shape_annular_segment",
+        "shape.arc_strip": "shape_arc_strip",
+        "shape.can": "shape_can",
+        "shape.impeller": "shape_impeller",
+        "shape.boss_pattern": "shape_boss_pattern"
+      }
+    },
+    {
+      "family": "feature",
+      "historicalDigest": "48b52421f35087905cb99a8876670fc5bce87aab551d68ce6de9d55fe0e1ac31",
+      "historicalFile": "runtime/python/fmcad/application/geometry_feature.py",
+      "historicalRange": [22, 25],
+      "role": "feature inspect and edit registrations",
+      "registrations": {
+        "feature.inspect": "feature_inspect",
+        "feature.edit": "feature_edit"
+      }
+    }
+  ],
+  "additionalExecutionSeams": {
+    "adapters/fusion/geometry_model.py": ["_model_extrude_profiles", "_model_extent_mode", "_model_extrude", "model_extrude"],
+    "adapters/fusion/geometry_shapes.py": [
+      "_shapes_primitive_inputs",
+      "_shapes_primitive_plane",
+      "_shapes_extruded_primitive",
+      "_shapes_box",
+      "_shapes_cylinder",
+      "_shapes_tube",
+      "_shapes_ring",
+      "_shapes_cone",
+      "_shapes_primitive"
+    ],
+    "application/geometry_feature.py": [
+      "feature_inspect",
+      "feature_edit"
+    ]
+  },
+  "delegations": {
+    "application/geometry_model.py": {
+      "model_revolve": ["model_feature", "revolve"],
+      "model_sweep": ["model_feature", "sweep"],
+      "model_loft": ["model_feature", "loft"],
+      "model_hole": ["model_feature", "hole"],
+      "model_shell": ["model_feature", "shell"],
+      "model_thicken": ["model_feature", "thicken"],
+      "model_combine": ["model_feature", "combine"],
+      "model_split": ["model_feature", "split"],
+      "model_fillet": ["model_feature", "fillet"],
+      "model_chamfer": ["model_feature", "chamfer"],
+      "model_draft": ["model_feature", "draft"],
+      "model_thread": ["model_feature", "thread"],
+      "model_mirror": ["model_feature", "mirror"],
+      "model_pattern_circular": ["model_feature", "circular"],
+      "model_pattern_rectangular": ["model_feature", "rectangular"],
+      "model_pattern_path": ["model_feature", "path"]
+    },
+    "adapters/fusion/geometry_model.py": {
+      "model_extrude": ["_model_extrude"]
+    },
+    "application/geometry_shapes.py": {
+      "shape_box": ["_shapes_box"],
+      "shape_cylinder": ["_shapes_cylinder"],
+      "shape_tube": ["_shapes_tube"],
+      "shape_ring": ["_shapes_ring"],
+      "shape_cone": ["_shapes_cone"],
+      "shape_revolved_profile": ["_shapes_recipe", "revolved_profile"],
+      "shape_bolt_circle": ["_shapes_recipe", "bolt_circle"],
+      "shape_slot": ["_shapes_recipe", "slot"],
+      "shape_slot_pattern": ["_shapes_recipe", "slot_pattern"],
+      "shape_rib": ["_shapes_recipe", "rib"],
+      "shape_web": ["_shapes_recipe", "web"],
+      "shape_route": ["_shapes_recipe", "route"],
+      "_shapes_helix_handler": ["_shapes_recipe", "helix"],
+      "shape_annular_segment": ["_shapes_annular_segment"],
+      "shape_arc_strip": ["_shapes_arc_strip"],
+      "shape_can": ["_shapes_can"],
+      "shape_impeller": ["_shapes_impeller"],
+      "shape_boss_pattern": ["_shapes_boss_pattern"]
+    }
+  },
+  "primitiveDispatch": {
+    "inputFunction": "_shapes_primitive_inputs",
+    "inputTrySha256": "68c4891820c152faa07cc297af18afcbb4a07e4178c46b9bb4b521ca1f90ede1",
+    "dispatcher": "_shapes_primitive",
+    "modes": {
+      "box": "_shapes_box",
+      "cylinder": "_shapes_cylinder",
+      "tube": "_shapes_tube",
+      "ring": "_shapes_ring",
+      "cone": "_shapes_cone"
+    },
+    "primitiveWrappers": {
+      "_shapes_box": [
+        "box",
+        ["width", "depth", "height"]
+      ],
+      "_shapes_cylinder": [
+        "cylinder",
+        ["radius", "height"]
+      ],
+      "_shapes_tube": [
+        "tube",
+        ["outerRadius", "innerRadius", "height"]
+      ],
+      "_shapes_ring": [
+        "ring",
+        ["outerRadius", "innerRadius", "height"]
+      ]
+    },
+    "creationFunctions": ["_shapes_extruded_primitive", "_shapes_cone"]
+  }
+}

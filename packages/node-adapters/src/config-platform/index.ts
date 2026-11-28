@@ -9,7 +9,6 @@ import {
   chmodSync,
   unlinkSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parse, type ParseError } from "jsonc-parser";
 import { resolveRuntimePaths } from "./runtime-paths.js";
@@ -36,15 +35,6 @@ export interface ConfigInitPlan {
   readonly imported: boolean;
   readonly force: boolean;
 }
-
-const OPENCODE_CONFIGS = [
-  [".opencode", "opencode.jsonc"],
-  [".opencode", "opencode.json"],
-  [".config", "opencode", "opencode.jsonc"],
-  [".config", "opencode", "opencode.json"],
-] as const;
-
-const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
 function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -87,26 +77,19 @@ export function parseJsonc(text: string): RecordValue {
   return value;
 }
 
-function parseConfigFile(
-  file: string,
-  kind: "config" | "OpenCode",
-): RecordValue | null {
+function parseConfigFile(file: string): RecordValue | null {
   if (!existsSync(file)) return null;
   let text: string;
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    throw new Error(`Cannot read ${kind} configuration ${file}`);
+    throw new Error(`Cannot read config ${file}`);
   }
   try {
     return parseJsonc(text);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid JSONC";
-    throw new Error(
-      kind === "config"
-        ? `Cannot parse config ${file}: ${message}`
-        : `Cannot parse ${file}: ${message}`,
-    );
+    throw new Error(`Cannot parse config ${file}: ${message}`);
   }
 }
 
@@ -141,8 +124,6 @@ function numericAliases(source: NodeJS.ProcessEnv): RecordValue {
     ["FMCAD_TIMEOUT_MS", "timeoutMs"],
     ["FMCAD_TIMEOUT", "timeout"],
     ["FMCAD_CONTROL_CENTER_PORT", "controlCenterPort"],
-    ["FMCAD_QUEUE_STARTUP_TIMEOUT_MS", "startupTimeoutMs"],
-    ["FMCAD_QUEUE_WAIT_TIMEOUT_MS", "waitTimeoutMs"],
   ] as const) {
     const value = source[environmentName];
     if (value !== undefined) values[key] = parsedNumber(value);
@@ -180,6 +161,15 @@ function readEnvironment(): RecordValue {
   }
 
   const queue: RecordValue = {};
+  for (const [environmentName, key] of [
+    ["FMCAD_QUEUE_STARTUP_TIMEOUT_MS", "startupTimeoutMs"],
+    ["FMCAD_QUEUE_WAIT_TIMEOUT_MS", "waitTimeoutMs"],
+    ["FMCAD_QUEUE_PREPARATION_CONCURRENCY", "preparationConcurrency"],
+  ] as const) {
+    const value = source[environmentName];
+    if (value !== undefined) queue[key] = parsedNumber(value);
+  }
+
   for (const [environmentName, key] of [
     ["FMCAD_QUEUE_AUTO_START", "autoStart"],
     ["FMCAD_QUEUE_AUTO_RECOVER", "autoRecover"],
@@ -263,7 +253,7 @@ function readAcceptedService(): unknown {
 export function readConfigSources(input: unknown = {}): NodeConfigSources {
   const options = asRecord(input, "config options");
   const configPath = selectedConfigPath(options);
-  const file = parseConfigFile(configPath, "config") ?? {};
+  const file = parseConfigFile(configPath) ?? {};
   const isWsl =
     process.platform === "linux" && Boolean(process.env["WSL_DISTRO_NAME"]);
   const platformDefaults: RecordValue = isWsl
@@ -283,160 +273,25 @@ export function readConfigSources(input: unknown = {}): NodeConfigSources {
   };
 }
 
-function importedBlock(document: RecordValue): RecordValue | null {
-  const mcp = document["mcp"];
-  if (!isRecord(mcp)) return null;
-  if (isRecord(mcp["fusion"])) return mcp["fusion"];
-  const servers = mcp["servers"];
-  if (isRecord(servers) && isRecord(servers["fusion"]))
-    return servers["fusion"];
-  return null;
-}
-
-function firstAlias(
-  source: RecordValue,
-  primary: string,
-  aliases: readonly string[],
-  field: string,
-): unknown {
-  const keys = [primary, ...aliases].filter((key) =>
-    Object.hasOwn(source, key),
-  );
-  if (keys.length > 1 && keys.some((key) => source[key] !== source[keys[0]!])) {
-    throw new Error(`${field} aliases conflict`);
-  }
-  return keys.length > 0 ? source[keys[0]!] : undefined;
-}
-
-function importedTransport(block: RecordValue): "node" | "windows-curl" {
-  const kind = block["type"];
-  if (kind === "local" || kind === "stdio" || Object.hasOwn(block, "command")) {
-    throw new Error(
-      "OpenCode Fusion entry is a local/stdio MCP server; only a remote HTTP(S) endpoint can be imported",
-    );
-  }
-  const transport = block["transport"] ?? kind;
-  if (
-    transport === undefined ||
-    transport === "remote" ||
-    transport === "http" ||
-    transport === "https" ||
-    transport === "node" ||
-    transport === "fetch" ||
-    transport === "sse"
-  ) {
-    return "node";
-  }
-  if (transport === "windows-curl" || transport === "curl")
-    return "windows-curl";
-  throw new Error(
-    "OpenCode Fusion entry uses an unsupported transport; configure node or windows-curl explicitly",
-  );
-}
-
-function importOpenCodeFusion(): {
-  readonly file: string;
-  readonly backend: RecordValue;
-} {
-  for (const parts of OPENCODE_CONFIGS) {
-    const file = join(homedir(), ...parts);
-    const document = parseConfigFile(file, "OpenCode");
-    if (!document) continue;
-    const block = importedBlock(document);
-    if (!block) continue;
-    const transport = importedTransport(block);
-    const url = firstAlias(block, "url", ["endpoint"], "OpenCode MCP fusion");
-    if (typeof url !== "string" || url.trim() === "") {
-      throw new Error(
-        "OpenCode Fusion entry must define a remote url or endpoint",
-      );
-    }
-    const headersValue = block["headers"] ?? {};
-    if (
-      !isRecord(headersValue) ||
-      Object.entries(headersValue).some(
-        ([name, value]) => !HEADER_NAME.test(name) || typeof value !== "string",
-      )
-    ) {
-      throw new Error(
-        "OpenCode Fusion headers must be an object of string values",
-      );
-    }
-    const timeout = firstAlias(
-      block,
-      "timeoutMs",
-      ["timeout"],
-      "OpenCode MCP fusion",
-    );
-    if (
-      timeout !== undefined &&
-      (typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0)
-    ) {
-      throw new Error(
-        "OpenCode Fusion timeout must be a positive number of milliseconds",
-      );
-    }
-    const protocolVersion = firstAlias(
-      block,
-      "protocolVersion",
-      ["protocol_version"],
-      "OpenCode MCP fusion",
-    );
-    const curlPath = firstAlias(
-      block,
-      "curlPath",
-      ["curl-path", "curl_path"],
-      "OpenCode MCP fusion",
-    );
-    const tool = block["tool"];
-    if (
-      tool !== undefined &&
-      (typeof tool !== "string" || tool.trim() === "")
-    ) {
-      throw new Error("OpenCode Fusion tool must be a nonempty string");
-    }
-    if (
-      protocolVersion !== undefined &&
-      (typeof protocolVersion !== "string" || protocolVersion.trim() === "")
-    ) {
-      throw new Error(
-        "OpenCode Fusion protocolVersion must be a nonempty string",
-      );
-    }
-    if (
-      curlPath !== undefined &&
-      (typeof curlPath !== "string" || curlPath.trim() === "")
-    ) {
-      throw new Error("OpenCode Fusion curlPath must be a nonempty string");
-    }
-    return {
-      file,
-      backend: {
-        url,
-        headers: headersValue,
-        ...(timeout !== undefined ? { timeoutMs: timeout } : {}),
-        ...(tool !== undefined ? { tool } : {}),
-        transport,
-        ...(curlPath !== undefined ? { curlPath } : {}),
-        ...(protocolVersion !== undefined ? { protocolVersion } : {}),
-      },
-    };
-  }
-  throw new Error(
-    "no OpenCode MCP configuration with a remote Fusion endpoint found",
-  );
-}
-
 export function prepareConfigInit(input: unknown = {}): ConfigInitPlan {
   const options = asRecord(input, "init options");
   const fromOpencode = options["fromOpencode"] === true;
   const force = options["force"] === true;
-  const backendValue = options["backend"] ?? (fromOpencode ? "mcp" : "addin");
-  if (backendValue !== "mcp" && backendValue !== "addin") {
-    throw new Error('backend must be "mcp" or "addin"');
+  if (fromOpencode) {
+    throw new Error(
+      "--from-opencode is no longer supported because it imports the retired native Fusion MCP backend; configure autodesk-fusion-mcp at http://127.0.0.1:8765/mcp",
+    );
   }
-  if (fromOpencode && backendValue !== "mcp") {
-    throw new Error("--from-opencode is only compatible with the mcp backend");
+  const backendValue = options["backend"] ?? "addin";
+  if (backendValue === "mcp") {
+    throw new Error(
+      'backend "mcp" is no longer supported; use backend "addin" with autodesk-fusion-mcp at http://127.0.0.1:8765/mcp',
+    );
+  }
+  if (backendValue !== "addin") {
+    throw new Error(
+      'backend must be "addin"; native Fusion MCP is no longer supported',
+    );
   }
   const configPath = selectedConfigPath(options);
   if (existsSync(configPath) && !force) {
@@ -445,29 +300,18 @@ export function prepareConfigInit(input: unknown = {}): ConfigInitPlan {
     );
   }
 
-  let config: RecordValue = {
+  const config: RecordValue = {
     backend: backendValue,
     routing: "queue",
     controlCenter: {},
   };
-  let note = "safe defaults written";
-  if (backendValue === "mcp") config["backends"] = { mcp: {} };
-  if (fromOpencode) {
-    const found = importOpenCodeFusion();
-    config = {
-      backend: "mcp",
-      routing: "queue",
-      controlCenter: {},
-      backends: { mcp: found.backend },
-    };
-    note = `imported from ${found.file}`;
-  }
+  const note = "safe defaults written";
   return {
     path: configPath,
     config,
     note,
     scriptsDir: join(dirname(configPath), "scripts"),
-    imported: fromOpencode,
+    imported: false,
     force,
   };
 }

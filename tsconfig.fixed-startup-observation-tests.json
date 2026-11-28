@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "tests/fixed-startup-observation.test.ts",
+    "tests/fixed-startup-observation-broker.test.ts"
+  ]
+}

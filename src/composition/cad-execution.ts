@@ -32,6 +32,7 @@ export interface CadClient extends NativeActionClient {
 type Client = CadClient | null | undefined;
 export interface CadInternal {
   projectDirectory?: string;
+  fusionPath?: (value: unknown) => string;
   stageDependencies?: {
     batch?: unknown;
     owner?: { scope?: { project?: string } };
@@ -124,7 +125,16 @@ export const executeCad: Execute = async (
 ) =>
   core.executeCad(operation, data, context, {
     validate: validateCad,
-    prepare: preparation.prepareCadScript,
+    prepare: (operation, data, context, cameraAlias) =>
+      preparation.prepareCadScript(
+        operation,
+        data,
+        context,
+        internal.fusionPath,
+        undefined,
+        undefined,
+        cameraAlias,
+      ),
     execution: {
       execute: ({ artifact, readOnly }) =>
         client!.callTool(
@@ -220,7 +230,7 @@ function executeNode(
           target,
           internal,
         ),
-      toFusionPath: preparation.fusionPath,
+      toFusionPath: internal.fusionPath ?? preparation.fusionPath,
     });
   }
   if (handler === "selection-rules") {

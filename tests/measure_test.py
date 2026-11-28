@@ -384,6 +384,25 @@ class MeasureTests(unittest.TestCase):
             value = NS['_measure_value'](scale ** 3, 'volume', {})['value']
             self.assertAlmostEqual(value, (10 * scale) ** 3)
 
+    def test_scalar_measurements_keep_their_dimensions_and_reject_mismatched_units(self):
+        cylinder = self.face('ScalarCylinder', Entity('Cylinder', 'cylinder', radius=1.25))
+        edge = self.add(Entity('BRepEdge', 'ScalarEdge', body=self.body, length=math.pi))
+        measurements = (
+            ('measure.diameter', {'ref': {'token': cylinder.entityToken}}, 'mm', 25, 'mm2'),
+            ('measure.radius', {'ref': {'token': cylinder.entityToken}}, 'mm', 12.5, 'mm2'),
+            ('measure.length', {'ref': edge}, 'mm', 10 * math.pi, 'mm2'),
+            ('measure.area', {'ref': 'BodyA'}, 'mm2', 600, 'mm3'),
+            ('measure.volume', {'ref': 'BodyA'}, 'mm3', 1000, 'mm2'),
+            ('measure.mass', {'ref': 'BodyA'}, 'kg', 0.00785, 'mm'),
+        )
+        for operation, data, units, value, invalid_units in measurements:
+            with self.subTest(operation=operation):
+                result = self.call(operation, data)
+                self.assertEqual(result['units'], units)
+                self.assertAlmostEqual(result['value'], value)
+                with self.assertRaisesRegex(ValueError, 'Unsupported .* units:'):
+                    self.call(operation, dict(data, units=invalid_units))
+
     def test_nonfinite_wrong_units_and_unknown_inputs_rejected(self):
         with self.assertRaisesRegex(ValueError, 'units'):
             self.call('measure.volume', {'ref': 'BodyA', 'units': 'mm'})
@@ -806,6 +825,44 @@ class MeasureTests(unittest.TestCase):
         for extra in ({'expected': '2 mm'}, {'tolerance': '-1 mm^3'}, {'max': '2 cm^3'}):
             with self.assertRaises(ValueError):
                 self.call('check', dict(spec, **extra))
+
+    def test_retained_engineering_volume_check_uses_expression_units(self):
+        source = (ROOT / 'tests/scenarios/native-engineering-cases.ts').read_text()
+        inputs = re.search(r'expected: "(6000 [^"]+)",\s*tolerance: "([^"]+)"', source)
+        self.assertIsNotNone(inputs)
+        self.body.volume = 6
+        spec = {'measurement': {'operation': 'measure.volume',
+                                'data': {'ref': 'BodyA', 'units': 'mm3'}},
+                'expected': inputs[1], 'tolerance': inputs[2]}
+        result = self.call('check', spec)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['actual']['value'], 6000)
+        self.assertEqual(result['acceptance'],
+                         {'min': 5999.99, 'max': 6000.01, 'units': 'mm3'})
+        self.body.volume = 6.001
+        self.assertFalse(self.call('check', spec)['passed'])
+        with self.assertRaises(ValueError):
+            self.call('check', dict(spec, expected='6000 mm^2'))
+
+    def test_retained_engineering_volume_report_minimum_uses_expression_units(self):
+        source = (ROOT / 'tests/scenarios/native-engineering-cases.ts').read_text()
+        report = re.search(
+            r'reportResult = await cad\("report", \{.*?min: "([^"]+)"',
+            source,
+            re.S,
+        )
+        self.assertIsNotNone(report)
+        self.assertEqual(report[1], '5999 mm^3')
+        self.body.volume = 6
+        result = self.call('check', {
+            'measurement': {'operation': 'measure.volume',
+                            'data': {'ref': 'BodyA', 'units': 'mm3'}},
+            'min': report[1],
+        })
+        self.assertTrue(result['passed'])
+        self.assertAlmostEqual(result['acceptance']['min'], 5999)
+        self.assertIsNone(result['acceptance']['max'])
+        self.assertEqual(result['acceptance']['units'], 'mm3')
 
     def test_compare_bodies_uses_bidirectional_csg_not_equal_volume(self):
         elongated = Body('EqualVolumeDifferentShape', self.root, (0, 0, 0), (0.5, 1, 2))

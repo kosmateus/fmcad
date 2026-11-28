@@ -21,6 +21,10 @@ def _qd_items(collection: _qd_Collection[_qd_T]) -> list[_qd_T]:
     return [collection.item(i) for i in range(collection.count)]
 
 
+def _qd_has_creation_id(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
 def _qd_identity(doc: '_qd_core.Document') -> dict[str, object]:
     data, error = _document_data_file(doc)
     result: dict[str, object] = {'creationId': doc.creationId, 'name': doc.name,
@@ -64,8 +68,9 @@ def _qd_design_state(doc: '_qd_core.Document', seen: set[str]) -> dict[str, obje
         for feature in _qd_items(component.features.deriveFeatures):
             if not feature.isSuppressed:
                 derive_refs.append(feature.documentReference)
-    parameters: list[dict[str, object]] = [{'name': p.name, 'expression': p.expression, 'value': p.value, 'unit': p.unit}
-                  for p in sorted(_qd_items(design.allParameters), key=lambda p: p.name)]
+    parameters: list[dict[str, object]] = [{'name': p.name, 'expression': p.expression,
+                                           'value': p.textValue if p.unit.lower() == 'text' else p.value, 'unit': p.unit}
+                   for p in sorted(_qd_items(design.allParameters), key=lambda p: p.name)]
     references: list[tuple[str, int, dict[str, object]]] = []
     # allDocumentReferences includes nested ordinary references. Derive features
     # are added explicitly because some SDK builds omit parameter-only Derives.
@@ -95,6 +100,35 @@ def _qd_capture(app: '_qd_core.Application', selector: dict[str, object] | None)
         return {'status': 'metadata-only'}
     candidates: list['_qd_core.Document'] = []
     try:
+        if selector.get('kind') == 'saved-document-metadata':
+            file_id, version = selector.get('fileId'), selector.get('version')
+            if (set(selector) != {'kind', 'fileId', 'version'} or
+                    not isinstance(file_id, str) or not file_id or
+                    type(version) is not int or version < 1):
+                raise ValueError('Expected an exact saved document file/version selector')
+            for doc in _qd_items(app.documents):
+                if doc.isSaved is not True:
+                    continue
+                data, error = _document_data_file(doc)
+                if error:
+                    raise RuntimeError('Cannot verify saved document file/version: ' + error['message'])
+                if data is None or data.id != file_id:
+                    continue
+                actual = data.versionNumber
+                if type(actual) is not int or actual < 1:
+                    raise RuntimeError('Cannot verify saved document version')
+                if actual == version:
+                    candidates.append(doc)
+            if len(candidates) != 1:
+                return {'status': 'target-unavailable', 'matches': len(candidates), 'selector': selector}
+            creation_id = candidates[0].creationId
+            if not _qd_has_creation_id(creation_id):
+                raise RuntimeError('Saved document has no stable identity')
+            metadata_state: dict[str, object] = {'identity': {
+                'creationId': creation_id, 'fileId': file_id, 'version': version, 'isSaved': True}}
+            metadata_json = _qd_json.dumps(metadata_state, sort_keys=True, separators=(',', ':'), allow_nan=False)
+            return {'status': 'complete', 'fingerprint': _qd_hashlib.sha256(metadata_json.encode('utf-8')).hexdigest(),
+                    'state': metadata_state}
         for doc in _qd_items(app.documents):
             if selector.get('creationId') and doc.creationId != selector['creationId']:
                 continue

@@ -1,6 +1,9 @@
 """Finite regional comparison DTO rules. No SDK, solver, store or sampling."""
 import math as _regional_math
 
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
 
 class RegionalGeometryUnavailable(RuntimeError):
     def __init__(self, reason: str, message: str) -> None:

@@ -1,0 +1,173 @@
+{
+  "kind": "read-only-inline-observer-expiry-evidence-not-authority",
+  "version": 1,
+  "observedAt": "2026-11-21T23:02:56.850156+00:00",
+  "jobId": "3627db2e-0b9d-4e4f-927f-20cb45deae74",
+  "requestId": "measured-fasteners-atomic-status-20261030-posthandoff-v1",
+  "kindOfJob": "command",
+  "operation": "batch.reconcile / atomic_holder_status",
+  "jobStateUnchanged": "needs_reconciliation",
+  "observerBuildHash": "2e1b3b7b1bb07c870d2aeb5a4e6afb552f41b4f78d8db408e8d2f2854b1b3fa7",
+  "originalTargetBuildHash": "1ef9b72ee009aafca52ea67a1a9050db10e0120b28467fe285290b88c224ae87",
+  "sourceCommitNotRecorded": true,
+  "archiveFingerprint": {
+    "archive": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d",
+    "recorded": "2e1b3b7b1bb07c870d2aeb5a4e6afb552f41b4f78d8db408e8d2f2854b1b3fa7",
+    "computed": "2e1b3b7b1bb07c870d2aeb5a4e6afb552f41b4f78d8db408e8d2f2854b1b3fa7",
+    "matched": true
+  },
+  "broker": {
+    "pid": 1470648,
+    "birth": "54299d3b-5d9a-4589-90e1-a53287c516c9:64702243",
+    "nonce": "e8956024-9420-4616-8724-e02ada9dd476",
+    "protocol": 2
+  },
+  "brokerLifecycleBuildMatched": true,
+  "oldSdk": {
+    "pid": 50352,
+    "birth": "134375220106992528",
+    "version": "2706.1.14"
+  },
+  "currentBootId": "f01fbbc0-7114-4203-83f2-bf5ac37e1eec",
+  "brokerBootId": "54299d3b-5d9a-4589-90e1-a53287c516c9",
+  "brokerPidAbsent": true,
+  "oldSdkObservation": {
+    "path": "/home/kamil/.local/state/fmcad/evidence/inline-observer-expiry-20261121T230256Z/old-sdk-process.json",
+    "sha256": "4d204c711ab7a2e7dba5983a419c57a3a7a1c60bfe28f23015f23f97efe4f25d"
+  },
+  "knownRpc": {
+    "id": "0b6a469c-4b47-435f-b852-4596d09a14c5",
+    "terminalJournal": true,
+    "terminalReceipt": true,
+    "proofWrittenAfterSendReturned": true,
+    "rpcCount": 1,
+    "completedCount": 1
+  },
+  "transport": {
+    "kind": "windows-curl",
+    "expectedMaxTimeSeconds": 30,
+    "helperIdentityNotRecorded": true,
+    "expiryBasis": "Exact pinned transport resolves only after child.close; matched immutable rpc terminal/proof written only after await originalPost. No need to infer helper death from ps/max-time elapsed.",
+    "noRetryOrDelayedDelegationInPinnedPath": true
+  },
+  "workerIdentityNotExpectedForThisRoute": true,
+  "sourceRefs": [
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/src/queue-broker.js",
+      "sha256": "a8b1e8ea109f4af37dce0cc04bc9a53f25792f2c61a6137642ade713c7a7d31a",
+      "lineRanges": [
+        [
+          655,
+          765
+        ],
+        [
+          1658,
+          1811
+        ],
+        [
+          1814,
+          1850
+        ],
+        [
+          1996,
+          2009
+        ]
+      ]
+    },
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/src/dist/fusion-transport/broker.js",
+      "sha256": "80890f48b3bf6d67086364acfea3eb65131f080de6fff7af604b9f5b389ca963",
+      "lineRanges": [
+        [
+          7,
+          12
+        ]
+      ]
+    },
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/src/dist/fusion-transport/addin.js",
+      "sha256": "5c6a3d7a195ece31accff30fabc73bf2456796091e4ae5a71d124aaf1c3c3f25",
+      "lineRanges": [
+        [
+          29,
+          32
+        ],
+        [
+          52,
+          52
+        ],
+        [
+          122,
+          135
+        ]
+      ]
+    },
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/src/dist/fusion-transport/mcp.js",
+      "sha256": "f2214fd9870d9fcde15955bd6304d9143ffba224d29863921e7a9bd29977fe9f",
+      "lineRanges": [
+        [
+          26,
+          36
+        ],
+        [
+          157,
+          167
+        ]
+      ]
+    },
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/src/dist/fusion-transport/curl.js",
+      "sha256": "4269a77ea08d72dc38557c1eccad5e0c85f1b3d845a29f0623a1d4b5536fd7a2",
+      "lineRanges": [
+        [
+          65,
+          165
+        ]
+      ]
+    },
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/src/dist/core/application/execution.js",
+      "sha256": "11fee1d889f7d9e04ecff4ef5539a3a64ce36cea1d83d18f3199b6d9f309f988",
+      "lineRanges": [
+        [
+          1,
+          200
+        ]
+      ]
+    }
+  ],
+  "evidenceRefs": [
+    {
+      "path": "/home/kamil/.local/state/fmcad/queue/jobs/3627db2e-0b9d-4e4f-927f-20cb45deae74/atomic-observation-0b6a469c-4b47-435f-b852-4596d09a14c5.receipt.json",
+      "sha256": "174cc2d1a1c238e5c47c4c2d7c241c3c7ed2b2820bf5ae018a12ec9680960035"
+    },
+    {
+      "path": "/home/kamil/.local/state/fmcad/queue/jobs/3627db2e-0b9d-4e4f-927f-20cb45deae74/atomic-observation-proof.json",
+      "sha256": "3ca48558b2e00532eb7fe26361ff15c1f26edfed8db1785098d28b2b4f3828c2"
+    },
+    {
+      "path": "/home/kamil/.local/state/fmcad/queue/jobs/3627db2e-0b9d-4e4f-927f-20cb45deae74/atomic-observation-start.json",
+      "sha256": "a28f9f6c44633c67e0b15da4670c573101a8df736dda73baa193178dfc94a14d"
+    },
+    {
+      "path": "/home/kamil/.local/state/fmcad/queue/jobs/3627db2e-0b9d-4e4f-927f-20cb45deae74/rpc-0b6a469c-4b47-435f-b852-4596d09a14c5.json",
+      "sha256": "52f3e326f18270b5f72dcfcd15886e7e580b0863515b0540b2774e63192fbc7e"
+    },
+    {
+      "path": "/home/kamil/.local/state/fmcad/queue/broker-lifecycle-e8956024-9420-4616-8724-e02ada9dd476.json",
+      "sha256": "aee15300206118541fec5d4d4a2bc4e29c466ce9c3f47fb8a43403c580f49ee6"
+    },
+    {
+      "path": "/home/kamil/.config/opencode/plugins/fmcad/dist.atomic-previous-5acb70a9-8293-4313-b8e7-03905143528d/runtime-build.json",
+      "sha256": "0521c451898e4f1139676bd78a531a650f3140929818584cacf17854c2f397f7"
+    }
+  ],
+  "rootSnapshotHash": "7130410aee63aa2e02f74614b563e7fa82147335007c97bf88cc8cc841b817fd",
+  "limits": [
+    "Not settlement of needs_reconciliation job or original target; UNKNOWN preserved",
+    "Exact inline path and its completed transport only, not classification of unrelated jobs",
+    "Requires reviewer acceptance and fresh same-hash fencing inside supported handoff",
+    "Lifecycle points to missing broker-startup receipt; proof uses matching observer start owner/build and existing lifecycle, not that missing file"
+  ]
+}

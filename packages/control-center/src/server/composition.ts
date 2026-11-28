@@ -1,4 +1,8 @@
 import type {
+  SystemControlsRouteRequest,
+  SystemControlsRouteResponse,
+} from "./system-controls.js";
+import type {
   ConsoleQueryHandler,
   ConsoleQueryPrincipal,
   ConsoleRevisionEvent,
@@ -26,6 +30,9 @@ export interface ControlCenterCompositionContext {
 }
 
 export interface ControlCenterComposition {
+  readonly systemControls?: (
+    request: SystemControlsRouteRequest,
+  ) => Promise<SystemControlsRouteResponse | null>;
   readonly query: ConsoleQueryHandler;
   readonly projectActions?: ProjectActionsExecutor | null;
   readonly resolvePrincipal: (
@@ -36,6 +43,9 @@ export interface ControlCenterComposition {
 }
 
 export interface ControlCenterCompositionDependencies {
+  readonly systemControls?: (
+    request: SystemControlsRouteRequest,
+  ) => Promise<SystemControlsRouteResponse | null>;
   /** Null keeps the process online but exposes explicit unavailable query results. */
   readonly readPort: ConsoleQueryReadPort | null;
   readonly projectActions?: ProjectActionsExecutor | null;
@@ -89,6 +99,9 @@ export function composeControlCenterService(
   };
   return {
     query,
+    ...(dependencies.systemControls
+      ? { systemControls: dependencies.systemControls }
+      : {}),
     ...(dependencies.projectActions !== undefined
       ? { projectActions: dependencies.projectActions }
       : {}),

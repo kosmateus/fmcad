@@ -1,0 +1,4072 @@
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID, createHash } from "node:crypto";
+import { record, type Execution, type ScenarioBackend } from "./contracts";
+import {
+  resolveCleanupHold,
+  validateCleanupResolution,
+  validateCleanupResolutionForClose,
+  createCleanupRecoveryAdapter,
+  recordFailedCleanupInspection,
+  recordTerminalLegacyChildEvidence,
+  recordNativeCleanupResult,
+  recordLegacyReadonlyCleanupResult,
+  recordSucceededImportObservationCleanupResult,
+  readCleanupRecoveryRequests,
+  type CleanupHoldPorts,
+} from "./cleanup-hold-resolution";
+import { resumeCleanup } from "./runner";
+import * as programs from "./programs";
+import { childProcessIdentity } from "./legacy-handoff";
+import { createRequire } from "node:module";
+import { queueExecution } from "./queue-backend";
+import { publishLegacyTerminalDisposition } from "./legacy-terminal-disposition";
+import { discoverOwnedUnsavedFixtureProofs } from "./fixture-provenance";
+
+function fixture(
+  t: TestContext,
+  pose = false,
+  modified = true,
+  legacy: boolean | "gm07" = false,
+  scenarioOverride?: string,
+) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-held-resolution-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const runId = randomUUID(),
+    scenarioId =
+      scenarioOverride ??
+      (legacy === "gm07"
+        ? "gm07-source-pinned"
+        : legacy
+          ? "native-legacy-0"
+          : pose
+            ? "native-pose-methods-0"
+            : "native-thread-1");
+  const owner = {
+    runId,
+    scenarioId,
+    clientId: `scenario:${runId}:${scenarioId}`,
+  };
+  const directory = path.join(root, runId, scenarioId);
+  fs.mkdirSync(directory, { recursive: true });
+  const document = {
+    creationId: randomUUID(),
+    name: `FMCAD_SCENARIO_${runId}_${scenarioId}`,
+  };
+  const runtime = { buildHash: "a".repeat(64), instanceId: randomUUID() };
+  const originals = new Map<string, unknown>(),
+    executions = new Map<string, Execution>();
+  const marker = (value: unknown) =>
+    "FMCAD_SCENARIO " + JSON.stringify(value) + "\n";
+  const create = {
+    ...document,
+    activeCreationId: document.creationId,
+    requestId: owner.clientId + ":0",
+    clientId: owner.clientId,
+  };
+  const request = (
+    ordinal: number,
+    phase: string,
+    stdout: string,
+    source: string,
+  ) => {
+    const requestId = owner.clientId + ":" + ordinal;
+    const filename = path.join(directory, `request-${ordinal}.py`);
+    fs.writeFileSync(filename, source);
+    const jobId = randomUUID();
+    const operationResult = {
+      version: 1,
+      requestId,
+      jobId,
+      acceptance: "accepted",
+      executionOutcome: "succeeded",
+      mayHaveMutated: true,
+    };
+    const result: Execution = {
+      requestId,
+      state: "succeeded",
+      sdkSettled: true,
+      mayHaveMutated: true,
+      stdout,
+      exitCode: 0,
+      brokerReceipt: {
+        requestId,
+        jobId,
+        clientId: owner.clientId,
+        state: "succeeded",
+        operationResult,
+      },
+    };
+    executions.set(requestId, result);
+    const now = Date.now();
+    originals.set(requestId, {
+      job: {
+        id: jobId,
+        requestId,
+        clientId: owner.clientId,
+        state: "succeeded",
+        kind: "command",
+        operationResult,
+        submittedAt: now,
+        startedAt: now,
+        finishedAt: now,
+      },
+      stdout,
+      stderr: "",
+      execution: {
+        state: "succeeded",
+        sdkSettled: true,
+        mayHaveMutated: true,
+        exitCode: 0,
+        publicationOutcome: "published",
+      },
+      pythonChecks: [
+        {
+          status: "passed",
+          diagnostics: [],
+          reasons: [],
+          provenance: {
+            checkerVersion: "1.40.2",
+            definitionsHash:
+              "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          },
+        },
+      ],
+      provenance: {
+        status: "available",
+        inputs: [
+          {
+            kind: "source",
+            originalPath: filename,
+            bytes: Buffer.byteLength(source),
+            sha256: createHash("sha256").update(source).digest("hex"),
+          },
+        ],
+      },
+    });
+    return {
+      requestId,
+      phase,
+      intent: {
+        kind: ordinal === 0 ? "script" : "cad-fenced",
+        ...(ordinal ? { operation: "model.thread" } : {}),
+      },
+      result,
+    };
+  };
+  const rows = [{ ...document, saved: false, modified, fileId: null }];
+  const requests = [
+    request(0, "create", marker(create), "# original owned create\n"),
+    request(
+      1,
+      "cad-native-modeling-13-model.thread",
+      "FMCAD_RESULT " +
+        JSON.stringify({
+          success: true,
+          helperCallsOnly: [],
+          result: {
+            success: true,
+            operation: "model.thread",
+            document: document.name,
+            creationId: document.creationId,
+            admission: {
+              status: "inventory-changed",
+              requestId: owner.clientId + ":1",
+              helperCalls: 0,
+              mutationStarted: false,
+            },
+            inventoryFence: { version: 1, before: rows, after: rows },
+          },
+        }),
+      programs.cadFence(
+        document,
+        "model.thread",
+        {},
+        [],
+        [],
+        [],
+        "root",
+        owner.clientId + ":1",
+      ),
+    ),
+  ];
+  if (pose) {
+    requests.pop();
+    const shape = request(
+      1,
+      "cad-native-pose-methods-2",
+      JSON.stringify({
+        success: true,
+        operation: "shape.box",
+        document: document.name,
+        result: {
+          recipe: "box",
+          feature: { name: "PoseBody" },
+          bodies: [
+            {
+              token: "pose-owned-body",
+              kind: "body",
+              component: { name: "root" },
+            },
+          ],
+        },
+      }),
+      "",
+    );
+    shape.intent = { kind: "cad" };
+    record(fixRaw(shape.requestId)["provenance"])["inputIdentity"] = "d".repeat(
+      64,
+    );
+    requests.push(
+      shape,
+      request(
+        2,
+        "observe-native-pose-methods-guard-3",
+        marker({ creationId: document.creationId, documents: rows }),
+        programs.unsavedState(document),
+      ),
+    );
+  }
+  function fixRaw(id: string) {
+    return record(originals.get(id));
+  }
+  const report = {
+    owner,
+    directory,
+    backendIdentity: "fusion:addin:" + runtime.buildHash,
+    mode: "fusion",
+    qualification: "broker",
+    protocol: "addin",
+    scope: "exclusive-instance",
+    status: "failed",
+    cleanup: "deferred",
+    document,
+    requests,
+    cleanupHold: {
+      requestId: requests[1]!.requestId,
+      reason:
+        "Fenced CAD turn failed; leave the owned document for inspection: Inventory re-admission lacks exact peer lifecycle receipts",
+    },
+  };
+  if (pose)
+    report.cleanupHold = {
+      requestId: requests[2]!.requestId,
+      reason:
+        "Owned unsaved fixture guard failed; inspect original identity before cleanup: A non-fixture document changed during the owned unsaved case",
+    };
+  fs.writeFileSync(path.join(directory, "report.json"), JSON.stringify(report));
+  fs.writeFileSync(
+    path.join(directory, "creation.json"),
+    JSON.stringify(create),
+  );
+  fs.writeFileSync(
+    path.join(directory, "..", "index.json"),
+    JSON.stringify({
+      runId,
+      status: "failed",
+      mode: report.mode,
+      qualification: report.qualification,
+      protocol: report.protocol,
+      backendIdentity: report.backendIdentity,
+      scenarioIds: [scenarioId],
+      processIdentity: {
+        pid: 99999999,
+        birth: childProcessIdentity.processBirth(),
+      },
+      before: { documents: [] },
+    }),
+  );
+  let submissions = 0;
+  const backend: ScenarioBackend = {
+    identity: report.backendIdentity,
+    mode: "fusion",
+    qualification: "broker",
+    protocol: "addin",
+    capabilities: new Set(),
+    fusionPath: (value) => value,
+    lookup: async (_owner, id) => executions.get(id) ?? null,
+    async execute(input) {
+      submissions++;
+      const closing = input.source.includes("doc.close(False)");
+      const stdout = marker(
+        closing
+          ? {
+              creationId: document.creationId,
+              closed: true,
+              inventoryFence: { version: 1, before: rows, after: [] },
+            }
+          : {
+              creationId: document.creationId,
+              saved: false,
+              modified,
+              fileId: null,
+              ...(pose
+                ? { body: { token: "pose-owned-body", count: 1, volume: 1.68 } }
+                : {}),
+              inventoryFence: { version: 1, before: rows, after: rows },
+            },
+      );
+      const entry = request(
+        Number(input.requestId.split(":").at(-1)),
+        "inspection",
+        stdout,
+        input.source,
+      );
+      return entry.result;
+    },
+  };
+  const ports: CleanupHoldPorts = {
+    readRuntimeBinding: async () => runtime,
+    readOriginalResult: async (_owner, id) => originals.get(id),
+  };
+  return {
+    directory,
+    report,
+    backend,
+    ports,
+    runtime,
+    document,
+    originals,
+    executions,
+    request,
+    submissions: () => submissions,
+  };
+}
+
+function withLocalTerminal(
+  t: TestContext,
+  code = "PYTHON_CHECK_REJECTED",
+  outcome = "not_started",
+  scenarioId?: string,
+  modified = true,
+) {
+  const f = fixture(t, false, modified, false, scenarioId);
+  const prior = f.report.requests[1]!;
+  const following = f.request(
+    2,
+    prior.phase,
+    prior.result.stdout.replaceAll(
+      prior.requestId,
+      f.report.owner.clientId + ":2",
+    ),
+    fs
+      .readFileSync(path.join(f.directory, "request-1.py"), "utf8")
+      .replaceAll(prior.requestId, f.report.owner.clientId + ":2"),
+  );
+  const rejected = f.request(1, "cad-local-rejected", "", "");
+  rejected.intent = { kind: "cad" };
+  const raw = record(f.originals.get(rejected.requestId));
+  record(raw["provenance"])["inputIdentity"] = "d".repeat(64);
+  const job = record(raw["job"]);
+  delete job["startedAt"];
+  Object.assign(job, {
+    state: "failed",
+    code,
+    mayHaveMutated: false,
+    ...(outcome === "not_started" ? { executionOutcome: outcome } : {}),
+  });
+  const operation = record(job["operationResult"]);
+  Object.assign(operation, {
+    executionOutcome: outcome,
+    mayHaveMutated: false,
+    code,
+  });
+  Object.assign(record(raw["execution"]), {
+    state: "failed",
+    code,
+    mayHaveMutated: false,
+    exitCode: 1,
+    ...(outcome === "not_started" ? { executionOutcome: outcome } : {}),
+  });
+  rejected.result = {
+    ...rejected.result,
+    state: "failed",
+    mayHaveMutated: false,
+    exitCode: 1,
+    brokerReceipt: { ...rejected.result.brokerReceipt!, state: "failed" },
+  };
+  f.executions.set(rejected.requestId, rejected.result);
+  f.report.requests.splice(1, 1, rejected, following);
+  f.report.cleanupHold.requestId = following.requestId;
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, rejected, raw, job };
+}
+
+for (const [code, outcome] of [
+  ["PYTHON_CHECK_REJECTED", "not_started"],
+  ["LOCAL_PREPARATION_FAILED", "not_started"],
+  ["LOCAL_EXECUTION_FAILED", "failed"],
+]) {
+  test(`authenticated terminal ${code} without SDK startedAt permits the existing guarded cleanup`, async (t) => {
+    const f = withLocalTerminal(t, code, outcome);
+    const result = await resumeCleanup(
+      f.backend,
+      path.join(f.directory, "report.json"),
+      f.ports,
+    );
+    assert.equal(result.cleanup, "complete");
+    assert.equal(f.submissions(), 2);
+  });
+}
+
+for (const bad of [
+  "unknown",
+  "unsettled",
+  "missing-operation",
+  "foreign-operation",
+  "mutated",
+  "submitted-script",
+  "physical-turn",
+  "rpc-turn",
+  "sdk-failure",
+  "missing-submitted",
+  "reversed-times",
+] as const) {
+  test(`missing startedAt cannot release cleanup with ${bad} evidence`, async (t) => {
+    const f = withLocalTerminal(t);
+    const execution = record(f.raw["execution"]);
+    const operation = record(f.job["operationResult"]);
+    if (bad === "unknown") execution["state"] = "unknown";
+    if (bad === "unsettled") execution["sdkSettled"] = false;
+    if (bad === "missing-operation") delete f.job["operationResult"];
+    if (bad === "foreign-operation") operation["jobId"] = randomUUID();
+    if (bad === "mutated") execution["mayHaveMutated"] = true;
+    if (bad === "submitted-script") f.job["userScriptSubmitted"] = true;
+    if (bad === "physical-turn") f.job["physicalTurns"] = 1;
+    if (bad === "rpc-turn") f.job["dispatch"] = { rpcCount: 1 };
+    if (bad === "sdk-failure")
+      for (const row of [f.job, execution, operation])
+        row["code"] = "SDK_EXECUTION_FAILED";
+    if (bad === "missing-submitted") delete f.job["submittedAt"];
+    if (bad === "reversed-times")
+      f.job["finishedAt"] = Number(f.job["submittedAt"]) - 1;
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+}
+
+function definitionReplayFixture(t: TestContext) {
+  const f = withLocalTerminal(
+    t,
+    "LOCAL_EXECUTION_FAILED",
+    "failed",
+    "definition-transaction-unsaved-4",
+  );
+  f.rejected.phase = "cad-replay";
+  const replay = {
+    version: 1,
+    operation: "definition.instantiate",
+    success: true,
+    status: "success",
+    replayed: true,
+    runId: "literal",
+    context: {
+      doc: f.document.name,
+      docId: f.document.creationId,
+      preview: false,
+    },
+    documentIdentity: { fileId: null, ...f.document, assertionsOnly: true },
+  };
+  Object.assign(f.job, { state: "succeeded", code: "EXECUTION_COMPLETE" });
+  Object.assign(record(f.job["operationResult"]), {
+    executionOutcome: "succeeded",
+    code: "EXECUTION_COMPLETE",
+  });
+  Object.assign(record(f.raw["execution"]), {
+    state: "succeeded",
+    code: "EXECUTION_COMPLETE",
+    exitCode: 0,
+  });
+  Object.assign(f.rejected.result, {
+    state: "succeeded",
+    exitCode: 0,
+    stdout: JSON.stringify(replay),
+    brokerReceipt: { ...f.rejected.result.brokerReceipt!, state: "succeeded" },
+  });
+  f.raw["stdout"] = f.rejected.result.stdout;
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, replay };
+}
+
+test("authenticated local definition replay without SDK start permits guarded cleanup", async (t) => {
+  const f = definitionReplayFixture(t);
+  const result = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+});
+for (const bad of [
+  "not-replayed",
+  "foreign-document",
+  "different-operation",
+  "missing-identity",
+  "rpc",
+  "mutated",
+  "wrong-phase",
+] as const)
+  test(`local replay without SDK start rejects ${bad}`, async (t) => {
+    const f = definitionReplayFixture(t);
+    if (bad === "not-replayed") f.replay.replayed = false;
+    if (bad === "foreign-document") f.replay.context.docId = randomUUID();
+    if (bad === "different-operation") f.replay.operation = "shape.box";
+    if (bad === "missing-identity") f.replay.documentIdentity.name = "";
+    if (bad === "rpc") f.job["dispatch"] = { rpcCount: 1 };
+    if (bad === "mutated") f.job["mayHaveMutated"] = true;
+    if (bad === "wrong-phase") f.rejected.phase = "cad-definition";
+    Object.assign(f.rejected.result, { stdout: JSON.stringify(f.replay) });
+    f.raw["stdout"] = f.rejected.result.stdout;
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+
+function observationFixture(t: TestContext, family = "native-extended-0") {
+  const f = fixture(t, false, true, false, family);
+  const modeling = family.startsWith("native-");
+  const source = modeling
+    ? programs.program(`import adsk.core, json, tempfile, os
+app = adsk.core.Application.get()
+owned = [d for d in app.documents if d.creationId == ${JSON.stringify(f.document.creationId)}]
+assert len(owned) == 1, 'Owned fixture is unavailable or ambiguous'
+docs = [dict(name=d.name, creationId=d.creationId, fileId=d.dataFile.id if d.dataFile else None, saved=d.isSaved, modified=d.isModified, active=d == app.activeDocument) for d in app.documents]
+${programs.emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs, tempDir=tempfile.gettempdir(), tempExists=os.path.isdir(tempfile.gettempdir()))")}`)
+    : programs.unsavedState(f.document);
+  const row = f.request(
+    1,
+    modeling ? "observe-native-modeling-state-52" : "observe-definition-7",
+    programs.marker +
+      JSON.stringify({
+        creationId: f.document.creationId,
+        documents: [
+          { ...f.document, saved: false, fileId: null, modified: true },
+        ],
+      }),
+    source,
+  );
+  row.intent = { kind: "script" };
+  f.report.requests.splice(1, 1, row);
+  f.report.cleanupHold = {
+    requestId: row.requestId,
+    reason: modeling
+      ? "Owned native fixture guard failed; leave the document for inspection: AssertionError [ERR_ASSERTION]: An original document changed during feature coverage.\n+ actual - expected"
+      : "Owned unsaved fixture guard failed; inspect original identity before cleanup: A non-fixture document changed during the owned unsaved case\n+ actual - expected",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, row };
+}
+
+for (const family of [
+  "native-extended-0",
+  "native-cad-0",
+  "definition-transaction-unsaved-4",
+]) {
+  test(`exact ${family} readonly observation hold uses existing guarded inspection and close`, async (t) => {
+    const f = observationFixture(t, family);
+    const result = await resumeCleanup(
+      f.backend,
+      path.join(f.directory, "report.json"),
+      f.ports,
+    );
+    assert.equal(result.cleanup, "complete");
+    assert.equal(f.submissions(), 2);
+  });
+}
+
+for (const bad of [
+  "source",
+  "reason",
+  "phase",
+  "foreign-document",
+  "saved",
+  "unknown",
+] as const) {
+  test(`extended observation cleanup rejects ${bad} before inspection`, async (t) => {
+    const f = observationFixture(t);
+    if (bad === "source")
+      fs.appendFileSync(
+        path.join(f.directory, "request-1.py"),
+        "\nprint('unreviewed')\n",
+      );
+    if (bad === "reason")
+      f.report.cleanupHold.reason = f.report.cleanupHold.reason.replace(
+        "feature coverage.",
+        "feature coverage but mutation continued.",
+      );
+    if (bad === "phase") f.row.phase = "cad-mutation";
+    if (bad === "unknown")
+      Object.assign(f.row.result, { state: "unknown", sdkSettled: false });
+    if (bad === "foreign-document" || bad === "saved") {
+      const value = JSON.parse(
+        f.row.result.stdout.slice(programs.marker.length),
+      ) as { documents: Record<string, unknown>[] };
+      Object.assign(
+        value.documents[0]!,
+        bad === "saved" ? { saved: true } : { creationId: randomUUID() },
+      );
+      const stdout = programs.marker + JSON.stringify(value);
+      Object.assign(f.row.result, { stdout });
+      record(f.originals.get(f.row.requestId))["stdout"] = stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+}
+
+function rejectedBatchFixture(t: TestContext) {
+  const f = withLocalTerminal(
+    t,
+    "PYTHON_CHECK_REJECTED",
+    "not_started",
+    "native-batch-reference-0",
+    false,
+  );
+  const unused = f.report.requests.pop()!;
+  f.originals.delete(unused.requestId);
+  f.executions.delete(unused.requestId);
+  fs.unlinkSync(path.join(f.directory, "request-2.py"));
+  const runId = "ref_" + f.report.owner.runId.replaceAll("-", "_") + "_0";
+  const output = {
+    version: 2,
+    operation: "batch.run",
+    success: false,
+    status: "failed",
+    outcome: "rejected",
+    mutated: false,
+    runId,
+    context: { doc: f.document.name, docId: f.document.creationId },
+    documentIdentity: {
+      expected: { fileId: null, ...f.document },
+      resolved: null,
+    },
+    request: {
+      runId,
+      atomic: true,
+      operations: [
+        {
+          id: "seed",
+          operation: "shape.box",
+          data: {
+            name: "OwnedRefBox",
+            width: "2 mm",
+            depth: "3 mm",
+            height: "4 mm",
+          },
+        },
+        {
+          id: "gate",
+          operation: "check",
+          data: {
+            measurement: {
+              operation: "measure.volume",
+              data: { ref: { $ref: "seed.result.bodies.0" }, units: "mm3" },
+            },
+            expected: "24 mm^3",
+            tolerance: "0.001 mm^3",
+          },
+        },
+      ],
+    },
+    steps: [
+      { id: "seed", operation: "shape.box", status: "pending" },
+      { id: "gate", operation: "check", status: "pending" },
+    ],
+  };
+  f.rejected.phase = "cad-batch-reference";
+  Object.assign(f.rejected.result, { stdout: JSON.stringify(output) });
+  f.raw["stdout"] = JSON.stringify(output);
+  f.report.cleanupHold = {
+    requestId: f.rejected.requestId,
+    reason:
+      "Native atomic reference outcome is uncertain; preserve the original fixture and receipts without replay",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, output };
+}
+
+test("exact rejected not-started batch retains its failure and uses existing pristine cleanup", async (t) => {
+  const f = rejectedBatchFixture(t);
+  const result = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+});
+
+for (const bad of [
+  "mutated",
+  "completed-step",
+  "foreign-target",
+  "different-recipe",
+  "unknown-outcome",
+] as const) {
+  test(`rejected batch cleanup refuses ${bad}`, async (t) => {
+    const f = rejectedBatchFixture(t);
+    if (bad === "mutated") f.output.mutated = true;
+    if (bad === "completed-step") f.output.steps[0]!.status = "success";
+    if (bad === "foreign-target") f.output.context.docId = randomUUID();
+    if (bad === "different-recipe")
+      f.output.request.operations[0]!.operation = "model.delete";
+    if (bad === "unknown-outcome") f.output.outcome = "unknown";
+    Object.assign(f.rejected.result, { stdout: JSON.stringify(f.output) });
+    f.raw["stdout"] = JSON.stringify(f.output);
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+}
+
+test("supported held resolution preserves the original failed report and binds a new inspection", async (t) => {
+  const f = fixture(t),
+    filename = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(filename);
+  const decision = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.deepEqual(decision.document, f.document);
+  assert.equal(decision.inspectedModified, true);
+  assert.equal(f.submissions(), 1);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    decision,
+  );
+  assert.deepEqual(
+    await resolveCleanupHold(f.backend, f.directory, f.ports),
+    decision,
+  );
+  assert.equal(
+    f.submissions(),
+    1,
+    "A verified inspection must not be replayed",
+  );
+});
+
+test("exhausted readmission budget preserves the last authenticated no-helper turn", async (t) => {
+  const f = fixture(t);
+  f.report.cleanupHold.reason =
+    "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn";
+  const filename = path.join(f.directory, "report.json");
+  fs.writeFileSync(filename, JSON.stringify(f.report));
+  const before = fs.readFileSync(filename);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, true);
+  assert.equal(f.submissions(), 1);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+});
+
+for (const corruption of [
+  "helper-called",
+  "mutation-started",
+  "request-mismatch",
+]) {
+  test(`exhausted readmission budget rejects ${corruption} before inspection`, async (t) => {
+    const f = fixture(t);
+    f.report.cleanupHold.reason =
+      "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn";
+    const last = f.report.requests.at(-1)!;
+    const output = record(
+      JSON.parse(last.result.stdout.slice("FMCAD_RESULT ".length)),
+    );
+    const admission = record(record(output["result"])["admission"]);
+    if (corruption === "helper-called") admission["helperCalls"] = 1;
+    if (corruption === "mutation-started") admission["mutationStarted"] = true;
+    if (corruption === "request-mismatch")
+      admission["requestId"] = "foreign-request";
+    last.result = {
+      ...last.result,
+      stdout: "FMCAD_RESULT " + JSON.stringify(output),
+    };
+    f.executions.set(last.requestId, last.result);
+    record(f.originals.get(last.requestId))["stdout"] = last.result.stdout;
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+}
+
+test("pristine admission holds bind the authenticated clean state instead of requiring a mutation", async (t) => {
+  const f = fixture(t, false, false);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, false);
+  assert.match(
+    fs.readFileSync(path.join(f.directory, "request-2.py"), "utf8"),
+    /assert doc\.isModified == False/u,
+  );
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+});
+
+for (const modified of [false, true])
+  test(`inspection rejects unexpected modified drift from ${modified} to ${!modified}`, async (t) => {
+    const f = fixture(t, false, modified),
+      execute = f.backend.execute.bind(f.backend);
+    f.backend.execute = async (input) => {
+      const result = await execute(input),
+        raw = record(f.originals.get(input.requestId));
+      const value = record(
+        JSON.parse(result.stdout.slice(programs.marker.length)) as unknown,
+      );
+      value["modified"] = !modified;
+      const fence = record(value["inventoryFence"]);
+      for (const key of ["before", "after"])
+        for (const row of fence[key] as Record<string, unknown>[])
+          if (row["creationId"] === f.document.creationId)
+            row["modified"] = !modified;
+      const changed = {
+        ...result,
+        stdout: programs.marker + JSON.stringify(value),
+      };
+      raw["stdout"] = changed.stdout;
+      f.executions.set(input.requestId, changed);
+      return changed;
+    };
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(
+      fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+      false,
+    );
+  });
+
+test("pose observation holds resolve using the authenticated owned shape and fresh exact-body inspection", async (t) => {
+  const f = fixture(t, true),
+    filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, true);
+  assert.equal(f.submissions(), 1);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+});
+
+test("settled historical failures remain failures and do not require fictional PASS for resolution", async (t) => {
+  const f = fixture(t);
+  const failed = f.request(
+    3,
+    "cad-native-history.check",
+    JSON.stringify({
+      success: false,
+      operation: "history.check",
+      error: "Historical check failed",
+    }),
+    "# historical failed readonly check\n",
+  );
+  const result = {
+    ...failed.result,
+    state: "failed" as const,
+    brokerReceipt: {
+      ...failed.result.brokerReceipt!,
+      state: "failed" as const,
+    },
+  };
+  failed.result = result;
+  f.executions.set(failed.requestId, result);
+  const raw = record(f.originals.get(failed.requestId));
+  record(raw["job"])["state"] = "failed";
+  record(record(raw["job"])["operationResult"])["executionOutcome"] = "failed";
+  record(raw["execution"])["state"] = "failed";
+  f.report.requests.splice(1, 0, failed);
+  const filename = path.join(f.directory, "report.json");
+  fs.writeFileSync(filename, JSON.stringify(f.report));
+  const before = fs.readFileSync(filename);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  const decision = JSON.parse(
+    fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-resolution.json"),
+      "utf8",
+    ),
+  ) as { originals: { job: { state: string } }[] };
+  assert.equal(decision.originals[1]!.job.state, "failed");
+  assert.equal(f.report.status, "failed");
+});
+
+test("existing default cleanup still refuses a case-specific hold without submitting", async (t) => {
+  const f = fixture(t);
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /cleanup hold/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+
+for (const pose of [false, true])
+  test(`resumeCleanup uses supported ${pose ? "pose" : "admission"} resolution and the canonical publisher without rewriting original FAIL or hold`, async (t) => {
+    const f = fixture(t, pose),
+      filename = path.join(f.directory, "report.json"),
+      before = fs.readFileSync(filename);
+    const result = await resumeCleanup(f.backend, filename, f.ports);
+    assert.equal(result.status, "failed");
+    assert.equal(result.cleanup, "complete");
+    assert.equal(f.submissions(), 2);
+    assert.deepEqual(fs.readFileSync(filename), before);
+    assert.ok(
+      fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+    );
+    assert.ok(fs.existsSync(path.join(f.directory, "supplemental-close.json")));
+    const again = await resumeCleanup(f.backend, filename, f.ports);
+    assert.equal(again.cleanup, "complete");
+    assert.equal(
+      f.submissions(),
+      2,
+      "Canonical closure recovery must not submit work",
+    );
+  });
+
+test("resumeCleanup recovers an original settled close publication without submitting it twice", async (t) => {
+  const f = fixture(t),
+    execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    const result = await execute(input);
+    return input.source.includes("doc.close(False)")
+      ? { ...result, state: "unknown", sdkSettled: false }
+      : result;
+  };
+  const filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename);
+  await assert.rejects(
+    resumeCleanup(f.backend, filename, f.ports),
+    /Held cleanup did not succeed/u,
+  );
+  assert.equal(f.submissions(), 2);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    false,
+  );
+  const recovered = await resumeCleanup(f.backend, filename, f.ports);
+  assert.equal(recovered.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(filename), before);
+});
+
+test("resumeCleanup cannot publish an unknown original close or replay the admitted intent", async (t) => {
+  const f = fixture(t),
+    execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    const result = await execute(input);
+    if (!input.source.includes("doc.close(False)")) return result;
+    const raw = record(f.originals.get(input.requestId));
+    record(raw["execution"])["sdkSettled"] = false;
+    const unknown = { ...result, state: "unknown" as const, sdkSettled: false };
+    f.executions.set(input.requestId, unknown);
+    return unknown;
+  };
+  const filename = path.join(f.directory, "report.json");
+  await assert.rejects(resumeCleanup(f.backend, filename, f.ports));
+  await assert.rejects(resumeCleanup(f.backend, filename, f.ports));
+  assert.equal(f.submissions(), 2);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    false,
+  );
+});
+
+test("an existing resolution does not weaken default resume refusal", async (t) => {
+  const f = fixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /cleanup hold/u,
+  );
+  assert.equal(f.submissions(), 1);
+});
+
+test("resume rechecks a live dependent before closing from an existing resolution", async (t) => {
+  const f = fixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const peer = path.join(path.dirname(path.dirname(f.directory)), randomUUID());
+  fs.mkdirSync(peer);
+  fs.writeFileSync(
+    path.join(peer, "index.json"),
+    JSON.stringify({
+      status: "running",
+      processIdentity: {
+        pid: process.pid,
+        birth: childProcessIdentity.processBirth(),
+      },
+      before: { documents: [f.document] },
+    }),
+  );
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    /producer is active/u,
+  );
+  assert.equal(f.submissions(), 1);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
+});
+
+test("unknown original evidence cannot authorize even the inspection", async (t) => {
+  const f = fixture(t),
+    requestId = f.report.requests[1]!.requestId;
+  const original = record(f.originals.get(requestId));
+  record(original["execution"])["sdkSettled"] = false;
+  await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+  assert.equal(f.submissions(), 0);
+});
+
+for (const [name, change] of Object.entries({
+  "foreign job": (raw: Record<string, unknown>) => {
+    record(raw["job"])["id"] = randomUUID();
+  },
+  "foreign owner": (raw: Record<string, unknown>) => {
+    record(raw["job"])["clientId"] = "foreign";
+  },
+  "missing source provenance": (raw: Record<string, unknown>) => {
+    record(raw["provenance"])["inputs"] = [];
+  },
+  "source digest mismatch": (raw: Record<string, unknown>) => {
+    record((record(raw["provenance"])["inputs"] as unknown[])[0])["sha256"] =
+      "b".repeat(64);
+  },
+  "nonterminal job": (raw: Record<string, unknown>) => {
+    record(raw["job"])["state"] = "unknown";
+  },
+}))
+  test(`resolution rejects ${name} before inspection`, async (t) => {
+    const f = fixture(t);
+    change(record(f.originals.get(f.report.requests[1]!.requestId)));
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+      false,
+    );
+  });
+
+test("a forged no-helper marker cannot bless a changed admission source", async (t) => {
+  const f = fixture(t),
+    sourceFile = path.join(f.directory, "request-1.py");
+  const source = fs
+    .readFileSync(sourceFile, "utf8")
+    .replace(
+      "    app = adsk.core.Application.get()",
+      "    app = adsk.core.Application.get()\n    app.activeDocument.close(False)",
+    );
+  fs.writeFileSync(sourceFile, source);
+  const raw = record(f.originals.get(f.report.requests[1]!.requestId));
+  const input = record((record(raw["provenance"])["inputs"] as unknown[])[0]);
+  input["sha256"] = createHash("sha256").update(source).digest("hex");
+  input["bytes"] = Buffer.byteLength(source);
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /supported admission program/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+
+test("an active original producer blocks resolution", async (t) => {
+  const f = fixture(t);
+  fs.writeFileSync(
+    path.join(f.directory, "..", "index.json"),
+    JSON.stringify({
+      runId: f.report.owner.runId,
+      status: "running",
+      processIdentity: {
+        pid: process.pid,
+        birth: childProcessIdentity.processBirth(),
+      },
+    }),
+  );
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /producer is active/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+
+test("a runtime nonce change during evidence recovery blocks inspection", async (t) => {
+  const f = fixture(t);
+  let reads = 0;
+  f.ports.readRuntimeBinding = async () => ({
+    ...f.runtime,
+    instanceId: ++reads === 1 ? f.runtime.instanceId : randomUUID(),
+  });
+  await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+  assert.equal(f.submissions(), 0);
+});
+
+test("canonical validation notices tampered history and rejects foreign runtime bindings", async (t) => {
+  const f = fixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.throws(() =>
+    validateCleanupResolution(f.directory, f.backend, {
+      ...f.runtime,
+      instanceId: randomUUID(),
+    }),
+  );
+  fs.appendFileSync(path.join(f.directory, "report.json"), "\n");
+  assert.throws(() =>
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+  );
+});
+
+test("an inspection failure cannot publish authorization or be replayed", async (t) => {
+  const f = fixture(t),
+    execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    const result = await execute(input);
+    const raw = record(f.originals.get(input.requestId));
+    record(raw["execution"])["sdkSettled"] = false;
+    return result;
+  };
+  await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+  assert.equal(f.submissions(), 1);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+    false,
+  );
+  await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+  assert.equal(f.submissions(), 1);
+});
+
+for (const kind of [
+  "admission",
+  "pose",
+  "accepted-legacy",
+  "extended",
+  "rejected-batch",
+  "expired",
+  "rejected-import",
+  "succeeded-import",
+])
+  test(`the actual ${kind} resolution inspection passes the pinned production checker`, async (t) => {
+    const f =
+      kind === "rejected-import" || kind === "succeeded-import"
+        ? await (async () => {
+            const fixture =
+              kind === "succeeded-import"
+                ? succeededImportFixture(t)
+                : rejectedImportFixture(t);
+            const bind =
+              kind === "succeeded-import"
+                ? recordSucceededImportObservationCleanupResult
+                : recordLegacyReadonlyCleanupResult;
+            await bind(
+              fixture.backend,
+              fixture.directory,
+              fixture.ports,
+              fixture.sources,
+            );
+            return {
+              ...fixture,
+              ...createCleanupRecoveryAdapter(
+                fixture.backend,
+                fixture.directory,
+                fixture.ports,
+              ),
+            };
+          })()
+        : kind === "accepted-legacy"
+          ? await acceptedLegacyFixture(t)
+          : kind === "extended"
+            ? observationFixture(t)
+            : kind === "rejected-batch"
+              ? rejectedBatchFixture(t)
+              : fixture(t, kind === "pose");
+    if (kind === "expired") {
+      const prior = await resolveCleanupHold(f.backend, f.directory, f.ports);
+      t.mock.method(Date, "now", () => prior.expiresAt + 1);
+    }
+    const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+    const source = fs.readFileSync(
+      path.join(
+        f.directory,
+        `request-${proof.inspectionRequestId.split(":").at(-1)}.py`,
+      ),
+      "utf8",
+    );
+    const root = path.resolve(__dirname, "../../.."),
+      load = createRequire(path.join(root, "package.json"));
+    const { createPythonChecker } = load(
+      "./packages/node-adapters/dist/python/checker",
+    ) as typeof import("../../packages/node-adapters/src/python/checker");
+    const { preparePythonArtifact } = load(
+      "./packages/node-adapters/dist/python/artifact",
+    ) as typeof import("../../packages/node-adapters/src/python/artifact");
+    const typingRoot = path.join(root, "dist/runtime/python/typing");
+    const checker = createPythonChecker({
+      typingRoot,
+      definitionsRoot: typingRoot,
+      pythonPlatform: "Windows",
+    });
+    const artifact = preparePythonArtifact([
+      {
+        id: "inspection",
+        filename: "inspection.py",
+        role: "user",
+        source: source + '\nrun("")\n',
+      },
+    ]);
+    const result = await checker.check({ artifact, context: { kind: "run" } });
+    assert.equal(result.status, "passed", JSON.stringify(result));
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.provenance.checkerVersion, "1.40.2");
+    assert.equal(
+      result.provenance.definitionsHash,
+      "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+    );
+  });
+
+test("a pose inspection cannot substitute a foreign body token", async (t) => {
+  const f = fixture(t, true),
+    execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    const result = await execute(input),
+      raw = record(f.originals.get(input.requestId));
+    const stdout = result.stdout!.replace("pose-owned-body", "foreign-body");
+    const changed = { ...result, stdout };
+    raw["stdout"] = stdout;
+    f.executions.set(input.requestId, changed);
+    return changed;
+  };
+  await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+    false,
+  );
+});
+
+for (const failure of [
+  "stale",
+  "saved",
+  "foreign-inventory",
+  "missing-checker",
+] as const)
+  test(`a ${failure} inspection cannot publish cleanup authorization`, async (t) => {
+    const f = fixture(t),
+      execute = f.backend.execute.bind(f.backend);
+    f.backend.execute = async (input) => {
+      const result = await execute(input),
+        raw = record(f.originals.get(input.requestId));
+      if (failure === "missing-checker") {
+        raw["pythonChecks"] = [];
+        return result;
+      }
+      if (failure === "stale") {
+        const job = record(raw["job"]);
+        for (const key of ["submittedAt", "startedAt", "finishedAt"])
+          job[key] = Number(job[key]) - 600_000;
+        return result;
+      }
+      const value = record(
+        JSON.parse(result.stdout!.slice(programs.marker.length)) as unknown,
+      );
+      if (failure === "saved") value["saved"] = true;
+      else record(value["inventoryFence"])["after"] = [];
+      const stdout = programs.marker + JSON.stringify(value),
+        changed = { ...result, stdout };
+      raw["stdout"] = stdout;
+      f.executions.set(input.requestId, changed);
+      return changed;
+    };
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(
+      fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+      false,
+    );
+  });
+
+test("close authorization requires freshness while historical validation remains valid after expiry", async (t) => {
+  const f = fixture(t);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.deepEqual(
+    validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    proof,
+  );
+  t.mock.method(Date, "now", () => proof.expiresAt);
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+  assert.throws(
+    () => validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    /stale/u,
+  );
+});
+
+test("expired successful inspection is freshly reinspected without replacing the original authorization", async (t) => {
+  const f = fixture(t);
+  const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const canonical = path.join(f.directory, "cleanup-hold-resolution.json");
+  const original = fs.readFileSync(canonical);
+  t.mock.method(Date, "now", () => old.expiresAt + 1);
+  const fresh = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(f.submissions(), 2);
+  assert.equal(fresh.inspectionRequestId, f.report.owner.clientId + ":3");
+  assert.notEqual(fresh.inspectionJobId, old.inspectionJobId);
+  assert.equal(fresh.expiresAt, fresh.inspectedAt + 300_000);
+  assert.ok(fresh.inspectedAt >= old.expiresAt);
+  assert.deepEqual(fs.readFileSync(canonical), original);
+  assert.deepEqual(
+    validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    fresh,
+  );
+  const closed = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(closed.cleanup, "complete");
+  assert.equal(f.submissions(), 3);
+  assert.deepEqual(fs.readFileSync(canonical), original);
+});
+
+for (const bad of [
+  "unknown",
+  "pending",
+  "foreign-job",
+  "changed-source",
+  "accepted-close",
+  "reinspection-intent",
+  "accepted-next-request",
+] as const)
+  test(`expired successful inspection refuses ${bad} before a fresh SDK turn`, async (t) => {
+    const f = fixture(t);
+    const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+    t.mock.method(Date, "now", () => old.expiresAt + 1);
+    const raw = record(f.originals.get(old.inspectionRequestId));
+    if (bad === "unknown" || bad === "pending")
+      Object.assign(record(raw["execution"]), {
+        state: bad,
+        sdkSettled: false,
+      });
+    if (bad === "foreign-job") record(raw["job"])["id"] = randomUUID();
+    if (bad === "changed-source")
+      fs.appendFileSync(
+        path.join(f.directory, "request-2.py"),
+        "\nprint('foreign')\n",
+      );
+    if (bad === "accepted-close")
+      fs.writeFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "{}",
+      );
+    if (bad === "reinspection-intent")
+      fs.writeFileSync(
+        path.join(f.directory, "cleanup-hold-reinspection-intent.json"),
+        "{}",
+      );
+    if (bad === "accepted-next-request")
+      f.executions.set(f.report.owner.clientId + ":3", {
+        ...f.executions.get(old.inspectionRequestId)!,
+        requestId: f.report.owner.clientId + ":3",
+        state: "unknown",
+        sdkSettled: false,
+      });
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 1);
+  });
+
+test("a refreshed successful inspection keeps a finite TTL and cannot be reinspected twice", async (t) => {
+  const f = fixture(t);
+  const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  let now = old.expiresAt + 1;
+  t.mock.method(Date, "now", () => now);
+  const fresh = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  now = fresh.expiresAt;
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    fresh,
+  );
+  assert.throws(
+    () => validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    /stale/u,
+  );
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /Never repeat/u,
+  );
+  assert.equal(f.submissions(), 2);
+});
+
+for (const bad of [
+  "prior-hash",
+  "intent-hash",
+  "owner",
+  "sdk-unknown",
+  "foreign-job",
+] as const)
+  test(`refreshed inspection rejects tampered ${bad} evidence`, async (t) => {
+    const f = fixture(t);
+    const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+    t.mock.method(Date, "now", () => old.expiresAt + 1);
+    await resolveCleanupHold(f.backend, f.directory, f.ports);
+    const file = path.join(
+      f.directory,
+      "cleanup-hold-reinspection-resolution.json",
+    );
+    const d = record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+    if (bad === "prior-hash") d["priorResolutionHash"] = "0".repeat(64);
+    if (bad === "owner") record(d["owner"])["clientId"] = "foreign";
+    if (bad === "sdk-unknown")
+      record(record(record(d["inspection"])["raw"])["execution"])[
+        "sdkSettled"
+      ] = false;
+    if (bad === "foreign-job")
+      record(record(record(d["inspection"])["raw"])["job"])["id"] =
+        randomUUID();
+    if (bad === "intent-hash") {
+      const intentFile = path.join(
+        f.directory,
+        "cleanup-hold-reinspection-intent.json",
+      );
+      const intent = record(
+        JSON.parse(fs.readFileSync(intentFile, "utf8")) as unknown,
+      );
+      intent["priorResolutionHash"] = "0".repeat(64);
+      fs.writeFileSync(intentFile, JSON.stringify(intent));
+    } else fs.writeFileSync(file, JSON.stringify(d));
+    assert.throws(() =>
+      validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    );
+    assert.equal(f.submissions(), 2);
+  });
+
+test("historical adapter reads exact original report jobs even when a fresh backend has no lookup ledger", async (t) => {
+  const f = fixture(t);
+  const calls: string[] = [];
+  const adapted = createCleanupRecoveryAdapter(
+    { ...f.backend, lookup: async () => null },
+    f.directory,
+    {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readJobResult: async (owner, requestId, jobId) => {
+        assert.deepEqual(owner, f.report.owner);
+        const raw = record(f.originals.get(requestId));
+        assert.equal(record(raw["job"])["id"], jobId);
+        calls.push(requestId);
+        return raw;
+      },
+    },
+  );
+  const id = f.report.requests[0]!.requestId;
+  const recovered = await adapted.backend.lookup!(f.report.owner, id);
+  assert.equal(
+    recovered?.brokerReceipt?.jobId,
+    f.report.requests[0]!.result.brokerReceipt?.jobId,
+  );
+  assert.deepEqual(calls, [id]);
+  await assert.rejects(
+    adapted.backend.lookup!({ ...f.report.owner, clientId: "foreign" }, id),
+  );
+});
+
+for (const corruption of ["missing", "job", "request", "client"] as const)
+  test(`historical adapter rejects ${corruption} authenticated original evidence without submission`, async (t) => {
+    const f = fixture(t),
+      id = f.report.requests[0]!.requestId;
+    const adapted = createCleanupRecoveryAdapter(
+      { ...f.backend, lookup: async () => null },
+      f.directory,
+      {
+        readRuntimeBinding: f.ports.readRuntimeBinding,
+        readJobResult: async () => {
+          if (corruption === "missing") return null;
+          const raw = structuredClone(record(f.originals.get(id))),
+            job = record(raw["job"]);
+          job[
+            corruption === "job"
+              ? "id"
+              : corruption === "request"
+                ? "requestId"
+                : "clientId"
+          ] = "foreign";
+          return raw;
+        },
+      },
+    );
+    await assert.rejects(adapted.backend.lookup!(f.report.owner, id));
+    assert.equal(f.submissions(), 0);
+  });
+
+test("historical adapter executes the supported full cleanup from authenticated original jobs and never replays originals", async (t) => {
+  const f = fixture(t),
+    originalIds = new Set(f.report.requests.map((row) => row.requestId));
+  for (const row of f.report.requests)
+    row.result = queueExecution(
+      f.originals.get(row.requestId),
+      f.report.owner,
+      row.requestId,
+    );
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const base: ScenarioBackend = {
+    ...f.backend,
+    lookup: async (_owner, id) =>
+      originalIds.has(id) ? null : (f.executions.get(id) ?? null),
+    execute: async (input) => {
+      await f.backend.execute(input);
+      const result = queueExecution(
+        f.originals.get(input.requestId),
+        input.owner,
+        input.requestId,
+      );
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  const adapted = createCleanupRecoveryAdapter(base, f.directory, {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner, id, jobId) => {
+      const raw = record(f.originals.get(id));
+      assert.equal(record(raw["job"])["id"], jobId);
+      return raw;
+    },
+  });
+  const id = f.report.requests[0]!.requestId;
+  await assert.rejects(
+    adapted.backend.execute({
+      owner: f.report.owner,
+      requestId: id,
+      directory: f.directory,
+      target: f.document,
+      source: "forbidden replay",
+    }),
+    /Never replay/u,
+  );
+  const original = fs.readFileSync(path.join(f.directory, "report.json"));
+  const result = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    original,
+  );
+});
+
+test("the source-backed lost peer lifecycle admission reason is supported without changing history", async (t) => {
+  const f = fixture(t);
+  f.report.cleanupHold.reason =
+    "Fenced CAD turn failed; leave the owned document for inspection: A previously admitted peer lost its exact lifecycle proof";
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const before = fs.readFileSync(path.join(f.directory, "report.json"));
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    before,
+  );
+});
+
+function readmittedFixture(t: TestContext, exhaustedPeers = false) {
+  const f = fixture(t),
+    prior = f.report.requests[1]!;
+  const payload = JSON.parse(
+    prior.result.stdout.slice("FMCAD_RESULT ".length),
+  ) as Record<string, unknown>;
+  record(record(payload["result"])["admission"])["requestId"] =
+    f.report.owner.clientId + ":2";
+  const row = f.request(
+    2,
+    prior.phase + "-readmitted",
+    "FMCAD_RESULT " + JSON.stringify(payload),
+    programs.cadFence(
+      f.document,
+      "model.thread",
+      {},
+      [],
+      [],
+      [],
+      "root",
+      f.report.owner.clientId + ":2",
+    ),
+  );
+  f.report.requests.push(row);
+  f.report.cleanupHold = {
+    requestId: row.requestId,
+    reason: exhaustedPeers
+      ? "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed"
+      : "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return f;
+}
+test("readmitted admission-only hold binds both original no-helper turns before guarded cleanup", async (t) => {
+  const f = readmittedFixture(t),
+    filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename);
+  const result = await resumeCleanup(f.backend, filename, f.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(filename), before);
+});
+test("exact exhausted-peer admission hold binds both no-helper receipts without changing the failed report", async (t) => {
+  const f = readmittedFixture(t, true);
+  const file = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(file);
+  const result = await resumeCleanup(f.backend, file, f.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(file), before);
+});
+for (const bad of [
+  "near-reason",
+  "missing-prior",
+  "mutation",
+  "foreign-request",
+  "unknown-prior",
+] as const)
+  test(`exhausted-peer admission cleanup rejects ${bad} before inspection`, async (t) => {
+    const f = readmittedFixture(t, true);
+    const prior = f.report.requests[1]!;
+    if (bad === "near-reason")
+      f.report.cleanupHold.reason += " but another helper executed";
+    if (bad === "missing-prior") f.report.requests.splice(1, 1);
+    if (bad === "unknown-prior") {
+      Object.assign(prior.result, { state: "unknown", sdkSettled: false });
+      record(f.originals.get(prior.requestId))["execution"] = {
+        state: "unknown",
+        sdkSettled: false,
+      };
+    }
+    if (bad === "mutation" || bad === "foreign-request") {
+      const value = record(
+        JSON.parse(
+          prior.result.stdout.slice("FMCAD_RESULT ".length),
+        ) as unknown,
+      );
+      const admission = record(record(value["result"])["admission"]);
+      if (bad === "mutation") admission["mutationStarted"] = true;
+      else admission["requestId"] = "foreign";
+      const stdout = "FMCAD_RESULT " + JSON.stringify(value);
+      Object.assign(prior.result, { stdout });
+      record(f.originals.get(prior.requestId))["stdout"] = stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+for (const kind of [
+  "prior-mutation",
+  "prior-helper",
+  "prior-operation",
+  "not-readmitted",
+  "prior-source",
+] as const)
+  test(`readmitted admission hold refuses ${kind} before inspection`, async (t) => {
+    const f = readmittedFixture(t),
+      prior = f.report.requests[1]!,
+      row = f.report.requests[2]!;
+    if (kind === "not-readmitted") row.phase = "cad-unbound";
+    if (kind === "prior-source")
+      fs.appendFileSync(path.join(f.directory, "request-1.py"), "# changed\n");
+    if (kind.startsWith("prior-") && kind !== "prior-source") {
+      const payload = JSON.parse(
+          prior.result.stdout.slice("FMCAD_RESULT ".length),
+        ) as Record<string, unknown>,
+        result = record(payload["result"]),
+        admission = record(result["admission"]);
+      if (kind === "prior-mutation") admission["mutationStarted"] = true;
+      if (kind === "prior-helper") admission["helperCalls"] = 1;
+      if (kind === "prior-operation") result["operation"] = "shape.box";
+      const changed = {
+        ...prior.result,
+        stdout: "FMCAD_RESULT " + JSON.stringify(payload),
+      };
+      prior.result = changed;
+      f.executions.set(prior.requestId, changed);
+      record(f.originals.get(prior.requestId))["stdout"] = changed.stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+
+for (const kind of ["unsupported-reason", "helper-mutation"] as const)
+  test(`admission resolution rejects ${kind} without inspection`, async (t) => {
+    const f = fixture(t);
+    if (kind === "unsupported-reason")
+      f.report.cleanupHold.reason =
+        "Fenced CAD turn failed; leave the owned document for inspection: A previously admitted peer lost its exact lifecycle proof but mutation continued";
+    else {
+      const row = f.report.requests.at(-1)!,
+        payload = record(
+          JSON.parse(
+            row.result.stdout.slice("FMCAD_RESULT ".length),
+          ) as unknown,
+        );
+      record(record(payload["result"])["admission"])["mutationStarted"] = true;
+      const result = {
+        ...row.result,
+        stdout: "FMCAD_RESULT " + JSON.stringify(payload),
+      };
+      row.result = result;
+      f.executions.set(row.requestId, result);
+      record(f.originals.get(row.requestId))["stdout"] = result.stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+
+test("the adapter cannot turn an unbound attempted request into null lookup or a replay", async (t) => {
+  const f = fixture(t);
+  let dispatched = 0;
+  const adapted = createCleanupRecoveryAdapter(
+    {
+      ...f.backend,
+      lookup: async () => null,
+      execute: async (input) => {
+        dispatched++;
+        return {
+          requestId: input.requestId,
+          state: "unknown",
+          sdkSettled: false,
+          mayHaveMutated: true,
+          stdout: "",
+        };
+      },
+    },
+    f.directory,
+    {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readJobResult: async () => null,
+    },
+  );
+  const input = {
+    owner: f.report.owner,
+    requestId: f.report.owner.clientId + ":2",
+    directory: f.directory,
+    target: f.document,
+    source: "readonly inspection",
+  };
+  assert.equal((await adapted.backend.execute(input)).state, "unknown");
+  await assert.rejects(
+    adapted.backend.lookup!(input.owner, input.requestId),
+    /never replay/u,
+  );
+  await assert.rejects(adapted.backend.execute(input), /Never replay/u);
+  assert.equal(dispatched, 1);
+});
+
+// Retained v1 readonly wire program from 66fb, independent of the current generator.
+function legacyInspectionSource(document: {
+  creationId: string;
+  name: string;
+}) {
+  return programs.program(`import adsk.core, adsk.fusion, json
+app = adsk.core.Application.get()
+def inventory() -> list[dict[str, str | bool | None]]:
+    return [dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None,active=d == app.activeDocument) for d in app.documents]
+before = inventory()
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(document.creationId)}]
+assert len(matches) == 1, 'Owned creationId is unavailable'
+doc = matches[0]
+assert doc.name == ${JSON.stringify(document.name)}, 'Owned identity changed'
+assert sum(d.name == doc.name for d in app.documents) == 1, 'Ambiguous owned name'
+assert not doc.isSaved and doc.dataFile is None, 'Owned fixture became saved'
+assert doc.isModified, 'Held modified fixture unexpectedly became clean'
+
+after = inventory()
+assert before == after, 'Inventory changed during inspection'
+${programs.emit("dict(creationId=doc.creationId,saved=doc.isSaved,modified=doc.isModified,fileId=None,inventoryFence=dict(version=1,before=before,after=after))")}`);
+}
+function failedInspectionFixture(t: TestContext, modified = false) {
+  const f = fixture(t, false, modified),
+    sha = (value: string | Buffer) =>
+      createHash("sha256").update(value).digest("hex");
+  for (const row of f.report.requests)
+    row.result = queueExecution(
+      f.originals.get(row.requestId),
+      f.report.owner,
+      row.requestId,
+    );
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const source = legacyInspectionSource(f.document),
+    requestId = f.report.owner.clientId + ":2";
+  f.request(
+    2,
+    "inspection",
+    "Held modified fixture unexpectedly became clean\nAssertionError: Held modified fixture unexpectedly became clean\n",
+    source,
+  );
+  const raw = record(f.originals.get(requestId));
+  record(raw["job"])["state"] = "failed";
+  record(record(raw["job"])["operationResult"])["executionOutcome"] = "failed";
+  record(raw["execution"])["state"] = "failed";
+  record(raw["execution"])["code"] = "SDK_EXECUTION_FAILED";
+  record(raw["execution"])["exitCode"] = 1;
+  record(raw["execution"])["publicationOutcome"] = "failed";
+  const jobId = String(record(raw["job"])["id"]);
+  const intent = {
+    version: 1,
+    nonce: randomUUID(),
+    owner: f.report.owner,
+    requestId,
+    runtime: f.runtime,
+    reportHash: sha(fs.readFileSync(path.join(f.directory, "report.json"))),
+    sourceHash: sha(source),
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    JSON.stringify(intent) + "\n",
+  );
+  const recoveryPorts = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (
+      _owner: typeof f.report.owner,
+      id: string,
+      job: string,
+    ) => {
+      const result = record(f.originals.get(id));
+      assert.equal(record(result["job"])["id"], job);
+      return result;
+    },
+  };
+  const base: ScenarioBackend = {
+    ...f.backend,
+    execute: async (input) => {
+      await f.backend.execute(input);
+      const result = queueExecution(
+        f.originals.get(input.requestId),
+        input.owner,
+        input.requestId,
+      );
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  return {
+    ...f,
+    base,
+    recoveryPorts,
+    failedRaw: raw,
+    failedRequestId: requestId,
+    failedJobId: jobId,
+  };
+}
+
+for (const corruption of [
+  "none",
+  "mutated",
+  "unsettled",
+  "wrong-code",
+  "source",
+]) {
+  test(`nonmutating INSTANCE_CHANGED inspection recovery: ${corruption}`, async (t) => {
+    const f = fixture(t);
+    for (const row of f.report.requests) {
+      row.result = queueExecution(
+        f.originals.get(row.requestId),
+        f.report.owner,
+        row.requestId,
+      );
+      f.executions.set(row.requestId, row.result);
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    let fail = true;
+    let failedJobId = "";
+    const base: ScenarioBackend = {
+      ...f.backend,
+      execute: async (input) => {
+        await f.backend.execute(input);
+        const raw = record(f.originals.get(input.requestId));
+        if (fail) {
+          const job = record(raw["job"]);
+          job["state"] = "failed";
+          job["code"] = "INSTANCE_CHANGED";
+          job["mayHaveMutated"] = false;
+          const operation = record(job["operationResult"]);
+          operation["executionOutcome"] = "failed";
+          operation["code"] = "INSTANCE_CHANGED";
+          operation["mayHaveMutated"] = false;
+          const execution = record(raw["execution"]);
+          Object.assign(execution, {
+            state: "failed",
+            code: "INSTANCE_CHANGED",
+            mayHaveMutated: false,
+            sdkSettled: true,
+            exitCode: 1,
+          });
+        raw["stdout"] = "";
+        raw["pythonChecks"] = [];
+          raw["stderr"] =
+            "ERROR Qualified scratch process is no longer the same live instance\n";
+          failedJobId = String(job["id"]);
+        }
+        const result = queueExecution(raw, input.owner, input.requestId);
+        f.executions.set(input.requestId, result);
+        return result;
+      },
+    };
+    const ports = {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readJobResult: async (
+        _owner: typeof f.report.owner,
+        requestId: string,
+        jobId: string,
+      ) => {
+        const raw = record(f.originals.get(requestId));
+        assert.equal(record(raw["job"])["id"], jobId);
+        return raw;
+      },
+    };
+    await assert.rejects(resolveCleanupHold(base, f.directory, f.ports));
+    assert.equal(f.submissions(), 1);
+    if (corruption !== "none") {
+      const raw = record(f.originals.get(f.report.owner.clientId + ":2"));
+      const execution = record(raw["execution"]);
+      if (corruption === "mutated") execution["mayHaveMutated"] = true;
+      if (corruption === "unsettled") execution["sdkSettled"] = false;
+      if (corruption === "wrong-code")
+        execution["code"] = "SDK_EXECUTION_FAILED";
+      if (corruption === "source")
+        fs.appendFileSync(
+          path.join(f.directory, "request-2.py"),
+          "\n# changed\n",
+        );
+      await assert.rejects(
+        recordFailedCleanupInspection(base, f.directory, ports, failedJobId),
+      );
+      assert.equal(f.submissions(), 1);
+      return;
+    }
+    await recordFailedCleanupInspection(base, f.directory, ports, failedJobId);
+    fail = false;
+    const adapted = createCleanupRecoveryAdapter(base, f.directory, ports);
+    const result = await resolveCleanupHold(
+      adapted.backend,
+      f.directory,
+      adapted.ports,
+    );
+    assert.equal(result.inspectionRequestId, f.report.owner.clientId + ":3");
+    assert.equal(f.submissions(), 2);
+    assert.equal(
+      record(record(f.originals.get(f.report.owner.clientId + ":2"))["job"])[
+        "state"
+      ],
+      "failed",
+    );
+  });
+}
+
+test("a settled failed readonly v1 inspection gets immutable disposition and a new inspection ID without replay", async (t) => {
+  const f = failedInspectionFixture(t),
+    intentFile = path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    before = fs.readFileSync(intentFile);
+  await recordFailedCleanupInspection(
+    f.base,
+    f.directory,
+    f.recoveryPorts,
+    f.failedJobId,
+  );
+  const adapted = createCleanupRecoveryAdapter(
+    f.base,
+    f.directory,
+    f.recoveryPorts,
+  );
+  const proof = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(proof.inspectionRequestId, f.report.owner.clientId + ":3");
+  assert.equal(proof.inspectedModified, false);
+  assert.deepEqual(fs.readFileSync(intentFile), before);
+  assert.ok(
+    fs.existsSync(
+      path.join(f.directory, "cleanup-hold-inspection-failure.json"),
+    ),
+  );
+  assert.ok(
+    fs.existsSync(
+      path.join(f.directory, "cleanup-hold-reinspection-intent.json"),
+    ),
+  );
+  assert.equal(f.submissions(), 1);
+  assert.equal(record(f.failedRaw["job"])["state"], "failed");
+  const result = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(intentFile), before);
+});
+
+for (const corruption of [
+  "unsettled",
+  "unknown",
+  "foreign-client",
+  "checker",
+  "source",
+  "other-failure",
+  "modified-drift",
+] as const)
+  test(`failed readonly disposition rejects ${corruption} without another inspection`, async (t) => {
+    const f = failedInspectionFixture(t, corruption === "modified-drift");
+    if (corruption === "unsettled")
+      record(f.failedRaw["execution"])["sdkSettled"] = false;
+    if (corruption === "unknown")
+      record(f.failedRaw["job"])["state"] = "unknown";
+    if (corruption === "foreign-client")
+      record(f.failedRaw["job"])["clientId"] = "foreign";
+    if (corruption === "checker") f.failedRaw["pythonChecks"] = [];
+    if (corruption === "other-failure")
+      f.failedRaw["stdout"] = "Owned identity changed\n";
+    if (corruption === "source") {
+      const file = path.join(f.directory, "request-2.py"),
+        source = fs.readFileSync(file, "utf8") + "# different source\n";
+      fs.writeFileSync(file, source);
+      const input = record(
+        (record(f.failedRaw["provenance"])["inputs"] as unknown[])[0],
+      );
+      input["sha256"] = createHash("sha256").update(source).digest("hex");
+      input["bytes"] = Buffer.byteLength(source);
+    }
+    const intent = fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    );
+    await assert.rejects(
+      recordFailedCleanupInspection(
+        f.base,
+        f.directory,
+        f.recoveryPorts,
+        f.failedJobId,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-hold-inspection-failure.json"),
+      ),
+      false,
+    );
+    assert.deepEqual(
+      fs.readFileSync(
+        path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+      ),
+      intent,
+    );
+  });
+
+test("a prior inspection intent without authenticated settled disposition cannot be reset", async (t) => {
+  const f = failedInspectionFixture(t),
+    before = fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    );
+  const adapted = createCleanupRecoveryAdapter(
+    f.base,
+    f.directory,
+    f.recoveryPorts,
+  );
+  await assert.rejects(
+    resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+  );
+  assert.equal(f.submissions(), 0);
+  assert.deepEqual(
+    fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    ),
+    before,
+  );
+});
+
+test("retained v1 modified-only decisions stay valid without rewriting their history", (t) => {
+  const f = fixture(t),
+    requestId = f.report.owner.clientId + ":2",
+    source = legacyInspectionSource(f.document);
+  const rows = [{ ...f.document, saved: false, modified: true, fileId: null }];
+  const row = f.request(
+    2,
+    "inspection",
+    programs.marker +
+      JSON.stringify({
+        creationId: f.document.creationId,
+        saved: false,
+        modified: true,
+        fileId: null,
+        inventoryFence: { version: 1, before: rows, after: rows },
+      }),
+    source,
+  );
+  row.intent = { kind: "script" };
+  const sha = (value: string | Buffer) =>
+    createHash("sha256").update(value).digest("hex");
+  const reportHash = sha(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+  );
+  fs.writeFileSync(
+    path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    JSON.stringify({
+      version: 1,
+      owner: f.report.owner,
+      runtime: f.runtime,
+      requestId,
+      reportHash,
+      sourceHash: sha(source),
+    }),
+  );
+  const raw = record(f.originals.get(requestId));
+  const decision = {
+    version: 1,
+    owner: f.report.owner,
+    document: f.document,
+    runtime: f.runtime,
+    reportHash,
+    creationHash: sha(fs.readFileSync(path.join(f.directory, "creation.json"))),
+    indexHash: sha(fs.readFileSync(path.join(f.directory, "..", "index.json"))),
+    originals: f.report.requests.map((original) =>
+      f.originals.get(original.requestId),
+    ),
+    holdProof: { kind: "admission-only" },
+    inspection: { row, raw },
+    expiresAt: Number(record(raw["job"])["finishedAt"]) + 300_000,
+  };
+  const file = path.join(f.directory, "cleanup-hold-resolution.json");
+  fs.writeFileSync(file, JSON.stringify(decision));
+  const before = fs.readFileSync(file);
+  t.mock.method(Date, "now", () => decision.expiresAt + 1);
+  assert.equal(
+    validateCleanupResolution(f.directory, f.backend, f.runtime)
+      .inspectedModified,
+    true,
+  );
+  assert.deepEqual(fs.readFileSync(file), before);
+});
+
+function terminalLegacyFixture(t: TestContext) {
+  const f = fixture(t, false, false, true),
+    sha = (v: string) => createHash("sha256").update(v).digest("hex");
+  const legacy = path.join(f.directory, "legacy");
+  fs.mkdirSync(path.join(legacy, "intents"), { recursive: true });
+  const lease = {
+    version: 1,
+    owner: f.report.owner,
+    document: f.document,
+    directory: f.directory,
+    source: "tests/scenarios/legacy-owned-driver.ts",
+    testCase: "native-legacy-cli",
+    protocol: "addin",
+    mode: "owned-unsaved-script",
+  };
+  const launch = {
+    state: "completed",
+    pid: 2_000_000_000,
+    birth: "known-dead-child:1",
+    code: 1,
+  };
+  const stderr =
+    "AssertionError [ERR_ASSERTION]: Original legacy snapshot is not explained by its protected baseline and exact peer receipts\n    at Object.<anonymous> (/original/dist/tests/scenarios/legacy-owned-driver.js:112:62)\n";
+  fs.writeFileSync(path.join(legacy, "lease.json"), JSON.stringify(lease));
+  fs.writeFileSync(path.join(legacy, "launch.json"), JSON.stringify(launch));
+  fs.writeFileSync(path.join(legacy, "stderr.log"), stderr);
+  fs.writeFileSync(path.join(legacy, "stdout.log"), "");
+  const exported = f.request(
+    1,
+    "export",
+    programs.marker +
+      JSON.stringify({ creationId: f.document.creationId, exported: true }),
+    programs.exportFile(f.document, path.join(f.directory, "fixture.f3d")),
+  );
+  exported.intent = { kind: "script" };
+  f.report.requests[1] = exported;
+  f.report.cleanupHold.reason =
+    "Native import child lacks its durable completion disposition; inspect original requests";
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const sourcePins = {
+    "tests/scenarios/runner.ts":
+      "6b061c40f87bd073d676947a222d50b802ef14b954eeac3fdf3379a4be3e7393",
+    "tests/scenarios/legacy-owned-driver.ts":
+      "b8c9891cef4943a4a5d53379cd6c5d7f45cedacf6600cad0e21087a24c6c8e56",
+    "tests/helpers/live-broker.js":
+      "6c3b4c52084c981059201ce3e3792bddba835549dde472515f804e53670622ae",
+    "tests/scenarios/legacy-handoff.ts":
+      "24b074d85b3ff1dd2337bd7078f04ad56fa26a82eb9abf0bb9e148f5f2af71eb",
+  };
+  const evidence = {
+    driverSource: "aa942f37710e872ef3f1997c9110d4fc2631328f",
+    owner: f.report.owner,
+    document: f.document,
+    reportHold: f.report.cleanupHold,
+    launch,
+    intents: [],
+    completionFileExists: false,
+    artifactEvidence: Object.fromEntries(
+      [
+        "report.json",
+        "creation.json",
+        "legacy/lease.json",
+        "legacy/launch.json",
+        "legacy/stderr.log",
+        "legacy/stdout.log",
+      ].map((file) => [
+        file,
+        {
+          path: path.join(f.directory, file),
+          sha256: sha(fs.readFileSync(path.join(f.directory, file), "utf8")),
+        },
+      ]),
+    ),
+  };
+  const value = {
+    version: 1,
+    evidence,
+    sourcePins,
+    continuity: {
+      driverSource: evidence.driverSource,
+      sourceBefore:
+        "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
+      sourceAfter:
+        "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
+      preflightHash: "a".repeat(64),
+      terminalHash: "b".repeat(64),
+      buildHash: "c".repeat(64),
+    },
+  };
+  const file = path.join(f.directory, "cleanup-legacy-child-terminal.json");
+  fs.writeFileSync(file, JSON.stringify(value));
+  return { ...f, legacy, value, file };
+}
+function rejectedImportFixture(t: TestContext) {
+  const f = fixture(t, false, false, false, "native-import-0");
+  const legacy = path.join(f.directory, "legacy");
+  fs.mkdirSync(path.join(legacy, "intents"), { recursive: true });
+  fs.mkdirSync(path.join(legacy, "queue-receipts"));
+  const artifacts = path.join(legacy, "artifacts", "live-data-import-original");
+  fs.mkdirSync(artifacts, { recursive: true });
+  const exported = f.request(
+    1,
+    "export",
+    "",
+    programs.exportFile(f.document, path.join(f.directory, "fixture.f3d")),
+  );
+  f.report.requests.splice(1, 1, exported);
+  const sourceFile = path.join(
+    artifacts,
+    "observation-" + randomUUID() + ".py",
+  );
+  const source = `DOC_NAME = None
+import adsk.core, json
+def run(_context: str) -> None:
+    app = adsk.core.Application.get()
+    documents = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,
+                      fileId=d.dataFile.id if d.isSaved and d.dataFile else None)
+                 for d in app.documents]
+    print(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),
+                          activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))
+`;
+  fs.writeFileSync(sourceFile, source);
+  const entry = f.request(2, "legacy-cli", "", "");
+  const oldId = entry.requestId;
+  const raw = record(f.originals.get(oldId));
+  const job = record(raw["job"]);
+  const operation = record(job["operationResult"]);
+  const execution = record(raw["execution"]);
+  const id = randomUUID(),
+    requestId = f.report.owner.clientId + ":legacy:" + id;
+  f.originals.delete(oldId);
+  f.executions.delete(oldId);
+  fs.unlinkSync(path.join(f.directory, "request-2.py"));
+  delete job["startedAt"];
+  Object.assign(job, {
+    requestId,
+    state: "failed",
+    code: "PYTHON_CHECK_REJECTED",
+    executionOutcome: "not_started",
+    userScriptSubmitted: false,
+    mayHaveMutated: false,
+  });
+  Object.assign(operation, {
+    requestId,
+    executionOutcome: "not_started",
+    code: "PYTHON_CHECK_REJECTED",
+    mayHaveMutated: false,
+    validation: {
+      status: "not_checked",
+      source: null,
+      artifactId: null,
+      measurements: {},
+    },
+  });
+  Object.assign(execution, {
+    state: "failed",
+    code: "PYTHON_CHECK_REJECTED",
+    executionOutcome: "not_started",
+    userScriptSubmitted: false,
+    mayHaveMutated: false,
+    exitCode: 1,
+  });
+  raw["provenance"] = {
+    status: "available",
+    inputIdentity: "d".repeat(64),
+    inputs: [
+      {
+        kind: "source",
+        originalPath: sourceFile,
+        sha256: createHash("sha256").update(source).digest("hex"),
+        bytes: Buffer.byteLength(source),
+      },
+    ],
+  };
+  raw["pythonChecks"] = [
+    {
+      status: "failed",
+      diagnostics: [{ severity: "error", rule: "reportArgumentType" }],
+    },
+  ];
+  entry.requestId = requestId;
+  entry.result = queueExecution(raw, f.report.owner, requestId);
+  f.originals.set(requestId, raw);
+  f.executions.set(requestId, entry.result);
+  f.report.requests.push(entry);
+  f.report.cleanupHold = {
+    requestId,
+    reason:
+      "Native import child retained an uncertain outcome; inspect original requests",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const write = (name: string, value: unknown) =>
+    fs.writeFileSync(path.join(legacy, name), JSON.stringify(value));
+  write("lease.json", {
+    version: 1,
+    owner: f.report.owner,
+    document: f.document,
+    directory: f.directory,
+    source: "tests/live-data-import.ts",
+    testCase: "native-data-import",
+    protocol: "addin",
+    mode: "owned-unsaved-script",
+  });
+  write("launch.json", {
+    state: "completed",
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    code: 1,
+  });
+  const args = [
+    "run",
+    sourceFile,
+    "--doc",
+    f.document.name,
+    "--doc-id",
+    f.document.creationId,
+    "--timeout",
+    "60000",
+  ];
+  write("intents/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    admissionRequested: true,
+    completed: true,
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    exitCode: 1,
+    argvHash: createHash("sha256")
+      .update(JSON.stringify([...args, "--request-id", requestId]))
+      .digest("hex"),
+    settlement: {
+      requestId,
+      clientId: f.report.owner.clientId,
+      jobId: job["id"],
+      state: "failed",
+      sdkSettled: true,
+    },
+  });
+  write("queue-receipts/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    jobId: job["id"],
+  });
+  const childReport = path.join(artifacts, "report.json");
+  const runtimeRoot = path.join(f.directory, "runtime");
+  fs.mkdirSync(path.join(runtimeRoot, "dist"), { recursive: true });
+  fs.writeFileSync(
+    path.join(runtimeRoot, "dist/runtime-build.json"),
+    JSON.stringify({ fingerprint: f.runtime.buildHash }),
+  );
+  fs.writeFileSync(
+    childReport,
+    JSON.stringify({
+      suite: "data-import",
+      status: "failed",
+      owner: f.report.owner.clientId,
+      name: f.document.name,
+      artifactRoot: artifacts,
+      runtimeRoot,
+      runtimeBuildHash: f.runtime.buildHash,
+      tests: [],
+      calls: [
+        {
+          label: "owned observation",
+          args,
+          exitCode: 1,
+          signal: null,
+          stdout: "",
+          stderr: "",
+          receiptStatus: "execution-outcome-not-settled",
+        },
+      ],
+    }),
+  );
+  write("completion.json", {
+    owner: f.report.owner,
+    document: f.document,
+    status: "failed",
+    safeForCleanup: false,
+    reportPath: childReport,
+  });
+  fs.writeFileSync(path.join(legacy, "stdout.log"), "");
+  fs.writeFileSync(
+    path.join(legacy, "stderr.log"),
+    "owned observation did not produce a known terminal execution outcome",
+  );
+  for (const prior of f.report.requests.slice(0, -1)) {
+    prior.result = queueExecution(
+      f.originals.get(prior.requestId),
+      f.report.owner,
+      prior.requestId,
+    );
+    f.executions.set(prior.requestId, prior.result);
+  }
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const backend = {
+    ...f.backend,
+    async execute(input: Parameters<ScenarioBackend["execute"]>[0]) {
+      await f.backend.execute(input);
+      const result = queueExecution(
+        f.originals.get(input.requestId),
+        input.owner,
+        input.requestId,
+      );
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  const ports = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner: unknown, key: string) => f.originals.get(key),
+  };
+  return {
+    ...f,
+    backend,
+    legacy,
+    sourceFile,
+    childReport,
+    raw,
+    requestId,
+    ports,
+    sources: { cwd: path.resolve(__dirname, "../../.."), runtimeRoot },
+  };
+}
+
+function succeededImportFixture(t: TestContext) {
+  const f = rejectedImportFixture(t);
+  const readJson = (file: string) =>
+    record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+  const source = fs
+    .readFileSync(f.sourceFile, "utf8")
+    .replace("lambda d: d['creationId']", "lambda d: str(d['creationId'])");
+  fs.writeFileSync(f.sourceFile, source);
+  const job = record(f.raw["job"]),
+    operation = record(job["operationResult"]),
+    execution = record(f.raw["execution"]);
+  for (const value of [job, execution]) {
+    Object.assign(value, {
+      state: "succeeded",
+      code: "EXECUTION_COMPLETE",
+      mayHaveMutated: true,
+    });
+    delete value["executionOutcome"];
+    delete value["userScriptSubmitted"];
+  }
+  Object.assign(job, {
+    startedAt: job["submittedAt"],
+    physicalTurns: 1,
+    dispatch: { rpcCount: 1, completedCount: 1 },
+  });
+  Object.assign(operation, {
+    executionOutcome: "succeeded",
+    code: "EXECUTION_COMPLETE",
+    mayHaveMutated: true,
+  });
+  execution["exitCode"] = 0;
+  const stdout =
+    JSON.stringify({
+      documents: [
+        { ...f.document, saved: false, modified: false, fileId: null },
+      ],
+      activeCreationId: f.document.creationId,
+    }) + "\n";
+  f.raw["stdout"] = stdout;
+  f.raw["pythonChecks"] = [{ status: "passed", diagnostics: [], reasons: [] }];
+  const provenance = record(f.raw["provenance"]);
+  provenance["inputs"] = [
+    {
+      kind: "source",
+      originalPath: f.sourceFile,
+      sha256: createHash("sha256").update(source).digest("hex"),
+      bytes: Buffer.byteLength(source),
+    },
+  ];
+  const intentFile = path.join(
+    f.legacy,
+    "intents",
+    f.requestId.split(":").at(-1)! + ".json",
+  );
+  const intent = readJson(intentFile);
+  intent["exitCode"] = 0;
+  record(intent["settlement"])["state"] = "succeeded";
+  fs.writeFileSync(intentFile, JSON.stringify(intent));
+  const child = readJson(f.childReport);
+  child["error"] =
+    "Error: owned observation did not produce a known terminal execution outcome.";
+  const call = record((child["calls"] as unknown[])[0]);
+  call["exitCode"] = 0;
+  call["stdout"] = stdout;
+  call["stderr"] =
+    "FMCAD_QUEUE_JOB " +
+    JSON.stringify({ jobId: job["id"], requestId: f.requestId }) +
+    "\nFMCAD_QUEUE_RESULT " +
+    JSON.stringify(job) +
+    "\n";
+  fs.writeFileSync(f.childReport, JSON.stringify(child));
+  const result = queueExecution(f.raw, f.report.owner, f.requestId);
+  f.report.requests.at(-1)!.result = result;
+  f.executions.set(f.requestId, result);
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return f;
+}
+
+test("authoritative succeeded first import observation uses a separate pristine cleanup proof", async (t) => {
+  const f = succeededImportFixture(t);
+  const report = fs.readFileSync(path.join(f.directory, "report.json"));
+  const completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  // The old rejected-only contract must still refuse this executed observation.
+  await assert.rejects(
+    recordLegacyReadonlyCleanupResult(
+      f.backend,
+      f.directory,
+      f.ports,
+      f.sources,
+    ),
+  );
+  assert.equal(f.submissions(), 0);
+  assert.equal(
+    fs.existsSync(
+      path.join(f.directory, "cleanup-legacy-readonly-binding.json"),
+    ),
+    false,
+  );
+  await recordSucceededImportObservationCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const resolution = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(resolution.holdKind, "succeeded-import-observation");
+  assert.equal(resolution.inspectedModified, false);
+  assert.equal(f.submissions(), 1);
+  const closed = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(closed.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    report,
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+});
+
+for (const bad of [
+  "unknown",
+  "pending",
+  "foreign-owner",
+  "foreign-job",
+  "unsettled",
+  "extra-turn",
+  "extra-rpc",
+  "missing-check",
+  "extra-intent",
+  "later-child-call",
+  "wrong-lease",
+  "changed-source",
+  "wrong-argv",
+  "accepted-close",
+  "live-producer",
+  "wrong-output",
+  "wrong-terminal-marker",
+] as const)
+  test(`succeeded import cleanup refuses ${bad} before inspection`, async (t) => {
+    const f = succeededImportFixture(t);
+    const job = record(f.raw["job"]),
+      execution = record(f.raw["execution"]);
+    if (bad === "unknown") execution["state"] = "unknown";
+    if (bad === "pending") job["state"] = "preparing";
+    if (bad === "foreign-owner") job["clientId"] = "foreign";
+    if (bad === "foreign-job") job["id"] = randomUUID();
+    if (bad === "unsettled") execution["sdkSettled"] = false;
+    if (bad === "extra-turn") job["physicalTurns"] = 2;
+    if (bad === "extra-rpc") record(job["dispatch"])["rpcCount"] = 2;
+    if (bad === "missing-check") f.raw["pythonChecks"] = [];
+    if (bad === "extra-intent")
+      fs.writeFileSync(
+        path.join(f.legacy, "intents", randomUUID() + ".json"),
+        "{}",
+      );
+    if (
+      bad === "later-child-call" ||
+      bad === "wrong-output" ||
+      bad === "wrong-terminal-marker"
+    ) {
+      const child = record(
+        JSON.parse(fs.readFileSync(f.childReport, "utf8")) as unknown,
+      );
+      if (bad === "later-child-call")
+        (child["calls"] as unknown[]).push({ label: "mutation" });
+      const call = record((child["calls"] as unknown[])[0]);
+      if (bad === "wrong-output") call["stdout"] = "{}";
+      if (bad === "wrong-terminal-marker")
+        call["stderr"] = "FMCAD_QUEUE_JOB {}";
+      fs.writeFileSync(f.childReport, JSON.stringify(child));
+    }
+    if (bad === "wrong-lease" || bad === "wrong-argv") {
+      const file =
+        bad === "wrong-lease"
+          ? path.join(f.legacy, "lease.json")
+          : path.join(
+              f.legacy,
+              "intents",
+              f.requestId.split(":").at(-1)! + ".json",
+            );
+      const value = record(
+        JSON.parse(fs.readFileSync(file, "utf8")) as unknown,
+      );
+      value[bad === "wrong-lease" ? "source" : "argvHash"] = "foreign";
+      fs.writeFileSync(file, JSON.stringify(value));
+    }
+    if (bad === "changed-source") {
+      fs.appendFileSync(f.sourceFile, "\napp.activeDocument.close(False)\n");
+      const source = fs.readFileSync(f.sourceFile, "utf8");
+      const input = record(
+        (record(f.raw["provenance"])["inputs"] as unknown[])[0],
+      );
+      input["sha256"] = createHash("sha256").update(source).digest("hex");
+      input["bytes"] = Buffer.byteLength(source);
+    }
+    if (bad === "accepted-close")
+      fs.writeFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "{}",
+      );
+    if (bad === "live-producer")
+      t.mock.method(childProcessIdentity, "priorProcessAlive", () => true);
+    await assert.rejects(
+      recordSucceededImportObservationCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.sources,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(
+          f.directory,
+          "cleanup-succeeded-import-observation-binding.json",
+        ),
+      ),
+      false,
+    );
+  });
+
+test("a bound succeeded import cannot change its source before inspection", async (t) => {
+  const f = succeededImportFixture(t);
+  await recordSucceededImportObservationCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  fs.appendFileSync(f.sourceFile, "\nprint('changed')\n");
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+  );
+  assert.equal(f.submissions(), 0);
+});
+
+test("succeeded import cleanup rejects a fresh saved or modified inspection before close", async (t) => {
+  for (const field of ["saved", "modified"]) {
+    const f = succeededImportFixture(t);
+    await recordSucceededImportObservationCleanupResult(
+      f.backend,
+      f.directory,
+      f.ports,
+      f.sources,
+    );
+    const backend = {
+      ...f.backend,
+      async execute(input: Parameters<ScenarioBackend["execute"]>[0]) {
+        await f.backend.execute(input);
+        const raw = record(f.originals.get(input.requestId));
+        raw["stdout"] = String(raw["stdout"]).replace(
+          `"${field}":false`,
+          `"${field}":true`,
+        );
+        const result = queueExecution(raw, input.owner, input.requestId);
+        f.executions.set(input.requestId, result);
+        return result;
+      },
+    };
+    const adapted = createCleanupRecoveryAdapter(backend, f.directory, f.ports);
+    await assert.rejects(
+      resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+    );
+    assert.equal(f.submissions(), 1);
+    assert.equal(
+      fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+      false,
+    );
+  }
+});
+
+test("authoritative rejected first import observation binds existing guarded cleanup without changing the failed child", async (t) => {
+  const f = rejectedImportFixture(t);
+  const report = fs.readFileSync(path.join(f.directory, "report.json"));
+  const completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const resolution = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(resolution.holdKind, "rejected-import-observation");
+  assert.equal(resolution.inspectedModified, false);
+  assert.equal(f.submissions(), 1);
+  const closed = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(closed.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    report,
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+});
+
+for (const bad of [
+  "unknown",
+  "pending",
+  "foreign-owner",
+  "foreign-job",
+  "mutated",
+  "script-submitted",
+  "physical-turn",
+  "rpc-turn",
+  "sdk-start",
+  "missing-check",
+  "extra-intent",
+  "later-child-call",
+  "wrong-lease",
+  "changed-source",
+  "accepted-close",
+  "live-producer",
+] as const)
+  test(`rejected import cleanup refuses ${bad} before inspection`, async (t) => {
+    const f = rejectedImportFixture(t);
+    const job = record(f.raw["job"]),
+      execution = record(f.raw["execution"]);
+    if (bad === "unknown")
+      Object.assign(execution, { state: "unknown", sdkSettled: false });
+    if (bad === "pending") job["state"] = "preparing";
+    if (bad === "foreign-owner") job["clientId"] = "foreign";
+    if (bad === "foreign-job") job["id"] = randomUUID();
+    if (bad === "mutated") job["mayHaveMutated"] = true;
+    if (bad === "script-submitted") execution["userScriptSubmitted"] = true;
+    if (bad === "physical-turn") job["physicalTurns"] = 1;
+    if (bad === "rpc-turn") job["dispatch"] = { rpcCount: 1 };
+    if (bad === "sdk-start") job["startedAt"] = job["submittedAt"];
+    if (bad === "missing-check") f.raw["pythonChecks"] = [];
+    if (bad === "extra-intent")
+      fs.writeFileSync(
+        path.join(f.legacy, "intents", randomUUID() + ".json"),
+        "{}",
+      );
+    if (bad === "later-child-call") {
+      const d = record(
+        JSON.parse(fs.readFileSync(f.childReport, "utf8")) as unknown,
+      );
+      (d["calls"] as unknown[]).push({ label: "mutation" });
+      fs.writeFileSync(f.childReport, JSON.stringify(d));
+    }
+    if (bad === "wrong-lease") {
+      const file = path.join(f.legacy, "lease.json");
+      const d = record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+      d["source"] = "foreign.ts";
+      fs.writeFileSync(file, JSON.stringify(d));
+    }
+    if (bad === "changed-source")
+      fs.appendFileSync(f.sourceFile, "\nprint('unreviewed')\n");
+    if (bad === "accepted-close")
+      fs.writeFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "{}",
+      );
+    if (bad === "live-producer")
+      t.mock.method(childProcessIdentity, "priorProcessAlive", () => true);
+    await assert.rejects(
+      recordLegacyReadonlyCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.sources,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-legacy-readonly-binding.json"),
+      ),
+      false,
+    );
+  });
+
+test("a bound rejected import cannot change its original source before a new inspection", async (t) => {
+  const f = rejectedImportFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  fs.appendFileSync(f.sourceFile, "\nprint('changed')\n");
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+  );
+  assert.equal(f.submissions(), 0);
+});
+
+test("a rejected import still requires a fresh unsaved pristine inspection before any close", async (t) => {
+  const f = rejectedImportFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const backend = {
+    ...f.backend,
+    async execute(input: Parameters<ScenarioBackend["execute"]>[0]) {
+      await f.backend.execute(input);
+      const raw = record(f.originals.get(input.requestId));
+      raw["stdout"] = String(raw["stdout"]).replace(
+        '"saved":false',
+        '"saved":true',
+      );
+      const result = queueExecution(raw, input.owner, input.requestId);
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  const adapted = createCleanupRecoveryAdapter(backend, f.directory, f.ports);
+  await assert.rejects(
+    resumeCleanup(
+      adapted.backend,
+      path.join(f.directory, "report.json"),
+      adapted.ports,
+    ),
+  );
+  assert.equal(f.submissions(), 1);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+    false,
+  );
+});
+
+function readonlyLegacyFixture(t: TestContext) {
+  const f = terminalLegacyFixture(t);
+  fs.unlinkSync(f.file);
+  f.runtime.buildHash =
+    "d3fcfc77da8e96102c4bc578066edf4701322705b2f45318e46abada4139edd8";
+  f.report.backendIdentity = "fusion:addin:" + f.runtime.buildHash;
+  const backend = { ...f.backend, identity: f.report.backendIdentity };
+  const indexFile = path.join(f.directory, "..", "index.json"),
+    index = JSON.parse(fs.readFileSync(indexFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  index["backendIdentity"] = backend.identity;
+  fs.writeFileSync(indexFile, JSON.stringify(index));
+  const id = randomUUID(),
+    requestId = f.report.owner.clientId + ":legacy:" + id;
+  const row = f.request(
+    2,
+    "legacy-cli",
+    `DOC name=${f.document.name} creationId=${f.document.creationId} isActive=true isModified=false isSaved=false\nDONE\n`,
+    "",
+  );
+  const raw = record(f.originals.get(row.requestId)),
+    job = record(raw["job"]),
+    op = record(job["operationResult"]);
+  const oldId = row.requestId;
+  f.executions.delete(oldId);
+  f.originals.delete(oldId);
+  fs.unlinkSync(path.join(f.directory, "request-2.py"));
+  row.requestId = requestId;
+  job["requestId"] = requestId;
+  op["requestId"] = requestId;
+  job["physicalTurns"] = 1;
+  job["code"] = "EXECUTION_COMPLETE";
+  const cwd = path.join(f.directory, "original-driver"),
+    runtimeRoot = path.join(f.directory, "runtime");
+  fs.mkdirSync(
+    path.join(runtimeRoot, "dist/src/dist/core/application/documents"),
+    { recursive: true },
+  );
+  fs.mkdirSync(path.join(runtimeRoot, "dist/assets"), { recursive: true });
+  const root = path.resolve(__dirname, "../../..");
+  fs.copyFileSync(
+    path.join(root, "packages/core/dist/application/documents/commands.js"),
+    path.join(
+      runtimeRoot,
+      "dist/src/dist/core/application/documents/commands.js",
+    ),
+  );
+  fs.copyFileSync(
+    path.join(root, "assets/addin-bridge.py"),
+    path.join(runtimeRoot, "dist/assets/addin-bridge.py"),
+  );
+  raw["provenance"] = {
+    status: "available",
+    inputs: [],
+    inputIdentity: createHash("sha256")
+      .update(JSON.stringify({ cwd, inputFiles: [], payload: null }))
+      .digest("hex"),
+  };
+  row.result = queueExecution(raw, f.report.owner, requestId);
+  f.executions.set(requestId, row.result);
+  f.originals.set(requestId, raw);
+  f.report.requests.push(row);
+  f.report.cleanupHold = {
+    requestId,
+    reason:
+      "Native import child retained an uncertain outcome; inspect original requests",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const write = (name: string, value: unknown) =>
+    fs.writeFileSync(path.join(f.legacy, name), JSON.stringify(value));
+  const intent = {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    argvHash: createHash("sha256")
+      .update(
+        JSON.stringify([
+          "doc",
+          "list",
+          "--timeout",
+          "30000",
+          "--request-id",
+          requestId,
+        ]),
+      )
+      .digest("hex"),
+    admissionRequested: true,
+    completed: true,
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    exitCode: 0,
+    settlement: {
+      requestId,
+      clientId: f.report.owner.clientId,
+      jobId: job["id"],
+      state: "succeeded",
+      sdkSettled: true,
+    },
+  };
+  write("intents/" + id + ".json", intent);
+  fs.mkdirSync(path.join(f.legacy, "queue-receipts"));
+  write("queue-receipts/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    jobId: job["id"],
+  });
+  const failure =
+    "Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- 'succeeded'\n";
+  write("readback.json", {
+    name: f.document.name,
+    scope: "owned-unsaved-only",
+    commands: [
+      {
+        args: ["doc", "list"],
+        status: 0,
+        stdout: raw["stdout"],
+        stderr:
+          "FMCAD_QUEUE_REQUEST " +
+          JSON.stringify({ requestId, clientId: f.report.owner.clientId }) +
+          "\nFMCAD_QUEUE_RESULT " +
+          JSON.stringify(job) +
+          "\n",
+      },
+    ],
+    files: [],
+    tests: [
+      { name: "doc list and baseline", status: "failed", error: failure },
+      { name: "remaining domains", status: "not-tested" },
+    ],
+    testDocumentRemainsOpen: "unknown",
+  });
+  write("completion.json", {
+    owner: f.report.owner,
+    document: f.document,
+    status: "failed",
+    safeForCleanup: false,
+    reportPath: path.join(f.legacy, "readback.json"),
+  });
+  for (const prior of f.report.requests.slice(0, -1)) {
+    prior.result = queueExecution(
+      f.originals.get(prior.requestId),
+      f.report.owner,
+      prior.requestId,
+    );
+    f.executions.set(prior.requestId, prior.result);
+  }
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const execute = backend.execute.bind(backend);
+  backend.execute = async (input) => {
+    await execute(input);
+    const result = queueExecution(
+      f.originals.get(input.requestId),
+      input.owner,
+      input.requestId,
+    );
+    f.executions.set(input.requestId, result);
+    return result;
+  };
+  const ports = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner: unknown, id: string, jobId: string) => {
+      const value = record(f.originals.get(id));
+      assert.equal(record(value["job"])["id"], jobId);
+      return value;
+    },
+  };
+  return {
+    ...f,
+    backend,
+    ports,
+    sources: { cwd, runtimeRoot },
+    raw,
+    requestId,
+  };
+}
+test("settled readonly legacy doc-list releases only a separately bound cleanup, not its failed completion", async (t) => {
+  const f = readonlyLegacyFixture(t),
+    reportFile = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(reportFile),
+    completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const result = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(result.holdKind, "settled-legacy-doc-list");
+  assert.equal(f.submissions(), 1);
+  assert.deepEqual(fs.readFileSync(reportFile), before);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+  const resolution = JSON.parse(
+    fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-resolution.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  assert.equal(resolution["expectedModified"], false);
+  assert.equal(
+    record(record(resolution["inspection"])["row"])["requestId"],
+    f.report.owner.clientId + ":2",
+  );
+});
+for (const kind of [
+  "foreign-client",
+  "foreign-request",
+  "foreign-job",
+  "unknown",
+  "checker",
+  "missing-receipt",
+  "argv",
+  "mutating-command",
+  "source",
+  "cwd",
+  "extra-intent",
+  "completion",
+  "readback",
+  "active-child",
+] as const)
+  test(`readonly legacy binding refuses ${kind} without inspection or close`, async (t) => {
+    const f = readonlyLegacyFixture(t),
+      job = record(f.raw["job"]),
+      id = f.requestId.split(":").at(-1)!;
+    const change = (
+      name: string,
+      edit: (value: Record<string, unknown>) => void,
+    ) => {
+      const file = path.join(f.legacy, name),
+        value = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      edit(value);
+      fs.writeFileSync(file, JSON.stringify(value));
+    };
+    if (kind === "foreign-client") job["clientId"] = "foreign";
+    if (kind === "foreign-request") job["requestId"] = "foreign";
+    if (kind === "foreign-job") job["id"] = randomUUID();
+    if (kind === "unknown") record(f.raw["execution"])["sdkSettled"] = false;
+    if (kind === "checker") f.raw["pythonChecks"] = [];
+    if (kind === "missing-receipt")
+      fs.unlinkSync(path.join(f.legacy, "queue-receipts", id + ".json"));
+    if (kind === "argv")
+      change(`intents/${id}.json`, (value) => {
+        value["argvHash"] = "f".repeat(64);
+      });
+    if (kind === "mutating-command")
+      change("readback.json", (value) => {
+        record((value["commands"] as unknown[])[0])["args"] = ["doc", "close"];
+      });
+    if (kind === "source")
+      fs.appendFileSync(
+        path.join(f.sources.runtimeRoot, "dist/assets/addin-bridge.py"),
+        "\napp.activeDocument.close(False)\n",
+      );
+    if (kind === "cwd") f.sources.cwd = path.join(f.directory, "foreign-cwd");
+    if (kind === "extra-intent")
+      fs.writeFileSync(
+        path.join(f.legacy, "intents", randomUUID() + ".json"),
+        "{}",
+      );
+    if (kind === "completion")
+      change("completion.json", (value) => {
+        value["safeForCleanup"] = true;
+      });
+    if (kind === "readback")
+      change("readback.json", (value) => {
+        record((value["commands"] as unknown[])[0])["stdout"] =
+          "foreign output";
+      });
+    if (kind === "active-child")
+      change("launch.json", (value) => {
+        value["pid"] = process.pid;
+        value["birth"] = childProcessIdentity.processBirth();
+      });
+    await assert.rejects(
+      recordLegacyReadonlyCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.sources,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-legacy-readonly-binding.json"),
+      ),
+      false,
+    );
+  });
+for (const kind of [
+  "completion",
+  "readback",
+  "intent",
+  "source",
+  "runtime",
+] as const)
+  test(`readonly legacy recovery refuses changed ${kind} after binding before dispatch`, async (t) => {
+    const f = readonlyLegacyFixture(t);
+    await recordLegacyReadonlyCleanupResult(
+      f.backend,
+      f.directory,
+      f.ports,
+      f.sources,
+    );
+    if (kind === "runtime") f.runtime.instanceId = randomUUID();
+    else if (kind === "source")
+      fs.appendFileSync(
+        path.join(f.sources.runtimeRoot, "dist/assets/addin-bridge.py"),
+        "# changed\n",
+      );
+    else
+      fs.appendFileSync(
+        path.join(
+          f.legacy,
+          kind === "intent"
+            ? `intents/${f.requestId.split(":").at(-1)}.json`
+            : `${kind}.json`,
+        ),
+        " ",
+      );
+    const adapted = createCleanupRecoveryAdapter(
+      f.backend,
+      f.directory,
+      f.ports,
+    );
+    await assert.rejects(
+      resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+test("readonly legacy binding cannot replay the original UUID child through the cleanup adapter", async (t) => {
+  const f = readonlyLegacyFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    adapted.backend.execute({
+      owner: f.report.owner,
+      requestId: f.requestId,
+      source: "# no replay",
+      directory: f.directory,
+      target: f.document,
+    }),
+  );
+  assert.equal(f.submissions(), 0);
+});
+test("readonly legacy close preserves the original unsafe completion and publishes canonical closed proof", async (t) => {
+  const f = readonlyLegacyFixture(t),
+    reportFile = path.join(f.directory, "report.json");
+  const originals = [
+    reportFile,
+    path.join(f.legacy, "completion.json"),
+    path.join(f.legacy, "readback.json"),
+    path.join(f.legacy, "intents", f.requestId.split(":").at(-1)! + ".json"),
+  ].map((filename) => [filename, fs.readFileSync(filename)] as const);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const result = await resumeCleanup(
+    adapted.backend,
+    reportFile,
+    adapted.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  for (const [filename, bytes] of originals)
+    assert.deepEqual(fs.readFileSync(filename), bytes);
+  const close = JSON.parse(
+    fs.readFileSync(
+      path.join(f.directory, "supplemental-close.intent.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  assert.equal(close["expectedModified"], false);
+  assert.equal(typeof close["resolutionDigest"], "string");
+  const proof = discoverOwnedUnsavedFixtureProofs(
+    path.dirname(path.dirname(f.directory)),
+    f.backend,
+  ).get(f.document.creationId);
+  assert.equal(proof?.state, "closed");
+});
+
+test("readonly legacy binding never authorizes the untyped default cleanup path", async (t) => {
+  const f = readonlyLegacyFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /Case-specific mutation outcome/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+for (const existing of [
+  "cleanup-legacy-readonly-binding.json",
+  "cleanup-hold-inspection-intent.json",
+  "supplemental-close.intent.json",
+])
+  test(`readonly legacy recording refuses existing ${existing} without resetting or querying it`, async (t) => {
+    const f = readonlyLegacyFixture(t),
+      file = path.join(f.directory, existing),
+      before = "preserved uncertain evidence\n";
+    fs.writeFileSync(file, before);
+    let queried = false;
+    await assert.rejects(
+      recordLegacyReadonlyCleanupResult(
+        f.backend,
+        f.directory,
+        {
+          ...f.ports,
+          readJobResult: async () => {
+            queried = true;
+            throw new Error("must not query");
+          },
+        },
+        f.sources,
+      ),
+      /must be recovered/u,
+    );
+    assert.equal(queried, false);
+    assert.equal(f.submissions(), 0);
+    assert.equal(fs.readFileSync(file, "utf8"), before);
+  });
+
+function nativeBindingFixture(t: TestContext) {
+  const f = fixture(t, false, true, "gm07"),
+    root = path.join(f.directory, "runtime");
+  const sourceFile = path.join(
+    root,
+    "dist/assets/native-qualification/gm07-curves.py",
+  );
+  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+  fs.copyFileSync(
+    path.resolve(
+      __dirname,
+      "../../../assets/native-qualification/gm07-curves.py",
+    ),
+    sourceFile,
+  );
+  const scriptSha256 = createHash("sha256")
+      .update(fs.readFileSync(sourceFile))
+      .digest("hex"),
+    manifestSha256 =
+      "aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5";
+  for (let n = 2; n <= 3; n++)
+    f.report.requests.push(
+      f.request(
+        n,
+        "observe",
+        programs.marker + JSON.stringify({ creationId: f.document.creationId }),
+        "# original observation\n",
+      ),
+    );
+  const status = { ...f.document, saved: false, fileId: null };
+  const native = f.request(
+    4,
+    "gm07-fixed-run",
+    "FMCAD_RESULT " +
+      JSON.stringify({
+        success: true,
+        result: {
+          document: {
+            ...f.document,
+            before: { ...status, modified: false },
+            after: { ...status, modified: true },
+          },
+          modelChangedByFixture: true,
+          nativeGeometry: true,
+        },
+      }),
+    fs.readFileSync(sourceFile, "utf8"),
+  );
+  const raw = record(f.originals.get(native.requestId));
+  record((record(raw["provenance"])["inputs"] as unknown[])[0])[
+    "originalPath"
+  ] = sourceFile;
+  fs.unlinkSync(path.join(f.directory, "request-4.py"));
+  const metadata = {
+    fixtureId: "gm07-curves-program-v1",
+    manifestSha256,
+    scriptSha256,
+    buildHash: f.runtime.buildHash,
+    document: f.document,
+  };
+  f.report.requests.push({
+    requestId: native.requestId,
+    phase: "gm07-fixed-run",
+    intent: metadata,
+  } as unknown as typeof native);
+  for (const row of f.report.requests.slice(0, -1))
+    row.result = queueExecution(
+      f.originals.get(row.requestId),
+      f.report.owner,
+      row.requestId,
+    );
+  const report = record(f.report);
+  delete report["cleanupHold"];
+  report["scope"] = "exclusive-instance";
+  report["cleanupExpectedModified"] = false;
+  report["error"] =
+    "Fixed-run accepted/terminal identity or outcome is unverified; inspect the original request, never replay.";
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const command = [
+    path.join(root, "dist/bin/fmcad.js"),
+    "run",
+    sourceFile,
+    "--helpers",
+    "cad-v1",
+    "--args",
+    JSON.stringify({
+      approved: true,
+      creationId: f.document.creationId,
+      expectedFusionVersion: "2706.1.17",
+      fixturePrefix: "NQGM07CURVE01",
+    }),
+    "--doc",
+    f.document.name,
+    "--doc-id",
+    f.document.creationId,
+    "--request-id",
+    native.requestId,
+    "--timeout",
+    "180000",
+  ];
+  const intent = {
+    version: 1,
+    state: "prepared",
+    binding: {
+      ...metadata,
+      requestId: native.requestId,
+      clientId: f.report.owner.clientId,
+      runtimeRoot: root,
+      command,
+    },
+    commandSha256: createHash("sha256")
+      .update(JSON.stringify(command))
+      .digest("hex"),
+  };
+  const intentFile = path.join(f.directory, "native-intent.json");
+  fs.writeFileSync(intentFile, JSON.stringify(intent));
+  const ports = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner: unknown, id: string, jobId: string) => {
+      const value = record(f.originals.get(id));
+      assert.equal(record(value["job"])["id"], jobId);
+      return value;
+    },
+  };
+  const execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    await execute(input);
+    const result = queueExecution(
+      f.originals.get(input.requestId),
+      input.owner,
+      input.requestId,
+    );
+    f.executions.set(input.requestId, result);
+    return result;
+  };
+  return {
+    ...f,
+    raw,
+    intentFile,
+    ports,
+    jobId: String(record(raw["job"])["id"]),
+  };
+}
+async function acceptedLegacyFixture(t: TestContext) {
+  const f = terminalLegacyFixture(t),
+    id = randomUUID(),
+    requestId = f.report.owner.clientId + ":legacy:" + id,
+    jobId = randomUUID();
+  fs.unlinkSync(f.file);
+  const report = record(f.report);
+  delete report["cleanupHold"];
+  report["scope"] = "exclusive-instance";
+  report["error"] =
+    "Original legacy request remains unsettled; cleanup deferred: " + requestId;
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(report),
+  );
+  const write = (file: string, value: unknown) =>
+    fs.writeFileSync(path.join(f.directory, file), JSON.stringify(value));
+  write("legacy/completion.json", {
+    owner: f.report.owner,
+    document: f.document,
+    status: "failed",
+    safeForCleanup: true,
+    reportPath: path.join(f.legacy, "readback.json"),
+  });
+  write("legacy/readback.json", { status: "failed" });
+  write("legacy/intents/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    argvHash: "b".repeat(64),
+    admissionRequested: true,
+    completed: true,
+    exitCode: 1,
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    settlementFailure: {
+      requestId,
+      clientId: f.report.owner.clientId,
+      reason: "lookup-unavailable",
+    },
+  });
+  fs.mkdirSync(path.join(f.legacy, "queue-receipts"));
+  write("legacy/queue-receipts/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    jobId,
+  });
+  const raw = {
+    job: {
+      id: jobId,
+      requestId,
+      clientId: f.report.owner.clientId,
+      kind: "command",
+      state: "failed",
+      code: "LOCAL_PREPARATION_FAILED",
+      executionOutcome: "not_started",
+      mayHaveMutated: false,
+      finishedAt: Date.now() - 100,
+      operationResult: {
+        version: 1,
+        requestId,
+        jobId,
+        acceptance: "accepted",
+        executionOutcome: "not_started",
+        mayHaveMutated: false,
+        code: "LOCAL_PREPARATION_FAILED",
+        validation: { status: "not_checked" },
+      },
+    },
+    execution: {
+      state: "failed",
+      code: "LOCAL_PREPARATION_FAILED",
+      executionOutcome: "not_started",
+      mayHaveMutated: false,
+      sdkSettled: true,
+    },
+    stdout: "",
+    stderr: "preparation failed",
+    pythonChecks: [],
+  };
+  const sourceHashes: Record<string, { path: string; sha256: string }> = {};
+  for (const base of ["runner", "legacy-owned-driver", "legacy-handoff"])
+    for (const file of [
+      `tests/scenarios/${base}.ts`,
+      `dist/tests/scenarios/${base}.js`,
+    ]) {
+      const filename = path.join(
+        f.directory,
+        "source-" + file.replaceAll("/", "_"),
+      );
+      fs.writeFileSync(filename, "retained bound source\n");
+      sourceHashes[file] = {
+        path: filename,
+        sha256: createHash("sha256")
+          .update(fs.readFileSync(filename))
+          .digest("hex"),
+      };
+    }
+  await publishLegacyTerminalDisposition(
+    f.directory,
+    { identity: f.backend.identity, mode: "fusion", protocol: "addin" },
+    {
+      readOriginal: async () => raw,
+      producerAlive: () => false,
+      sourceBinding: {
+        driverSource: "a".repeat(40),
+        buildHash: f.runtime.buildHash,
+        sourceHashes,
+      },
+    },
+  );
+  return { ...f, requestId, raw };
+}
+test("accepted terminal legacy disposition authorizes a new pristine inspection without rewriting history", async (t) => {
+  const f = await acceptedLegacyFixture(t),
+    filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename),
+    completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, false);
+  assert.equal(proof.inspectionRequestId, f.report.owner.clientId + ":2");
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+  assert.equal(f.submissions(), 1);
+});
+for (const kind of ["missing", "raw", "intent", "report"] as const)
+  test(`accepted terminal legacy recovery refuses ${kind} evidence before dispatch`, async (t) => {
+    const f = await acceptedLegacyFixture(t),
+      file = path.join(f.legacy, "terminal-disposition.json");
+    if (kind === "missing") fs.unlinkSync(file);
+    if (kind === "raw") {
+      const proof = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      record(record(proof["raw"])["execution"])["mayHaveMutated"] = true;
+      fs.writeFileSync(file, JSON.stringify(proof));
+    }
+    if (kind === "intent")
+      fs.appendFileSync(
+        path.join(
+          f.legacy,
+          "intents",
+          f.requestId.split(":").at(-1)! + ".json",
+        ),
+        " ",
+      );
+    if (kind === "report")
+      fs.appendFileSync(path.join(f.directory, "report.json"), " ");
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+test("missing authoritative native result cannot enter cleanup before its immutable binding", async (t) => {
+  const f = nativeBindingFixture(t);
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readOriginalResult: async (_owner, id) => f.originals.get(id),
+    }),
+  );
+  assert.equal(f.submissions(), 0);
+});
+test("authoritative native binding preserves FAIL and prepared intent while authorizing modified inspection", async (t) => {
+  const f = nativeBindingFixture(t),
+    report = fs.readFileSync(path.join(f.directory, "report.json")),
+    intent = fs.readFileSync(f.intentFile);
+  await recordNativeCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.intentFile,
+    f.jobId,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const proof = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(proof.inspectedModified, true);
+  assert.equal(proof.inspectionRequestId, f.report.owner.clientId + ":5");
+  assert.equal(
+    readCleanupRecoveryRequests(f.directory, f.backend, f.runtime).at(-1)![
+      "result"
+    ] !== undefined,
+    true,
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    report,
+  );
+  assert.deepEqual(fs.readFileSync(f.intentFile), intent);
+});
+for (const kind of [
+  "foreign-client",
+  "foreign-request",
+  "foreign-job",
+  "source",
+  "checker",
+  "unknown",
+] as const)
+  test(`native binding refuses ${kind} without cleanup`, async (t) => {
+    const f = nativeBindingFixture(t),
+      job = record(f.raw["job"]);
+    if (kind === "foreign-client") job["clientId"] = "foreign";
+    if (kind === "foreign-request") job["requestId"] = "foreign";
+    if (kind === "foreign-job") job["id"] = "foreign";
+    if (kind === "source")
+      record((record(f.raw["provenance"])["inputs"] as unknown[])[0])[
+        "sha256"
+      ] = "f".repeat(64);
+    if (kind === "checker") f.raw["pythonChecks"] = [];
+    if (kind === "unknown") record(f.raw["execution"])["sdkSettled"] = false;
+    await assert.rejects(
+      recordNativeCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.intentFile,
+        f.jobId,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-native-result-binding.json"),
+      ),
+      false,
+    );
+  });
+for (const kind of ["report", "intent", "forged-result", "runtime"] as const)
+  test(`native binding refuses changed ${kind} before dispatch`, async (t) => {
+    const f = nativeBindingFixture(t);
+    await recordNativeCleanupResult(
+      f.backend,
+      f.directory,
+      f.ports,
+      f.intentFile,
+      f.jobId,
+    );
+    if (kind === "report")
+      fs.appendFileSync(path.join(f.directory, "report.json"), " ");
+    if (kind === "intent") fs.appendFileSync(f.intentFile, " ");
+    if (kind === "forged-result") {
+      const file = path.join(f.directory, "cleanup-native-result-binding.json"),
+        binding = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      record(record(binding["raw"])["execution"])["sdkSettled"] = false;
+      fs.writeFileSync(file, JSON.stringify(binding));
+    }
+    if (kind === "runtime") f.runtime.instanceId = randomUUID();
+    await assert.rejects(async () => {
+      readCleanupRecoveryRequests(f.directory, f.backend, f.runtime);
+      const adapted = createCleanupRecoveryAdapter(
+        f.backend,
+        f.directory,
+        f.ports,
+      );
+      await resolveCleanupHold(adapted.backend, f.directory, adapted.ports);
+    });
+    assert.equal(f.submissions(), 0);
+  });
+test("native result still requires typed ports and cannot use generic report-rewriting cleanup", async (t) => {
+  const f = nativeBindingFixture(t);
+  await recordNativeCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.intentFile,
+    f.jobId,
+  );
+  const before = fs.readFileSync(path.join(f.directory, "report.json"));
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /Case-specific mutation outcome/u,
+  );
+  assert.equal(f.submissions(), 0);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    before,
+  );
+});
+
+test("accepted legacy recovery publishes a pristine close without replacing its failed completion", async (t) => {
+  const f = await acceptedLegacyFixture(t),
+    file = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(file),
+    completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  const result = await resumeCleanup(f.backend, file, f.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(file), before);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    true,
+  );
+  const close = record(
+    JSON.parse(
+      fs.readFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "utf8",
+      ),
+    ) as unknown,
+  );
+  assert.equal(close["expectedModified"], false);
+  assert.equal(typeof close["resolutionDigest"], "string");
+});
+
+test("native recovery publishes an exact modified close without rewriting the failed report", async (t) => {
+  const f = nativeBindingFixture(t);
+  const filename = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(filename);
+  const originalIntent = fs.readFileSync(f.intentFile);
+  await recordNativeCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.intentFile,
+    f.jobId,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const result = await resumeCleanup(adapted.backend, filename, adapted.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(fs.readFileSync(f.intentFile), originalIntent);
+  const close = record(
+    JSON.parse(
+      fs.readFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "utf8",
+      ),
+    ) as unknown,
+  );
+  assert.equal(close["expectedModified"], true);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    true,
+  );
+});
+
+test("source-bound terminal legacy child without dispatch resolves without creating completion or replay", async (t) => {
+  const f = terminalLegacyFixture(t),
+    original = fs.readFileSync(path.join(f.directory, "report.json"));
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, false);
+  assert.equal(f.submissions(), 1);
+  assert.equal(fs.existsSync(path.join(f.legacy, "completion.json")), false);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    original,
+  );
+  const result = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    original,
+  );
+});
+for (const corruption of [
+  "missing-proof",
+  "foreign-lease",
+  "active-child",
+  "intent",
+  "completion",
+  "source",
+  "changed-artifact",
+  "unknown-original",
+] as const)
+  test(`legacy no-dispatch resolution rejects ${corruption} before inspection`, async (t) => {
+    const f = terminalLegacyFixture(t);
+    if (corruption === "missing-proof") fs.unlinkSync(f.file);
+    if (corruption === "foreign-lease")
+      fs.writeFileSync(
+        path.join(f.legacy, "lease.json"),
+        JSON.stringify({ ...f.value.evidence, owner: { clientId: "foreign" } }),
+      );
+    if (corruption === "active-child")
+      fs.writeFileSync(
+        path.join(f.legacy, "launch.json"),
+        JSON.stringify({ state: "running", pid: process.pid }),
+      );
+    if (corruption === "intent")
+      fs.writeFileSync(path.join(f.legacy, "intents", "accepted.json"), "{}");
+    if (corruption === "completion")
+      fs.writeFileSync(path.join(f.legacy, "completion.json"), "{}");
+    if (corruption === "source") {
+      f.value.sourcePins["tests/helpers/live-broker.js"] = "f".repeat(64);
+      fs.writeFileSync(f.file, JSON.stringify(f.value));
+    }
+    if (corruption === "changed-artifact")
+      fs.appendFileSync(path.join(f.legacy, "stderr.log"), "changed");
+    if (corruption === "unknown-original")
+      record(
+        record(f.originals.get(f.report.requests[1]!.requestId))["execution"],
+      )["sdkSettled"] = false;
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+test("legacy evidence recording refuses unbound input rather than trusting a dead PID", (t) => {
+  const f = terminalLegacyFixture(t);
+  fs.unlinkSync(f.file);
+  assert.throws(() =>
+    recordTerminalLegacyChildEvidence(
+      f.backend,
+      f.directory,
+      path.join(f.legacy, "launch.json"),
+      {
+        preflight: path.join(f.legacy, "lease.json"),
+        terminal: path.join(f.legacy, "launch.json"),
+        buildLog: path.join(f.legacy, "stdout.log"),
+      },
+    ),
+  );
+  assert.equal(fs.existsSync(f.file), false);
+});
+
+test("a rehashed live child launch still cannot authorize legacy cleanup", async (t) => {
+  const f = terminalLegacyFixture(t);
+  const queue = createRequire(
+    path.resolve(__dirname, "../../..", "package.json"),
+  )("./src/queue-instance") as { processBirth(): string };
+  f.value.evidence.launch.pid = process.pid;
+  f.value.evidence.launch.birth = queue.processBirth();
+  const filename = path.join(f.legacy, "launch.json"),
+    bytes = JSON.stringify(f.value.evidence.launch);
+  fs.writeFileSync(filename, bytes);
+  f.value.evidence.artifactEvidence["legacy/launch.json"]!.sha256 = createHash(
+    "sha256",
+  )
+    .update(bytes)
+    .digest("hex");
+  fs.writeFileSync(f.file, JSON.stringify(f.value));
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /Child exit is unverified/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+test("an export-shaped legacy mutation does not qualify as no-dispatch proof", async (t) => {
+  const f = terminalLegacyFixture(t),
+    id = f.report.requests[1]!.requestId;
+  const filename = path.join(f.directory, "request-1.py"),
+    source = fs.readFileSync(filename, "utf8") + "# changed program\n";
+  fs.writeFileSync(filename, source);
+  const input = record(
+    (
+      record(record(f.originals.get(id))["provenance"])["inputs"] as unknown[]
+    )[0],
+  );
+  input["sha256"] = createHash("sha256").update(source).digest("hex");
+  input["bytes"] = Buffer.byteLength(source);
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /exact non-mutating program/u,
+  );
+  assert.equal(f.submissions(), 0);
+});

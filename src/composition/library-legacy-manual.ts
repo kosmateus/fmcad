@@ -32,9 +32,9 @@ function entry(
         "example argument dispatch",
       ],
       tests: [
-        "tests/legacy.test.js",
-        "tests/registry.test.js",
-        "tests/manual-legacy.test.js",
+        "tests/legacy.test.ts",
+        "tests/registry.test.ts",
+        "tests/manual-legacy.test.ts",
         "tests/manual_legacy_test.py",
       ],
       gaps: [],

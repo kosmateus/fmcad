@@ -78,7 +78,7 @@ export function runCheckerProcess(
         })
         .catch(() => undefined);
     }, 25);
-    child.on("close", (code) => {
+    child.on("close", (code, terminationSignal) => {
       clearTimeout(deadline);
       clearInterval(memory);
       signal?.removeEventListener("abort", abort);
@@ -86,7 +86,9 @@ export function runCheckerProcess(
         code,
         stdout: Buffer.concat(out).toString("utf8"),
         stderr: Buffer.concat(err).toString("utf8"),
-        problem,
+        problem:
+          problem ??
+          (terminationSignal ? `signal: ${terminationSignal}` : null),
       });
     });
   });

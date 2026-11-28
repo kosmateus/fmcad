@@ -1,4 +1,10 @@
 """DTO-only rules extracted from assets/cad/containment.py. No SDK or filesystem access."""
+import math as _containment_math
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
+
 def _containment_vsub(a: "Sequence[float]", b: "Sequence[float]") -> "list[float]":
     return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 
@@ -6,11 +12,11 @@ def _containment_vdot(a: "Sequence[float]", b: "Sequence[float]") -> float:
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
 def _containment_vnorm(a: "Sequence[float]") -> float:
-    return math.sqrt(_containment_vdot(a, a))
+    return _containment_math.sqrt(_containment_vdot(a, a))
 
 def _containment_vunit(a: "Sequence[float]") -> "list[float]":
     n = _containment_vnorm(a)
-    if n == 0 or not math.isfinite(n):
+    if n == 0 or not _containment_math.isfinite(n):
         raise ValueError('Direction cannot be zero')
     return [x / n for x in a]
 
@@ -39,7 +45,7 @@ def _signed_cylinder(origin: "Sequence[float]", direction: "Sequence[float]", ra
         return -d_axial
     if 0.0 <= a <= height:
         return -d_radial
-    return -math.hypot(d_radial, d_axial)
+    return -_containment_math.hypot(d_radial, d_axial)
 
 def _signed_box(minv: "Sequence[float]", maxv: "Sequence[float]", p: "Sequence[float]") -> float:
     inside = all(minv[i] <= p[i] <= maxv[i] for i in range(3))
@@ -48,7 +54,7 @@ def _signed_box(minv: "Sequence[float]", maxv: "Sequence[float]", p: "Sequence[f
     d = 0.0
     for i in range(3):
         d += (minv[i] - p[i]) ** 2 if p[i] < minv[i] else (p[i] - maxv[i]) ** 2 if p[i] > maxv[i] else 0.0
-    return -math.sqrt(d)
+    return -_containment_math.sqrt(d)
 
 def _signed_sphere(center: "Sequence[float]", radius: float, p: "Sequence[float]") -> float:
     return radius - _containment_vnorm(_containment_vsub(p, center))
@@ -57,7 +63,7 @@ def _region_kind(region: "JsonValue") -> "JsonValue":
     return region.get('type') if isinstance(region, dict) else 'body'
 
 def _classify(distance: float, tolerance: float) -> "Literal['error', 'inside', 'outside', 'boundary']":
-    if not math.isfinite(distance):
+    if not _containment_math.isfinite(distance):
         return 'error'
     if distance > tolerance:
         return 'inside'
@@ -96,7 +102,7 @@ def _containment_circle_union_area(circles: "Sequence[tuple[Sequence[float], flo
     width, height = maxx - minx, maxy - miny
     if width == 0 or height == 0:
         return 0.0
-    cells = int(math.sqrt(budget))
+    cells = int(_containment_math.sqrt(budget))
     count = 0
     for i in range(cells):
         x = minx + width * (i + 0.5) / cells

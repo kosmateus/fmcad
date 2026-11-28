@@ -5,6 +5,8 @@ const { descriptors } = createRequire(__filename)("../../queue-cli") as {
   descriptors: Record<string, unknown>;
 };
 const returns: Record<string, string> = {
+  "transition-backend":
+    "Starts the sole shared broker on an explicitly approved physical addin/MCP endpoint after owner-authenticated idle stop. Exact existing epoch credentials, old/new configs and a read-only receipt for the same live Fusion PID/birth/version are required. Returns listening metadata with buildHash, not model or physical validation. Historical identity/receipts/unknown work remain immutable; uncertainty retains ownership without replay.",
   serve:
     "Runs until a controlled drain/stop. The broker reserves one Fusion instance; startup is not model validation. Existing active or unknown work prevents ownership release. It does not start or restart Fusion.",
   exec: "Stdout/stderr are the child command output. Durable request/job/result receipts use FMCAD_QUEUE_* lines on stderr. Exit zero means the job succeeded, not that geometry or physical manufacturing was validated. Inspect the domain outcome.",
@@ -45,6 +47,16 @@ const returns: Record<string, string> = {
     "Returns metadata containing the exact epochId, registered clientId, owned document and bounded scratch scope. SDK0: it does not create or mutate a model, authorize broker administration or grant access to historical/recovered documents.",
   "successor-epoch":
     "Returns an exact dead-predecessor preflight or metadata-ready/pending successor bootstrap receipt with source/build and owner evidence. SDK0: current observation, proven-new document creation and a new grant are separate actions. No old model, grant or historical outcome is adopted or replayed.",
+  "authorize-normal-successor":
+    "Returns an immutable authorization reference bound to the original registered job owner, explicit normal target and unchanged currentstore. SDK0: no request bytes or raw credentials are copied, no SDK runs and unknown work is not settled. A separately authenticated epoch owner must approve the cold successor.",
+  "authorize-normal-currentfacts-retry":
+    "Returns a one-shot normal read-attempt reference bound to a terminal SDK-succeeded read-only observation, its separate validator failure, the exact owner and a fresh qualified candidate. SDK0: preserves all prior results and refuses unknown, active or mutating work.",
+  "retire-normal-currentfacts-producer":
+    "Returns an exact prior normal read metadata-producer preview or once-only pidfd retirement receipt. Requires the immutable fresh-attempt reference and matching request. Never closes Fusion, repeats a signal or settles historical work.",
+  "record-normal-producers-retired":
+    "Returns an immutable OS absence receipt after the exact old SDK and all currentstore producers have exited, before a new SDK starts. Never signals, closes or restarts processes. Missing, reused or uncertain identities refuse recovery; this is not historical SDK settlement.",
+  "retire-normal-metadata-producer":
+    "Returns a non-mutating exact metadata-owner preview, or with --apply true its one-shot pidfd retirement receipt/pending fence. Requires distinct epoch authorization, original job-owner approval, authentic old SDK death, all other producers gone and the exact predecessor runtime/interpreter/process. Never replays a signal after uncertainty and never closes/restarts Fusion or resolves an original SDK operation.",
   "observe-successor":
     "Returns the original pending, complete or failed current-process observation for an existing owner successor authority. Known current facts must remain request/source/process-bound; the historical native outcome stays unknown. It does not create a document or authorize a second observation after a lost reply.",
   "authorize-closed-successor":
@@ -93,10 +105,11 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
           "src/queue-state.js",
         ],
         tests: [
-          "tests/queue-scheduling.test.js",
-          "tests/console-pause.test.js",
-          "tests/phased-queue.test.js",
-          "tests/queue-probe-recovery.test.js",
+          "tests/queue-scheduling.test.ts",
+          "tests/console-pause.test.ts",
+          "tests/phased-queue.test.ts",
+          "tests/queue-probe-recovery.test.ts",
+          ...(["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer", "authorize-normal-currentfacts-retry", "retire-normal-currentfacts-producer"].includes(action) ? ["tests/normal-currentstore-successor.test.ts"] : []),
         ],
         verified: [
           "Offline parsing and typed broker records",
@@ -142,9 +155,9 @@ manuals["console"] = {
       "src/queue-gate.js",
     ],
     tests: [
-      "tests/console-pause.test.js",
-      "tests/console-offline.test.js",
-      "tests/console-services.test.js",
+      "tests/console-pause.test.ts",
+      "tests/console-offline.test.ts",
+      "tests/console-services.test.ts",
     ],
     verified: [
       "Offline startup/help contracts",

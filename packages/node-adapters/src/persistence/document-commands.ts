@@ -17,9 +17,9 @@ export function documentCommandPorts(
     call,
     newDocument(name) {
       return script(
-        "import adsk.core\n\nNAME: str = " +
+        "import adsk.core\nimport json\nfrom typing import cast as _doc_cast\n\nNAME: str = " +
           pythonLiteral(name) +
-          '\n\ndef run(_context: str) -> None:\n    app = adsk.core.Application.get()\n    doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)\n    if NAME:\n        doc.name = NAME\n    print("CREATED_DOC name=" + doc.name)\n',
+          '\n\ndef run(_context: str) -> None:\n    app = adsk.core.Application.get()\n    doc = app.documents.add(_doc_cast("adsk.core.DocumentTypes", adsk.core.DocumentTypes.FusionDesignDocumentType))\n    if NAME:\n        doc.name = NAME\n    if doc.isSaved or not doc.creationId:\n        raise RuntimeError("New document identity is not unsaved")\n    print("CREATED_DOC name=" + doc.name)\n    print(json.dumps({"schema": "fmcad-created-document-v1", "creationId": doc.creationId, "name": doc.name, "fileId": None, "isSaved": doc.isSaved, "isModified": doc.isModified}))\n',
       );
     },
     download(file, output) {

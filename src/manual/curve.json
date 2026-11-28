@@ -8,7 +8,7 @@
     "examples": [
       {"label":"Open cam profile from inline records","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","plane":"sketchXY","columns":{"x":"x","y":"y"},"units":{"length":"mm"},"closed":false,"interpolation":"spline","records":[{"x":0,"y":0},{"x":5,"y":2},{"x":10,"y":8},{"x":12,"y":12}]},"requires":"An existing sketch GM07_Profile in the selected component; create it with sketch create name GM07_Profile plane XY.","output":"result.entities are the fitted spline refs; result.fitError.status is pass when the measured bound fits the tolerance; reuse result.profiles for extrusion."}
     ],
-    "audit": {"sources":["src/curve.js:prepare,validate","assets/cad/curve.py:curve_fit,_curve_evidence,_curve_result","assets/cad/model.py:_model_fields"],"verified":["CSV/JSON column mapping, polar and loop columns","closed-endpoint snap, winding and provenance survival","preflight before sketch.geometry mutation","fit status propagation into the envelope"],"tests":["tests/curve.test.js","tests/gm07_curve_test.py"],"gaps":[],"bugs":[]}
+    "audit": {"sources":["src/curve.js:prepare,validate","assets/cad/curve.py:curve_fit,_curve_evidence,_curve_result","assets/cad/model.py:_model_fields"],"verified":["CSV/JSON column mapping, polar and loop columns","closed-endpoint snap, winding and provenance survival","preflight before sketch.geometry mutation","fit status propagation into the envelope"],"tests":["tests/curve.test.ts","tests/gm07_curve_test.py"],"gaps":[],"bugs":[]}
   },
   "curve.fit": {
     "sections": [
@@ -19,7 +19,7 @@
     "examples": [
       {"label":"Fitted polyline","data":{"schemaVersion":1,"sketch":"Profile","frame":"sketch","plane":"sketchXY","columns":{"x":"x","y":"y"},"units":{"length":"mm"},"closed":false,"interpolation":"lines","records":[{"x":0,"y":0},{"x":10,"y":5}]},"requires":"An existing sketch Profile in the selected component.","output":"result.entities contains one line segment; fitError.status pass with a tight tolerance."}
     ],
-    "audit": {"sources":["src/curve.js:prepare,validate","assets/cad/curve.py:curve_fit"],"verified":["Shared file adapter and preflight","Envelope status and provenance"],"tests":["tests/curve.test.js","tests/gm07_curve_test.py"],"gaps":[],"bugs":[]}
+    "audit": {"sources":["src/curve.js:prepare,validate","assets/cad/curve.py:curve_fit"],"verified":["Shared file adapter and preflight","Envelope status and provenance"],"tests":["tests/curve.test.ts","tests/gm07_curve_test.py"],"gaps":[],"bugs":[]}
   },
   "curve.inspect": {
     "sections": [
@@ -30,7 +30,7 @@
     "examples": [
       {"label":"Inspect a profile","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","entities":[{"token":"curve-token"}]},"requires":"A real curve ref from sketch.inspect curves or the entities returned by sketch.profile-file; the example token is a placeholder, not an executable ID.","output":"result.inspection.curves/loops and result.status pass/unknown/fail; the report does not mutate the sketch."}
     ],
-    "audit": {"sources":["assets/cad/curve.py:curve_inspect,_curve_evidence"],"verified":["Stroke/curvature sampling and budgets","Loop grouping and crossing detection","pass/unknown/fail envelope status"],"tests":["tests/gm07_curve_test.py","tests/curve.test.js"],"gaps":[],"bugs":["Continuous regularity certification"]}
+    "audit": {"sources":["assets/cad/curve.py:curve_inspect,_curve_evidence"],"verified":["Stroke/curvature sampling and budgets","Loop grouping and crossing detection","pass/unknown/fail envelope status"],"tests":["tests/gm07_curve_test.py","tests/curve.test.ts"],"gaps":[],"bugs":["Continuous regularity certification"]}
   },
   "curve.offset": {
     "sections": [
@@ -41,7 +41,7 @@
     "examples": [
       {"label":"Outward circular offset","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","entities":[{"token":"circle-token"}],"distance":"5 mm","side":"right"},"requires":"A real closed circle ref from sketch.inspect curves; the example token is a placeholder.","output":"result.entities is the outer child circle; result.offsetParameter names the native dimension (edit it with curve offset-edit)."}
     ],
-    "audit": {"sources":["assets/cad/curve.py:curve_offset","assets/cad/model.py:model_sketch_offset"],"verified":["Pre-mutation cusp/intersection blocking","Signed side expression","Post-offset inspection and envelope","offsetParameter passthrough"],"tests":["tests/gm07_curve_test.py","tests/gm07_offset_edit_test.py","tests/curve.test.js"],"gaps":[],"bugs":[]}
+    "audit": {"sources":["assets/cad/curve.py:curve_offset","assets/cad/model.py:model_sketch_offset"],"verified":["Pre-mutation cusp/intersection blocking","Signed side expression","Post-offset inspection and envelope","offsetParameter passthrough"],"tests":["tests/gm07_curve_test.py","tests/gm07_offset_edit_test.py","tests/curve.test.ts"],"gaps":[],"bugs":[]}
   },
   "curve.offset-edit": {
     "sections": [
@@ -52,6 +52,6 @@
     "examples": [
       {"label":"Resize an existing offset","data":{"schemaVersion":1,"frame":"sketch","parameter":"d203","distance":"8 mm"},"requires":"d203 must be the offsetParameter name reported by a previous curve offset in this document.","output":"result.after.expression is 8 mm and the offset child curves regenerate at the new distance."}
     ],
-    "audit": {"sources":["src/curve.js:descriptors,validate","assets/cad/curve.py:curve_offset_edit","assets/cad/model.py:model_sketch_offset"],"verified":["Parameter-name and reference targeting","Offset-dimension ownership check before mutation","Before/after expression envelope","Iterable SketchCurveVector handling (no .count)"],"tests":["tests/gm07_offset_edit_test.py","tests/curve.test.js"],"gaps":[],"bugs":[]}
+    "audit": {"sources":["src/curve.js:descriptors,validate","assets/cad/curve.py:curve_offset_edit","assets/cad/model.py:model_sketch_offset"],"verified":["Parameter-name and reference targeting","Offset-dimension ownership check before mutation","Before/after expression envelope","Iterable SketchCurveVector handling (no .count)"],"tests":["tests/gm07_offset_edit_test.py","tests/curve.test.ts"],"gaps":[],"bugs":[]}
   }
 }

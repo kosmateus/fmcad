@@ -4,6 +4,7 @@ import {
   type CadData,
   type CadOutput,
   type CadServices,
+  type CameraAliasObservation,
 } from "./contracts";
 import { parseNativeResult, unknownNativeOutcome } from "./native-result";
 
@@ -54,26 +55,84 @@ export async function executeCad(
       entry.offline === true,
       services.sketchValidates(operation),
     );
-  const artifact = services.prepare(operation, data, context);
-  const out = await services.execution.execute({
-    operation,
-    context: { ...context },
-    artifact,
-    readOnly:
-      entry.readOnly ||
-      (operation === "document.clear" && data["dryRun"] === true),
-  });
-  const text = out.text || "";
-  if (
-    out.failed ||
-    !text.split(/\r?\n/).some((value) => value.startsWith("FMCAD_RESULT "))
-  )
-    throw unknownNativeOutcome(
-      new Error(
-        `${operation} failed; model may contain partial changes. Inspect before retry. ${text}`,
-      ),
-    );
-  const output = parseNativeResult(text);
+  if (operation === "camera.save" && context.component != null) {
+    data = { ...data }; // camera.save has no accepted input fields
+    if (typeof context.component === "object")
+      context = {
+        ...context,
+        component: JSON.parse(JSON.stringify(context.component)) as Record<
+          string,
+          unknown
+        >,
+      };
+  }
+  const send = async (alias?: CameraAliasObservation) => {
+    const artifact = services.prepare(operation, data, context, alias);
+    const out = await services.execution.execute({
+      operation,
+      context: { ...context },
+      artifact,
+      readOnly:
+        entry.readOnly ||
+        (operation === "document.clear" && data["dryRun"] === true),
+    });
+    const text = out.text || "";
+    if (
+      out.failed ||
+      !text.split(/\r?\n/).some((value) => value.startsWith("FMCAD_RESULT "))
+    )
+      throw unknownNativeOutcome(
+        new Error(
+          `${operation} failed; model may contain partial changes. Inspect before retry. ${text}`,
+        ),
+      );
+    return parseNativeResult(text);
+  };
+  let output = await send();
+  let observation: CameraAliasObservation | undefined;
+  while (operation === "camera.save" && Object.hasOwn(output, "_cameraAlias")) {
+    const observed = output["_cameraAlias"];
+    const direct =
+      typeof context.component === "object" && context.component != null;
+    const nested = observation !== undefined || direct;
+    if (
+      context.component == null ||
+      output["operation"] !== operation ||
+      output["document"] !== context.doc ||
+      !record(observed) ||
+      typeof observed["name"] !== "string" ||
+      (!nested && observed["name"] !== context.component) ||
+      (typeof observed["raw"] !== "string" &&
+        !(observed["raw"] === null && !nested)) ||
+      typeof observed["docId"] !== "string" ||
+      !observed["docId"] ||
+      (context.docId != null && observed["docId"] !== context.docId) ||
+      (observation && observed["docId"] !== observation.docId)
+    )
+      throw unknownNativeOutcome(
+        new Error("Camera selector returned a mismatched continuation"),
+      );
+    const next = { name: observed["name"], raw: observed["raw"] ?? "" };
+    if (!observation)
+      observation = {
+        name: direct ? "" : observed["name"],
+        raw: direct ? JSON.stringify(context.component) : next.raw,
+        ...(observed["raw"] === null ? { absent: true as const } : {}),
+        docId: observed["docId"],
+      };
+    if (nested) {
+      const known = observation.observed ?? [];
+      if (
+        (!direct && next.name === observation.name) ||
+        known.some((row) => row.name === next.name)
+      )
+        throw new Error(
+          "Cyclic or changed camera component alias: " + next.name,
+        );
+      observation = { ...observation, observed: [...known, next] };
+    }
+    output = await send(observation);
+  }
   if (services.failed(output)) output["success"] = false;
   const result = output["result"];
   if (!record(result)) return output;

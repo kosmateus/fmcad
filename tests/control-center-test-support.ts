@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -19,9 +20,10 @@ import type { ProjectHistoryStore } from "../packages/core/dist/ports/project-hi
 import type { ProjectRegistryStore } from "../packages/core/dist/ports/project-registry.js";
 import type { OpenProjectHistoryOptions } from "../packages/node-adapters/dist/persistence/project-history/sqlite.js";
 
+const load = createRequire(__filename);
 const repositoryRoot = process.cwd();
 const loadModule = <T>(relativePath: string): T =>
-  require(path.join(repositoryRoot, relativePath)) as T;
+  load(path.join(repositoryRoot, relativePath)) as T;
 
 const core = loadModule<typeof import("../packages/core/dist/index.js")>(
   "packages/core/dist/index.js",

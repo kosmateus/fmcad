@@ -3,6 +3,8 @@ import math as _gear_domain_math
 from typing import cast as _gear_cast
 from typing import TypedDict as _gear_TypedDict
 
+from fmcad.domain.values import JsonObject
+
 
 class _GearGeometryParameters(_gear_TypedDict):
     pressureAngle: float

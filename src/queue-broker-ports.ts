@@ -1,6 +1,6 @@
 /** Private composition contracts for the existing shared broker. No port grants
  * SDK ownership: admission and all fences remain in the canonical composition. */
-import type { ChildProcess, spawn } from "node:child_process";
+import type { spawn } from "node:child_process";
 import type { Agent } from "node:http";
 import type { QueueDomain } from "../packages/core/src/domain/queue";
 import type {
@@ -27,12 +27,24 @@ export interface Instance {
   activeCommand?: string;
   documents?: Array<{ isModified?: boolean; creationId?: string }>;
   documentState?: DocumentSnapshot;
+  startupAudit?: import("../packages/node-adapters/src/execution/queue-instance").StartupSdkAudit;
+}
+/** Private readonly observation. None of these data are dispatch authority. */
+export interface StartupObservation {
+  readonly identity: Readonly<Omit<Instance, "startupAudit">>;
+  readonly startupAudit: import("../packages/node-adapters/src/execution/queue-instance").StartupSdkAudit;
+  readonly originalReceipt: import("../packages/node-adapters/src/execution/queue-instance").ProbeReceiptObservation;
+  readonly originalPhysicalRead: import("../packages/node-adapters/src/execution/queue-instance").ProbeReceiptObservation;
+  readonly binding: Readonly<Record<string, unknown>>;
+  readonly broker: { readonly owner: Readonly<Owner>; readonly buildHash: string; readonly configHash: string };
+  readonly native: Readonly<PhysicalTurnBinding["physicalRuntime"]>;
 }
 export interface Identity {
   configHash: string;
   buildHash: string;
   instance: Instance;
   sourceCommit?: string;
+  normalRestart?: Reference;
 }
 export interface Owner {
   pid: number;
@@ -77,6 +89,7 @@ export interface Reply {
 export interface Response {
   status: number;
   raw: string;
+  toolResponse?: unknown;
 }
 export interface Request extends QueueRequest, Record<string, unknown> {
   backend?: string;
@@ -133,9 +146,10 @@ export type State = Omit<
   status(id: string): PublicJob;
   status(): Omit<Snapshot, "jobs"> & { jobs: Record<string, PublicJob> };
   lookup(id: string): Job;
-  next(): Job | null;
+  next(options?: { grant?: boolean }): Job | null;
   submit(request: Request, preparedId?: string): PublicJob;
   assertEpoch(normal?: boolean): void;
+  verifyCurrentEpoch(): Epoch | null;
   isHistorical(id: string): boolean;
   findAnyRequest(clientId: string, requestId: string): PublicJob | null;
 };
@@ -156,6 +170,7 @@ export interface RemoteReceipt extends Binding {
   instance: Instance;
 }
 export interface RecordEvidence {
+  physicalCatalogIndex?: number;
   binding: Binding;
   instance: Instance;
   receipt?: string;
@@ -183,8 +198,7 @@ export interface RecordEvidence {
   dispatchClass?: string;
   dispatchIndex?: number;
 }
-export interface NativeProof {
-  rpcId: string;
+export interface NativeProof extends Binding {
   outcome: string;
   native: {
     kind: string;
@@ -197,17 +211,38 @@ export interface Certificate {
   report?: PythonCheckReport;
   fence(payload: Rpc): void;
 }
-export interface Prepared {
+interface PreparedWire {
   outgoing: Rpc;
   record: RecordEvidence;
   rpcId: string;
-  pythonArtifact?: PreparedPythonArtifact | undefined;
   contextEpoch: number;
   metadataOnly: boolean;
-  pythonCertificate: Certificate;
   journal?: string;
   dispatchRemaining?: number;
 }
+export interface Prepared extends PreparedWire {
+  pythonCertificate: Certificate;
+  pythonArtifact?: PreparedPythonArtifact | undefined;
+}
+export interface MetadataWireProof {
+  readonly wire: Readonly<{
+    jsonrpc: "2.0";
+    method: "tools/call";
+    id: string | number;
+    params: Readonly<{
+      name: "get_open_document_metadata";
+      arguments: Readonly<{ fileId: string; version: number }>;
+    }>;
+  }>;
+  fence(payload: Rpc): void;
+}
+export type PreparedCall =
+  | (Prepared & { metadataProof?: never })
+  | (PreparedWire & {
+      metadataProof: MetadataWireProof;
+      pythonCertificate?: never;
+      pythonArtifact?: never;
+    });
 export interface PreparedPost {
   outgoing: Rpc;
   pythonCertificate: Certificate;
@@ -282,6 +317,7 @@ export interface Origin {
   readonly [key: string]: unknown;
 }
 export interface Send<Result = unknown> {
+  readonly dispatchBoundary?: "broker-post";
   (): Promise<Result>;
   fence(): void;
 }
@@ -309,6 +345,11 @@ export interface Client {
   ): Promise<ToolResult>;
   listTools(): Promise<Array<{ name: string }>>;
   executeUiGuardedScript(script: string, origin?: Origin): Promise<ToolResult>;
+  executeBrokerScript?(
+    script: string,
+    origin: Origin,
+    readOnly?: boolean,
+  ): Promise<ToolResult>;
   prepareCallTool?: (...args: unknown[]) => Promise<Send>;
   prepareUiGuardedScript?: (...args: unknown[]) => Promise<Send>;
   prepareListTools?: (...args: unknown[]) => Promise<Send>;
@@ -331,11 +372,77 @@ export interface Config {
   timeoutMs: number;
   [key: string]: unknown;
 }
+export interface TrustedAddinMetadataAdmission {
+  readonly capability: "get_open_document_metadata";
+  readonly owner: string;
+  readonly endpoint: string;
+  readonly token: string;
+  readonly pid: number;
+  readonly birth: string;
+  readonly instance: string;
+  readonly epoch: string;
+  readonly source: string;
+  readonly build: string;
+}
+/** Token-free exact physical dispatch identity. Never accepted from IPC/config. */
+export type PhysicalTurnBinding =
+  import("../packages/core/src/domain/queue-model").QueuePhysicalBinding;
+export type IsolationTarget = import("../packages/core/src/domain/queue-model").QueueIsolationTarget;
+export interface PhysicalTurnRequest {
+  kind?: "product" | "system-read";
+  brokerNonce?: string;
+  jobId: string;
+  requestId: string;
+  requestHash: string;
+  clientId: string;
+  grantGeneration: number;
+  physicalRequestId: string;
+  documentSelector:
+    | import("../packages/core/src/domain/document").DocumentSelector
+    | { fileId: string; version: number }
+    | undefined;
+}
+export type PhysicalTurnQuiescence =
+  | { state: "unknown" | "active"; binding: PhysicalTurnBinding }
+  | { state: "released"; binding: PhysicalTurnBinding; physicalEvidenceReference: string; evidenceDigest: string;
+    };
 export interface Options {
+  /** Same-process operator data export only, never config, CLI or IPC input.
+   * Selects one fixed startup-readiness audit; must return void synchronously. */
+  captureStartupObservation?: (observation: StartupObservation) => void;
+  authorizePhysicalRequest?: (endpoint: string,
+  ) => Readonly<Record<string, string>>;
+  preparePhysicalGeneration?: (claim: {
+    directory: string; owner: Owner; buildHash: string; configHash: string;
+    assertBrokerOwner: () => void;
+  }) => Promise<void>;
+  bindPhysicalTurn?: (request: PhysicalTurnRequest,
+  ) => PhysicalTurnBinding | undefined;
+  withPhysicalTurn?: <T>(binding: PhysicalTurnBinding, send: () => Promise<T>,
+  ) => Promise<T>;
+  /** Exact, irreversible remote dispatch revocation; absence is fail-closed. */
+  physicalTurnQuiescence?: (binding: Readonly<PhysicalTurnBinding>,
+  ) => Promise<PhysicalTurnQuiescence>;
+  backendTransition?: import("./queue-backend-transition").BackendTransitionApproval;
   confirmOwnership?: boolean;
   confirmVersionTransition?: boolean;
   dir?: string;
   createBackend?: (config: Config) => Client;
+  /** Trusted bootstrap only; never populated from runtime config or IPC. */
+  addinMetadataAdmission?: TrustedAddinMetadataAdmission;
+  /** Private same-process controlled bootstrap only. A serialized profile or
+   * invocation cannot supply a host witness. Absence preserves raw denial. */
+  prepareControlledStdout?: (
+    request: import("@fmcad/core").QueueRequest,
+    pins: import("./protocol-metadata-broker").ProtocolMetadataPins,
+  ) => Promise<import("./python-diagnostic-broker").StdoutCompilationPorts>;
+  /** Same-process operator handoff only; never runtime config or IPC data. */
+  captureControlledIngress?: (ready: {
+    readonly window: import("../packages/node-adapters/src/execution/controlled-ingress-window").ControlledIngressWindow;
+    readonly identity: import("../packages/node-adapters/src/execution/controlled-ingress-window").ControlledIngressIdentity;
+    /** After the existing supported resume completes, never an unpause override. */
+    activate(): void;
+  }) => void;
   /** Explicit physical test adapter only. Production always uses its WSL/native mapping. */
   nativePath?: (file: string) => string;
   stateOptions?: Record<string, unknown>;
@@ -347,6 +454,7 @@ export interface Options {
   deadEpochSuccessorNonce?: string;
   testAtomicWorkflowScope?: AtomicScopeConfig;
   testFusionProcessAlive?: (instance: Instance) => boolean;
+  testCheckPrepared?: (prepared: Prepared) => void | Promise<void>;
   spawnWorker?: typeof spawn;
   pollMs?: number;
 }
@@ -356,6 +464,17 @@ export interface Budget {
   resume(): void;
   close(): void;
 }
+export type ProductContext = Context & {
+  productTurn?: import("../packages/core/src/application/broker-execution").TurnIdentity;
+};
+
+export interface LaneContext {
+  job: Job;
+  worker?: ProductContext;
+  postflight?: boolean;
+  executing: boolean;
+}
+
 export interface Context {
   job: Job;
   token: string;
@@ -371,8 +490,9 @@ export interface Context {
   localDispatchErrors?: Set<unknown>;
   budget?: Budget;
   timeoutPromise?: Promise<never>;
-  child?: ChildProcess;
+  workerProcess?: import("../packages/node-adapters/src/execution/local-worker-process").LocalWorkerProcess;
   nativeActivityId?: string;
+  nativeActivityToken?: ReturnType<QueueGate["beginActivity"]>;
   workflowUnknown?: boolean;
   waitingForPause?: boolean;
   rpcBudget?: Budget | undefined;
@@ -400,6 +520,7 @@ export interface BrokerError {
 export interface WorkerMessage {
   jobId: string;
   workerToken: string;
+  debugTraceMessageId?: string;
   method: "callTool" | "listTools" | "executeUiGuardedScript";
   args: unknown[];
   rpcTimeoutMs: number;
@@ -410,6 +531,8 @@ export interface Flight {
   send: Send<Instance>;
 }
 export interface ProbeOptions {
+  startupAudit?: true;
+  assertCurrent?: () => void;
   mapPath?: (file: string) => string;
   receiptPath?: string;
   binding?: Binding | Record<string, unknown>;
@@ -417,7 +540,10 @@ export interface ProbeOptions {
   diagnosticPath?: string | undefined;
   documentSelector?: DocumentSelector | null | undefined;
   prepared?: Flight | undefined;
-  onObservation?: (instance: Instance) => void | Promise<void>;
+  onObservation?: (
+    instance: Instance,
+    receipt?: import("../packages/node-adapters/src/execution/queue-instance").ProbeReceiptObservation,
+  ) => void | Promise<void>;
 }
 export interface ResetProof {
   nonce: string;
@@ -497,6 +623,7 @@ export interface AtomicProof {
   rpcId: string;
 }
 export interface ObservationScope {
+  assertGrant(): void;
   targetJob: Job;
   observerJob: Job;
   clientId: string;
@@ -519,7 +646,6 @@ export interface ObservationScope {
   resultPath: string;
   toolStarted: boolean;
   proof: AtomicProof | null;
-  originalContext: Context | null;
   observerContext?: Context;
   rpcId?: string;
   rpcJournal?: string;
@@ -544,6 +670,7 @@ export interface ScriptScope {
 }
 export interface Message extends Partial<WorkerMessage> {
   action: string;
+  snapshotFence?: boolean;
   auth?: { clientId: string; clientToken: string } | undefined;
   clientId?: string;
   clientToken?: string;

@@ -1,8 +1,17 @@
 """Exact many-body baseline orchestration; no SDK handles escape this port."""
 import copy as _brep_baseline_copy
 import math as _brep_baseline_math
+from collections.abc import Sequence as _BrepDomainSequence
+from typing import Generic as _BrepGeneric, TypeVar as _BrepTypeVar
 from typing import TYPE_CHECKING as _BREP_TYPE_CHECKING, Literal as _BrepLiteral
 from typing import Protocol as _BrepProtocol, TypedDict as _BrepTypedDict, cast as _brep_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
+_BrepSnapshotBody = _BrepTypeVar('_BrepSnapshotBody')
+_BrepSnapshotBodyCo = _BrepTypeVar('_BrepSnapshotBodyCo', covariant=True)
 
 
 if _BREP_TYPE_CHECKING:
@@ -27,28 +36,30 @@ if _BREP_TYPE_CHECKING:
         frame: "JsonObject | str"
         bodies: list[_BrepBodySpec]
 
-    class _BrepSnapshot(_BrepProtocol):
-        body: "adsk.fusion.BRepBody"
+    class _BrepSnapshot(_BrepProtocol[_BrepSnapshotBodyCo]):
+        @property
+        def body(self) -> _BrepSnapshotBodyCo: ...
+
         frame: "JsonObject | str"
 
         @property
         def transform(self) -> list[int | float]: ...
 
-    class _BrepBaselinePort(_BrepProtocol):
+    class _BrepBaselinePort(_BrepProtocol[_BrepSnapshotBody]):
         def source(self) -> "JsonObject": ...
 
-        def snapshot(self, ref: "JsonValue", frame: "JsonValue") -> _BrepSnapshot: ...
+        def snapshot(self, ref: "JsonValue", frame: "JsonValue") -> _BrepSnapshot[_BrepSnapshotBody]: ...
 
         def identity(self, ref: "JsonValue") -> "JsonRecord": ...
 
         def budget(self) -> None: ...
 
         def publish(self, manifest: _BrepManifest,
-                    snapshots: "Sequence[_BrepSnapshot]") -> "JsonRecord": ...
+                    snapshots: _BrepDomainSequence[_BrepSnapshot[_BrepSnapshotBody]]) -> "JsonRecord": ...
 
-        def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot]]": ...
+        def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot[_BrepSnapshotBody]]]": ...
 
-        def compare(self, snapshot: _BrepSnapshot, ref: "JsonValue", frame: "JsonValue",
+        def compare(self, snapshot: _BrepSnapshot[_BrepSnapshotBody], ref: "JsonValue", frame: "JsonValue",
                     tolerances: "JsonObject") -> "JsonRecord": ...
 
 
@@ -110,16 +121,16 @@ def _brep_baseline_manifest(manifest: object) -> "_BrepManifest":
     return _brep_cast('_BrepManifest', manifest)
 
 
-class BrepBaselineService:
+class BrepBaselineService(_BrepGeneric[_BrepSnapshotBody]):
     """One service per SDK session. Durable artifacts are delegated, never handles.
 
     Port: source, snapshot, identity, compare, budget, publish, restore.
     publish/restore must perform exact serialization and integrity verification.
     """
-    def __init__(self, port: "_BrepBaselinePort", session: str) -> None:
+    def __init__(self, port: "_BrepBaselinePort[_BrepSnapshotBody]", session: str) -> None:
         self.port = port
         self.session = session
-        self._sessions: dict[str, tuple[_BrepManifest, list[_BrepSnapshot]]] = {}
+        self._sessions: dict[str, tuple[_BrepManifest, list[_BrepSnapshot[_BrepSnapshotBody]]]] = {}
         self._next: int = 0
 
     def capture(self, bodies: "JsonValue", frame: "JsonValue",
@@ -128,7 +139,7 @@ class BrepBaselineService:
         if scope not in ('session', 'durable'):
             raise ValueError('scope must be session or durable')
         source = self.port.source()
-        snapshots: list[_BrepSnapshot] = []
+        snapshots: list[_BrepSnapshot[_BrepSnapshotBody]] = []
         rows: list[JsonRecord] = []
         for spec in specs:
             self.port.budget()
@@ -160,7 +171,7 @@ class BrepBaselineService:
     def _result(status: str, reason: str, **extra: "JsonValue") -> "JsonRecord":
         return dict(status=status, passed=False, precision='exact', reason=reason, **extra)
 
-    def _load(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot]] | None":
+    def _load(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot[_BrepSnapshotBody]]] | None":
         if reference.get('scope') == 'session':
             if reference.get('session') != self.session:
                 return None

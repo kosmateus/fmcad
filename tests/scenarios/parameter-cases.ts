@@ -83,7 +83,7 @@ export function parameterScenarios(folder: FixtureFolder): Scenario[] {
           "migration_width",
           "20 mm",
         ]);
-        near(parameters(changed)[0]!["value"], 2);
+        assert.equal(parameters(changed)[0]!["value"], 2);
         const renamed = await command(session, "rename", "param_rename", [
           "migration_width",
           "migration_width_renamed",
@@ -91,6 +91,15 @@ export function parameterScenarios(folder: FixtureFolder): Scenario[] {
         assert.equal(
           parameters(renamed)[0]!["name"],
           "migration_width_renamed",
+        );
+        const renamedList = await command(
+          session,
+          "renamed-list",
+          "param_list",
+        );
+        assert.match(
+          text(renamedList["output"]),
+          /PARAM name=migration_width_renamed/,
         );
         const deleted = await command(session, "delete", "param_delete", [
           "migration_width_renamed",

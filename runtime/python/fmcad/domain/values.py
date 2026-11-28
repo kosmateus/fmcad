@@ -2,7 +2,7 @@
 import enum as _value_enum
 import math as _value_math
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
-from typing import Literal, Protocol as _Protocol, TYPE_CHECKING as _TYPE_CHECKING, TypeAlias, TypeVar, cast
+from typing import Literal, Protocol as _Protocol, TypeAlias, TypeVar, cast
 
 
 JsonValue: TypeAlias = None | bool | int | float | str | Sequence["JsonValue"] | Mapping[str, "JsonValue"]
@@ -42,18 +42,6 @@ class _CadNamed(_Protocol):
     def name(self) -> str: ...
 
 
-if _TYPE_CHECKING:
-    import adsk.core
-    import adsk.fusion
-
-    class _CadAttributes(_Protocol):
-        def itemByName(self, groupName: str, name: str, /) -> adsk.core.Attribute | None: ...
-
-    class _DesignCaster(_Protocol):
-        @staticmethod
-        def cast(arg: object) -> adsk.fusion.Design | None: ...
-
-
 def json_value(value: object) -> JsonValue:
     """Project a DTO, rejecting opaque objects instead of stringifying handles."""
     if isinstance(value, _value_enum.Enum):
@@ -73,6 +61,19 @@ def json_value(value: object) -> JsonValue:
             raise TypeError('DTO keys must be strings')
         return {cast(str, key): json_value(item) for key, item in items.items()}
     raise TypeError('DTO cannot contain an opaque object')
+
+
+def _cad_fields(data: "Mapping[str, object]", required: tuple[str, ...]=(), optional: tuple[str, ...]=()) -> None:
+    missing = set(required) - data.keys()
+    unknown = data.keys() - set(required) - set(optional)
+    if missing or unknown:
+        raise ValueError('Missing inputs: %s; unsupported inputs: %s' % (sorted(missing), sorted(unknown)))
+    for key in ('confirm', 'overwrite', 'unique', 'replace', 'includeModel'):
+        if key in data and type(data[key]) is not bool:
+            raise ValueError(key + ' must be boolean')
+
+
+__fmcad_domain_values__cad_fields = _cad_fields
 
 
 def fields(data: object, required: tuple[str, ...]=(), optional: tuple[str, ...]=()) -> None:

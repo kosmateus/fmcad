@@ -7,8 +7,44 @@ import type {
   QueueDetails,
   SequenceMode,
   AtomicWorkflowObservation,
+  QueueQuarantine,
+  QueuePhysicalDispatch,
+  QueueIsolationTarget,
 } from "./queue-model";
 import { initialQueueSnapshot } from "./queue-model";
+import { validQuarantine,
+  validPhysicalDispatch, quarantineTarget,
+} from "./queue-quarantine";
+import { documentConflicts, documentConflictAllowsInspection, documentConflictFence } from "./document-conflicts";
+import { createDocumentCreationAuthority, verifiedDocumentCreation, validDocumentCreation,
+  type DocumentCreation, type DocumentCreationAuthority } from "./document-creation";
+import { runtimeRetiredJob, projectRuntimeRetirement, verifiedRuntimeRetirement, type RuntimeRetirementAuthority } from "./runtime-retirement";
+import {
+  validDocumentContinuation, verifiedDocumentContinuation,
+  isDocumentContinuationAuthority, createDocumentContinuationAuthority,
+  type DocumentContinuation, type DocumentContinuationAuthority,
+} from "./document-continuation";
+import {
+  createDocumentMetadataReadAuthority, verifiedDocumentMetadataRead, validDocumentMetadataRead,
+  type DocumentMetadataRead, type DocumentMetadataReadAuthority,
+} from "./document-metadata-read";
+import {
+  createProtocolMetadataAuthority, verifiedProtocolMetadata, validProtocolMetadata,
+  isProtocolMetadataMethod, type ProtocolMetadata, type ProtocolMetadataAuthority,
+} from "./protocol-metadata";
+import {
+  createPythonStdoutAuthority, verifiedPythonStdout, validPythonStdout,
+  type PythonStdout, type PythonStdoutAuthority,
+} from "./python-stdout";
+import {
+  documentTargetKey,
+  validDocumentObservation,
+  validDocumentCheckpoints,
+  type DocumentObservation,
+  type DocumentAcceptance,
+  type DocumentBlocker,
+  type DocumentInspection,
+} from "./document-checkpoint";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "expired"]);
 const STATES = new Set([
@@ -22,8 +58,34 @@ const STATES = new Set([
 ]);
 export const terminal = (state: string) => TERMINAL.has(state);
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const retirements = new WeakMap<QueueDomain, RuntimeRetirementAuthority>();
+const continuations = new WeakMap<QueueDomain, Map<string, DocumentContinuationAuthority>>();
+type MetadataReadBinding = {
+  marker: DocumentMetadataRead;
+  authority: DocumentMetadataReadAuthority;
+  originalRpcId?: string;
+};
+const metadataReads = new WeakMap<QueueDomain, Map<string, MetadataReadBinding>>();
+type CreationBinding = { marker: DocumentCreation; authority: DocumentCreationAuthority; originalRpcId?: string };
+const creations = new WeakMap<QueueDomain, Map<string, CreationBinding>>();
+type ProtocolMetadataBinding = {
+  marker: ProtocolMetadata;
+  authority: ProtocolMetadataAuthority;
+  originalRpcId?: string;
+};
+const protocolMetadata = new WeakMap<QueueDomain, Map<string, ProtocolMetadataBinding>>();
+type StdoutBinding = { marker: PythonStdout; authority: PythonStdoutAuthority; originalRpcId?: string };
+const stdoutPrograms = new WeakMap<QueueDomain, Map<string, StdoutBinding>>();
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
+}
+function isSnapshotCapacityRefusal(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "SNAPSHOT_TOO_LARGE"
+  );
 }
 const identifier = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= 256;
@@ -31,24 +93,27 @@ const integer = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const plain = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
-function validWorkflowObservation(value: unknown): value is AtomicWorkflowObservation {
+function validWorkflowObservation(value: unknown,
+): value is AtomicWorkflowObservation {
   if (!plain(value)) return false;
   const keys = [
     "version", "kind", "targetJobId", "targetRequestId", "targetClientId", "targetJobHash", "observerJobHash",
     "targetBuildHash", "observerBuildHash", "projectDirectory", "paused", "controlGeneration", "contextEpoch",
     "reportPath", "reportFingerprint", "commandId", "sessionNonce", "docId",
   ];
-  return Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key)) &&
+  return (
+    Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key)) &&
     value["version"] === 1 && value["kind"] === "atomic-holder-status" &&
-    ["targetJobId", "targetRequestId", "targetClientId", "projectDirectory", "reportPath", "targetBuildHash", "observerBuildHash", "docId"].every(
-      (key) => identifier(value[key]),
-    ) &&
+    ["targetJobId", "targetRequestId", "targetClientId", "projectDirectory", "reportPath", "targetBuildHash", "observerBuildHash", "docId",
+    ].every(
+      (key) => identifier(value[key])) &&
       typeof value["targetJobHash"] === "string" && /^[a-f0-9]{64}$/.test(value["targetJobHash"]) &&
       typeof value["observerJobHash"] === "string" && /^[a-f0-9]{64}$/.test(value["observerJobHash"]) &&
       typeof value["reportFingerprint"] === "string" && /^[a-f0-9]{64}$/.test(value["reportFingerprint"]) &&
       typeof value["paused"] === "boolean" && integer(value["controlGeneration"]) && integer(value["contextEpoch"]) &&
     typeof value["commandId"] === "string" && /^fmcad_atomic_[a-f0-9]{32}$/.test(value["commandId"]) &&
-    typeof value["sessionNonce"] === "string" && /^[a-f0-9]{32}$/.test(value["sessionNonce"]);
+    typeof value["sessionNonce"] === "string" && /^[a-f0-9]{32}$/.test(value["sessionNonce"])
+  );
 }
 function cadInvocation(request: QueueRequest) {
   const payload = request.payload;
@@ -59,13 +124,107 @@ function cadInvocation(request: QueueRequest) {
     ? invocation
     : null;
 }
-function workflowObservationFor(d: QueueSnapshot, id: string) {
+function validDocumentInspection(job: QueueJob): boolean {
+  const marker = job.documentInspection;
+  const invocation = cadInvocation(job.request);
+  const target = quarantineTarget(job.request);
+  const argv = job.request.argv?.[0] === "cad" ? job.request.argv.slice(1) : job.request.argv;
+  if (!marker || marker.version !== 1 || !identifier(marker.generation) ||
+    !identifier(marker.target?.creationId) ||
+    !/^[a-f0-9]{64}$/.test(marker.blockersDigest) ||
+    !(marker.priorCheckpointId === null || identifier(marker.priorCheckpointId)) ||
+    Object.keys(marker).sort().join(",") !== "blockersDigest,generation,priorCheckpointId,target,version" ||
+    !target || canonical(target) !== canonical(marker.target) ||
+    job.request.kind !== "command" || argv?.[0] !== "param" || argv[1] !== "inspect" ||
+    invocation?.["kind"] !== "cad" || invocation["version"] !== 1 ||
+    invocation["operation"] !== "param.inspect" ||
+    invocation["docId"] !== marker.target.creationId ||
+    invocation["docFileId"] !== marker.target.fileId ||
+    !plain(invocation["data"]) || invocation["data"]["includeModel"] !== true ||
+    Object.keys(invocation["data"]).length !== 1)
+    return false;
+  try { documentTargetKey(marker.target); return true; } catch { return false; }
+}
+function documentInspectionAllowed(d: QueueSnapshot, job: QueueJob, hash: (value: string) => string,
+  authority?: RuntimeRetirementAuthority) {
+  if (!validDocumentInspection(job) || d.blocked || d.localUnknown || d.controlBlocked) return false;
+  const marker = job.documentInspection!;
+  const conflicts = documentConflicts(d, marker.target, authority, canonical);
+  return conflicts.every(documentConflictAllowsInspection) &&
+    marker.blockersDigest === hash(canonical(conflicts)) &&
+    (d.documentCheckpoints?.heads[documentTargetKey(marker.target)] ?? null) === marker.priorCheckpointId;
+}
+function validContinuationJob(job: QueueJob) {
+  const marker = job.documentContinuation;
+  const invocation = cadInvocation(job.request);
+  const target = quarantineTarget(job.request);
+  const argv = job.request.argv?.[0] === "cad"
+    ? job.request.argv.slice(1) : job.request.argv;
+  return !!marker && validDocumentContinuation(marker) &&
+    !job.documentInspection && job.request.kind === "command" &&
+    marker.actorClientId === job.clientId && marker.requestHash === job.hash &&
+    !!target && canonical(target) === canonical(marker.target) &&
+    argv?.[0] === "param" && argv[1] === "apply" &&
+    invocation?.["kind"] === "cad" && invocation["version"] === 1 &&
+    invocation?.["operation"] === "param.apply" &&
+    invocation["docId"] === marker.target.creationId &&
+    invocation["docFileId"] === marker.target.fileId &&
+    invocation["component"] === undefined && invocation["preview"] !== true &&
+    plain(invocation["data"]);
+}
+function documentContinuationAllowed(
+  d: QueueSnapshot, job: QueueJob, hash: (value: string) => string,
+  retirement: RuntimeRetirementAuthority | undefined,
+  authority: DocumentContinuationAuthority | undefined,
+  domain: QueueDomain,
+) {
+  if (!validContinuationJob(job) || !isDocumentContinuationAuthority(authority, domain) ||
+    d.blocked || d.localUnknown || d.controlBlocked) return false;
+  const marker = job.documentContinuation!;
+  let current: DocumentContinuation;
+  try {
+    current = verifiedDocumentContinuation(authority, domain);
+  } catch (error) {
+    const code = plain(error) ? error["code"] : undefined;
+    if (typeof code === "string" &&
+      ["NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED", "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+        "DOCUMENT_UNLOCK_STALE", "CHECKPOINT_CHANGED",
+        "DOCUMENT_CONTINUATION_UNPROVEN", "DOCUMENT_STATE_CHANGED"].includes(code))
+      return false;
+    // Namespace/owner/durability failures are not per-job expiration.
+    throw error;
+  }
+  if (canonical(current) !== canonical(marker)) return false;
+  const identity = { ...job.request };
+  delete identity.description;
+  if (hash(canonical(identity)) !== marker.requestHash) return false;
+  const records = d.documentCheckpoints;
+  const observation = records?.observations[marker.observationId];
+  const acceptance = records?.acceptances[marker.acceptanceId];
+  if (!observation || !acceptance ||
+    records!.heads[documentTargetKey(marker.target)] !== marker.acceptanceId ||
+    acceptance.actorClientId !== job.clientId ||
+    observation.actorClientId !== job.clientId ||
+    acceptance.observationId !== marker.observationId ||
+    acceptance.observationDigest !== hash(canonical(observation)) ||
+    observation.generation !== marker.generation ||
+    observation.stateDigest !== marker.stateDigest ||
+    canonical(observation.target) !== canonical(marker.target)) return false;
+  const conflicts = documentConflicts(d, marker.target, retirement, canonical);
+  if (!conflicts.every(documentConflictAllowsInspection) ||
+    hash(canonical(conflicts)) !== marker.blockersDigest) return false;
+  const blockers = conflicts.map((item) => ({
+    jobId: item.jobId, requestId: item.requestId, originalHash: item.jobHash,
+    catalogDigest: item.catalogDigest, barrierRef: item.evidenceReference,
+  }));
+  return canonical(blockers) === canonical(observation.blockers);
+}
+/** Immutable marker/request bindings, without granting operational eligibility. */
+function workflowObservationBinding(d: QueueSnapshot, id: string) {
   const observer = d.jobs[id];
   const marker = observer?.workflowObservation;
   const target = marker && d.jobs[marker.targetJobId];
-  const current = !!(target && d.blocked?.id === target.id && target.state === "needs_reconciliation");
-  const historical = !!(target && terminal(target.state) && terminal(observer?.state || ""));
-  if (!target || (!current && !historical) || !marker || !validWorkflowObservation(marker) || marker.targetJobId !== target.id ||
+  if (!target || !marker || !validWorkflowObservation(marker) || marker.targetJobId !== target.id ||
       marker.targetRequestId !== target.requestId || marker.targetClientId !== target.clientId ||
       marker.targetJobHash !== target.hash || marker.targetBuildHash !== target.request.buildHash ||
       marker.observerJobHash !== observer.hash || marker.observerBuildHash !== observer.request.buildHash || observer.clientId !== target.clientId ||
@@ -79,6 +238,40 @@ function workflowObservationFor(d: QueueSnapshot, id: string) {
       (data["operations"] !== undefined && (!Array.isArray(data["operations"]) || data["operations"].length !== 0)) ||
       payload["docId"] !== marker.docId || observer.request.buildHash !== marker.observerBuildHash) return null;
   return marker;
+}
+function workflowObservationFor(d: QueueSnapshot, id: string) {
+  const marker = workflowObservationBinding(d, id);
+  if (!marker) return null;
+  const target = d.jobs[marker.targetJobId]!, observer = d.jobs[id]!;
+  const current = d.blocked?.id === target.id && target.state === "needs_reconciliation";
+  const historical = terminal(target.state) && terminal(observer.state);
+  return current || historical ? marker : null;
+}
+/** Validation of immutable history only. This must never replace the operational
+ * workflowObservationFor predicate or authorize another observer dispatch. */
+function retiredWorkflowObservationHistory(
+  d: QueueSnapshot, id: string, authority: RuntimeRetirementAuthority | undefined,
+) {
+  if (!d.appliedRuntimeRetirement && !d.runtimeRetiredExposures) return false;
+  const coverage = verifiedRuntimeRetirement(authority);
+  const original = coverage.frozen.jobs[id], observer = d.jobs[id];
+  const marker = original && workflowObservationBinding(coverage.frozen, id);
+  const target = marker && d.jobs[marker.targetJobId];
+  if (!original || !observer || !marker || !target ||
+      !runtimeRetiredJob(d, target, authority, canonical)) return false;
+  if (terminal(original.state))
+    return canonical(observer) === canonical(original);
+  if (runtimeRetiredJob(d, observer, authority, canonical)) return true;
+  const covered = coverage.jobs[id];
+  if (covered?.outcome !== "not_started" || original.state !== "queued" ||
+      canonical(covered.original) !== canonical(original) || !integer(observer.finishedAt))
+    return false;
+  return canonical(observer) === canonical({
+    ...original, state: "failed", code: "RUNTIME_RETIRED_NOT_STARTED",
+    finishedAt: observer.finishedAt,
+    details: { executionOutcome: "not_started", userScriptSubmitted: false,
+      mayHaveMutated: false, code: "RUNTIME_RETIRED_NOT_STARTED" },
+  });
 }
 function normalizeDescription(value: string): string | undefined {
   if (
@@ -154,6 +347,27 @@ export function validateQueueOptions({
     fail("INVALID_OPTIONS", "now must be a clock function");
 }
 
+function advanceQuiescentInstanceEpoch(
+  d: QueueSnapshot,
+  transitionId: string,
+  retirement: RuntimeRetirementAuthority | undefined,
+) {
+  if (
+    d.active || d.blocked || d.lease ||
+    Object.values(d.jobs).some((job) =>
+      !terminal(job.state) && !runtimeRetiredJob(d, job, retirement, canonical))
+  )
+    fail("QUEUE_NOT_QUIESCENT",
+      "Automatic instance recovery requires terminal jobs and no active job, block or lease");
+  if (d.lastInstanceTransitionId === transitionId)
+    return { alreadyApplied: true, revision: d.revision, epoch: d.epoch };
+  const previous = { revision: d.revision, epoch: d.epoch };
+  d.revision++;
+  d.epoch++;
+  d.lastInstanceTransitionId = transitionId;
+  return { alreadyApplied: false, previous, revision: d.revision, epoch: d.epoch };
+}
+
 export class QueueDomain {
   data: QueueSnapshot;
   readonly maxQueued: number;
@@ -178,6 +392,7 @@ export class QueueDomain {
     newId,
     hash,
     commit,
+    runtimeRetirement,
   }: QueueDomainOptions) {
     validateQueueOptions({ maxQueued, maxPerClient, idleMs, leaseMs, now });
     this.maxQueued = maxQueued;
@@ -188,6 +403,7 @@ export class QueueDomain {
     this.newId = newId;
     this.hash = hash;
     this.commit = commit;
+    if (runtimeRetirement) retirements.set(this, runtimeRetirement);
     this.data =
       snapshot === undefined ? initialQueueSnapshot() : copy(snapshot);
     if (!recover) {
@@ -212,6 +428,8 @@ export class QueueDomain {
       fail("CORRUPT_STATE", "Unsupported queue snapshot");
     }
     const jobs = Object.values(d.jobs);
+    if (d.appliedRuntimeRetirement || d.runtimeRetiredExposures)
+      projectRuntimeRetirement(d, runtimeRetirement!, canonical, this.hash, this._time());
     if (
       jobs.some(
         (j) =>
@@ -241,22 +459,69 @@ export class QueueDomain {
       fail("CORRUPT_STATE", "Invalid sequence lease");
     }
     for (const job of jobs) {
+      if (job.documentInspection !== undefined && !validDocumentInspection(job))
+        fail("CORRUPT_STATE", "Invalid broker-authored document inspection marker");
+      if (job.documentContinuation !== undefined && !validContinuationJob(job))
+        fail("CORRUPT_STATE", "Invalid broker-authored document continuation marker");
+      if (job.documentMetadataRead !== undefined &&
+          (!validDocumentMetadataRead(job.documentMetadataRead) ||
+           job.documentMetadataRead.requestHash !== job.hash ||
+            job.documentInspection || job.documentContinuation || job.documentCreation))
+        fail("CORRUPT_STATE", "Invalid broker-authored metadata read marker");
+      if (job.documentCreation !== undefined &&
+          (!validDocumentCreation(job.documentCreation) || job.documentCreation.requestHash !== job.hash ||
+           job.documentInspection || job.documentContinuation || job.documentMetadataRead))
+        fail("CORRUPT_STATE", "Invalid broker-authored creation marker");
+      if (job.protocolMetadata !== undefined &&
+          (!validProtocolMetadata(job.protocolMetadata) ||
+           job.protocolMetadata.requestHash !== job.hash ||
+           job.request.kind !== "rpc" || !isProtocolMetadataMethod(job.request.payload?.["method"]) ||
+           job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation))
+        fail("CORRUPT_STATE", "Invalid broker-authored protocol metadata marker");
+      if (job.pythonStdout !== undefined &&
+          (!validPythonStdout(job.pythonStdout) || job.pythonStdout.requestHash !== job.hash ||
+           job.documentInspection || job.documentContinuation || job.documentMetadataRead ||
+           job.documentCreation || job.protocolMetadata))
+        fail("CORRUPT_STATE", "Invalid broker-authored stdout marker");
       if (job.workflowObservation !== undefined && !validWorkflowObservation(job.workflowObservation))
         fail("CORRUPT_STATE", "Invalid scoped workflow observation marker");
-      if (job.workflowObservation && !workflowObservationFor(d, job.id))
-        fail("CORRUPT_STATE", "Scoped workflow observation marker does not match its blocked owner job");
+      if (job.workflowObservation && !workflowObservationFor(d, job.id) &&
+          !retiredWorkflowObservationHistory(d, job.id, retirements.get(this)))
+        fail("CORRUPT_STATE", "Scoped workflow observation marker does not match its blocked owner job",
+        );
     }
+    if (d.quarantined !== undefined &&
+        (!plain(d.quarantined) || Object.entries(d.quarantined).some(
+          ([id, record]) => !Object.hasOwn(d.jobs, id) || !plain(record) || record.jobId !== id ||
+            !validQuarantine(d.jobs[id]!, record, this.hash),
+        )))
+      fail("CORRUPT_STATE", "Invalid UNKNOWN dispatch quarantine");
+    if (d.documentCheckpoints !== undefined &&
+      !validDocumentCheckpoints(d.documentCheckpoints, (value) => this.hash(canonical(value))))
+      fail("CORRUPT_STATE", "Invalid document checkpoint history");
+    if (d.documentUnlockIntents !== undefined &&
+      (!plain(d.documentUnlockIntents) || Object.entries(d.documentUnlockIntents).some(([key, intent]) =>
+        !plain(intent) || Object.keys(intent).sort().join(",") !== "actorClientId,requestHash,requestId" ||
+        !identifier(intent.actorClientId) || !identifier(intent.requestId) ||
+        typeof intent.requestHash !== "string" || !/^[a-f0-9]{64}$/.test(intent.requestHash) ||
+        key !== this.hash(canonical([intent.actorClientId, intent.requestId])))))
+      fail("CORRUPT_STATE", "Invalid document unlock request history");
     const uncertain = jobs.filter((j) =>
-      ["running", "sending", "needs_reconciliation"].includes(j.state),
+      ["running", "sending", "needs_reconciliation"].includes(j.state) &&
+      !Object.hasOwn(d.quarantined ?? {}, j.id) &&
+      !runtimeRetiredJob(d, j, retirements.get(this), canonical),
     );
     const activeObservation = d.active ? workflowObservationFor(d, d.active) : null;
+    let recoveryChanged = false;
     if (activeObservation) {
       const observer = d.jobs[d.active!]!;
       const original = d.jobs[activeObservation.targetJobId]!;
       if (d.blocked?.id !== original.id || original.state !== "needs_reconciliation" ||
-          !["running", "sending", "needs_reconciliation"].includes(observer.state) ||
+          !["running", "sending", "needs_reconciliation"].includes(observer.state,
+        ) ||
           uncertain.length !== 2 || !uncertain.includes(observer) || !uncertain.includes(original))
-        fail("CORRUPT_STATE", "Scoped observation no longer matches the single blocked atomic job");
+        fail("CORRUPT_STATE", "Scoped observation no longer matches the single blocked atomic job",
+        );
     } else if (
       uncertain.length > 1 ||
       (d.active && !uncertain.some((j) => j.id === d.active)) ||
@@ -266,6 +531,12 @@ export class QueueDomain {
     }
     if (uncertain.length && !activeObservation) {
       const job = uncertain[0]!;
+      recoveryChanged =
+        job.state !== "needs_reconciliation" ||
+        job.sequenceState !==
+          (job.sequenceId ? "needs_reconciliation" : null) ||
+        d.active !== job.id ||
+        !d.blocked;
       job.state = "needs_reconciliation";
       job.sequenceState = job.sequenceId ? "needs_reconciliation" : null;
       d.active = job.id;
@@ -275,6 +546,7 @@ export class QueueDomain {
         at: this._time(),
       };
     } else if (activeObservation && ["running", "sending"].includes(d.jobs[d.active!]!.state)) {
+      recoveryChanged = true;
       const observer = d.jobs[d.active!]!;
       observer.state = "needs_reconciliation";
       observer.code = "ATOMIC_OBSERVATION_INTERRUPTED";
@@ -292,6 +564,7 @@ export class QueueDomain {
         job.id !== d.localUnknown?.id &&
         ["preparing", "processing", "queued"].includes(job.state)
       ) {
+        recoveryChanged = true;
         Object.assign(job, {
           state: "failed",
           code: "LOCAL_WORKER_INTERRUPTED",
@@ -301,8 +574,51 @@ export class QueueDomain {
         if (d.lease?.clientId === job.clientId) d.lease = null;
       }
     }
+    if (d.localUnknown && !d.active && !d.blocked) recoveryChanged = true;
     this._promoteLocalUnknown(d);
-    this._commit(() => null);
+    try {
+      this._commit(() => null);
+    } catch (error) {
+      if (!isSnapshotCapacityRefusal(error) || !recoveryChanged) throw error;
+      // The durable snapshot retains the pre-recovery states. Derive local
+      // failures without replay and keep physically unfinished jobs blocked
+      // as UNKNOWN, without claiming this projection was persisted.
+      this._waiting = Object.values(this.data.jobs).filter(
+        (job) => job.state === "queued",
+      );
+    }
+  }
+
+  writerStatus(): Readonly<{ ready: boolean; writing: boolean; faulted: boolean }> {
+    return Object.freeze({
+      ready: !this._writing && !this._fault,
+      writing: this._writing,
+      faulted: !!this._fault,
+    });
+  }
+
+  beginControlProbe(rpcId: string): void {
+    if (typeof rpcId !== "string" || !rpcId.trim())
+      fail("INVALID_REQUEST", "A control probe requires its original RPC id");
+    this._commit((draft) => {
+      if (draft.controlBlocked)
+        fail("RECONCILIATION_REQUIRED", "An earlier control probe is unresolved");
+      draft.controlBlocked = { rpcId };
+      return null;
+    });
+  }
+
+  settleControlProbe(rpcId: string): boolean {
+    const matches = (value: unknown): boolean =>
+      !!value && typeof value === "object" &&
+      "rpcId" in value && value.rpcId === rpcId;
+    if (!matches(this.data.controlBlocked))
+      return false;
+    return this._commit((draft) => {
+      if (!matches(draft.controlBlocked)) return false;
+      delete draft.controlBlocked;
+      return true;
+    });
   }
 
   _time() {
@@ -330,10 +646,32 @@ export class QueueDomain {
       try {
         this.commit?.(draft);
       } catch (error) {
-        this._fault = error;
+        if (!isSnapshotCapacityRefusal(error)) this._fault = error;
         throw error;
       }
       this.data = draft;
+      const capabilities = continuations.get(this);
+      if (capabilities)
+        for (const id of capabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state))
+            capabilities.delete(id);
+      const reads = metadataReads.get(this);
+      if (reads)
+        for (const id of reads.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state))
+             reads.delete(id);
+      const creationCapabilities = creations.get(this);
+      if (creationCapabilities)
+        for (const id of creationCapabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state)) creationCapabilities.delete(id);
+      const protocolCapabilities = protocolMetadata.get(this);
+      if (protocolCapabilities)
+        for (const id of protocolCapabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state)) protocolCapabilities.delete(id);
+      const stdoutCapabilities = stdoutPrograms.get(this);
+      if (stdoutCapabilities)
+        for (const id of stdoutCapabilities.keys())
+          if (!draft.jobs[id] || terminal(draft.jobs[id].state)) stdoutCapabilities.delete(id);
       // Index only real transactions; idle ticks never scan terminal history.
       this._waiting = Object.values(draft.jobs).filter(
         (job) => job.state === "queued",
@@ -501,6 +839,11 @@ export class QueueDomain {
       d.lease = null;
     for (const job of Object.values(d.jobs)) {
       if (job.state !== "queued") continue;
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job)) {
+        this._refuseDocumentConflict(d, job, time);
+        job.code = job.pythonStdout ? "PYTHON_STDOUT_UNPROVEN" : job.protocolMetadata ? "PROTOCOL_METADATA_UNPROVEN" : "CHECKPOINT_CHANGED";
+        continue;
+      }
       const r = job.request;
       const code = job.contextEnded
         ? "SEQUENCE_EXPIRED"
@@ -541,6 +884,344 @@ export class QueueDomain {
   }
 
   submit(request: unknown, preparedId?: string) {
+    return this._submit(request, preparedId);
+  }
+
+  submitDocumentInspection(request: unknown, marker: DocumentInspection) {
+    return this._submit(request, undefined, copy(marker));
+  }
+  submitDocumentContinuation(
+    request: unknown, authority: DocumentContinuationAuthority,
+  ) {
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const marker = verifiedDocumentContinuation(authority, this);
+    const result = this._submit(request, undefined, undefined, { marker, authority });
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) &&
+      ["queued", "preparing", "processing"].includes(job.state) && job.documentContinuation &&
+      canonical(job.documentContinuation) === canonical(marker)) {
+      let capabilities = continuations.get(this);
+      if (!capabilities) continuations.set(this, capabilities = new Map());
+      capabilities.set(job.id, authority);
+    }
+    return result;
+  }
+  /** Private server composition binds the capability to this exact queue. */
+  createDocumentContinuationAuthority(verify: () => DocumentContinuation) {
+    return createDocumentContinuationAuthority(this, verify);
+  }
+  createDocumentMetadataReadAuthority(verify: () => DocumentMetadataRead) {
+    return createDocumentMetadataReadAuthority(this, verify);
+  }
+  createDocumentCreationAuthority(verify: () => DocumentCreation) {
+    return createDocumentCreationAuthority(this, verify);
+  }
+  submitDocumentCreation(request: unknown, authority: DocumentCreationAuthority) {
+    const binding = { marker: verifiedDocumentCreation(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, undefined, undefined, undefined, false, undefined, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) && ["queued", "preparing", "processing"].includes(job.state)) {
+      let entries = creations.get(this);
+      if (!entries) creations.set(this, entries = new Map());
+      entries.set(job.id, binding);
+    }
+    return result;
+  }
+  _creationAllowed(d: QueueSnapshot, job: QueueJob, binding?: CreationBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+      const current = verifiedDocumentCreation(binding.authority, this);
+      const identity = { ...job.request };
+      delete identity.description;
+      // A known retired executor cannot touch the newly allocated document.
+      // A current per-turn quarantine (even a target-scoped one) is not retired.
+      return canonical(current) === canonical(binding.marker) &&
+        canonical(job.documentCreation) === canonical(binding.marker) &&
+        current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+        documentConflicts(d, null, retirements.get(this), canonical)
+          .every((conflict) => documentConflictFence(conflict) === "runtime_retired");
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["DOCUMENT_CREATION_UNPROVEN", "NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED",
+            "DOCUMENT_UNLOCK_NOT_AUTHENTICATED", "DOCUMENT_UNLOCK_STALE"].includes(code)) return false;
+      throw error; // Real storage, owner and runtime-root faults stay faults.
+    }
+  }
+  assertDocumentCreation(id: string, programHash: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id);
+    const binding = creations.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const intent = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId && binding?.originalRpcId === committedRpcId && !!committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._creationAllowed(this.data, job, binding) ||
+        binding.marker.programHash !== programHash || binding.marker.rpcHash !== rpcHash || !intent)
+      fail("DOCUMENT_CREATION_UNPROVEN", "Creation must match its one original compiler-bound RPC");
+    return copy(binding.marker);
+  }
+  hasDocumentCreation(id: string) { return creations.get(this)?.has(id) ?? false; }
+  createProtocolMetadataAuthority(verify: () => ProtocolMetadata) {
+    return createProtocolMetadataAuthority(this, verify);
+  }
+  submitProtocolMetadata(request: unknown, authority: ProtocolMetadataAuthority, preparedId?: string) {
+    const binding = { marker: verifiedProtocolMetadata(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, preparedId, undefined, undefined, false, undefined, undefined, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) &&
+        ["queued", "preparing", "processing"].includes(job.state)) {
+      let entries = protocolMetadata.get(this);
+      if (!entries) protocolMetadata.set(this, entries = new Map());
+      entries.set(job.id, binding);
+    }
+    return result;
+  }
+  _protocolMetadataAllowed(d: QueueSnapshot, job: QueueJob, binding?: ProtocolMetadataBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+      const current = verifiedProtocolMetadata(binding.authority, this);
+      const identity = { ...job.request };
+      delete identity.description;
+      return job.request.kind === "rpc" &&
+        isProtocolMetadataMethod(job.request.payload?.["method"]) &&
+        canonical(current) === canonical(binding.marker) &&
+        canonical(job.protocolMetadata) === canonical(binding.marker) &&
+        current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+        documentConflicts(d, null, retirements.get(this), canonical)
+          .every(documentConflictAllowsInspection);
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["PROTOCOL_METADATA_UNPROVEN", "NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED",
+            "DOCUMENT_UNLOCK_NOT_AUTHENTICATED", "DOCUMENT_UNLOCK_STALE"].includes(code)) return false;
+      throw error;
+    }
+  }
+  assertProtocolMetadata(id: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id);
+    const binding = protocolMetadata.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const intent = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId &&
+        binding?.originalRpcId === committedRpcId && !!committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._protocolMetadataAllowed(this.data, job, binding) ||
+        binding.marker.rpcHash !== rpcHash || !intent)
+      fail("PROTOCOL_METADATA_UNPROVEN", "Metadata must match its one original compiler-bound protocol RPC");
+    return copy(binding.marker);
+  }
+  hasProtocolMetadata(id: string) { return protocolMetadata.get(this)?.has(id) ?? false; }
+  createPythonStdoutAuthority(verify: () => PythonStdout) {
+    return createPythonStdoutAuthority(this, verify);
+  }
+  submitPythonStdout(request: unknown, authority: PythonStdoutAuthority, preparedId?: string) {
+    const binding = { marker: verifiedPythonStdout(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, preparedId, undefined, undefined, false, undefined, undefined, undefined, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    if (job && !existingIds.has(job.id) && ["queued", "preparing", "processing"].includes(job.state)) {
+      let entries = stdoutPrograms.get(this);
+      if (!entries) stdoutPrograms.set(this, entries = new Map());
+      entries.set(job.id, binding);
+    }
+    return result;
+  }
+  _pythonStdoutAllowed(d: QueueSnapshot, job: QueueJob, binding?: StdoutBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+    const current = verifiedPythonStdout(binding.authority, this);
+    const request = job.request, rpc = request.payload;
+    const params = rpc && plain(rpc["params"]) ? rpc["params"] : undefined;
+    const args = params && plain(params["arguments"]) ? params["arguments"] : undefined;
+    const identity = { ...request };
+    delete identity.description;
+    return request.kind === "rpc" && rpc?.["method"] === "tools/call" &&
+      params?.["name"] === "execute_python" && args?.["persistent"] === false &&
+      typeof args?.["code"] === "string" &&
+      Object.keys(args).sort().join() === "code,persistent" &&
+      this.hash(args["code"]) === current.sourceHash &&
+      canonical(current) === canonical(binding.marker) &&
+      canonical(job.pythonStdout) === canonical(binding.marker) &&
+      current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+      documentConflicts(d, null, retirements.get(this), canonical).every(documentConflictAllowsInspection);
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["PYTHON_STDOUT_UNPROVEN", "PYTHON_DIAGNOSTIC_UNPROVEN",
+            "HOST_BINDINGS_UNPROVEN", "NOT_AUTHORIZED", "EPOCH_CLIENT_NOT_GRANTED"].includes(code))
+        return false;
+      throw error;
+    }
+  }
+  assertPythonStdout(id: string, programHash: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id), binding = stdoutPrograms.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const original = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId && binding?.originalRpcId === committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._pythonStdoutAllowed(this.data, job, binding) ||
+        programHash !== binding.marker.programHash || rpcHash !== binding.marker.rpcHash || !original)
+      fail("PYTHON_STDOUT_UNPROVEN", "Stdout must match its one original compiler-bound RPC");
+    return copy(binding.marker);
+  }
+  hasPythonStdout(id: string) { return stdoutPrograms.get(this)?.has(id) ?? false; }
+  submitDocumentMetadataRead(request: unknown, authority: DocumentMetadataReadAuthority) {
+    const binding = { marker: verifiedDocumentMetadataRead(authority, this), authority };
+    const existingIds = new Set(Object.keys(this.data.jobs));
+    const result = this._submit(request, undefined, undefined, undefined, false, binding);
+    const id = result["id"];
+    const job = typeof id === "string" ? this.data.jobs[id] : undefined;
+    // Deduplication must never attach fresh authority to an older request.
+    if (job && !existingIds.has(job.id) &&
+        ["queued", "preparing", "processing"].includes(job.state)) {
+      let bindings = metadataReads.get(this);
+      if (!bindings) metadataReads.set(this, bindings = new Map());
+      bindings.set(job.id, binding);
+    }
+    return result;
+  }
+  _metadataReadAllowed(d: QueueSnapshot, job: QueueJob, binding?: MetadataReadBinding) {
+    if (!binding || d.blocked || d.localUnknown || d.controlBlocked) return false;
+    try {
+      const current = verifiedDocumentMetadataRead(binding.authority, this);
+      const identity = { ...job.request };
+      delete identity.description;
+      return canonical(current) === canonical(binding.marker) &&
+        canonical(job.documentMetadataRead) === canonical(binding.marker) &&
+        current.requestHash === job.hash && this.hash(canonical(identity)) === job.hash &&
+        documentConflicts(d, null, retirements.get(this), canonical)
+          .every(documentConflictAllowsInspection);
+    } catch (error) {
+      const code = plain(error) ? error["code"] : undefined;
+      if (typeof code === "string" &&
+          ["DOCUMENT_METADATA_READ_UNPROVEN", "NOT_AUTHORIZED",
+            "EPOCH_CLIENT_NOT_GRANTED", "DOCUMENT_UNLOCK_NOT_AUTHENTICATED",
+            "DOCUMENT_UNLOCK_STALE"].includes(code)) return false;
+      // Storage, owner and runtime-root faults are not ordinary job expiry.
+      throw error;
+    }
+  }
+  /** Bind the actual pre-receipt program and logical RPC. The adapter must also
+   * fence the final wire certificate and original physical-turn binding. */
+  assertDocumentMetadataRead(id: string, programHash: string, rpcHash: string, committedRpcId?: string) {
+    const job = this._job(this.data, id);
+    const binding = metadataReads.get(this)?.get(id);
+    const dispatch = job.dispatch;
+    const originalIntent = committedRpcId === undefined
+      ? (dispatch?.rpcCount ?? 0) === 0 && binding?.originalRpcId === undefined
+      : dispatch?.rpcCount === 1 && dispatch.completedCount === 0 &&
+        dispatch.details?.["rpcId"] === committedRpcId &&
+        binding?.originalRpcId === committedRpcId && !!committedRpcId;
+    if (!binding || !["queued", "preparing", "processing", "running", "sending"].includes(job.state) ||
+        !this._metadataReadAllowed(this.data, job, binding) ||
+        binding.marker.programHash !== programHash || binding.marker.rpcHash !== rpcHash ||
+        !originalIntent)
+      fail("DOCUMENT_METADATA_READ_UNPROVEN", "The actual metadata read must match its one compiler-bound RPC");
+    return copy(binding.marker);
+  }
+  hasDocumentMetadataRead(id: string) {
+    return metadataReads.get(this)?.has(id) ?? false;
+  }
+
+  /** Persist a server-side checkpoint refusal with the original immutable input.
+   * This entrypoint can only deny work; it cannot mint continuation authority. */
+  refuseDocumentContinuation(request: unknown, preparedId?: string) {
+    return this._submit(request, preparedId, undefined, undefined, true);
+  }
+  _documentJobAllowed(d: QueueSnapshot, job: QueueJob) {
+    if (job.pythonStdout)
+      return this._pythonStdoutAllowed(d, job, stdoutPrograms.get(this)?.get(job.id));
+    if (job.protocolMetadata)
+      return this._protocolMetadataAllowed(d, job, protocolMetadata.get(this)?.get(job.id));
+    if (job.documentCreation) return this._creationAllowed(d, job, creations.get(this)?.get(job.id));
+    const metadata = metadataReads.get(this)?.get(job.id);
+    if (job.documentMetadataRead) return this._metadataReadAllowed(d, job, metadata);
+    if (job.documentInspection)
+      return documentInspectionAllowed(d, job, this.hash, retirements.get(this));
+    if (job.documentContinuation)
+      return documentContinuationAllowed(d, job, this.hash,
+        retirements.get(this), continuations.get(this)?.get(job.id), this);
+    return !documentConflicts(d, quarantineTarget(job.request),
+      retirements.get(this), canonical).length;
+  }
+  /** Preparation and dispatch compare their independently compiled guarded
+   * source. This grants neither an active SDK slot nor dispatch authority. */
+  assertDocumentContinuation(id: string, sourceHash: string) {
+    const job = this._job(this.data, id);
+    if (!["preparing", "processing", "queued", "running", "sending"].includes(job.state) ||
+      !job.documentContinuation || job.documentContinuation.sourceHash !== sourceHash ||
+      !this._documentJobAllowed(this.data, job))
+      fail("CHECKPOINT_CHANGED", "A fresh accepted checkpoint and exact guarded program are required");
+    return copy(job.documentContinuation);
+  }
+
+  assertDocumentProbeAllowed() {
+    if (this.data.blocked || this.data.localUnknown || this.data.controlBlocked)
+      fail("SDK_QUIESCENCE_UNPROVEN", "The previous physical execution is not fenced");
+    if (!this.documentConflicts(null).every(documentConflictAllowsInspection))
+      fail("UNKNOWN_SCOPE_UNPROVEN", "Raw exposure requires an authenticated runtime-retirement barrier before identity lookup");
+  }
+
+  documentConflicts(target: QueueIsolationTarget | null) {
+    return documentConflicts(this.data, target, retirements.get(this), canonical);
+  }
+
+  rememberDocumentUnlockRequest(actorClientId: string, request: unknown) {
+    const input: unknown = JSON.parse(canonical(request));
+    if (!identifier(actorClientId) || !plain(input) ||
+      !identifier(input["requestId"]) ||
+      (input["action"] !== "inspect" && input["action"] !== "accept"))
+      fail("INVALID_REQUEST", "Expected a decoded document unlock control request");
+    const intent = {
+      actorClientId, requestId: input["requestId"],
+      requestHash: this.hash(canonical(input)),
+    };
+    const key = this.hash(canonical([actorClientId, intent.requestId]));
+    return this._commit((d) => {
+      const existing = d.documentUnlockIntents?.[key];
+      if (existing && existing.requestHash !== intent.requestHash)
+        fail("REQUEST_CONFLICT", "Document unlock request ID already identifies different arguments");
+      d.documentUnlockIntents ??= {};
+      d.documentUnlockIntents[key] = intent;
+      return intent;
+    });
+  }
+
+  documentInspectionFence(target: QueueIsolationTarget, generation: string): DocumentInspection {
+    if (!identifier(target.creationId))
+      fail("DOCUMENT_TARGET_UNRESOLVED", "Resolve the current document creation identity before full inspection");
+    const key = documentTargetKey(target);
+    if (!identifier(generation))
+      fail("INVALID_DOCUMENT_INSPECTION", "A current runtime generation is required");
+    if (this.data.blocked || this.data.localUnknown || this.data.controlBlocked)
+      fail("SDK_QUIESCENCE_UNPROVEN", "The previous physical execution is not fenced");
+    const conflicts = this.documentConflicts(target);
+    if (!conflicts.every(documentConflictAllowsInspection))
+      fail("UNKNOWN_SCOPE_UNPROVEN", "Raw exposure requires a host-retirement barrier before inspection");
+    return {
+      version: 1, target: copy(target), generation,
+      blockersDigest: this.hash(canonical(conflicts)),
+      priorCheckpointId: this.data.documentCheckpoints?.heads[key] ?? null,
+    };
+  }
+
+  // Internal server entrypoint; inspection markers are not decoded from RPC.
+  _submit(request: unknown, preparedId?: string, inspection?: DocumentInspection,
+    continuation?: { marker: DocumentContinuation; authority: DocumentContinuationAuthority },
+    refusedContinuation = false, metadata?: MetadataReadBinding, creation?: CreationBinding,
+    protocol?: ProtocolMetadataBinding, stdout?: StdoutBinding) {
     if (
       preparedId !== undefined &&
       (!identifier(preparedId) || this.data.jobs[preparedId])
@@ -561,6 +1242,28 @@ export class QueueDomain {
         "INVALID_REQUEST",
         "requestId, clientId and kind (command or rpc) are required",
       );
+    }
+    if (r.debugTrace !== undefined) {
+      const trace = r.debugTrace as unknown;
+      if (
+        !trace ||
+        typeof trace !== "object" ||
+        Array.isArray(trace) ||
+        Object.keys(trace).sort().join(",") !==
+          "requestId,rootSpanId,source,traceId,version" ||
+        (trace as Record<string, unknown>)["version"] !== 1 ||
+        (trace as Record<string, unknown>)["requestId"] !== r.requestId ||
+        !["cli", "mcp"].includes(
+          String((trace as Record<string, unknown>)["source"]),
+        ) ||
+        !/^[a-f0-9]{32}$/.test(
+          String((trace as Record<string, unknown>)["traceId"]),
+        ) ||
+        !/^[a-f0-9]{16}$/.test(
+          String((trace as Record<string, unknown>)["rootSpanId"]),
+        )
+      )
+        fail("INVALID_DEBUG_TRACE", "Debug trace identity is invalid");
     }
     if (r.description !== undefined)
       r.description = normalizeDescription(r.description);
@@ -623,11 +1326,53 @@ export class QueueDomain {
     });
     return this._commit((d) => {
       const time = this._time();
-      if (r.expectedRevision !== undefined && r.expectedRevision !== d.revision)
+      if (!refusedContinuation && r.expectedRevision !== undefined && r.expectedRevision !== d.revision)
         fail(
           "STALE_REVISION",
           "Read status and submit a new requestId with the current revision",
         );
+      // Commit the refusal after request deduplication. A lost refusal ACK must
+      // never turn the original immutable request into a later dispatched job.
+      const inspectionCandidate: QueueJob = {
+        id: preparedId ?? "unpublished-inspection", requestId: r.requestId,
+        clientId: r.clientId, kind: r.kind, request: r, hash, order: 0,
+        state: "queued", submittedAt: time, queueDeadline: null,
+        timeoutMs: r.timeoutMs, sequenceId: null, sequenceState: null,
+        ...(inspection ? { documentInspection: inspection } : {}),
+        ...(continuation ? { documentContinuation: copy(continuation.marker) } : {}),
+        ...(metadata ? { documentMetadataRead: copy(metadata.marker) } : {}),
+        ...(creation ? { documentCreation: copy(creation.marker) } : {}),
+        ...(protocol ? { protocolMetadata: copy(protocol.marker) } : {}),
+        ...(stdout ? { pythonStdout: copy(stdout.marker) } : {}),
+      };
+      if (inspection && !documentInspectionAllowed(d, inspectionCandidate, this.hash, retirements.get(this)))
+        fail("DOCUMENT_INSPECTION_UNPROVEN", "Inspection must bind the complete current conflict set and full parameter read");
+      if (continuation && !documentContinuationAllowed(d, inspectionCandidate, this.hash,
+        retirements.get(this), continuation.authority, this))
+        fail("DOCUMENT_CONTINUATION_UNPROVEN", "Continuation requires the current accepted state and exact private guard");
+      if (metadata && !this._metadataReadAllowed(d, inspectionCandidate, metadata))
+        fail("DOCUMENT_METADATA_READ_UNPROVEN", "A current private compiler-bound metadata read is required");
+      if (creation && !this._creationAllowed(d, inspectionCandidate, creation))
+        fail("DOCUMENT_CREATION_UNPROVEN", "Unfenced work cannot permit new document creation");
+      if (protocol && ((inspection || continuation || metadata || creation) ||
+          !this._protocolMetadataAllowed(d, inspectionCandidate, protocol)))
+        fail("PROTOCOL_METADATA_UNPROVEN", "An exclusive current protocol metadata capability is required");
+      if (stdout && ((inspection || continuation || metadata || creation || protocol) ||
+          !this._pythonStdoutAllowed(d, inspectionCandidate, stdout)))
+        fail("PYTHON_STDOUT_UNPROVEN", "An exclusive current compiler and host stdout proof is required");
+      if (refusedContinuation ||
+          (documentConflicts(d, quarantineTarget(r), retirements.get(this), canonical).length && !inspection && !continuation && !metadata && !creation && !protocol && !stdout)) {
+        const refused: QueueJob = {
+          id: preparedId ?? this.newId(), requestId: r.requestId,
+          clientId: r.clientId, kind: r.kind, request: r, hash,
+          order: Math.max(0, ...Object.values(d.jobs).map((job) => job.order)) + 1,
+          state: "queued", submittedAt: time, queueDeadline: null,
+          timeoutMs: r.timeoutMs, sequenceId: null, sequenceState: null,
+        };
+        this._refuseDocumentConflict(d, refused, time);
+        d.jobs[refused.id] = refused;
+        return this._public(refused);
+      }
       let sequenceMode: SequenceMode = seq?.mode || "automatic",
         sequenceParent: QueueJob | undefined;
       if (seq && seq.action !== "begin") {
@@ -698,6 +1443,12 @@ export class QueueDomain {
         sequenceId: seq && seq.action !== "begin" ? seq.id! : null,
         sequenceState: seq ? "queued" : null,
       };
+      if (inspection) job.documentInspection = inspection;
+      if (metadata) job.documentMetadataRead = copy(metadata.marker);
+      if (creation) job.documentCreation = copy(creation.marker);
+      if (protocol) job.protocolMetadata = copy(protocol.marker);
+      if (stdout) job.pythonStdout = copy(stdout.marker);
+      if (continuation) job.documentContinuation = copy(continuation.marker);
       if (r.description) job.description = r.description;
       if (seq) job.sequenceMode = sequenceMode;
       if (sequenceParent && sequenceMode === "automatic") {
@@ -711,13 +1462,15 @@ export class QueueDomain {
   /** Broker-only marker that lets the existing scheduler select one scoped observer past a block. */
   armWorkflowObservation(id: string, marker: AtomicWorkflowObservation) {
     if (!validWorkflowObservation(marker))
-      fail("INVALID_WORKFLOW_SCOPE", "Invalid broker-authored atomic observation marker");
+      fail("INVALID_WORKFLOW_SCOPE", "Invalid broker-authored atomic observation marker",
+      );
     return this._commit((d) => {
       const observer = this._job(d, id);
       const target = d.jobs[marker.targetJobId];
       if (observer.workflowObservation) {
         if (canonical(observer.workflowObservation) !== canonical(marker))
-          fail("REQUEST_CONFLICT", "Observation request is already bound to another workflow");
+          fail("REQUEST_CONFLICT", "Observation request is already bound to another workflow",
+          );
         return this._public(observer);
       }
       const invocation = cadInvocation(observer.request);
@@ -735,18 +1488,23 @@ export class QueueDomain {
           invocation["docId"] !== marker.docId || observer.request.cwd !== marker.projectDirectory ||
           target.request.cwd !== marker.projectDirectory || marker.paused !== d.paused ||
           marker.controlGeneration !== (d.controlGeneration || 0) || marker.contextEpoch !== (d.contextEpoch || 0)) {
-        fail("WORKFLOW_OWNER_OR_JOB_MISMATCH", "Observer does not bind to the exact blocked atomic owner job");
+        fail("WORKFLOW_OWNER_OR_JOB_MISMATCH", "Observer does not bind to the exact blocked atomic owner job",
+        );
       }
-      const prior = Object.values(d.jobs).find(job => job.id !== id && job.workflowObservation?.targetJobId === target.id);
+      const prior = Object.values(d.jobs).find(
+        (job) => job.id !== id && job.workflowObservation?.targetJobId === target.id,
+      );
       if (prior && !(prior.state === "failed" && prior.details?.["executionOutcome"] === "not_started" &&
           prior.details?.["mayHaveMutated"] === false && (prior.dispatch?.rpcCount || 0) === 0))
-        fail("WORKFLOW_OBSERVATION_EXISTS", "A scoped observation was already sent or has an uncertain receipt");
+        fail("WORKFLOW_OBSERVATION_EXISTS", "A scoped observation was already sent or has an uncertain receipt",
+        );
       observer.workflowObservation = marker;
       return this._public(observer);
     });
   }
 
-  next() {
+  /** Run the same deadline maintenance without granting any physical turn. */
+  next({ grant = true }: { grant?: boolean } = {}) {
     if (this._fault)
       fail(
         "STORAGE_UNAVAILABLE",
@@ -758,11 +1516,15 @@ export class QueueDomain {
       time = this._time();
     if (d.controlBlocked || d.localUnknown) return null;
     if (d.blocked) {
-      const observers = Object.values(d.jobs).filter(
-        (job) => job.state === "queued" && workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
-      );
+      const observers = grant
+        ? this._waiting.filter(
+            (job) =>
+              workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
+          )
+        : [];
       if (observers.length > 1)
-        fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job");
+        fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job",
+        );
       if (observers.length === 1) {
         return this._commit((draft) => {
           if (draft.controlBlocked || draft.localUnknown || !draft.blocked || draft.active !== draft.blocked.id)
@@ -771,7 +1533,8 @@ export class QueueDomain {
             (job) => job.state === "queued" && workflowObservationFor(draft, job.id)?.targetJobId === draft.blocked?.id,
           );
           if (candidates.length !== 1 || candidates[0]!.id !== observers[0]!.id)
-            fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "Scoped observer selection changed before its durable grant");
+            fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "Scoped observer selection changed before its durable grant",
+            );
           const job = candidates[0]!;
           const now = this._time();
           if (draft.lease && draft.lease.clientId !== job.clientId) return null;
@@ -788,7 +1551,8 @@ export class QueueDomain {
       }
       if (d.paused) return null;
       const deadlineDue = this._waiting.some(
-        (job) => job.queueDeadline !== null && time >= job.queueDeadline,
+        (job) => (job.queueDeadline !== null && time >= job.queueDeadline) ||
+          (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job)),
       );
       if (!deadlineDue) return null;
       return this._commit((draft) => {
@@ -804,10 +1568,11 @@ export class QueueDomain {
       !d.active &&
       !d.blocked &&
       (time >= d.lease.idleUntil || time >= d.lease.holdUntil);
-    const canGrant = !d.blocked && !d.paused && !d.active;
+    const canGrant = grant && !d.blocked && !d.paused && !d.active;
     const workDue = this._waiting.some((job) => {
       const r = job.request;
       return (
+        (!!(job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job)) ||
         (job.queueDeadline !== null && time >= job.queueDeadline) ||
         (!job.physicalTurns &&
           r.expectedRevision !== undefined &&
@@ -818,7 +1583,7 @@ export class QueueDomain {
           !(job.sequenceMode === "automatic"
             ? this._automaticMatches(d, job, time)
             : this._matches(d, r, time))) ||
-        (canGrant &&
+        (canGrant && this._documentJobAllowed(d, job) &&
           (!d.lease ||
             (r.sequence &&
               r.sequence.action !== "begin" &&
@@ -833,10 +1598,11 @@ export class QueueDomain {
     return this._commit((d) => {
       const time = this._time();
       this._expire(d, time);
-      if (d.blocked || d.paused || d.active) return null;
+      if (!grant || d.blocked || d.paused || d.active) return null;
       const eligible = Object.values(d.jobs).filter(
         (j) =>
           j.state === "queued" &&
+          this._documentJobAllowed(d, j) &&
           (!d.lease ||
             (j.request.sequence &&
               j.request.sequence.action !== "begin" &&
@@ -984,7 +1750,7 @@ export class QueueDomain {
         "Finish with succeeded, failed or needs_reconciliation",
       );
     const record = JSON.parse(canonical(details)) as QueueDetails;
-    return this._commit((d) => {
+    const result = this._commit((d) => {
       const job = this._active(d, id);
       const time = this._time();
       Object.assign(job, { state, details: record, revision: ++d.revision });
@@ -1049,14 +1815,23 @@ export class QueueDomain {
       }
       return this._public(job);
     });
+    continuations.get(this)?.delete(id);
+    return result;
   }
 
-  markDispatch(id: string, details: QueueDetails = {}) {
+  markDispatch(id: string, details: QueueDetails = {}, physical?: QueuePhysicalDispatch) {
     const record = JSON.parse(canonical(details)) as QueueDetails;
     if (!record || Array.isArray(record) || typeof record !== "object")
       fail("INVALID_DISPATCH", "Dispatch details must be an object");
-    return this._commit((d) => {
+    const metadata = metadataReads.get(this)?.get(id);
+    const creation = creations.get(this)?.get(id);
+    const protocol = protocolMetadata.get(this)?.get(id);
+    const stdout = stdoutPrograms.get(this)?.get(id);
+    let originalRpcId: string | undefined;
+    const result = this._commit((d) => {
       const job = this._active(d, id);
+      if (!this._documentJobAllowed(d, job))
+        fail("DOCUMENT_UNLOCK_REQUIRED", "Document conflict changed before dispatch; inspect and explicitly accept the current state");
       const old = job.dispatch || {
         dispatchCount: 0,
         rpcCount: 0,
@@ -1064,6 +1839,53 @@ export class QueueDomain {
       };
       const rpcCount = record.rpcCount ?? old.rpcCount + 1;
       const completedCount = record.completedCount ?? old.completedCount;
+      if (job.pythonStdout) {
+        const rpcId = record["rpcId"];
+        if (!stdout || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
+          fail("PYTHON_STDOUT_UNPROVEN", "One original stdout RPC intent is required");
+        if (old.rpcCount === 0 && stdout.originalRpcId === undefined && completedCount === 0 &&
+            (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 && stdout.originalRpcId === rpcId &&
+            job.dispatch?.details?.["rpcId"] === rpcId && completedCount === 1 &&
+            record.rpcState === "terminal" && !physical))
+          fail("PYTHON_STDOUT_UNPROVEN", "The original stdout RPC cannot be replaced or repeated");
+      }
+      if (job.protocolMetadata) {
+        const rpcId = record["rpcId"];
+        if (!protocol || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
+          fail("PROTOCOL_METADATA_UNPROVEN", "One original protocol RPC intent is required");
+        if (old.rpcCount === 0 && protocol.originalRpcId === undefined && completedCount === 0 &&
+            (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 && protocol.originalRpcId === rpcId &&
+            job.dispatch?.details?.["rpcId"] === rpcId && completedCount === 1 && record.rpcState === "terminal" && !physical))
+          fail("PROTOCOL_METADATA_UNPROVEN", "The original protocol RPC cannot be replaced or repeated");
+      }
+      if (job.documentCreation) {
+        const rpcId = record["rpcId"];
+        if (!creation || typeof rpcId !== "string" || !identifier(rpcId) || rpcCount !== 1)
+          fail("DOCUMENT_CREATION_UNPROVEN", "One original creation RPC intent is required");
+        if (old.rpcCount === 0 && creation.originalRpcId === undefined && completedCount === 0 &&
+            (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 && creation.originalRpcId === rpcId &&
+            job.dispatch?.details?.["rpcId"] === rpcId && completedCount === 1 && record.rpcState === "terminal" && !physical))
+          fail("DOCUMENT_CREATION_UNPROVEN", "The creation RPC cannot be replaced or repeated");
+      }
+      if (job.documentMetadataRead) {
+        const rpcId = record["rpcId"];
+        if (!metadata || typeof rpcId !== "string" || !identifier(rpcId) ||
+            rpcCount !== 1)
+          fail("DOCUMENT_METADATA_READ_UNPROVEN", "One original metadata RPC intent is required");
+        if (old.rpcCount === 0 && metadata.originalRpcId === undefined &&
+            completedCount === 0 && (record.rpcState ?? record.state ?? "sending") === "sending")
+          originalRpcId = rpcId;
+        else if (!(old.rpcCount === 1 && old.completedCount === 0 &&
+            metadata.originalRpcId === rpcId && job.dispatch?.details?.["rpcId"] === rpcId &&
+            completedCount === 1 && record.rpcState === "terminal" && !physical))
+          fail("DOCUMENT_METADATA_READ_UNPROVEN", "The original metadata RPC intent cannot be replaced or repeated");
+      }
       if (
         !integer(rpcCount) ||
         rpcCount < old.rpcCount ||
@@ -1075,6 +1897,7 @@ export class QueueDomain {
           "INVALID_DISPATCH",
           "RPC counters must be monotonic and completedCount <= rpcCount",
         );
+      if (physical) this._appendPhysicalDispatch(job, physical);
       job.dispatch = {
         rpcState: record.rpcState ?? record.state ?? "sending",
         dispatchCount: old.dispatchCount + 1,
@@ -1086,6 +1909,12 @@ export class QueueDomain {
       job.state = "sending";
       return this._public(job);
     });
+    // Never publish authority for a transaction whose durable commit failed.
+    if (metadata && originalRpcId) metadata.originalRpcId = originalRpcId;
+    if (creation && originalRpcId) creation.originalRpcId = originalRpcId;
+    if (protocol && originalRpcId) protocol.originalRpcId = originalRpcId;
+    if (stdout && originalRpcId) stdout.originalRpcId = originalRpcId;
+    return result;
   }
 
   advanceInstanceEpoch(transitionId: string) {
@@ -1097,29 +1926,21 @@ export class QueueDomain {
           "MANUAL_PAUSE",
           "Automatic instance recovery does not clear a manual pause",
         );
-      if (
-        d.active ||
-        d.blocked ||
-        d.lease ||
-        Object.values(d.jobs).some((job) => !terminal(job.state))
-      ) {
-        fail(
-          "QUEUE_NOT_QUIESCENT",
-          "Automatic instance recovery requires terminal jobs and no active job, block or lease",
-        );
-      }
-      if (d.lastInstanceTransitionId === transitionId)
-        return { alreadyApplied: true, revision: d.revision, epoch: d.epoch };
-      const previous = { revision: d.revision, epoch: d.epoch };
-      d.revision++;
-      d.epoch++;
-      d.lastInstanceTransitionId = transitionId;
-      return {
-        alreadyApplied: false,
-        previous,
-        revision: d.revision,
-        epoch: d.epoch,
-      };
+      return advanceQuiescentInstanceEpoch(d, transitionId, retirements.get(this));
+    });
+  }
+
+  /** Startup identity observation is not resume authority. Preserve the whole
+   * pause/control state and all history while fencing the new physical instance. */
+  observePausedInstanceEpoch(transitionId: string) {
+    if (!identifier(transitionId))
+      fail("INVALID_TRANSITION", "A stable instance transition id is required");
+    return this._commit((d) => {
+      if (!d.paused)
+        fail("PAUSED_STARTUP_REQUIRED", "Paused startup observation requires an existing manual pause");
+      if (d.localUnknown || d.controlBlocked)
+        fail("QUEUE_NOT_QUIESCENT", "Paused startup observation cannot bypass a local or control UNKNOWN");
+      return advanceQuiescentInstanceEpoch(d, transitionId, retirements.get(this));
     });
   }
 
@@ -1128,6 +1949,194 @@ export class QueueDomain {
       state: "needs_reconciliation",
       reason: JSON.parse(canonical(reason)),
     });
+  }
+  recordPhysicalDispatch(id: string, entry: QueuePhysicalDispatch) {
+    return this._commit((d) => {
+      const job = this._active(d, id);
+      if ((job.documentInspection || job.documentContinuation || job.documentMetadataRead || job.documentCreation || job.protocolMetadata || job.pythonStdout) && !this._documentJobAllowed(d, job))
+        fail("DOCUMENT_UNLOCK_REQUIRED", "Document fence changed before the system-read boundary");
+      this._appendPhysicalDispatch(job, entry);
+      return this._public(job);
+    });
+  }
+  _appendPhysicalDispatch(job: QueueJob, entry: QueuePhysicalDispatch) {
+    if (entry.catalogIndex !== undefined) {
+      const previous = job.physicalDispatchCount ?? job.physicalDispatches?.length ?? 0;
+      if (entry.catalogIndex !== previous + 1)
+        fail("PHYSICAL_BINDING_MISMATCH", "Physical catalog admission index must be monotonic");
+      job.physicalDispatchCount = entry.catalogIndex;
+    }
+      if (
+        !validPhysicalDispatch(job, entry) ||
+        job.physicalDispatches?.some(
+          (prior) => prior.physical.turnId === entry.physical.turnId,
+        )
+      )
+        fail(
+          "PHYSICAL_BINDING_MISMATCH",
+          "Physical intent must bind one original job and turn",
+        );
+      (job.physicalDispatches ??= []).push(copy(entry));
+  }
+
+  /** Release only physical ownership. This never settles or rewrites the job's
+   * UNKNOWN outcome, original request, hash, dispatch or receipt. */
+  quarantineUnknown(id: string, record: QueueQuarantine) {
+    return this._commit((d) => {
+      const job = this._job(d, id);
+      if (
+        d.active !== id || d.blocked?.id !== id ||
+        d.localUnknown || !validQuarantine(job, record, this.hash)
+      )
+        fail(
+          "RECONCILIATION_REQUIRED",
+          "Quarantine must bind the exact blocked UNKNOWN",
+        );
+      (d.quarantined ??= {})[id] = copy(record);
+      d.active = null;
+      d.blocked = null;
+      if (job.sequenceId && d.lease?.id === job.sequenceId &&
+        d.lease.clientId === job.clientId) d.lease = null;
+      for (const waiting of Object.values(d.jobs))
+        if (["queued", "preparing", "processing"].includes(waiting.state) &&
+          documentConflicts(d, quarantineTarget(waiting.request), retirements.get(this), canonical).length &&
+          !this._documentJobAllowed(d, waiting))
+          this._refuseDocumentConflict(d, waiting, this._time());
+      return this._public(job);
+    });
+  }
+
+  _refuseDocumentConflict(d: QueueSnapshot, job: QueueJob, time: number) {
+    const target = quarantineTarget(job.request);
+    const publicTarget = target ? {
+      ...(target.creationId ? { docId: target.creationId } : {}),
+      ...(target.fileId ? { docFileId: target.fileId } : {}),
+    } : null;
+    const conflicts = documentConflicts(d, target, retirements.get(this), canonical);
+    const started = !!(job.physicalTurns || job.dispatch?.rpcCount);
+    Object.assign(job, {
+      state: "failed", code: target ? "DOCUMENT_UNLOCK_REQUIRED" : "UNKNOWN_SCOPE_UNPROVEN",
+      finishedAt: time, revision: d.revision,
+      sequenceState: job.sequenceId ? "ended" : null,
+      details: {
+        executionOutcome: started ? "previous_turns_complete_current_not_started" : "not_started",
+        mayHaveMutated: started,
+        userScriptSubmitted: !!job.dispatch?.rpcCount,
+        rpcCount: job.dispatch?.rpcCount ?? 0,
+        completedCount: job.dispatch?.completedCount ?? 0,
+        target: publicTarget,
+        blockers: conflicts.map((item) => ({
+          jobId: item.jobId, requestId: item.requestId,
+          scope: item.target ? "document" : "unproven",
+          executionFence: "fenceKind" in item ? item.fenceKind : "released",
+        })),
+        next: publicTarget ? {
+          tool: "fmcad_document_unlock",
+          arguments: { action: "status", target: publicTarget },
+          cliArguments: ["queue", "document-unlock", "--action", "status",
+            ...(target?.creationId ? ["--doc-id", target.creationId] : []),
+            ...(target?.fileId ? ["--doc-file-id", target.fileId] : [])],
+        } : {
+          action: "establish_exact_scope_or_operator_runtime_barrier",
+          message: "The new operation was not started. Establish an exact document scope or a verified runtime barrier.",
+        },
+      },
+    });
+    if (job.sequenceId && d.lease?.id === job.sequenceId &&
+      d.lease.clientId === job.clientId) d.lease = null;
+  }
+
+  /** Broker-authored readback only. Public clients cannot provide these fields.
+   * Source artifact verification and current document rights are adapter duties. */
+  recordDocumentObservation(input: DocumentObservation) {
+    const observation = copy(input);
+    const key = documentTargetKey(observation.target);
+    if (!validDocumentObservation(observation))
+      fail("INVALID_DOCUMENT_OBSERVATION", "Verified document readback is required");
+    return this._commit((d) => {
+      const records = d.documentCheckpoints ??= {
+        observations: {}, acceptances: {}, heads: {},
+      };
+      if (Object.values(records.acceptances).some((item) =>
+        item.actorClientId === observation.actorClientId && item.requestId === observation.requestId))
+        fail("REQUEST_CONFLICT", "The request already identifies an acceptance");
+      const existing = Object.values(records.observations).find((item) =>
+        item.actorClientId === observation.actorClientId &&
+        item.requestId === observation.requestId,
+      );
+      if (existing) {
+        if (canonical(existing) !== canonical(observation))
+          fail("REQUEST_CONFLICT", "Observation request already has different immutable input");
+        return copy(existing);
+      }
+      if (Object.hasOwn(records.observations, observation.id))
+        fail("REQUEST_CONFLICT", "Observation identity already exists");
+      this._assertDocumentObservation(d, observation);
+      if ((records.heads[key] ?? null) !== observation.priorCheckpointId)
+        fail("CHECKPOINT_CHANGED", "Document checkpoint changed before the observation was recorded");
+      records.observations[observation.id] = observation;
+      return copy(observation);
+    });
+  }
+
+  /** Accept a fresh broker read of a previously shown observation, never an
+   * invented outcome for an earlier UNKNOWN job. Idempotency precedes CAS. */
+  acceptDocumentObservation(input: {
+    observationId: string; requestId: string; actorClientId: string;
+    generation: string; observedStateDigest: string;
+  }): DocumentAcceptance {
+    if (![input.observationId, input.requestId, input.actorClientId, input.generation].every(identifier))
+      fail("INVALID_DOCUMENT_ACCEPTANCE", "Acceptance requires the current actor and an observation");
+    return this._commit((d) => {
+      const records = d.documentCheckpoints;
+      if (Object.values(records?.observations ?? {}).some((item) =>
+        item.actorClientId === input.actorClientId && item.requestId === input.requestId))
+        fail("REQUEST_CONFLICT", "The request already identifies an inspection");
+      const existing = Object.values(records?.acceptances ?? {}).find((item) =>
+        item.actorClientId === input.actorClientId && item.requestId === input.requestId,
+      );
+      if (existing) {
+        if (existing.observationId !== input.observationId)
+          fail("REQUEST_CONFLICT", "Acceptance request already refers to another observation");
+        return copy(existing);
+      }
+      const observation = records?.observations[input.observationId];
+      if (!observation || observation.actorClientId !== input.actorClientId)
+        fail("NOT_AUTHORIZED", "Create a readback under the current actor before accepting it");
+      if (observation.generation !== input.generation)
+        fail("DOCUMENT_STATE_CHANGED", "Inspect the document in the current runtime generation");
+      if (observation.stateDigest !== input.observedStateDigest)
+        fail("DOCUMENT_STATE_CHANGED", "Document state differs from the presented readback");
+      this._assertDocumentObservation(d, observation);
+      const key = documentTargetKey(observation.target);
+      if ((records!.heads[key] ?? null) !== observation.priorCheckpointId)
+        fail("CHECKPOINT_CHANGED", "Another acceptance changed the document checkpoint");
+      const result: DocumentAcceptance = {
+        version: 1, id: this.newId(), requestId: input.requestId,
+        actorClientId: input.actorClientId, observationId: observation.id,
+        observationDigest: this.hash(canonical(observation)), targetKey: key,
+        priorCheckpointId: observation.priorCheckpointId,
+        acceptedAt: Math.max(this._time(), observation.createdAt,
+          observation.priorCheckpointId ? records!.acceptances[observation.priorCheckpointId]!.acceptedAt : 0),
+      };
+      records!.acceptances[result.id] = result;
+      records!.heads[key] = result.id;
+      return copy(result);
+    });
+  }
+
+  _assertDocumentObservation(d: QueueSnapshot, observation: DocumentObservation) {
+    if (d.blocked || d.localUnknown || d.controlBlocked)
+      fail("SDK_QUIESCENCE_UNPROVEN", "The previous execution must be fenced before a document checkpoint");
+    const conflicts = documentConflicts(d, observation.target, retirements.get(this), canonical);
+    if (!conflicts.every(documentConflictAllowsInspection))
+      fail("UNKNOWN_SCOPE_UNPROVEN", "A raw exposure requires an authenticated host-retirement barrier");
+    const current: DocumentBlocker[] = conflicts.map((item) => ({
+      jobId: item.jobId, requestId: item.requestId, originalHash: item.jobHash,
+      catalogDigest: item.catalogDigest, barrierRef: item.evidenceReference,
+    }));
+    if (canonical(current) !== canonical(observation.blockers))
+      fail("CHECKPOINT_CHANGED", "The complete document conflict set changed; inspect again");
   }
 
   resolve(id: string, details: unknown) {
@@ -1138,10 +2147,10 @@ export class QueueDomain {
         "Recovery must explicitly provide state succeeded or failed",
       );
     return this._commit((d) => {
-      const job = this._active(d, id, true);
+      const quarantined = d.quarantined?.[id];
+      const job = quarantined ? this._job(d, id) : this._active(d, id, true);
       if (
-        !d.blocked ||
-        d.blocked.id !== id ||
+        (!quarantined && (!d.blocked || d.blocked.id !== id)) ||
         job.state !== "needs_reconciliation"
       )
         fail("NOT_BLOCKED", "Only the blocked active job can be resolved");
@@ -1153,7 +2162,9 @@ export class QueueDomain {
         sequenceState: job.sequenceId ? "ended" : null,
       });
       if (typeof record.code === "string") job.code = record.code;
-      d.blocked = d.active = d.lease = null;
+      if (quarantined) {
+        delete d.quarantined![id];
+      } else d.blocked = d.active = d.lease = null;
       this._promoteLocalUnknown(d);
       return this._public(job);
     });

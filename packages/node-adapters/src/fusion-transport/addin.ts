@@ -4,7 +4,9 @@ import { ADDIN_CAPABILITIES } from "./addin-capabilities.js";
 import { buildBridgeScript } from "./bridge.js";
 import { object, unknownOutcome } from "./contracts.js";
 import type { PythonArtifactManifest } from "@fmcad/core";
-import { bindPythonArtifactManifest } from "../python/context-binding.js";
+import { bindPythonArtifactManifest, pythonArtifactManifest } from "../python/context-binding.js";
+import { registeredCameraForAddin } from "../python/camera-save-payload.js";
+import { findInstallationRoot } from "../config-platform/runtime-paths.js";
 import type {
   Dependencies,
   ObjectValue,
@@ -38,6 +40,10 @@ export class BrokerAddinClient extends BrokerMcpClient {
     if (typeof script !== "string" || !script.trim())
       throw new Error("A nonempty Python script is required");
     if (origin) origin = bindPythonArtifactManifest(script, origin);
+    const camera = readOnly && origin ? registeredCameraForAddin(
+      findInstallationRoot(__filename), script, origin,
+    ) : null;
+    if (camera) origin = pythonArtifactManifest(camera);
     const guardToken = guardedUiRoute ? null : randomUUID();
     const guard =
       readOnly || guardedUiRoute
@@ -56,7 +62,7 @@ if _fmcad_guard_command not in ('', 'SelectCommand'):
     raise RuntimeError('An interactive Fusion command is open (' + _fmcad_guard_command + '); user script not started. Use ui.inspect then authorized ui.resolve; no retry is automatic.')
 `;
     const send = await super.prepareWireCall(
-      { code: guard + script + '\n\nrun("")\n', persistent: false },
+      { code: camera ? camera.script + "\nrun()\n" : guard + script + '\n\nrun("")\n', persistent: false },
       "execute_python",
       origin,
     );
@@ -134,7 +140,10 @@ if _fmcad_guard_command not in ('', 'SelectCommand'):
         readOnlyEnforced: false,
       };
     };
-    return Object.assign(execute, { fence: () => send.fence() });
+    return Object.assign(execute, {
+      dispatchBoundary: send.dispatchBoundary,
+      fence: () => send.fence(),
+    });
   }
   executeUiGuardedScript(
     script: string,

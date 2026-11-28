@@ -1,8 +1,8 @@
-import fs = require("node:fs");
-import path = require("node:path");
-import Module = require("node:module");
+import fs from "node:fs";
+import path from "node:path";
+import Module, { createRequire } from "node:module";
+const load = createRequire(__filename);
 import { createHash } from "node:crypto";
-import ts = require("typescript");
 
 interface Fixture {
   revision: string;
@@ -18,8 +18,9 @@ function historicalModule(
   sourcePath: string,
   runtimePath = sourcePath,
 ): unknown {
-  const root = path.resolve(__dirname, "../..");
-  const directory = path.join(__dirname, "history");
+  const emitted = __dirname.endsWith(path.join("dist", "tests", "fixtures"));
+  const root = path.resolve(__dirname, emitted ? "../../.." : "../..");
+  const directory = path.join(root, "tests", "fixtures", "history");
   const manifest: Fixture[] = JSON.parse(
     fs.readFileSync(path.join(directory, "manifest.json"), "utf8"),
   );
@@ -35,6 +36,7 @@ function historicalModule(
     throw new Error("Historical source hash mismatch: " + fixture.file);
   let source = bytes.toString("utf8");
   if (sourcePath.endsWith(".ts")) {
+    const ts = load("typescript") as typeof import("typescript");
     source = ts.transpileModule(source, {
       compilerOptions: {
         target: ts.ScriptTarget.ES2022,

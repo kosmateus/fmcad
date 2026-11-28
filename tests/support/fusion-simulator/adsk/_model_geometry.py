@@ -245,12 +245,27 @@ class Sketch(core.Base):
         self.objectType: str = "adsk::fusion::Sketch"
         self.entityToken: str = "model-sketch:" + str(uuid.uuid4())
         self.model_plane: fusion.ConstructionPlane = plane
+        self.model_light_bulb: bool = True
         self.name: str = "Sketch" + str(component.sketches.count + 1)
         self.profiles: Profiles = Profiles()
         self.sketchCurves: SketchCurves = SketchCurves(self)
         self.originPoint: SketchPoint = SketchPoint(self, core.Point3D(0, 0, 0))
         self.geometricConstraints: GeometricConstraints = GeometricConstraints(self)
         self.sketchDimensions: SketchDimensions = SketchDimensions(self)
+
+    @property
+    def isLightBulbOn(self) -> bool:
+        if not self.parentComponent.model_design.model_doc.isValid:
+            raise ValueError("Sketch document is closed")
+        return self.model_light_bulb
+
+    @isLightBulbOn.setter
+    def isLightBulbOn(self, value: bool) -> None:
+        document = self.parentComponent.model_design.model_doc
+        if not document.isValid:
+            raise ValueError("Sketch document is closed")
+        self.model_light_bulb = value
+        document.isModified = True
 
     def model_regenerate(self) -> None:
         # This is a closed-form axis-aligned rectangle, not a general constraint solver.
@@ -363,9 +378,70 @@ class ExtrudeFeatureInput(core.Base):
         return self.setOneSideExtent(DistanceExtentDefinition.create(distance), ExtentDirections.PositiveExtentDirection)
 
 
+class CalculationAccuracy:
+    LowCalculationAccuracy: ClassVar[int] = 0
+    MediumCalculationAccuracy: ClassVar[int] = 1
+    HighCalculationAccuracy: ClassVar[int] = 2
+    VeryHighCalculationAccuracy: ClassVar[int] = 3
+
+
 class PhysicalProperties(core.Base):
     def __init__(self, volume: float) -> None:
         self.volume: float = volume
+
+
+class _PrismBoundaryCardinality:
+    """Exact box-edge cardinality, without pretending to expose native topology."""
+    def __init__(self, boundaries: list[tuple[tuple[float, float, float], ...]]) -> None:
+        self.model_boundaries: list[tuple[tuple[float, float, float], ...]] = boundaries
+
+    @property
+    def count(self) -> int:
+        return len(self.model_boundaries)
+
+    def item(self, index: int) -> object:
+        raise NotImplementedError("Only rectangular-prism edge cardinality is modeled")
+
+    def __iter__(self) -> Iterator[object]:
+        raise NotImplementedError("Native edge geometry and identities are not modeled")
+
+
+class _PrismFace(core.Base):
+    """Synthetic identity for appearance readback; no native face geometry is exposed."""
+
+    objectType: ClassVar[str] = "adsk::fusion::BRepFace"
+
+    def __init__(self, body: BRepBody, index: int) -> None:
+        self.body: BRepBody = body
+        self.parentComponent: fusion.Component = body.parentComponent
+        self.entityToken: str = f"model-face:{body.entityToken}:{index}"
+        self.isValid: bool = body.parentComponent.model_design.model_doc.isValid and body.model_active
+
+    @property
+    def appearance(self) -> None:
+        return None
+
+    @property
+    def appearanceSourceType(self) -> None:
+        return None
+
+
+class _PrismFaces:
+    def __init__(self, body: BRepBody, boundaries: list[tuple[tuple[float, float, float], ...]]) -> None:
+        self.model_body: BRepBody = body
+        self.model_boundaries = boundaries
+
+    @property
+    def count(self) -> int:
+        return len(self.model_boundaries)
+
+    def item(self, index: int) -> _PrismFace:
+        if index < 0 or index >= self.count:
+            raise IndexError("Rectangular-prism face index out of range")
+        return _PrismFace(self.model_body, index)
+
+    def __iter__(self) -> Iterator[_PrismFace]:
+        return (_PrismFace(self.model_body, index) for index in range(self.count))
 
 
 class BRepBody(core.Base):
@@ -373,11 +449,75 @@ class BRepBody(core.Base):
         self.model_feature: ExtrudeFeature = feature
         self.model_bounds: core.BoundingBox3D = bounds
         self.name: str = "Body" + str(feature.model_component.bRepBodies.count + 1)
-        self.isVisible: bool = True
+        self.model_light_bulb: bool = True
+        self.model_appearance: core.Appearance | None = None
+        self.model_material: core.Material | None = None
         self.objectType: str = "adsk::fusion::BRepBody"
         self.parentComponent: fusion.Component = feature.model_component
         self.entityToken: str = "model-body:" + str(uuid.uuid4())
         self.attributes: core.Attributes = core.Attributes(self.parentComponent.model_design.model_doc)
+
+    def model_style_target(self) -> None:
+        design = self.parentComponent.model_design
+        if not design.model_doc.isValid or not self.model_active:
+            raise ValueError("Style target is closed or rolled back")
+        if self.parentComponent is not design.rootComponent:
+            raise NotImplementedError("Only explicit root-body style assignments are modeled")
+
+    @property
+    def appearance(self) -> core.Appearance | None:
+        self.model_style_target()
+        return self.model_appearance
+
+    @appearance.setter
+    def appearance(self, value: core.Appearance | None) -> None:
+        self.model_style_target()
+        design = self.parentComponent.model_design
+        if value is None:
+            raise NotImplementedError("Clearing overrides and inherited appearance are not modeled")
+        value.model_valid()
+        if value.parent is not design:
+            raise ValueError("Appearance must belong to the target design")
+        self.model_appearance = value
+        design.model_doc.isModified = True
+
+    @property
+    def material(self) -> core.Material | None:
+        self.model_style_target()
+        return self.model_material
+
+    @material.setter
+    def material(self, value: core.Material | None) -> None:
+        self.model_style_target()
+        design = self.parentComponent.model_design
+        if value is None:
+            raise NotImplementedError("Inherited physical material is not modeled")
+        value.model_valid()
+        if value.parent is not design:
+            raise ValueError("Material must belong to the target design")
+        self.model_material = value
+        design.model_doc.isModified = True
+
+    @property
+    def isLightBulbOn(self) -> bool:
+        return self.model_light_bulb
+
+    @isLightBulbOn.setter
+    def isLightBulbOn(self, value: bool) -> None:
+        if not self.parentComponent.model_design.model_doc.isValid:
+            raise ValueError("Body document is closed")
+        self.model_light_bulb = value
+        self.parentComponent.model_design.model_doc.isModified = True
+
+    @property
+    def isVisible(self) -> bool:
+        if self.parentComponent is not self.parentComponent.model_design.rootComponent:
+            raise NotImplementedError("Occurrence and ancestor visibility are not modeled")
+        return self.isLightBulbOn and self.model_active
+
+    @isVisible.setter
+    def isVisible(self, value: bool) -> None:
+        raise NotImplementedError("Set isLightBulbOn; direct visibility setters are not modeled")
 
     @property
     def boundingBox(self) -> core.BoundingBox3D:
@@ -398,6 +538,47 @@ class BRepBody(core.Base):
         return core.BoundingBox3D.create(
             core.Point3D(min(first.x, second.x)+origin.x, min(first.y, second.y)+origin.y, origin.z+min(0, distance)),
             core.Point3D(max(first.x, second.x)+origin.x, max(first.y, second.y)+origin.y, origin.z+max(0, distance)))
+
+    def model_corners(self) -> list[tuple[float, float, float]]:
+        if not self.parentComponent.model_design.model_doc.isValid or not self.model_active:
+            raise ValueError("Topology target is closed or rolled back")
+        bounds = self.boundingBox
+        low, high = bounds.minPoint.asArray(), bounds.maxPoint.asArray()
+        if any(high[i] <= low[i] for i in range(3)):
+            raise ValueError("Rectangular prism requires three positive extents")
+        return [(x, y, z) for x in (low[0], high[0])
+                for y in (low[1], high[1]) for z in (low[2], high[2])]
+
+    @property
+    def faces(self) -> _PrismFaces:
+        corners = self.model_corners()
+        return _PrismFaces(self, [
+            tuple(point for point in corners if point[axis] == coordinate)
+            for axis in range(3) for coordinate in sorted({point[axis] for point in corners})])
+
+    @property
+    def edges(self) -> _PrismBoundaryCardinality:
+        corners = self.model_corners()
+        return _PrismBoundaryCardinality([
+            (first, second) for i, first in enumerate(corners) for second in corners[i + 1:]
+            if sum(first[axis] != second[axis] for axis in range(3)) == 1])
+
+    @property
+    def preciseBoundingBox(self) -> core.BoundingBox3D:
+        return self.boundingBox
+
+    def getPhysicalProperties(self, accuracy: int = CalculationAccuracy.LowCalculationAccuracy) -> PhysicalProperties:
+        if accuracy not in (0, 1, 2, 3):
+            raise ValueError("Invalid calculation accuracy")
+        return self.physicalProperties
+
+    @property
+    def volume(self) -> float:
+        return self.physicalProperties.volume
+
+    @property
+    def isSolid(self) -> bool:
+        return True
 
     @property
     def physicalProperties(self) -> PhysicalProperties:

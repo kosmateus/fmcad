@@ -7,6 +7,7 @@ import type {
   Server,
 } from "./contracts.js";
 import { unknownOutcome } from "./contracts.js";
+import { captureTestWire } from "./test-wire-capture.js";
 
 export const DEFAULT_LIMIT = 32 * 1024 * 1024;
 export function requestSettings(
@@ -78,6 +79,7 @@ export async function postHttp(
     return Promise.reject(
       unknownOutcome("Observation aborted before submission", "ABORT_ERR"),
     );
+  captureTestWire(body);
   return new Promise((resolve, reject) => {
     const mod = url.protocol === "https:" ? https : http;
     let settled = false;

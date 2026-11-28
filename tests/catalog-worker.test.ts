@@ -33,12 +33,23 @@ type PhysicalBackend = {
   _parse: typeof JSON.parse;
   _post(payload: PhysicalRequest): Promise<{ status: number; raw: string }>;
   callTool(value: {
-    object: { script: string };
+    featureType?: string;
+    object: { script: string; readOnly?: boolean };
   }): Promise<{ failed: boolean; text: string }>;
 };
 const localPhaseTimeoutMs = 180_000;
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
+const { decodeNativeProgram, nativeReceipts } = runtimeRequire(
+  path.join(projectRoot, "tests/fixtures/native-source-envelope.cjs"),
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 const { serve } = runtimeRequire(
   path.join(projectRoot, "src/queue-broker.js"),
 ) as {
@@ -93,21 +104,10 @@ Module._load = function(name, parent, ...rest) {
   };
   let calls = 0;
   function receipt(script: string): void {
-    const binding = script.match(
-      /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-    );
-    const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-    if (!binding || !file || !binding[1] || !file[1]) return;
-    const record = JSON.parse(JSON.parse(binding[1]));
-    const target = JSON.parse(file[1])
-      .replace(/^\\\\wsl\$\\[^\\]+/, "")
-      .replaceAll("\\", "/");
-    durable(target, {
-      ...record,
-      terminal: true,
-      outcome: "succeeded",
-      instance,
-    });
+    const receipts = nativeReceipts(script, dir, instance);
+    if (decodeNativeProgram(script).includes("FMCAD_QUEUE_INSTANCE"))
+      assert.ok(receipts.length > 0, "probe wire must include a bound receipt");
+    for (const item of receipts) durable(item.file, item.value);
   }
   let result: CatalogResult = {
     success: true,
@@ -138,7 +138,11 @@ Module._load = function(name, parent, ...rest) {
     },
     async callTool(value) {
       const script = value.object?.script || "";
-      if (script.includes("FMCAD_QUEUE_INSTANCE")) {
+      const decodedScript = decodeNativeProgram(script);
+      if (decodedScript.includes("FMCAD_QUEUE_INSTANCE")) {
+        assert.equal(value.featureType, "script");
+        assert.equal(value.object.readOnly, true);
+        assert.ok(script.includes("# FMCAD native source envelope v1\n"));
         receipt(script);
         return {
           failed: false,

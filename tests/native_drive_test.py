@@ -218,9 +218,12 @@ class NativeDriveTest(unittest.TestCase):
                 if isinstance(node, ast.Import):
                     self.assertEqual([a.name for a in node.names], ['math'])
                 if isinstance(node, ast.ImportFrom):
-                    self.assertEqual(node.module, 'typing')
-                    self.assertTrue(all(alias.name in ('TYPE_CHECKING', 'Literal', 'TypedDict', 'Protocol', 'cast')
-                                        for alias in node.names))
+                    if node.module == 'typing':
+                        self.assertTrue(all(alias.name in ('TYPE_CHECKING', 'Literal', 'TypedDict', 'Protocol', 'cast')
+                                            for alias in node.names))
+                    else:
+                        self.assertEqual(node.module, 'fmcad.domain.values')
+                        self.assertTrue(all(alias.name in ('JsonObject', 'JsonValue') for alias in node.names))
 
     def test_scratch_helper_is_inert_and_consent_gated(self):
         namespace = {}

@@ -37,6 +37,29 @@ the current UI is idle, and every current document is unmodified. The broker rec
 queue context epoch before readiness; it does not restart Fusion or discard
 documents. Without this explicit confirmation, version changes remain fenced.
 
+## Client and worker loss
+
+A disconnected client does not cancel an accepted request. Its original request
+ID still identifies the durable result; reconnecting must not replay the mutation.
+If a local worker dies before SDK dispatch, its preparation is aborted and the
+job fails without mutation. Other clients can continue. If a worker dies after
+dispatch, local process death alone cannot prove that Fusion stopped executing.
+The job becomes `needs_reconciliation`, not an indefinitely orphaned `running`
+job. Matching transport and native termination evidence can release the SDK
+queue without repeating the original operation; unavailable worker output is
+not fabricated as success.
+
+Current-epoch startup recovery resolves the authenticated backend or normal
+restart identity, rather than assuming the original pointer still names the
+live process. Public `queue reclaim` performs that classification under the
+exclusive recovery lock after proving the old broker dead. Historical queues
+and explicit `recover: false` inspection remain unchanged. Reclaim does not
+terminate a live broker or prove an uncertain SDK outcome.
+
+This differs from automatically redelivering a queue message: CAD mutations
+are not generally idempotent. Unproven physical execution must remain fenced,
+but losing a client or a pre-dispatch worker must not strand unrelated work.
+
 ## Production composition
 
 `queue-broker.js` installs the following hooks after coordinating its separate
@@ -51,7 +74,7 @@ the final Python bytes.
    deadlock startup before the IPC server exists. This does not resume the queue.
 2. Construct `createAdmin` from `src/queue-console-admin` with the existing
    `state, gate, dir, marker`, `buildHash: codeHash`, `getContext: () =>
-   ({active, busy, stopping, held})`, `setBusy: value => { busy = value; }`,
+({active, busy, stopping, held})`, `setBusy: value => { busy = value; }`,
    `resumeCheck`, `close`, `diagnostics`, `durable`, `readJson`, `hash`.
    Its `observeControlCompletion` callback must read `control-resume.json`, call
    `remoteReceipt(record, false)` and return that ORIGINAL receipt. Clear `held`
@@ -62,7 +85,7 @@ the final Python bytes.
    the existing held/blocked/localUnknown constraints.
 4. After `auth(message)`, before the normal action switch:
    `if (lifecycleControl.accepts(message.action)) return
-   lifecycleControl.handle(message, clientId)`.
+lifecycleControl.handle(message, clientId)`.
    The dispatcher installs build/capabilities on gate snapshots. Do not advertise
    lifecycle capabilities without installing this dispatch path. Existing legacy
    `stop` is not the fenced shared control API; reset uses `console-stop`.

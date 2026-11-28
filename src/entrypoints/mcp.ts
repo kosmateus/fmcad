@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import {
+  decodeDocumentUnlockPublicError,
+  decodeDocumentUnlockRequest,
+  documentUnlockIpcFailure,
+} from "@fmcad/core";
 import { createCatalogServices } from "../api";
 import type {
   CatalogMcpTool,
@@ -41,7 +46,10 @@ export interface McpApplicationOptions {
     readonly inputSchema: {
       readonly required: readonly string[];
       readonly properties?: Readonly<
-        Record<string, { readonly enum?: readonly string[] }>
+        Record<
+          string,
+          { readonly type?: string; readonly enum?: readonly string[] }
+        >
       >;
     };
   }[];
@@ -89,6 +97,30 @@ const projectApplicationTools = (contextProperties: RecordValue) => [
       type: "object",
       additionalProperties: false,
       properties: { operation: { type: "string", minLength: 1 } },
+    },
+  },
+  {
+    name: "fmcad_document_unlock",
+    description:
+      "Read or accept broker-verified document recovery state. Does not execute CAD operations.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["action", "target"],
+      properties: {
+        action: { type: "string", enum: ["status", "inspect", "accept"] },
+        target: {
+          type: "object",
+          minProperties: 1,
+          additionalProperties: false,
+          properties: {
+            docId: { type: "string", minLength: 1, maxLength: 256 },
+            docFileId: { type: "string", minLength: 1, maxLength: 256 },
+          },
+        },
+        requestId: { type: "string", minLength: 1, maxLength: 256 },
+        observationId: { type: "string", minLength: 1, maxLength: 256 },
+      },
     },
   },
 ];
@@ -163,9 +195,13 @@ export function createMcpApplication(options: McpApplicationOptions) {
       raw: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
       ...ownership,
     });
-    const toolResult = (value: unknown, isError = false) =>
+    const toolResult = (
+      value: unknown,
+      isError = false,
+      text = JSON.stringify(value),
+    ) =>
       reply({
-        content: [{ type: "text", text: JSON.stringify(value) }],
+        content: [{ type: "text", text }],
         structuredContent: value,
         isError,
       });
@@ -243,15 +279,48 @@ export function createMcpApplication(options: McpApplicationOptions) {
           (typeof input["operation"] !== "string" || !input["operation"])
         )
           invalid("operation must be a nonempty string");
-        const availableContracts = contracts
-          .filter(
-            (contract) =>
-              input["operation"] === undefined ||
-              contract.operation === input["operation"],
-          );
+        const availableContracts = contracts.filter(
+          (contract) =>
+            input["operation"] === undefined ||
+            contract.operation === input["operation"],
+        );
         if (!availableContracts.length)
           invalid(`Unknown operation: ${String(input["operation"])}`);
         return toolResult({ operations: availableContracts });
+      }
+      if (name === "fmcad_document_unlock") {
+        const input = decodeDocumentUnlockRequest(args);
+        if (object(params["_meta"]) && Object.hasOwn(params["_meta"], "fmcad"))
+          invalid("fmcad_document_unlock does not accept fmcad metadata");
+        validating = false;
+        const identity = options.clientContext?.identity ?? {
+          clientId: "mcp-local",
+          instanceId: randomUUID(),
+          sessionId: randomUUID(),
+        };
+        try {
+          const project = await options.clientContext?.resolveProject({});
+          executionContext = createMcpExecutionContext({
+            clientId: identity.clientId,
+            sessionId: identity.sessionId,
+            requestId: input.requestId ?? randomUUID(),
+            projectDirectory: project?.projectDirectory ?? null,
+          });
+          services = options.services(false, executionContext);
+          await services.start();
+          const result = await services.documentUnlock(input);
+          if (result instanceof Error) {
+            const publicError = documentUnlockIpcFailure();
+            return toolResult(publicError, true, publicError.error.message);
+          }
+          const publicError = decodeDocumentUnlockPublicError(result);
+          return publicError
+            ? toolResult(publicError, true, publicError.error.message)
+            : toolResult(result);
+        } catch {
+          const publicError = documentUnlockIpcFailure();
+          return toolResult(publicError, true, publicError.error.message);
+        }
       }
       const queueTool = queueByName.get(name);
       if (queueTool || legacyTools.some((tool) => tool.name === name)) {
@@ -259,7 +328,11 @@ export function createMcpApplication(options: McpApplicationOptions) {
         if (queueTool) {
           const keys = queueTool.inputSchema.required;
           const properties = queueTool.inputSchema.properties;
-          const input = exact(args, properties ? Object.keys(properties) : keys, name);
+          const input = exact(
+            args,
+            properties ? Object.keys(properties) : keys,
+            name,
+          );
           for (const key of keys) {
             const value = input[key];
             if (
@@ -393,7 +466,12 @@ export function createMcpApplication(options: McpApplicationOptions) {
               control["projectDirectory"].length > 4096)
           )
             invalid("projectDirectory must contain 1..4096 characters");
-          for (const key of ["doc", "docId", "docFileId", "projectId"] as const) {
+          for (const key of [
+            "doc",
+            "docId",
+            "docFileId",
+            "projectId",
+          ] as const) {
             if (
               control[key] !== undefined &&
               (typeof control[key] !== "string" ||
@@ -431,14 +509,16 @@ export function createMcpApplication(options: McpApplicationOptions) {
               purpose: control["purpose"],
             });
           }
-          const metadataPins = ["doc", "docId", "docFileId", "projectId"] as const;
+          const metadataPins = [
+            "doc",
+            "docId",
+            "docFileId",
+            "projectId",
+          ] as const;
           for (const key of metadataPins) {
             const supplied = control[key];
             if (supplied === undefined) continue;
-            if (
-              invocation[key] !== undefined &&
-              invocation[key] !== supplied
-            )
+            if (invocation[key] !== undefined && invocation[key] !== supplied)
               invalid(`Conflicting ${key} in operation context and metadata`);
             invocation = catalog.validate({ ...invocation, [key]: supplied });
           }
@@ -449,7 +529,10 @@ export function createMcpApplication(options: McpApplicationOptions) {
           )
             invalid("expectedRevision must be a nonnegative safe integer");
           if (control["roots"] !== undefined) {
-            if (!Array.isArray(control["roots"]) || control["roots"].length > 32)
+            if (
+              !Array.isArray(control["roots"]) ||
+              control["roots"].length > 32
+            )
               invalid("roots must contain at most 32 entries");
             for (const [index, root] of control["roots"].entries()) {
               if (
@@ -458,8 +541,7 @@ export function createMcpApplication(options: McpApplicationOptions) {
                   (key) => !["uri", "name"].includes(key),
                 ) ||
                 typeof root["uri"] !== "string" ||
-                (root["name"] !== undefined &&
-                  typeof root["name"] !== "string")
+                (root["name"] !== undefined && typeof root["name"] !== "string")
               )
                 invalid(`roots[${index}] must contain a URI and optional name`);
             }
@@ -690,30 +772,33 @@ export function createMcpApplication(options: McpApplicationOptions) {
             },
           }
         : {};
-      return reply({
-        content: [{ type: "text", text: JSON.stringify(value) }],
-        structuredContent: value,
-        isError:
-          ["failed", "cancelled", "expired"].includes(receipt.state) ||
-          receipt.outcome.executionOutcome === "failed",
-        ...(receipt.jobId
-          ? {
-              _meta: {
-                fmcad: {
-                  clientId: executionContext.clientId,
-                  instanceId: identity.instanceId,
-                  sessionId: executionContext.sessionId,
-                  requestId: executionContext.requestId,
-                  jobId: receipt.jobId,
-                  state: receipt.state,
-                  requestStatus: mcpRequestState(receipt.state),
-                  context: executionContext,
-                  validation: receipt.outcome.validation,
+      return reply(
+        {
+          content: [{ type: "text", text: JSON.stringify(value) }],
+          structuredContent: value,
+          isError:
+            ["failed", "cancelled", "expired"].includes(receipt.state) ||
+            receipt.outcome.executionOutcome === "failed",
+          ...(receipt.jobId
+            ? {
+                _meta: {
+                  fmcad: {
+                    clientId: executionContext.clientId,
+                    instanceId: identity.instanceId,
+                    sessionId: executionContext.sessionId,
+                    requestId: executionContext.requestId,
+                    jobId: receipt.jobId,
+                    state: receipt.state,
+                    requestStatus: mcpRequestState(receipt.state),
+                    context: executionContext,
+                    validation: receipt.outcome.validation,
+                  },
                 },
-              },
-            }
-          : {}),
-      }, owner);
+              }
+            : {}),
+        },
+        owner,
+      );
     } catch (error) {
       const failure = error as Error & {
         code?: number | string;
@@ -736,46 +821,46 @@ export function createMcpApplication(options: McpApplicationOptions) {
             message: options.diagnostic?.(failure.message) ?? failure.message,
             ...(requestIdentity
               ? {
-                    data: {
-                      requestId: requestIdentity,
-                      ...(typeof failure.code === "string"
-                        ? { code: failure.code }
-                        : {}),
-                      ...(failure.boundary
-                        ? {
-                            compatibility: {
-                              boundary: failure.boundary,
-                              received: failure.received,
-                              supported: failure.supported,
-                            },
-                          }
-                        : {}),
-                      ...(accepted
-                        ? {
-                            requestStatus: mcpRequestState(accepted.state),
-                            ...(accepted.jobId ? { jobId: accepted.jobId } : {}),
-                          }
-                        : {
-                            requestStatus:
-                              admissionAttempted &&
-                              (failure as Error & { notStarted?: boolean })
-                                .notStarted !== true
-                                ? "needs_reconciliation"
-                                : "rejected-before-admission",
-                            validation:
-                              validating ||
-                              (failure as Error & { notStarted?: boolean })
-                                .notStarted === true
-                                ? {
-                                    status: "required",
-                                    diagnostics: [failure.message],
-                                  }
-                                : null,
-                            ...(executionContext
-                              ? { context: executionContext }
-                              : {}),
-                          }),
-                      instruction:
+                  data: {
+                    requestId: requestIdentity,
+                    ...(typeof failure.code === "string"
+                      ? { code: failure.code }
+                      : {}),
+                    ...(failure.boundary
+                      ? {
+                          compatibility: {
+                            boundary: failure.boundary,
+                            received: failure.received,
+                            supported: failure.supported,
+                          },
+                        }
+                      : {}),
+                    ...(accepted
+                      ? {
+                          requestStatus: mcpRequestState(accepted.state),
+                          ...(accepted.jobId ? { jobId: accepted.jobId } : {}),
+                        }
+                      : {
+                          requestStatus:
+                            admissionAttempted &&
+                            (failure as Error & { notStarted?: boolean })
+                              .notStarted !== true
+                              ? "needs_reconciliation"
+                              : "rejected-before-admission",
+                          validation:
+                            validating ||
+                            (failure as Error & { notStarted?: boolean })
+                              .notStarted === true
+                              ? {
+                                  status: "required",
+                                  diagnostics: [failure.message],
+                                }
+                              : null,
+                          ...(executionContext
+                            ? { context: executionContext }
+                            : {}),
+                        }),
+                    instruction:
                       "Observe the existing request/job; do not resubmit an uncertain operation.",
                     ...(accepted?.jobId
                       ? {

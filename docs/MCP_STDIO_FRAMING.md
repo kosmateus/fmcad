@@ -7,10 +7,11 @@ build:code` stages both modules with the other compiled MCP entrypoints.
 
 ## Limits and framing
 
-- An input JSONL frame is limited to **1 MiB of UTF-8 payload bytes** (the LF
-  delimiter is not counted). UTF-8 decoding is fatal rather than replacement-
-  based. An over-limit frame is discarded through its next LF and rejected
-  before it reaches the application.
+- An input JSONL frame is limited to **10 MiB (10,485,760 bytes) of UTF-8
+  payload bytes** (the LF delimiter is not counted). UTF-8 decoding is fatal
+  rather than replacement-based. An over-limit frame is discarded through its
+  next LF and rejected before it reaches the application. This is an MCP
+  framing limit; it does not raise downstream Fusion/native request limits.
 - The default in-flight/pending request limit is **4**. The stdio pump pauses
   input while waiting for a slot and resumes as completed requests release one.
   Queue helper concurrency is selected by the caller; `fmcad_queue_begin` is

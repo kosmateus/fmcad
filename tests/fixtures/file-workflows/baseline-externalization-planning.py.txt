@@ -1,0 +1,86 @@
+def _external_probe_refresh_bindings(derived_bindings,current_edges):
+    result=[]
+    for binding in derived_bindings:
+        matches=[]
+        for edge in current_edges:
+            if edge.get('kind')!='derive' or edge.get('sourceFileId')!=binding.get('sourceFileId') or \
+                    edge.get('edgeIdentityUnique') is not True:
+                continue
+            if binding.get('ownerFileId') and edge.get('ownerFileId')!=binding['ownerFileId']:continue
+            sources={row.get('name') for row in edge.get('sourceParameters',[])}
+            derived={row.get('name') for row in edge.get('derivedParameters',[])}
+            if binding.get('sourceParameter') in sources and binding.get('nativeDerivedParameter') in derived:
+                matches.append(edge)
+        _external_require(len(matches)==1,
+                          'Saved consumer graph must uniquely identify each declared driver binding edge')
+        edge=matches[0]
+        result.append({'edgeId':edge['edgeId'],'sourceFileId':edge['sourceFileId'],
+            'sourceParameter':binding['sourceParameter'],
+            'nativeDerivedParameter':binding['nativeDerivedParameter'],
+            'consumerAlias':binding['consumerAlias']})
+    return result
+
+
+def _external_probe_refresh_bindings_payload(bindings):
+    return [{name:row[name] for name in
+        ('edgeId','sourceParameter','nativeDerivedParameter','consumerAlias')}
+        for row in bindings]
+
+
+def _external_probe_refresh_plan_request(data,probe,state,key):
+    target=state.get('targetPin') or {}
+    source=state.get('source') or {}
+    published=state.get('publishedVersion')
+    _external_require(all(target.get(name) for name in ('projectId','fileId')) and
+                      type(target.get('version')) is int and target['version']>0,
+                      'Driver refresh requires the exact saved consumer baseline pin')
+    _external_require(source.get('fileId') and type(published) is int and published>0 and
+                      source.get('version')==published,
+                      'Driver refresh requires the exact settled producer publication receipt')
+    suffix='restore' if state.get('restoring') else 'driver'
+    return {'schemaVersion':1,'phase':'plan',
+        'root':{name:target[name] for name in ('projectId','fileId','version')},
+        'policy':'latest','lifecycle':'openOwned','durability':'cold',
+        'reportPath':probe['refresh']['reportPath'],
+        'nativeFallback':probe['refresh'].get('nativeFallback','never'),
+        'parameterBindings':_external_probe_refresh_bindings_payload(state.get('refreshBindings',[])),
+        'requestId':data['operationId']+'_'+key+'_'+suffix+'_plan'}
+
+
+def _external_probe_validate_refresh_plan(state,plan):
+    expected={row['edgeId'] for row in state.get('refreshBindings',[])
+              if row.get('sourceFileId')==state['source']['fileId']}
+    actual={edge['edgeId'] for edge in plan.get('edges',[])
+            if edge.get('kind')=='derive' and edge.get('sourceFileId')==state['source']['fileId']}
+    _external_require(bool(expected) and actual==expected,
+                      'Consumer plan omitted or changed the declared published driver binding edge')
+    for edge in plan.get('edges',[]):
+        if edge['sourceFileId']==state['source']['fileId']:
+            _external_require(edge['targetVersion']==state['publishedVersion'],
+                              'Consumer plan did not pin this exact producer publication')
+        else:
+            baseline=next((e for e in state['baselineEdges'] if e['edgeId']==edge['edgeId']),None)
+            expected=state.get('appliedVersions',{}).get(edge['sourceFileId'],baseline['baselineVersion'] if baseline else None)
+            _external_require(baseline and expected==edge['targetVersion'],
+                              'Unrelated dependency drift during driver publication')
+
+
+def _external_probe_refresh_apply_request(data,probe,state,key,plan):
+    planned=state.get('refreshRequest') or {}
+    target=state.get('targetPin') or {}
+    _external_require(plan and plan.get('planId') and plan.get('invocationStatus')=='complete',
+                      'Missing successful immutable consumer refresh plan')
+    _external_require(plan.get('root')==planned.get('root') and planned.get('root')==
+                      {name:target.get(name) for name in ('projectId','fileId','version')},
+                      'Consumer refresh plan differs from the exact saved consumer baseline')
+    suffix='restore' if state.get('restoring') else 'driver'
+    request={'schemaVersion':1,'phase':'apply','confirm':True,
+        'root':dict(planned['root']),'reportPath':planned['reportPath'],
+        'planId':plan['planId'],'requestId':data['operationId']+'_'+key+'_'+suffix+'_apply',
+        'policy':planned['policy'],'lifecycle':planned['lifecycle'],
+        'durability':planned['durability'],'nativeFallback':planned['nativeFallback'],
+        'parameterBindings':list(planned['parameterBindings'])}
+    lease_key='restoreUiLeases' if state.get('restoring') else 'driverUiLeases'
+    if probe['refresh'].get(lease_key):
+        request['uiLeases']=probe['refresh'][lease_key]
+    return request

@@ -1,22 +1,24 @@
 import json
 import unicodedata
 import adsk.core
+from typing import NoReturn as _BridgeNoReturn, cast as _bridge_cast
 
 _BRIDGE_REQUEST = {}
 
 
-def _unsupported(detail):
+def _unsupported(detail: str) -> _BridgeNoReturn:
     raise RuntimeError(detail + ' is unsupported by the addin bridge; use --backend mcp explicitly. No automatic fallback is performed.')
 
 
-def _normalize(text):
+def _normalize(text: str) -> str:
     return unicodedata.normalize('NFKC', text).casefold()
 
 
-def run(_context: str):
+def run(_context: str) -> None:
     tool = _BRIDGE_REQUEST['toolName']
-    req = _BRIDGE_REQUEST['request']
+    req = _bridge_cast('dict[str, object]', _BRIDGE_REQUEST['request'])
     app = adsk.core.Application.get()
+    payload: dict[str, object]
     if tool == 'fusion_mcp_read':
         query = req.get('queryType')
         if query == 'projects':
@@ -33,12 +35,12 @@ def run(_context: str):
             }
         elif query == 'document':
             operation = req.get('operation')
-            results = []
+            results: list[dict[str, object]] = []
             if operation == 'open':
                 for doc in app.documents:
-                    row = {'name': doc.name, 'isActive': doc.isActive,
+                    row: dict[str, object] = {'name': doc.name, 'isActive': doc.isActive,
                            'isSaved': doc.isSaved, 'isModified': doc.isModified}
-                    creation_id = getattr(doc, 'creationId', None)
+                    creation_id = _bridge_cast('object', getattr(doc, 'creationId', None))
                     if creation_id is not None:
                         row['creationId'] = creation_id
                     file, error = _document_data_file(doc) if doc.isSaved else (None, None)
@@ -84,15 +86,16 @@ def run(_context: str):
         obj = req.get('object')
         if not isinstance(obj, dict):
             raise ValueError('Document operation requires an object')
-        operation = obj.get('operation')
+        obj = _bridge_cast('dict[str, object]', obj)
+        operation = _bridge_cast('str', obj.get('operation'))
         if operation == 'open':
             file_id = obj.get('fileId')
             if not isinstance(file_id, str) or not file_id.strip():
                 raise ValueError('Document open requires fileId')
-            data_file = app.data.findFileById(file_id)
+            data_file = _bridge_cast('adsk.core.DataFile | None', app.data.findFileById(file_id))
             if data_file is None:
                 raise RuntimeError('File not found or inaccessible: ' + file_id)
-            if app.documents.open(data_file) is None:
+            if _bridge_cast('adsk.core.Document | None', app.documents.open(data_file)) is None:
                 raise RuntimeError('Document open failed')
         elif operation in ('save', 'close'):
             save = operation == 'save'
@@ -104,18 +107,18 @@ def run(_context: str):
                 discard = obj.get('userConfirmedCloseWithoutSave') is True
                 if save == discard:
                     raise ValueError('Document close requires exactly one save or discard confirmation')
-            doc = app.activeDocument
-            if doc is None:
+            active_doc = _bridge_cast('adsk.core.Document | None', app.activeDocument)
+            if active_doc is None:
                 raise RuntimeError('No active document')
             if save:
-                if not doc.isSaved:
+                if not active_doc.isSaved:
                     raise RuntimeError('New document has no save target; save it with an explicit name and location in Fusion first')
-                if doc.save('') is not True:
+                if active_doc.save('') is not True:
                     raise RuntimeError('Document save failed; document was not closed')
-                if operation == 'close' and doc.isModified:
+                if operation == 'close' and active_doc.isModified:
                     raise RuntimeError('Document still has unsaved changes; document was not closed')
             # close(True) prompts rather than guaranteeing a save. Save explicitly first.
-            if operation == 'close' and doc.close(False) is not True:
+            if operation == 'close' and active_doc.close(False) is not True:
                 raise RuntimeError('Document close failed')
         else:
             _unsupported('Document execute ' + str(operation))

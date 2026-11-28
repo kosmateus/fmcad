@@ -1,0 +1,997 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import type { Scenario } from "./runner";
+import { record, text } from "./contracts";
+import type { Execution } from "./contracts";
+import { concurrencyLimit } from "./scheduling";
+import { emit, program } from "./programs";
+import { discoverOwnedUnsavedFixtureProofs } from "./fixture-provenance";
+import {
+  nativeModelingHarness,
+  nativeResultUncertain,
+  values,
+} from "./native-modeling-support";
+export const nativeFeatureModesCapability = "native-feature-modes-addin";
+const py = (value: unknown): string =>
+  `json.loads(${JSON.stringify(JSON.stringify(value))})`;
+interface FeatureProbeAdmission {
+  readonly requestId: string;
+  readonly peers: readonly { creationId: string; name: string }[];
+}
+export function assertFeatureProbeReadmission(
+  result: Record<string, unknown>,
+  requestId: string,
+  creationId: string,
+  execution: Pick<Execution, "requestId" | "state" | "sdkSettled"> | undefined,
+): void {
+  const admission = record(result["admission"]);
+  assert.equal(execution?.requestId, requestId);
+  assert.equal(execution?.sdkSettled, true);
+  assert.equal(execution?.state, "succeeded");
+  assert.equal(result["creationId"], creationId);
+  assert.equal(admission["requestId"], requestId);
+  assert.equal(admission["status"], "inventory-changed");
+  assert.equal(admission["mutationStarted"], false);
+  assert.equal(admission["bodyCalls"], 0);
+}
+function featureModeForeignInventory(
+  identity: { creationId: string },
+  current: Record<string, unknown>,
+) {
+  return values(current["documents"])
+    .map(record)
+    .filter((doc) => doc["creationId"] !== identity.creationId)
+    .map((doc) => ({
+      name: doc["name"],
+      creationId: doc["creationId"],
+      saved: doc["saved"],
+      modified: doc["modified"],
+    }))
+    .sort((a, b) => text(a.creationId).localeCompare(text(b.creationId)));
+}
+export async function guardedFeatureModeProbeSource(
+  identity: { name: string; creationId: string },
+  guard: () => Promise<Record<string, unknown> | undefined>,
+  body: string,
+  admission?: FeatureProbeAdmission,
+): Promise<string> {
+  const current = await guard();
+  assert.ok(current, "Feature probe requires a verified current inventory");
+  const foreign = featureModeForeignInventory(identity, current);
+  return featureModeProbeSource(identity, foreign, body, admission);
+}
+export function featureModeProbeSource(
+  identity: { name: string; creationId: string },
+  foreign: readonly unknown[],
+  body: string,
+  admission?: FeatureProbeAdmission,
+): string {
+  const guard = admission
+    ? `from typing import cast
+_feature_peers = {p['creationId']: p['name'] for p in cast(list[dict[str, str]], ${py(admission.peers)})}
+_feature_expected = cast(list[dict[str, str | bool]], ${py(foreign)})
+_feature_peer_rows = [d for d in _feature_before if d['creationId'] in _feature_peers]
+if (
+    [d for d in _feature_before if d['creationId'] not in _feature_peers] != [d for d in _feature_expected if d['creationId'] not in _feature_peers]
+    or len(_feature_peer_rows) != len(_feature_peers)
+    or any(d['name'] != _feature_peers[cast(str, d['creationId'])] or d['saved'] for d in _feature_peer_rows)
+):
+    ${emit(`dict(creationId=doc.creationId, admission=dict(status='inventory-changed', requestId=${JSON.stringify(admission.requestId)}, mutationStarted=False, bodyCalls=0))`)}
+    return`
+    : `assert _feature_before == ${py(foreign)}, 'Other document state changed'`;
+  const guardedBody = `try:\n${body
+    .split("\n")
+    .map((line) => "    " + line)
+    .join(
+      "\n",
+    )}\nfinally:\n    assert app.activeDocument == doc, 'Owned target changed during feature probe'\n    assert [d for d in documents() if d['creationId'] != doc.creationId] == _feature_before, 'Other document state changed during feature probe'`;
+  return program(
+    `import adsk.core, adsk.fusion, json, math
+app = adsk.core.Application.get()
+def documents():
+    return sorted([dict(name=d.name, creationId=d.creationId, saved=d.isSaved, modified=d.isModified) for d in app.documents], key=lambda d: d['creationId'])
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)} and d.name == ${JSON.stringify(identity.name)}]
+assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None, 'Owned active unsaved document guard failed'
+doc = matches[0]
+_feature_before = [d for d in documents() if d['creationId'] != doc.creationId]
+${guard}
+if app.activeDocument != doc:
+    assert doc.activate(), 'Owned target could not be activated'
+assert app.activeDocument == doc, 'Owned active unsaved document guard failed'
+assert [d for d in documents() if d['creationId'] != doc.creationId] == _feature_before, 'Other document state changed during feature probe'
+${guardedBody}`,
+    `from typing import TypeAlias
+_FeatureJsonValue: TypeAlias = None | bool | int | float | str | list['_FeatureJsonValue'] | dict[str, '_FeatureJsonValue']`,
+  );
+}
+export function featureModeLineProbe(entity: unknown): string {
+  return `from typing import Callable, cast
+e = cast(Callable[[object], adsk.fusion.SketchLine | None], adsk.fusion.SketchLine.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(entity)})))
+assert e is not None, 'Expected the owned sketch line'
+${emit("dict(creationId=doc.creationId, result=[ [p.x * 10, p.y * 10, p.z * 10] for p in (e.startSketchPoint.worldGeometry, e.endSketchPoint.worldGeometry) ])")}`;
+}
+export function featureModePropertiesProbe(
+  feature: unknown,
+  mode: string,
+): string {
+  return `from typing import Callable, cast
+feature = cast(Callable[[object], adsk.fusion.Feature | None], adsk.fusion.Feature.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(feature)})))
+assert feature is not None, 'Expected the owned feature'
+r: dict[str, object] = dict(name=feature.name, type=feature.objectType, health=int(cast(int, feature.healthState)), message=feature.errorOrWarningMessage, token=feature.entityToken)
+mode = str(${JSON.stringify(mode)})
+if mode == 'extrude':
+    extrude = cast(Callable[[object], adsk.fusion.ExtrudeFeature | None], adsk.fusion.ExtrudeFeature.cast)(feature)
+    assert extrude is not None
+    r['extentType'] = extrude.extentOne.objectType
+    r['startType'] = extrude.startExtent.objectType
+    to_entity = cast(Callable[[object], adsk.fusion.ToEntityExtentDefinition | None], adsk.fusion.ToEntityExtentDefinition.cast)(extrude.extentOne)
+    if to_entity is not None:
+        target = cast(Callable[[object], adsk.fusion.ConstructionPlane | None], adsk.fusion.ConstructionPlane.cast)(to_entity.entity)
+        assert target is not None, 'Expected the declared target construction plane'
+        r['target'] = dict(kind='plane', name=target.name, token=target.entityToken)
+        offset = cast(Callable[[object], adsk.fusion.ModelParameter | None], adsk.fusion.ModelParameter.cast)(to_entity.offset)
+        assert offset is not None, 'Expected the created feature offset parameter'
+        r['offset'] = offset.expression
+    start = cast(Callable[[object], adsk.fusion.OffsetStartDefinition | None], adsk.fusion.OffsetStartDefinition.cast)(extrude.startExtent)
+    if start is not None:
+        start_offset = cast(Callable[[object], adsk.fusion.ModelParameter | None], adsk.fusion.ModelParameter.cast)(start.offset)
+        assert start_offset is not None, 'Expected the created feature start parameter'
+        r['startOffset'] = start_offset.expression
+elif mode == 'hole':
+    hole = cast(Callable[[object], adsk.fusion.HoleFeature | None], adsk.fusion.HoleFeature.cast)(feature)
+    assert hole is not None
+    r['extentType'] = hole.extentDefinition.objectType
+    r['defaultDirection'] = hole.isDefaultDirection
+    r['diameter'] = hole.holeDiameter.expression
+    r['direction'] = [hole.direction.x, hole.direction.y, hole.direction.z]
+    r['holeType'] = int(cast(int, hole.holeType))
+    r['parameters'] = [dict(name=p.name, expression=p.expression, value=p.value, unit=p.unit) for p in FMCAD.design.allParameters if getattr(p, 'createdBy', None) == hole]
+    cylinders: list[dict[str, float]] = []
+    for body in hole.bodies:
+        for face in body.faces:
+            cylinder = cast(Callable[[object], adsk.core.Cylinder | None], adsk.core.Cylinder.cast)(face.geometry)
+            if cylinder is not None:
+                box = face.boundingBox
+                cylinders.append(dict(radiusMm=cylinder.radius * 10, minZMm=box.minPoint.z * 10, maxZMm=box.maxPoint.z * 10))
+    r['cylinders'] = cylinders
+elif mode == 'sweep':
+    sweep = cast(Callable[[object], adsk.fusion.SweepFeature | None], adsk.fusion.SweepFeature.cast)(feature)
+    assert sweep is not None
+    r['orientation'] = int(cast(int, sweep.orientation))
+    r['parallelEnum'] = int(adsk.fusion.SweepOrientationTypes.ParallelOrientationType)
+    r['perpendicularEnum'] = int(adsk.fusion.SweepOrientationTypes.PerpendicularOrientationType)
+elif mode == 'sweepRail':
+    rail = cast(Callable[[object], adsk.fusion.SweepFeature | None], adsk.fusion.SweepFeature.cast)(feature)
+    assert rail is not None
+    r['profileScaling'] = int(cast(int, rail.profileScaling))
+    r['scaleEnum'] = int(adsk.fusion.SweepProfileScalingOptions.SweepProfileScaleOption)
+    r['inspectionGap'] = 'guideRail getter requires timeline rollback; orientation getter is inapplicable. Neither is read by this read-only probe. Guide effect verified by separate scaling geometry test.'
+elif mode == 'loft':
+    loft = cast(Callable[[object], adsk.fusion.LoftFeature | None], adsk.fusion.LoftFeature.cast)(feature)
+    assert loft is not None
+    r['guideCount'] = loft.centerLineOrRails.count
+    r['isCenterLine'] = loft.centerLineOrRails.isCenterLine
+${emit("dict(creationId=doc.creationId, result=r)")}`;
+}
+export function featureModeHoleInputProbe(
+  point: unknown,
+  component: string,
+): string {
+  return `from typing import Callable, cast
+p = cast(Callable[[object], adsk.fusion.SketchPoint | None], adsk.fusion.SketchPoint.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(point)})))
+assert p is not None, 'Expected the owned sketch point'
+component = cast(Callable[[object], adsk.fusion.Component | None], adsk.fusion.Component.cast)(FMCAD.resolve(cast(str, ${py(component)}), 'component'))
+assert component is not None
+rows: list[dict[str, object]] = []
+for direction in [adsk.fusion.ExtentDirections.NegativeExtentDirection, adsk.fusion.ExtentDirections.PositiveExtentDirection]:
+    inp = component.features.holeFeatures.createSimpleInput(adsk.core.ValueInput.createByString('4 mm'))
+    assert inp is not None
+    assert inp.setPositionBySketchPoints(FMCAD.collection([p]))
+    row: dict[str, object] = dict(directionEnum=int(direction), before=inp.isDefaultDirection)
+    assert inp.setAllExtent(cast(adsk.fusion.ExtentDirections, direction))
+    row['after'] = inp.isDefaultDirection
+    rows.append(row)
+${emit("dict(creationId=doc.creationId, result=dict(inputs=rows, point=[p.worldGeometry.x * 10, p.worldGeometry.y * 10, p.worldGeometry.z * 10]))")}`;
+}
+interface Metric {
+  label: string;
+  actual: unknown;
+  expected: unknown;
+  tolerance: number;
+  units: string;
+  requestIndex: number;
+  status: "pass" | "fail";
+}
+interface CaseEvidence {
+  name: string;
+  status: "running" | "pass" | "fail";
+  metrics: Metric[];
+  error?: string;
+  inspectionGap?: string;
+  failureInspection?: unknown;
+  inspectionError?: string;
+}
+interface ScriptOptions {
+  mutation?: boolean;
+  cadBundle?: boolean;
+  request?: unknown;
+}
+interface SectionOptions {
+  plane?: unknown;
+  rectangle?: readonly [string[], string[]];
+  radius?: string;
+  point?: string[];
+}
+function field(value: unknown, ...keys: (string | number)[]): unknown {
+  return keys.reduce<unknown>(
+    (current, key) =>
+      typeof key === "number"
+        ? values(current)[key]
+        : key === "length" && Array.isArray(current)
+          ? current.length
+          : record(current)[key],
+    value,
+  );
+}
+
+/** Retained extent/rail/participant/regeneration probes use the real installed handlers. */
+export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
+  concurrencyLimit(owners);
+  return Array.from({ length: owners }, (_, index): Scenario => ({
+    id: "native-feature-modes-" + index,
+    requires: ["documents", nativeFeatureModesCapability],
+    scope: "exclusive-instance",
+    async run(session) {
+      assert.equal(
+        session.backend.protocol,
+        "addin",
+        "The retained feature-mode qualification is addin-only",
+      );
+      const harness = await nativeModelingHarness(
+        session,
+        "tests/live-feature-modes.js",
+        [],
+        [],
+      );
+      const { identity } = harness;
+      const report = {
+        retainedSource: "tests/live-feature-modes.js",
+        owner: session.report.owner,
+        identity,
+        preparation: "canonical public CAD and selected runtime probes",
+        tolerances: {
+          lengthMm: 0.001,
+          volumeAbsoluteMm3: 0.001,
+          volumeRelative: 0.00001,
+        },
+        tests: [] as CaseEvidence[],
+        probes: [] as Record<string, unknown>[],
+      };
+      const persist = () =>
+        fs.writeFileSync(
+          path.join(session.directory, "native-feature-modes.json"),
+          JSON.stringify(report, null, 2) + "\n",
+          { mode: 0o600 },
+        );
+      let component = "root",
+        sequence = 0;
+      let current: CaseEvidence = {
+        name: "setup",
+        status: "running",
+        metrics: [],
+      };
+      async function script(
+        label: string,
+        body: string,
+        options: ScriptOptions = {},
+      ): Promise<unknown> {
+        // A changed inventory may only reprepare after a settled, request-bound
+        // receipt positively proves that this probe body never started.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const inventory = await harness.guard();
+          assert.ok(inventory);
+          const peers = [
+            ...discoverOwnedUnsavedFixtureProofs(
+              path.dirname(path.dirname(session.directory)),
+              session.backend,
+            ).values(),
+          ]
+            .filter(
+              (proof) =>
+                proof.state === "open" &&
+                proof.document.creationId !== identity.creationId,
+            )
+            .map((proof) => proof.document);
+          const row: Record<string, unknown> = {
+            label,
+            test: current.name,
+            mutation: options.mutation ?? false,
+            request: options.request,
+            admissionAttempt: attempt,
+          };
+          report.probes.push(row);
+          let originalRequestId = "";
+          const result = await session.execute(
+            "feature-mode-" + sequence++ + "-" + label,
+            (requestId) => {
+              originalRequestId = requestId;
+              const source = featureModeProbeSource(
+                identity,
+                featureModeForeignInventory(identity, inventory),
+                body,
+                { requestId, peers },
+              );
+              row["sourceSha256"] = createHash("sha256")
+                .update(source)
+                .digest("hex");
+              row["requestId"] = requestId;
+              persist();
+              return source;
+            },
+            session.document,
+            options.cadBundle ? "cad-v1" : undefined,
+          );
+          if (nativeResultUncertain(result))
+            session.deferCleanup(
+              "Feature-mode probe returned unknown/pending; do not replay.",
+            );
+          row["result"] = result["result"];
+          if (result["admission"] !== undefined)
+            row["admission"] = result["admission"];
+          persist();
+          if (result["admission"] === undefined) return result["result"];
+          const original = session.report.requests.find(
+            (entry) => entry.requestId === originalRequestId,
+          );
+          assertFeatureProbeReadmission(
+            result,
+            originalRequestId,
+            identity.creationId,
+            original?.result,
+          );
+        }
+        throw new Error(
+          "Feature probe admission changed twice; no probe body executed",
+        );
+      }
+      async function cad(
+        operation: string,
+        data: Record<string, unknown> = {},
+        scope = component,
+      ): Promise<Record<string, unknown>> {
+        const row: Record<string, unknown> = {
+          label: operation,
+          test: current.name,
+          request: { operation, data, component: scope },
+          preparation: "public-cad",
+        };
+        report.probes.push(row);
+        persist();
+        const result = await harness.cad(operation, data, scope);
+        row["result"] = result;
+        persist();
+        return result;
+      }
+      function near(
+        actual: unknown,
+        expected: unknown,
+        tolerance: number,
+        label: string,
+      ): void {
+        const metric: Metric = {
+          label,
+          actual,
+          expected,
+          tolerance,
+          units: label.includes("volume")
+            ? "mm3"
+            : label.includes("unit direction")
+              ? "unitless"
+              : "mm",
+          requestIndex: session.report.requests.length - 1,
+          status:
+            typeof actual === "number" &&
+            Number.isFinite(actual) &&
+            typeof expected === "number" &&
+            Math.abs(actual - expected) <= tolerance
+              ? "pass"
+              : "fail",
+        };
+        current.metrics.push(metric);
+        persist();
+        assert.equal(metric.status, "pass", JSON.stringify(metric));
+      }
+      async function volume(body: unknown, expected: number): Promise<void> {
+        const v = await cad("measure.volume", { ref: body, units: "mm3" });
+        assert.equal(v["units"], "mm3");
+        near(
+          v["value"],
+          expected,
+          Math.max(0.001, Math.abs(expected) * 0.00001),
+          "volume",
+        );
+      }
+      async function bounds(
+        body: unknown,
+        min: number[],
+        max: number[],
+      ): Promise<void> {
+        const b = await cad("measure.bounds", { ref: body, units: "mm" });
+        assert.equal(b["units"], "mm");
+        min.forEach((v, i) =>
+          near(values(b["min"])[i], v, 0.001, "bounds min " + "xyz"[i]),
+        );
+        max.forEach((v, i) =>
+          near(values(b["max"])[i], v, 0.001, "bounds max " + "xyz"[i]),
+        );
+      }
+      const xyz = (x = 0, y = 0, z = 0): string[] =>
+        [x, y, z].map((v) => v + " mm");
+      const named = (suffix: string): string => component + "_" + suffix;
+      const profileRef = (sketch: unknown) => ({
+        kind: "profile",
+        sketch,
+        index: 0,
+      });
+      async function plane(
+        suffix: string,
+        offset: string,
+      ): Promise<Record<string, unknown>> {
+        return cad("datum.plane", {
+          name: named(suffix),
+          mode: "offset",
+          plane: "XY",
+          offset,
+        });
+      }
+      async function parameter(
+        key: string,
+        expression: string,
+        overwrite = false,
+      ): Promise<void> {
+        await cad(
+          "param.apply",
+          { parameters: [{ name: key, expression, unit: "mm" }], overwrite },
+          "root",
+        );
+      }
+      async function section(
+        suffix: string,
+        {
+          plane: onPlane = "XY",
+          rectangle,
+          radius,
+          point,
+        }: SectionOptions = {},
+      ) {
+        const sketch = field(
+          await cad("sketch.create", { name: named(suffix), plane: onPlane }),
+          "sketch",
+        );
+        const geometry = point
+          ? { type: "point", point }
+          : rectangle
+            ? { type: "rectangle", start: rectangle[0], end: rectangle[1] }
+            : { type: "circle", center: xyz(), radius: radius || "4 mm" };
+        const made = await cad("sketch.geometry", {
+          sketch,
+          geometry: [geometry],
+        });
+        if (!point)
+          assert.equal(
+            values(field(await cad("sketch.inspect", { sketch }), "profiles"))
+              .length,
+            1,
+          );
+        return {
+          sketch,
+          profile: profileRef(sketch),
+          entities: values(field(made, "entities")),
+        };
+      }
+      async function line(
+        suffix: string,
+        x: number,
+        height: number,
+        driving?: string,
+      ) {
+        const sketch = field(
+          await cad("sketch.create", { name: named(suffix), plane: "XZ" }),
+          "sketch",
+        );
+        const entity = values(
+          field(
+            await cad("sketch.geometry", {
+              sketch,
+              geometry: [{ type: "line", start: xyz(x), end: xyz(x, -height) }],
+            }),
+            "entities",
+          ),
+        )[0];
+        if (driving) {
+          await cad("sketch.edit", {
+            sketch,
+            entities: [{ entity, point: "start" }],
+            fixed: true,
+          });
+          await cad("sketch.constrain", {
+            sketch,
+            type: "vertical",
+            entities: [entity],
+          });
+          await cad("sketch.dimension", {
+            sketch,
+            type: "distance",
+            entities: [
+              { entity, point: "start" },
+              { entity, point: "end" },
+            ],
+            text: xyz(x + 5, -height / 2),
+            expression: driving,
+          });
+        }
+        const route = field(
+          await cad("path.create", { curves: [entity], chain: "none" }),
+          "path",
+        );
+        const ends = values(
+          await script("native-line-endpoints", featureModeLineProbe(entity), {
+            cadBundle: true,
+          }),
+        );
+        assert.equal(
+          values(ends[0]).length,
+          3,
+          "Native endpoint must contain all three coordinates",
+        );
+        assert.equal(
+          values(ends[1]).length,
+          3,
+          "Native endpoint must contain all three coordinates",
+        );
+        values(ends[0]).forEach((v, i) =>
+          near(v, [x, 0, 0][i], 0.001, "line start " + "xyz"[i]),
+        );
+        values(ends[1]).forEach((v, i) =>
+          near(v, [x, 0, height][i], 0.001, "line end " + "xyz"[i]),
+        );
+        return { entity, path: route };
+      }
+      async function native(
+        feature: unknown,
+        mode: string,
+      ): Promise<Record<string, unknown>> {
+        const result = record(
+          await script(
+            "native-feature-properties",
+            featureModePropertiesProbe(feature, mode),
+            { cadBundle: true, request: { feature, mode } },
+          ),
+        );
+        assert.equal(result["health"], 0, JSON.stringify(result));
+        return result;
+      }
+      async function recompute(): Promise<void> {
+        const result = await cad("history.recompute");
+        assert.equal(result["recomputed"], true);
+        assert.equal(result["healthy"], true, JSON.stringify(result));
+      }
+      async function test(
+        label: string,
+        fn: () => Promise<void>,
+      ): Promise<void> {
+        current = { name: label, status: "running", metrics: [] };
+        report.tests.push(current);
+        persist();
+        component = "Geo_" + label;
+        try {
+          await cad("component.create", { name: component }, "root");
+          await fn();
+          current.status = "pass";
+        } catch (error) {
+          current.status = "fail";
+          current.error =
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error);
+          persist();
+          if (session.uncertain) throw error;
+          try {
+            current.failureInspection = await cad("history.check");
+          } catch (inspectionError) {
+            current.inspectionError = String(inspectionError);
+            if (session.uncertain) throw inspectionError;
+          }
+        }
+        persist();
+      }
+      await test("extrude_throughAll", async () => {
+        const h = named("height");
+        await parameter(h, "10 mm");
+        const stock = await cad("shape.box", {
+          name: named("stock"),
+          width: "20 mm",
+          depth: "20 mm",
+          height: h,
+        });
+        const other = await cad("shape.box", {
+          name: named("other"),
+          width: "20 mm",
+          depth: "20 mm",
+          height: "4 mm",
+          plane: await plane("otherPlane", "25 mm"),
+        });
+        const cut = await section("cut", {
+          rectangle: [xyz(5, 5), xyz(10, 10)],
+        });
+        const made = await cad("model.extrude", {
+          name: named("through"),
+          profile: cut.profile,
+          extent: "throughAll",
+          direction: "positive",
+          operation: "cut",
+          participants: [field(stock, "bodies", 0)],
+        });
+        for (const height of [10, 16, 10]) {
+          if (height !== 10 || current.metrics.length) {
+            await parameter(h, height + " mm", true);
+            await recompute();
+          }
+          await volume(field(stock, "bodies", 0), 375 * height);
+          await bounds(field(stock, "bodies", 0), [0, 0, 0], [20, 20, height]);
+          await volume(field(other, "bodies", 0), 1600);
+          await bounds(field(other, "bodies", 0), [0, 0, 25], [20, 20, 29]);
+          assert.match(
+            text(
+              field(
+                await native(field(made, "feature"), "extrude"),
+                "extentType",
+              ),
+            ),
+            /ThroughAll/,
+          );
+        }
+      });
+      await test("extrude_toEntity", async () => {
+        const h = named("height");
+        await parameter(h, "20 mm");
+        const target = await plane("target", h);
+        const low = await section("section", { rectangle: [xyz(), xyz(4, 3)] });
+        const made = await cad("model.extrude", {
+          name: named("to"),
+          profile: low.profile,
+          extent: "toEntity",
+          target,
+          offset: "-1 mm",
+          startOffset: "2 mm",
+        });
+        for (const height of [20, 26, 20]) {
+          if (height !== 20 || current.metrics.length) {
+            await parameter(h, height + " mm", true);
+            await recompute();
+          }
+          await volume(field(made, "bodies", 0), 12 * (height - 3));
+          await bounds(field(made, "bodies", 0), [0, 0, 2], [4, 3, height - 1]);
+          const props = await native(field(made, "feature"), "extrude");
+          assert.match(text(field(props, "extentType")), /ToEntity/);
+          assert.match(text(field(props, "startType")), /OffsetStart/);
+          assert.equal(
+            text(field(props, "offset")).replaceAll(" ", ""),
+            "-1mm",
+          );
+          assert.equal(
+            text(field(props, "startOffset")).replaceAll(" ", ""),
+            "2mm",
+          );
+        }
+      });
+      for (const extent of ["throughAll", "toEntity"])
+        await test("hole_" + extent, async () => {
+          const h = named("height");
+          await parameter(h, "10 mm");
+          const stock = await cad("shape.box", {
+            name: named("stock"),
+            width: "20 mm",
+            depth: "20 mm",
+            height: h,
+          });
+          const top = await plane("top", h);
+          const points = await section("points", {
+            plane: top,
+            point: xyz(10, 10),
+          });
+          if (extent === "throughAll")
+            await script(
+              "hole-native-input-direction-diagnostic",
+              featureModeHoleInputProbe(points.entities[0], component),
+              { cadBundle: true },
+            );
+          const made = await cad("model.hole", {
+            name: named("hole"),
+            points: points.entities,
+            diameter: "4 mm",
+            extent,
+            ...(extent === "toEntity" ? { target: "XY" } : { reverse: false }),
+            participants: [field(stock, "bodies", 0)],
+          });
+          for (const height of [10, 17, 10]) {
+            if (height !== 10 || current.metrics.length) {
+              await parameter(h, height + " mm", true);
+              await recompute();
+            }
+            await volume(
+              field(stock, "bodies", 0),
+              (400 - Math.PI * 4) * height,
+            );
+            await bounds(
+              field(stock, "bodies", 0),
+              [0, 0, 0],
+              [20, 20, height],
+            );
+            await native(field(made, "feature"), "hole");
+          }
+        });
+      for (const type of ["simple", "counterbore", "countersink"])
+        await test("hole_reverse_" + type, async () => {
+          const h = named("height");
+          await parameter(h, "10 mm");
+          const stock = await cad("shape.box", {
+            name: named("stock"),
+            width: "20 mm",
+            depth: "20 mm",
+            height: h,
+          });
+          const points = await section("points", { point: xyz(10, 10) });
+          const extras =
+            type === "counterbore"
+              ? { boreDiameter: "8 mm", boreDepth: "2 mm" }
+              : type === "countersink"
+                ? { sinkDiameter: "8 mm", sinkAngle: "90 deg" }
+                : {};
+          const made = await cad("model.hole", {
+            name: named("hole"),
+            points: points.entities,
+            diameter: "4 mm",
+            extent: "throughAll",
+            reverse: true,
+            type,
+            ...extras,
+            participants: [field(stock, "bodies", 0)],
+          });
+          const additionalRemoval =
+            type === "counterbore"
+              ? Math.PI * 12 * 2
+              : type === "countersink"
+                ? (Math.PI * 32) / 3
+                : 0;
+          for (const height of [10, 17, 10]) {
+            await parameter(h, height + " mm", true);
+            await recompute();
+            const props = await native(field(made, "feature"), "hole");
+            await volume(
+              field(stock, "bodies", 0),
+              (400 - Math.PI * 4) * height - additionalRemoval,
+            );
+            await bounds(
+              field(stock, "bodies", 0),
+              [0, 0, 0],
+              [20, 20, height],
+            );
+            assert.equal(field(props, "defaultDirection"), false);
+            values(field(props, "direction")).forEach((v, i) =>
+              near(
+                v,
+                [0, 0, 1][i],
+                0.000001,
+                "hole unit direction " + "xyz"[i],
+              ),
+            );
+          }
+        });
+      for (const orientation of ["parallel", "perpendicular"])
+        await test("sweep_" + orientation, async () => {
+          const h = named("length");
+          await parameter(h, "20 mm");
+          const sectionRef = await section("section", {
+            rectangle: [xyz(-2, -1), xyz(2, 1)],
+          });
+          const route = await line("route", 0, 20, h);
+          const made = await cad("model.sweep", {
+            name: named("sweep"),
+            profile: sectionRef.profile,
+            path: route.path,
+            orientation,
+          });
+          for (const length of [20, 25, 20]) {
+            await parameter(h, length + " mm", true);
+            await recompute();
+            await volume(field(made, "bodies", 0), 8 * length);
+            await bounds(field(made, "bodies", 0), [-2, -1, 0], [2, 1, length]);
+            const props = await native(field(made, "feature"), "sweep");
+            assert.equal(
+              field(props, "orientation"),
+              props[orientation + "Enum"],
+            );
+          }
+        });
+      for (const orientation of ["parallel", "perpendicular"])
+        await test("sweep_bent_" + orientation, async () => {
+          const sectionRef = await section("section", {
+            rectangle: [xyz(-2, -1), xyz(2, 1)],
+          });
+          const sketch = field(
+            await cad("sketch.create", { name: named("arc"), plane: "XZ" }),
+            "sketch",
+          );
+          const arc = await cad("sketch.geometry", {
+            sketch,
+            geometry: [
+              { type: "arc", center: xyz(20), start: xyz(), sweep: "45 deg" },
+            ],
+          });
+          const route = field(
+            await cad("path.create", { curves: field(arc, "entities") }),
+            "path",
+          );
+          const made = await cad("model.sweep", {
+            name: named("sweep"),
+            profile: sectionRef.profile,
+            path: route,
+            orientation,
+          });
+          await volume(
+            field(made, "bodies", 0),
+            8 * 20 * (orientation === "parallel" ? Math.SQRT1_2 : Math.PI / 4),
+          );
+          const props = await native(field(made, "feature"), "sweep");
+          assert.equal(
+            field(props, "orientation"),
+            props[orientation + "Enum"],
+          );
+          await bounds(
+            field(made, "bodies", 0),
+            [-2, -1, 0],
+            [
+              20 * (1 - Math.SQRT1_2) +
+                (orientation === "parallel" ? 2 : Math.SQRT2),
+              1,
+              20 * Math.SQRT1_2 + (orientation === "parallel" ? 0 : Math.SQRT2),
+            ],
+          );
+        });
+      await test("sweep_guideRail", async () => {
+        const h = named("length");
+        await parameter(h, "20 mm");
+        const sectionRef = await section("section", {
+          rectangle: [xyz(-2, -1), xyz(2, 1)],
+        });
+        const route = await line("route", 0, 20, h),
+          rail = await line("rail", 2, 20, h);
+        const made = await cad("model.sweep", {
+          name: named("sweep"),
+          profile: sectionRef.profile,
+          path: route.path,
+          guideRail: rail.path,
+        });
+        for (const length of [20, 25, 20]) {
+          await parameter(h, length + " mm", true);
+          await recompute();
+          await volume(field(made, "bodies", 0), 8 * length);
+          await bounds(field(made, "bodies", 0), [-2, -1, 0], [2, 1, length]);
+          const props = await native(field(made, "feature"), "sweepRail");
+          assert.equal(
+            field(props, "profileScaling"),
+            field(props, "scaleEnum"),
+          );
+        }
+        current.inspectionGap =
+          "guideRail getter requires rollback; this read-only suite does not change the timeline to inspect it.";
+      });
+      await test("sweep_guideRail_scaling", async () => {
+        const spread = named("spread");
+        await parameter(spread, "1 mm");
+        const sectionRef = await section("section", {
+          rectangle: [xyz(-2, -1), xyz(2, 1)],
+        });
+        const route = await line("route", 0, 20);
+        const sketch = field(
+          await cad("sketch.create", { name: named("rail"), plane: "XZ" }),
+          "sketch",
+        );
+        const entity = field(
+          await cad("sketch.geometry", {
+            sketch,
+            geometry: [{ type: "line", start: xyz(2), end: xyz(3, -20) }],
+          }),
+          "entities",
+          0,
+        );
+        await cad("sketch.edit", {
+          sketch,
+          entities: [{ entity, point: "start" }],
+          fixed: true,
+        });
+        for (const [orientation, expression] of [
+          ["horizontal", spread],
+          ["vertical", "20 mm"],
+        ]) {
+          await cad("sketch.dimension", {
+            sketch,
+            type: "distance",
+            entities: [
+              { entity, point: "start" },
+              { entity, point: "end" },
+            ],
+            text: xyz(5, -10),
+            orientation,
+            expression,
+          });
+        }
+        const guideRail = field(
+          await cad("path.create", { curves: [entity] }),
+          "path",
+        );
+        const made = await cad("model.sweep", {
+          name: named("sweep"),
+          profile: sectionRef.profile,
+          path: route.path,
+          guideRail,
+        });
+        for (const value of [1, 2, 1]) {
+          await parameter(spread, value + " mm", true);
+          await recompute();
+          const scale = 1 + value / 2;
+          await volume(
+            field(made, "bodies", 0),
+            (8 * 20 * (1 + scale + scale * scale)) / 3,
+          );
+          await bounds(
+            field(made, "bodies", 0),
+            [-2 * scale, -scale, 0],
+            [2 * scale, scale, 20],
+          );
+          const props = await native(field(made, "feature"), "sweepRail");
+          assert.equal(
+            field(props, "profileScaling"),
+            field(props, "scaleEnum"),
+          );
+        }
+        current.inspectionGap =
+          "Native guideRail getter not read because it requires rollback; independent rail-only perturbation verifies geometric dependence.";
+      });
+      for (const guide of ["rails", "centerLine"])
+        await test("loft_" + guide, async () => {
+          const h = named("height");
+          await parameter(h, "20 mm");
+          const low = await section("low"),
+            high = await section("high", { plane: await plane("top", h) });
+          const rail = await line("guide", guide === "rails" ? 4 : 0, 20, h);
+          const made = await cad("model.loft", {
+            name: named("loft"),
+            profiles: [low.profile, high.profile],
+            ...(guide === "rails"
+              ? { rails: [rail.path] }
+              : { centerLine: rail.entity }),
+          });
+          for (const height of [20, 26, 20]) {
+            await parameter(h, height + " mm", true);
+            await recompute();
+            await volume(field(made, "bodies", 0), Math.PI * 16 * height);
+            await bounds(field(made, "bodies", 0), [-4, -4, 0], [4, 4, height]);
+            const props = await native(field(made, "feature"), "loft");
+            assert.equal(field(props, "guideCount"), 1);
+            assert.equal(field(props, "isCenterLine"), guide === "centerLine");
+          }
+        });
+      await harness.guard();
+      persist();
+      assert.ok(
+        report.tests.length > 0 &&
+          report.tests.every((row) => row.status === "pass"),
+        "Retained native feature modes did not all pass; inspect native-feature-modes.json",
+      );
+    },
+  }));
+}

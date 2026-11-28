@@ -227,6 +227,7 @@ export function createBrowserFixture(): BrowserFixture {
   const agents: ConsoleAgentRecord[] = [
     {
       id: "agent-e2e-active",
+      agentId: "agent-e2e-active",
       name: "E2E Active Agent",
       kind: "OpenCode",
       presence: "active",

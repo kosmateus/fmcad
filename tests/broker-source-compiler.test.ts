@@ -1,0 +1,339 @@
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import * as fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { Worker } from "node:worker_threads";
+import type { QueueRequest } from "@fmcad/core";
+import type { ParamCheckpointGuardV1 } from "../packages/node-adapters/src/python/cad-script.js";
+
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "dist/src/queue-broker.js"));
+const compilerRequire = createRequire(
+  path.join(root, "dist/src/broker-source-compiler.js"),
+);
+const { createBrokerSourceCompiler } = load(
+  "./broker-source-compiler",
+) as typeof import("../src/broker-source-compiler");
+const { compileDocumentContinuationPrograms } = load(
+  "./document-continuation-broker",
+) as typeof import("../src/document-continuation-broker");
+const { prepareCadScript } = load(
+  "./dist/composition/cad",
+) as typeof import("../src/composition/cad");
+const { cadWorkerPolicyArguments, decodeCadWorkerInvocation } = load(
+  "./dist/core/application/cad/worker-command",
+) as typeof import("../packages/core/src/application/cad/worker-command");
+
+const checkpoint: ParamCheckpointGuardV1 = {
+  schema: "fmcad.param-checkpoint-v1",
+  document: {
+    identity: {
+      creationId: "creation-A",
+      name: "Owned A",
+      fileId: "file-A",
+      version: 2,
+      isSaved: true,
+      isModified: false,
+    },
+    fingerprint: "a".repeat(64),
+  },
+  parameters: [],
+};
+function data() {
+  return {
+    parameters: [{ name: "length", expression: "12 mm", unit: "mm" }],
+  };
+}
+function context() {
+  return {
+    doc: "Owned A",
+    docId: "creation-A",
+    docFileId: "file-A",
+    preview: false,
+  };
+}
+function request(): QueueRequest {
+  const payload = {
+    kind: "cad",
+    version: 1,
+    operation: "param.apply",
+    doc: "Owned A",
+    docId: "creation-A",
+    docFileId: "file-A",
+    data: data(),
+  };
+  return {
+    requestId: "new-write-A",
+    clientId: "owner-A",
+    ownerToken: "b".repeat(64),
+    kind: "command",
+    cwd: root,
+    timeoutMs: 15000,
+    phased: true,
+    buildHash: "c".repeat(64),
+    payload,
+    argv: cadWorkerPolicyArguments(decodeCadWorkerInvocation(payload)),
+  };
+}
+
+function threadCount(): number | null {
+  return process.platform === "linux"
+    ? fs.readdirSync(`/proc/${process.pid}/task`).length
+    : null;
+}
+
+async function waitForThreadCount(expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (threadCount() === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(threadCount(), expected);
+}
+
+test("runtime-test emission includes the source compiler worker entry", () => {
+  assert.equal(
+    compilerRequire.resolve("./broker-source-compiler-worker.js"),
+    path.join(root, "dist/src/broker-source-compiler-worker.js"),
+  );
+});
+
+test("CAD compiler preserves the complete prepared artifact", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+
+  const expected = prepareCadScript(
+    "param.apply",
+    data(),
+    context(),
+    undefined,
+    checkpoint,
+  );
+  const actual = await compiler.cad(
+    "param.apply",
+    data(),
+    context(),
+    checkpoint,
+  );
+
+  assert.deepEqual(actual, expected);
+  assert.equal(actual.script, expected.script);
+  assert.equal(actual.sha256, expected.sha256);
+  assert.equal(actual.artifactHash, expected.artifactHash);
+  assert.deepEqual(actual.units, expected.units);
+  assert.deepEqual(actual.sourceMap, expected.sourceMap);
+  assert.deepEqual(actual, JSON.parse(JSON.stringify(actual)));
+});
+
+test("continuation compiler preserves both programs and their bindings", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+  const input = request();
+  const guard = structuredClone(checkpoint);
+
+  const actual = await compiler.continuation(input, guard);
+  const expected = compileDocumentContinuationPrograms(input, guard);
+
+  assert.deepEqual(actual, expected);
+  assert.equal(actual.ordinary.script, expected.ordinary.script);
+  assert.equal(actual.guarded.script, expected.guarded.script);
+  assert.equal(actual.ordinary.sourceHash, expected.ordinary.sourceHash);
+  assert.equal(actual.guarded.sourceHash, expected.guarded.sourceHash);
+  assert.deepEqual(actual.ordinary.manifest, expected.ordinary.manifest);
+  assert.deepEqual(actual.guarded.manifest, expected.guarded.manifest);
+});
+
+test("main-loop timer runs before a real continuation compilation completes", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+  let timerFired = false;
+  const timer = new Promise<"timer">((resolve) =>
+    setTimeout(() => {
+      timerFired = true;
+      resolve("timer");
+    }, 0),
+  );
+  const compilation = compiler.continuation(request(), checkpoint);
+  const first = await Promise.race([
+    compilation.then(() => "compiled" as const),
+    timer,
+  ]);
+
+  assert.equal(first, "timer");
+  assert.equal(timerFired, true);
+  assert.deepEqual(
+    await compilation,
+    compileDocumentContinuationPrograms(request(), checkpoint),
+  );
+});
+
+test("compiler failures cross the worker boundary without worker stacks", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+
+  await assert.rejects(
+    compiler.cad("not-a-real-operation", {}, context()),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.length > 0 &&
+      !error.stack?.includes("broker-source-compiler-worker"),
+  );
+  assert.deepEqual(
+    await compiler.cad("param.apply", data(), context(), checkpoint),
+    prepareCadScript("param.apply", data(), context(), undefined, checkpoint),
+  );
+});
+
+test("one persistent worker compiles consecutive jobs responsively", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+  const baselineThreads = threadCount();
+  const secondData = data();
+  const timer = new Promise<"timer">((resolve) =>
+    setTimeout(() => resolve("timer"), 0),
+  );
+  const cad = compiler.cad("param.apply", data(), context(), checkpoint);
+  const continuation = compiler.continuation(request(), checkpoint);
+  const secondCad = compiler.cad(
+    "param.apply",
+    secondData,
+    context(),
+    checkpoint,
+  );
+  const first = await Promise.race([
+    Promise.all([cad, continuation, secondCad]).then(() => "compiled" as const),
+    timer,
+  ]);
+
+  assert.equal(first, "timer");
+  const [actualCad, actualContinuation, actualSecondCad] = await Promise.all([
+    cad,
+    continuation,
+    secondCad,
+  ]);
+  assert.deepEqual(
+    actualCad,
+    prepareCadScript("param.apply", data(), context(), undefined, checkpoint),
+  );
+  assert.deepEqual(
+    actualContinuation,
+    compileDocumentContinuationPrograms(request(), checkpoint),
+  );
+  assert.deepEqual(
+    actualSecondCad,
+    prepareCadScript(
+      "param.apply",
+      secondData,
+      context(),
+      undefined,
+      checkpoint,
+    ),
+  );
+
+  if (baselineThreads !== null) {
+    await waitForThreadCount(baselineThreads + 1);
+    await compiler.close();
+    await waitForThreadCount(baselineThreads);
+  }
+});
+
+test("an exited worker is replaced without failing its queued successor", async (t) => {
+  const compiler = createBrokerSourceCompiler({ concurrency: 1 });
+  t.after(() => compiler.close());
+  const baselineThreads = threadCount();
+  const originalPostMessage = Worker.prototype.postMessage;
+  let exitFirstWorker = true;
+  Worker.prototype.postMessage = function (
+    this: Worker,
+    ...args: Parameters<typeof Worker.prototype.postMessage>
+  ): void {
+    const result = originalPostMessage.apply(this, args);
+    if (exitFirstWorker) {
+      exitFirstWorker = false;
+      void this.terminate();
+    }
+    return result;
+  };
+
+  let failedAssertion: Promise<void> | undefined;
+  let successfulTask: Promise<unknown> | undefined;
+  try {
+    const failedTask = compiler.cad(
+      "param.apply",
+      data(),
+      context(),
+      checkpoint,
+    );
+    failedAssertion = assert.rejects(failedTask, {
+      code: "SOURCE_COMPILER_WORKER_EXIT",
+    });
+    successfulTask = compiler.cad("param.apply", data(), context(), checkpoint);
+  } finally {
+    Worker.prototype.postMessage = originalPostMessage;
+  }
+
+  assert.ok(failedAssertion);
+  assert.ok(successfulTask);
+  await failedAssertion;
+  assert.deepEqual(
+    await successfulTask,
+    prepareCadScript("param.apply", data(), context(), undefined, checkpoint),
+  );
+  await compiler.close();
+  if (baselineThreads !== null) await waitForThreadCount(baselineThreads);
+});
+
+test("concurrency is bounded and close drains active work only", async (t) => {
+  if (process.platform !== "linux") {
+    t.skip("Linux /proc exposes the active worker-thread count");
+    return;
+  }
+  const compiler = createBrokerSourceCompiler({ concurrency: 2 });
+  t.after(() => compiler.close());
+  const baseline = threadCount()!;
+  const taskDirectory = `/proc/${process.pid}/task`;
+  const tasks = Array.from({ length: 3 }, () =>
+    compiler.cad("param.apply", data(), context(), checkpoint),
+  );
+  const settled = Promise.allSettled(tasks);
+  let peak = 0;
+  for (let attempt = 0; attempt < 1000 && peak < 2; attempt++) {
+    peak = Math.max(peak, fs.readdirSync(taskDirectory).length - baseline);
+    if (peak < 2) await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  assert.equal(peak, 2);
+  const closing = compiler.close();
+  assert.equal(compiler.close(), closing);
+  let closeResolved = false;
+  void closing.then(() => {
+    closeResolved = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(closeResolved, false);
+  const results = await settled;
+  await closing;
+  assert.equal(closeResolved, true);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    2,
+  );
+  assert.equal(
+    results.filter((result) => result.status === "rejected").length,
+    1,
+  );
+  for (const result of results) {
+    if (result.status === "rejected")
+      assert.equal(result.reason.code, "SOURCE_COMPILER_CLOSED");
+  }
+  await waitForThreadCount(baseline);
+  assert.throws(() => createBrokerSourceCompiler({ concurrency: 0 }), {
+    code: "INVALID_SOURCE_COMPILER_CONCURRENCY",
+  });
+  assert.throws(() => createBrokerSourceCompiler({ concurrency: 11 }), {
+    code: "INVALID_SOURCE_COMPILER_CONCURRENCY",
+  });
+  await assert.rejects(compiler.cad("param.apply", data(), context()), {
+    code: "SOURCE_COMPILER_CLOSED",
+  });
+});

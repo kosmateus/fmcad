@@ -1,0 +1,1207 @@
+#!/usr/bin/env node
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.metadataRetirementPidfdProgram = void 0;
+exports.abortUnstartedSuccessor = abortUnstartedSuccessor;
+exports.retireMetadataWorker = retireMetadataWorker;
+const node_fs_1 = __importDefault(require("node:fs"));
+const node_path_1 = __importDefault(require("node:path"));
+const node_module_1 = require("node:module");
+const node_util_1 = require("node:util");
+const node_child_process_1 = require("node:child_process");
+const node_crypto_1 = require("node:crypto");
+const retainedNativeSourceCommit = "923c339d3b8c85ca74e0c22511128958a97e7476";
+const retainedNativeBuildHash = "63a7c521b4beb0808afc12815fa3a0ff3ec6dcbd5528bb5557fe284ad5872e14";
+const retainedNativeConfigHash = "fb8fba61d742d82c5cea76df8c8e7e235dd2bb09744685835aa4622f88dbd045";
+// This fixed program has no shell, PID-only signal, SIGTERM fallback or Fusion
+// access. The pidfd is opened BEFORE /proc identity checks and held to exit.
+exports.metadataRetirementPidfdProgram = `import os,sys,json,hashlib,signal,select
+def require(condition,message='metadata retirement proof refused'):
+ if not condition: raise RuntimeError(message)
+p=json.load(sys.stdin); owner=p['owner']; pid=owner['pid']; base='/proc/'+str(pid)
+require(isinstance(pid,int) and pid>1 and pid!=os.getpid())
+require(hasattr(os,'pidfd_open') and hasattr(signal,'pidfd_send_signal'))
+fd=os.pidfd_open(pid)
+def digest(file):
+ with open(file,'rb') as f: return hashlib.sha256(f.read()).hexdigest()
+def verify():
+ stat=open(base+'/stat').read(); tail=stat[stat.rfind(')')+2:].split()
+ birth=open('/proc/sys/kernel/random/boot_id').read().strip()+':'+tail[19]
+ require(birth==owner['birth'] and tail[0]!='Z')
+ exe=os.path.realpath(base+'/exe'); cmd=open(base+'/cmdline','rb').read().split(b'\\0')
+ require(cmd[-1]==b''); cmd=[v.decode() for v in cmd[:-1]]
+ require(cmd==[exe,p['runtime']+'/src/queue-epoch-successor-worker.js'])
+ children={task:open(base+'/task/'+task+'/children').read().split() for task in os.listdir(base+'/task')}
+ require(not any(children.values()))
+ sockets={}; stdin=None
+ for name in os.listdir(base+'/fd'):
+  link=os.readlink(base+'/fd/'+name)
+  if link.startswith('socket:['):
+   inode=link[8:-1]; sockets[inode]=name
+   if name=='0': stdin=inode
+ for net in ['tcp','tcp6','udp','udp6']:
+  for line in open(base+'/net/'+net).read().splitlines()[1:]:
+   parts=line.split(); require(parts[9] not in sockets)
+ rows=[]
+ for line in open(base+'/net/unix').read().splitlines()[1:]:
+  parts=line.split()
+  if parts[6] in sockets:
+   require(parts[6]==stdin or (len(parts)==8 and parts[7]==p['root']+'/broker.sock' and parts[3]=='00010000' and parts[5]=='01'))
+   rows.append(line)
+ require(len(rows)==len(sockets))
+ for ref in p['refs']: require(digest(ref['path'])==ref['sha256'])
+ return {'pid':pid,'birth':birth,'exe':exe,'exeSha256':digest(exe),'cmdline':cmd,'childrenByTask':children,'socketRows':rows}
+before=verify()
+if p['apply']:
+ require(before==p['expectedProcess'])
+ signal.pidfd_send_signal(fd,signal.SIGKILL)
+ poll=select.poll(); poll.register(fd,select.POLLIN); require(poll.poll(30000),'retirement outcome pending')
+ print(json.dumps({'process':before,'retired':True,'mechanism':'pidfd_send_signal:SIGKILL','gracefulClose':False}))
+else: print(json.dumps({'process':before,'retired':False}))
+os.close(fd)
+`;
+const linuxRetirementPorts = {
+    certify(proof) {
+        if (proof["sourceCommit"] !== "48ef3305e47ca412e7bafba00ca383ada0f99723" ||
+            proof["buildHash"] !==
+                "0d08b1e49c2c29f17e46b03ad6f9777100b771a627db088ab86f2267d2f02880")
+            fail("Only the independently certified immutable 48ef metadata closure is supported");
+        const runtime = text(proof["runtimeRoot"]);
+        const load = (0, node_module_1.createRequire)(node_path_1.default.join(runtime, "src/queue-instance.js"));
+        if (load("./queue-instance").buildHash(runtime) !== proof["buildHash"])
+            fail("Certified old runtime bytes changed");
+    },
+    process(owner, runtime, refs, apply, root) {
+        // A fresh read-only snapshot is required even by the effect proxy. Node
+        // supplies expectedProcess only after the second status/identity validation.
+        const input = {
+            owner,
+            runtime,
+            refs,
+            apply,
+            root,
+            ...(apply ? { expectedProcess: owner["processProof"] } : {}),
+        };
+        const interpreterPath = node_fs_1.default.realpathSync("/usr/bin/python3");
+        const version = (0, node_child_process_1.spawnSync)(interpreterPath, ["-I", "--version"], {
+            encoding: "utf8",
+            timeout: 5000,
+        });
+        if (version.error || version.status !== 0)
+            fail("Canonical Python interpreter is unavailable");
+        const interpreter = {
+            path: interpreterPath,
+            sha256: (0, node_crypto_1.createHash)("sha256")
+                .update(node_fs_1.default.readFileSync(interpreterPath))
+                .digest("hex"),
+            version: version.stdout.trim(),
+        };
+        if (apply && !(0, node_util_1.isDeepStrictEqual)(owner["interpreterProof"], interpreter))
+            fail("Python interpreter changed before retirement");
+        input.refs = [
+            ...refs,
+            { path: interpreter.path, sha256: interpreter.sha256 },
+        ];
+        const result = (0, node_child_process_1.spawnSync)(interpreterPath, ["-I", "-c", exports.metadataRetirementPidfdProgram], {
+            input: JSON.stringify(input),
+            encoding: "utf8",
+            timeout: 35000,
+            maxBuffer: 8 * 1024 * 1024,
+        });
+        if (result.error || result.status !== 0)
+            fail("Linux pidfd identity/quiescence or retirement is unproven; never retry a signal blindly");
+        return { ...object(JSON.parse(result.stdout)), interpreter };
+    },
+    fusion(expected) {
+        const pid = expected["pid"];
+        if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0)
+            fail("Exact Fusion OS PID required");
+        const script = `$ErrorActionPreference="Stop"; $p=Get-Process -Id ${pid} -ErrorAction Stop; [pscustomobject]@{observedAtUtc=[DateTime]::UtcNow.ToString("o");pid=$p.Id;birth=$p.StartTime.ToFileTimeUtc().ToString();version=$p.FileVersion;hasExited=$p.HasExited;responding=$p.Responding}|ConvertTo-Json -Compress`;
+        const result = (0, node_child_process_1.spawnSync)("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: 30000 });
+        if (result.error || result.status !== 0)
+            fail("Fresh read-only Fusion OS identity is unavailable");
+        return object(JSON.parse(result.stdout.replace(/^\uFEFF/, "")));
+    },
+};
+function fail(message) {
+    throw Object.assign(new Error(message), { code: "SUCCESSOR_ABORT_UNPROVEN" });
+}
+function object(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        fail("Object-shaped original evidence required");
+    return value;
+}
+function text(value) {
+    if (typeof value !== "string" || !value)
+        fail("Exact original identity required");
+    return value;
+}
+/** Owner-only metadata recovery; never launches a worker or calls Fusion. */
+function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspection = false, processDeathProofFile, withdrawUnknown = false, } = {}) {
+    const approval = object(JSON.parse(node_fs_1.default.readFileSync(approvalFile, "utf8")));
+    const runtime = text(approval["candidateRoot"]);
+    if (!node_path_1.default.isAbsolute(runtime) || node_fs_1.default.realpathSync(runtime) !== runtime)
+        fail("Canonical original runtime required");
+    const load = (0, node_module_1.createRequire)(node_path_1.default.join(runtime, "src/queue-instance.js"));
+    const api = load("./queue-instance");
+    const files = load("./queue-atomic-migration-files");
+    const lineage = load("./queue-epoch-lineage");
+    // The immutable predecessor runtime supplies historical readers, not new
+    // recovery policy. Evaluate that policy from this operator's own package.
+    const operatorLoad = (0, node_module_1.createRequire)(__filename);
+    const successor = operatorLoad("../dist/src/queue-epoch-successor.js");
+    const { classifyPythonRpc } = operatorLoad("../dist/src/dist/python/admission.js");
+    const root = node_fs_1.default.realpathSync(client.dir);
+    files.directory(root);
+    const requestId = text(approval["requestId"]);
+    if (requestId.length > 160 ||
+        approval["purpose"] !== "dead-isolated-epoch-successor-v1")
+        fail("Original dead-successor approval required");
+    const audit = node_path_1.default.join(root, "epoch-successions", api.hash(requestId));
+    files.directory(audit);
+    const read = (file) => object(api.readJson(file));
+    const ref = (file) => lineage.reference(file);
+    const observationDir = node_path_1.default.join(audit, "dead-epoch-current-observation");
+    const deathBindings = (authorityEntry) => ({
+        authority: authorityEntry,
+        observationIntent: ref(node_path_1.default.join(observationDir, "intent.json")),
+        observationStart: ref(node_path_1.default.join(observationDir, "start.json")),
+        observationWire: ref(node_path_1.default.join(observationDir, "wire.json")),
+        observationResult: ref(node_path_1.default.join(observationDir, "result.json")),
+    });
+    const verifyDeathProof = (file, authorityEntry, expectedProcess) => successor.verifySdkProcessDeathProof(file, expectedProcess, deathBindings(authorityEntry));
+    const predecessorAuditIdentity = (pointer) => {
+        const receipt = object(pointer["qualificationReceipt"]), intentFile = node_path_1.default.join(node_path_1.default.dirname(text(receipt["path"])), "intent.json"), evidence = pointer["qualificationEvidence"];
+        if (!Array.isArray(evidence) ||
+            !evidence.some((entry) => (0, node_util_1.isDeepStrictEqual)(object(entry), ref(intentFile)) &&
+                object(entry)["path"] === intentFile))
+            fail("Exact predecessor qualification identity required");
+        return read(intentFile)["identity"];
+    };
+    const verifySdkUnknownAttempt = (authorityEntry, expectedProcess, expectedBuildHash, expectedSourceCommit, expectedConfigHash, originalIdentity, jobIds, proofFile, requireProof) => {
+        const jobs = jobIds;
+        if (!Array.isArray(jobs) || jobs.length < 2)
+            fail("Original holder and observer required");
+        const key = {
+            jobId: jobs[0],
+            observationJobId: jobs[1],
+            requestId: text(approval["requestId"]) + ":observe",
+            clientId: client.auth.clientId,
+        };
+        if (!node_fs_1.default.existsSync(observationDir))
+            fail("Exact SDK1 observation journal required");
+        const names = node_fs_1.default.readdirSync(observationDir).sort();
+        const legacyNames = [
+            "intent.json",
+            "result.json",
+            "start.json",
+            "wire.json",
+        ];
+        if (names.includes("received-response.json")
+            ? names.length !== 6 ||
+                legacyNames.some((name) => !names.includes(name))
+            : !(0, node_util_1.isDeepStrictEqual)(names, legacyNames))
+            fail("SDK1 withdrawal requires a terminal lost-observation journal with no response receipt or pending dispatch");
+        const observationIntentFile = node_path_1.default.join(observationDir, "intent.json"), observationStartFile = node_path_1.default.join(observationDir, "start.json"), observationWireFile = node_path_1.default.join(observationDir, "wire.json"), observationResultFile = node_path_1.default.join(observationDir, "result.json"), observationIntent = read(observationIntentFile), start = read(observationStartFile), startBinding = object(start["binding"]), pythonCheck = object(start["pythonCheck"]), provenance = object(pythonCheck["provenance"]), wire = read(observationWireFile), outgoing = object(wire["outgoing"]), params = object(outgoing["params"]), args = object(params["arguments"]), artifact = object(wire["artifact"]), result = read(observationResultFile);
+        const nativeObservation = names.includes("received-response.json"), receiptName = "remote-" + String(startBinding["rpcId"]) + ".json", nativeNames = [
+            "intent.json",
+            "start.json",
+            "wire.json",
+            "received-response.json",
+            receiptName,
+            "result.json",
+        ].sort();
+        const retainedRefs = [];
+        if (expectedSourceCommit === retainedNativeSourceCommit) {
+            if (expectedBuildHash !== retainedNativeBuildHash ||
+                expectedConfigHash !== retainedNativeConfigHash ||
+                !nativeObservation ||
+                !(0, node_util_1.isDeepStrictEqual)(names, nativeNames))
+                fail("Exact pinned 923c six-file native observation required");
+            const retained = operatorLoad("../dist/src/dist/node-adapters/execution/recovery-audit.js").verifyRetainedAuditResponse({
+                directory: observationDir,
+                key,
+                identity: originalIdentity,
+                binding: object(observationIntent["binding"]),
+                instance: expectedProcess,
+                buildHash: expectedBuildHash,
+            });
+            const runtime = text(authority["candidateRoot"]), reader = (0, node_module_1.createRequire)(node_path_1.default.join(runtime, "src/queue-atomic-recovery-audit.js"))("./queue-atomic-recovery-audit").prepareRecoveryAudit(runtime, observationIntent["identity"], object(observationIntent["binding"]));
+            if (observationIntent["sourceSha256"] !== reader.sourceSha256 ||
+                observationIntent["sourceArtifactHash"] !==
+                    reader.artifact.artifactHash ||
+                startBinding["sourceHash"] !== reader.artifact.sha256)
+                fail("Retained native observation differs from the original source-bound audit builder");
+            retainedRefs.push(...Object.values(retained.files));
+        }
+        else if (nativeObservation) {
+            fail("Retained native observation is restricted to the pinned 923c profile");
+        }
+        const python = classifyPythonRpc(outgoing);
+        // Both registered historical encodings are exact, closed shapes. In
+        // particular the failed old Python wire is evidence, not native success.
+        const script = args["object"];
+        const exactWire = python.kind === "python" &&
+            (python.official
+                ? params["name"] === "fusion_mcp_execute" &&
+                    args["featureType"] === "script" &&
+                    !!script &&
+                    typeof script === "object" &&
+                    !Array.isArray(script) &&
+                    object(script)["readOnly"] === true &&
+                    (0, node_util_1.isDeepStrictEqual)(Object.keys(args).sort(), ["featureType", "object"]) &&
+                    (0, node_util_1.isDeepStrictEqual)(Object.keys(script).sort(), ["readOnly", "script"])
+                : params["name"] === "execute_python" &&
+                    args["persistent"] === false &&
+                    (0, node_util_1.isDeepStrictEqual)(Object.keys(args).sort(), ["code", "persistent"]));
+        if (observationIntent["version"] !== 1 ||
+            !(0, node_util_1.isDeepStrictEqual)(observationIntent["key"], key) ||
+            !(0, node_util_1.isDeepStrictEqual)(observationIntent["binding"], {
+                purpose: "atomic-recovery-audit-v1",
+                clientId: client.auth.clientId,
+                expectedProcess,
+                successorAuthorityHash: authorityEntry.sha256,
+            }) ||
+            !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceSha256"])) ||
+            !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceArtifactHash"])) ||
+            startBinding["jobId"] !== key.jobId ||
+            typeof startBinding["rpcId"] !== "string" ||
+            !startBinding["rpcId"] ||
+            !/^[a-f0-9]{64}$/.test(String(startBinding["requestHash"])) ||
+            startBinding["buildHash"] !== expectedBuildHash ||
+            !/^[a-f0-9]{64}$/.test(String(startBinding["sourceHash"])) ||
+            startBinding["purpose"] !== "atomic-recovery-audit-v1" ||
+            !/^[a-f0-9]{64}$/.test(String(startBinding["auditBindingHash"])) ||
+            startBinding["pythonOriginHash"] !==
+                observationIntent["sourceArtifactHash"] ||
+            !(0, node_util_1.isDeepStrictEqual)(startBinding["auditExpectedProcess"], expectedProcess) ||
+            !(0, node_util_1.isDeepStrictEqual)(start["instance"], expectedProcess) ||
+            start["receipt"] !==
+                node_path_1.default.join(observationDir, "remote-" + String(startBinding["rpcId"]) + ".json") ||
+            pythonCheck["status"] !== "passed" ||
+            !/^[a-f0-9]{64}$/.test(String(provenance["artifactHash"])) ||
+            !/^[a-f0-9]{64}$/.test(String(provenance["wireHash"])) ||
+            start["originArtifactHash"] !== observationIntent["sourceArtifactHash"] ||
+            outgoing["jsonrpc"] !== "2.0" ||
+            outgoing["id"] !== "fmcad:" + String(startBinding["rpcId"]) ||
+            outgoing["method"] !== "tools/call" ||
+            !exactWire ||
+            python.kind !== "python" ||
+            api.hash(python.source) !== artifact["sha256"] ||
+            artifact["artifactHash"] !== provenance["artifactHash"] ||
+            artifact["sha256"] !== provenance["wireHash"] ||
+            !(0, node_util_1.isDeepStrictEqual)(result["kind"], "dead-epoch-current-observation") ||
+            !(0, node_util_1.isDeepStrictEqual)(result["jobId"], key.jobId) ||
+            !(0, node_util_1.isDeepStrictEqual)(result["observationJobId"], key.observationJobId) ||
+            result["requestId"] !== key.requestId ||
+            result["clientId"] !== key.clientId ||
+            result["status"] !== "failed" ||
+            typeof result["code"] !== "string" ||
+            !result["code"] ||
+            result["sdkRequestsSent"] !== 1 ||
+            result["nativeOutcome"] !== "unknown" ||
+            result["modelValidation"] !== "not_performed" ||
+            result["rollbackVerification"] !== "not_performed")
+            fail("Exact terminal SDK1 unknown observation, request, owner, build, wire and process lineage required");
+        const processDeathProof = proofFile
+            ? verifyDeathProof(proofFile, authorityEntry, expectedProcess)
+            : undefined;
+        if (requireProof && !processDeathProof)
+            fail("Exact SDK process-death proof required for SDK1 withdrawal");
+        return {
+            key,
+            observationIntentFile,
+            observationStartFile,
+            observationWireFile,
+            observationResultFile,
+            processDeathProof,
+            retainedRefs,
+        };
+    };
+    const intentFile = node_path_1.default.join(audit, "intent.json"), intent = read(intentFile);
+    const approved = object(intent["approval"]), tokenHash = api.hash(client.auth.clientToken);
+    // Relocated recovery copies are accepted only when the approved bytes are identical.
+    if (intent["clientId"] !== client.auth.clientId ||
+        intent["ownerTokenHash"] !== tokenHash ||
+        approval["clientId"] !== client.auth.clientId ||
+        read(node_path_1.default.join(root, "clients.json"))[client.auth.clientId] !== tokenHash ||
+        files.fileHash(approvalFile).sha256 !== approved["sha256"])
+        fail("Original existing credential-bound owner and exact approval bytes required");
+    const abortDir = node_path_1.default.join(audit, "abort-unstarted"), completeFile = node_path_1.default.join(abortDir, "complete.json");
+    if (node_fs_1.default.existsSync(completeFile)) {
+        const complete = read(completeFile), original = read(node_path_1.default.join(abortDir, "intent.json"));
+        if (complete["kind"] === "dead-epoch-successor-withdrawn-after-sdk-unknown") {
+            const authorityFile = node_path_1.default.join(audit, "authority.json"), authorityEntry = ref(authorityFile), authority = read(authorityFile), pointer = lineage.successionAuthority(root, authorityEntry).pointer, processDeathProof = object(complete["processDeathProof"]), sdkUnknown = verifySdkUnknownAttempt(authorityEntry, object(authority["expectedProcess"]), text(authority["buildHash"]), text(authority["sourceCommit"]), text(authority["configHash"]), authority["sourceCommit"] === retainedNativeSourceCommit
+                ? predecessorAuditIdentity(pointer)
+                : undefined, pointer["quarantinedJobIds"], processDeathProofFile || text(processDeathProof["path"]), true);
+            const completeFacts = Array.isArray(complete["facts"])
+                ? complete["facts"]
+                : [];
+            if (complete["status"] !== "withdrawn" ||
+                complete["requestId"] !== requestId ||
+                complete["clientId"] !== client.auth.clientId ||
+                complete["sdkRequestsSent"] !== 1 ||
+                complete["nativeOutcome"] !== "unknown" ||
+                complete["historicalOutcome"] !== "unknown" ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["approval"], approved) ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["authority"], authorityEntry) ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["owner"], read(node_path_1.default.join(audit, "worker-ready.json"))["owner"]) ||
+                complete["buildHash"] !== authority["buildHash"] ||
+                complete["configHash"] !== authority["configHash"] ||
+                complete["sourceCommit"] !== authority["sourceCommit"] ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["expectedProcess"], authority["expectedProcess"]) ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["processDeathProof"], sdkUnknown.processDeathProof) ||
+                original["kind"] !== "withdraw-sdk-unknown-dead-successor" ||
+                original["reason"] !== "sdk-process-exited-after-unknown-transport" ||
+                original["clientId"] !== client.auth.clientId ||
+                !(0, node_util_1.isDeepStrictEqual)(original["approval"], approved) ||
+                !(0, node_util_1.isDeepStrictEqual)(original["authority"], authorityEntry) ||
+                !(0, node_util_1.isDeepStrictEqual)(original["owner"], complete["owner"]) ||
+                original["buildHash"] !== authority["buildHash"] ||
+                original["configHash"] !== authority["configHash"] ||
+                original["sourceCommit"] !== authority["sourceCommit"] ||
+                !(0, node_util_1.isDeepStrictEqual)(original["expectedProcess"], authority["expectedProcess"]) ||
+                original["sdkRequestsSent"] !== 1 ||
+                original["nativeOutcome"] !== "unknown" ||
+                original["historicalOutcome"] !== "unknown" ||
+                !(0, node_util_1.isDeepStrictEqual)(original["facts"], complete["facts"]) ||
+                !(0, node_util_1.isDeepStrictEqual)(original["processDeathProof"], complete["processDeathProof"]) ||
+                !Array.isArray(complete["facts"]) ||
+                !completeFacts.some((entry) => (0, node_util_1.isDeepStrictEqual)(entry, sdkUnknown.processDeathProof)) ||
+                sdkUnknown.retainedRefs.some((retained) => !completeFacts.some((entry) => (0, node_util_1.isDeepStrictEqual)(entry, retained))) ||
+                (processDeathProofFile &&
+                    !(0, node_util_1.isDeepStrictEqual)(ref(processDeathProofFile), complete["processDeathProof"])))
+                fail("Original SDK1 withdrawal receipt changed");
+            for (const entry of completeFacts) {
+                const proof = object(entry);
+                if (files.fileHash(text(proof["path"])).sha256 !== proof["sha256"])
+                    fail("SDK1 withdrawal evidence changed");
+            }
+            return complete;
+        }
+        if (complete["kind"] !== "dead-epoch-successor-aborted-before-sdk" ||
+            complete["status"] !== "aborted" ||
+            complete["requestId"] !== requestId ||
+            complete["clientId"] !== client.auth.clientId ||
+            !(0, node_util_1.isDeepStrictEqual)(complete["approval"], approved) ||
+            !(0, node_util_1.isDeepStrictEqual)(complete["facts"], original["facts"]) ||
+            complete["reason"] !== original["reason"] ||
+            complete["sdkRequestsSent"] !== 0 ||
+            complete["historicalOutcome"] !== "unknown")
+            fail("Original abort receipt changed");
+        for (const entry of complete["facts"]) {
+            const proof = object(entry);
+            if (files.fileHash(text(proof["path"])).sha256 !== proof["sha256"])
+                fail("Abort evidence changed");
+        }
+        return complete; // Original terminal receipt only, even after a later handoff.
+    }
+    const authorityFile = node_path_1.default.join(audit, "authority.json"), entry = ref(authorityFile), authority = read(authorityFile);
+    const { pointer } = lineage.successionAuthority(root, entry);
+    for (const key of [
+        "requestId",
+        "clientId",
+        "previousOwner",
+        "previousBuildHash",
+        "candidateRoot",
+        "sourceCommit",
+        "buildHash",
+        "expectedProcess",
+    ])
+        if (!(0, node_util_1.isDeepStrictEqual)(authority[key], approval[key]))
+            fail("Original authority differs from the approved startup");
+    const predecessor = object(authority["predecessor"]);
+    if (predecessor["epochId"] !== approval["predecessorEpochId"] ||
+        object(predecessor["pointer"])["sha256"] !== approval["pointerHash"] ||
+        object(predecessor["state"])["sha256"] !== approval["stateHash"] ||
+        object(predecessor["rootState"])["sha256"] !== approval["rootStateHash"] ||
+        object(predecessor["rootIdentity"])["sha256"] !==
+            approval["rootIdentityHash"] ||
+        object(authority["qualification"])["sha256"] !==
+            object(approval["qualification"])["sha256"])
+        fail("Original predecessor or qualification differs from the approval");
+    if (!(0, node_util_1.isDeepStrictEqual)(read(node_path_1.default.join(root, "isolated-admission-epoch.json")), pointer) ||
+        authority["kind"] !== "owner-authenticated-dead-epoch-successor" ||
+        authority["nonce"] !== intent["nonce"] ||
+        authority["clientId"] !== client.auth.clientId ||
+        authority["ownerTokenHash"] !== tokenHash ||
+        authority["requestId"] !== requestId ||
+        api.priorProcessAlive(pointer["currentInstance"]) !== false ||
+        api.priorProcessAlive(pointer["originalInstance"]) !== false ||
+        api.priorProcessAlive(authority["expectedProcess"]) === null)
+        fail("Unchanged predecessor and original dead-process authority required");
+    const guard = {
+        kind: "dead-epoch-successor",
+        nonce: intent["nonce"],
+        audit,
+        clientId: client.auth.clientId,
+    };
+    const previousFile = node_path_1.default.join(audit, "previous-active-succession.json");
+    const previous = node_fs_1.default.existsSync(previousFile) ? read(previousFile) : null;
+    if (!(0, node_util_1.isDeepStrictEqual)(previous?.["authority"], pointer["succession"]) ||
+        !(0, node_util_1.isDeepStrictEqual)(read(node_path_1.default.join(audit, "launch-intent.json")), {
+            nonce: intent["nonce"],
+            authority: entry,
+        }))
+        fail("Exact previous authority and original launch required");
+    const workerFile = node_path_1.default.join(audit, "worker-claim.json"), worker = read(workerFile);
+    // A ready metadata worker is not an unstarted startup. SDK0 rejection and
+    // SDK1 unknown withdrawal have separate terminal evidence and receipts.
+    if (node_fs_1.default.existsSync(node_path_1.default.join(audit, "worker-ready.json"))) {
+        const sdk0Reason = "metadata-ready-observation-rejected-before-sdk", sdk1Reason = "sdk-process-exited-after-unknown-transport";
+        const readyFile = node_path_1.default.join(audit, "worker-ready.json"), ready = read(readyFile);
+        const metadataFile = node_path_1.default.join(audit, "complete.json"), metadata = read(metadataFile);
+        const owner = object(ready["owner"]);
+        const workerAlive = api.priorProcessAlive(worker);
+        if (worker["nonce"] !== intent["nonce"] ||
+            ready["nonce"] !== intent["nonce"] ||
+            owner["pid"] !== worker["pid"] ||
+            owner["birth"] !== worker["birth"] ||
+            owner["protocol"] !== 2 ||
+            ready["buildHash"] !== authority["buildHash"] ||
+            ready["sdkRequestsSent"] !== 0 ||
+            workerAlive === null ||
+            metadata["kind"] !== "dead-epoch-successor-metadata-ready" ||
+            metadata["requestId"] !== requestId ||
+            !(0, node_util_1.isDeepStrictEqual)(metadata["authority"], entry) ||
+            !(0, node_util_1.isDeepStrictEqual)(metadata["owner"], owner) ||
+            metadata["sdkRequestsSent"] !== 0 ||
+            metadata["buildHash"] !== authority["buildHash"] ||
+            metadata["sourceCommit"] !== authority["sourceCommit"] ||
+            metadata["historicalOutcome"] !== "unknown" ||
+            metadata["modelingAdmission"] !==
+                "blocked-until-current-facts-and-proven-new-scratch")
+            fail("Exact metadata-ready worker and original completion required");
+        const allowed = new Set([
+            "authority.json",
+            "intent.json",
+            "launch-intent.json",
+            "predecessor-pointer.json",
+            "previous-active-succession.json",
+            "retired-owner.json",
+            "installed-qualification.json",
+            "worker-claim.json",
+            "worker-ready.json",
+            "complete.json",
+            "worker.stdout.log",
+            "worker.stderr.log",
+            "dead-epoch-current-observation",
+            "sdk1-worker-retirement",
+            "released-recovery.lock.json",
+            "released-atomic-migration.lock.json",
+            "abort-unstarted",
+        ]);
+        if (node_fs_1.default.readdirSync(audit).some((name) => !allowed.has(name)))
+            fail("Unexpected SDK, scratch, pending or startup evidence forbids metadata-ready retirement");
+        if (node_fs_1.default.existsSync(node_path_1.default.join(audit, "sdk1-worker-retirement")) &&
+            read(node_path_1.default.join(observationDir, "result.json"))["sdkRequestsSent"] !== 1)
+            fail("SDK1 retirement journal cannot qualify an SDK0 attempt");
+        const observation = observationDir;
+        if (!node_fs_1.default.existsSync(observation))
+            fail("Original successor observation journal required");
+        const observationIntentFile = node_path_1.default.join(observation, "intent.json"), resultFile = node_path_1.default.join(observation, "result.json"), observationIntent = read(observationIntentFile), result = read(resultFile), sdkUnknown = result["sdkRequestsSent"] === 1, reason = sdkUnknown ? sdk1Reason : sdk0Reason;
+        const jobs = pointer["quarantinedJobIds"];
+        if (!Array.isArray(jobs) || jobs.length < 2)
+            fail("Original holder and observer required");
+        const key = {
+            jobId: jobs[0],
+            observationJobId: jobs[1],
+            requestId: requestId + ":observe",
+            clientId: client.auth.clientId,
+        };
+        let sdkUnknownProof;
+        let sdkUnknownAttempt;
+        if (sdkUnknown) {
+            if (!withdrawUnknown)
+                fail("SDK1 unknown transport requires the explicit withdrawal confirmation path");
+            const evidence = verifySdkUnknownAttempt(entry, object(authority["expectedProcess"]), text(authority["buildHash"]), text(authority["sourceCommit"]), text(authority["configHash"]), authority["sourceCommit"] === retainedNativeSourceCommit
+                ? predecessorAuditIdentity(pointer)
+                : undefined, jobs, processDeathProofFile, apply);
+            if (!(0, node_util_1.isDeepStrictEqual)(evidence.key, key))
+                fail("SDK1 observation key changed");
+            sdkUnknownAttempt = evidence;
+            sdkUnknownProof = evidence.processDeathProof;
+        }
+        else {
+            if (withdrawUnknown)
+                fail("Explicit SDK1 withdrawal cannot be used for an SDK0 attempt");
+            if (result["sdkRequestsSent"] !== 0 ||
+                !(0, node_util_1.isDeepStrictEqual)(node_fs_1.default.readdirSync(observation).sort(), [
+                    "intent.json",
+                    "result.json",
+                ]) ||
+                observationIntent["version"] !== 1 ||
+                !(0, node_util_1.isDeepStrictEqual)(observationIntent["key"], key) ||
+                !(0, node_util_1.isDeepStrictEqual)(observationIntent["binding"], {
+                    purpose: "atomic-recovery-audit-v1",
+                    clientId: client.auth.clientId,
+                    expectedProcess: authority["expectedProcess"],
+                    successorAuthorityHash: entry.sha256,
+                }) ||
+                !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceSha256"])) ||
+                !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceArtifactHash"])) ||
+                !(0, node_util_1.isDeepStrictEqual)(result, {
+                    kind: "dead-epoch-current-observation",
+                    ...key,
+                    status: "failed",
+                    code: "AUDIT_REQUEST_INVALID",
+                    sdkRequestsSent: 0,
+                    nativeOutcome: "unknown",
+                    modelValidation: "not_performed",
+                    rollbackVerification: "not_performed",
+                }))
+                fail("Exact original terminal AUDIT_REQUEST_INVALID observation with SDK0 required");
+        }
+        const lifecycleFile = node_path_1.default.join(root, "broker-lifecycle-" + text(owner["nonce"]) + ".json");
+        const lifecycle = read(lifecycleFile);
+        if (!(0, node_util_1.isDeepStrictEqual)(lifecycle["owner"], owner) ||
+            lifecycle["stage"] !== "ready" ||
+            lifecycle["buildHash"] !== authority["buildHash"] ||
+            lifecycle["configHash"] !== authority["configHash"] ||
+            node_fs_1.default
+                .readdirSync(root)
+                .some((name) => name.startsWith("broker-startup-" + text(owner["nonce"]))) ||
+            [root, text(pointer["root"])].some((dir) => node_fs_1.default.existsSync(node_path_1.default.join(dir, "queue-state.pending.json"))))
+            fail("Metadata-only lifecycle without pending state required");
+        const released = [];
+        for (const name of ["recovery.lock", "atomic-migration.lock"]) {
+            const releasedFile = node_path_1.default.join(audit, "released-" + name + ".json");
+            if (node_fs_1.default.existsSync(node_path_1.default.join(root, name)) ||
+                !(0, node_util_1.isDeepStrictEqual)(read(releasedFile), guard))
+                fail("Exact already-released successor guards and no live guards required");
+            released.push(releasedFile);
+        }
+        const retiredFile = node_path_1.default.join(audit, "retired-owner.json"), retired = read(retiredFile);
+        if (!(0, node_util_1.isDeepStrictEqual)(retired, intent["previousOwner"]) ||
+            !(0, node_util_1.isDeepStrictEqual)(retired, authority["previousOwner"]) ||
+            api.priorProcessAlive(retired) !== false)
+            fail("Exact escrowed dead predecessor marker required");
+        const continuing = node_fs_1.default.existsSync(node_path_1.default.join(abortDir, "intent.json"));
+        const activeFile = node_path_1.default.join(root, "active-epoch-succession.json");
+        const active = node_fs_1.default.existsSync(activeFile) ? read(activeFile) : null;
+        if (!(0, node_util_1.isDeepStrictEqual)(active, { version: 1, authority: entry }) &&
+            !(continuing && (0, node_util_1.isDeepStrictEqual)(active, previous)))
+            fail("Active authority changed before metadata-ready retirement");
+        const markerFile = node_path_1.default.join(root, "broker.lock"), marker = node_fs_1.default.existsSync(markerFile) ? read(markerFile) : null;
+        const retirementDirectory = sdkUnknown
+            ? node_path_1.default.join(audit, "sdk1-worker-retirement")
+            : abortDir;
+        const retirementFile = node_path_1.default.join(retirementDirectory, sdkUnknown ? "after.json" : "retirement-after.json");
+        if (sdkUnknown &&
+            node_fs_1.default.existsSync(retirementDirectory) &&
+            !node_fs_1.default.existsSync(retirementFile))
+            fail("SDK1 worker retirement outcome is pending; no withdrawal or signal replay");
+        const retiredMetadataMarker = workerAlive === false &&
+            (0, node_util_1.isDeepStrictEqual)(marker, owner) &&
+            node_fs_1.default.existsSync(retirementFile);
+        const retirementFacts = [];
+        if (node_fs_1.default.existsSync(retirementFile)) {
+            const after = read(retirementFile), beforeFile = node_path_1.default.join(retirementDirectory, sdkUnknown ? "before.json" : "retirement-before.json"), startFile = node_path_1.default.join(retirementDirectory, sdkUnknown ? "effect-start.json" : "retirement-effect-start.json");
+            const exactRetirement = sdkUnknown
+                ? after["kind"] === "sdk1-metadata-worker-retirement-complete" &&
+                    after["status"] === "retired" &&
+                    after["sdkRequestsSent"] === 1 &&
+                    after["nativeOutcome"] === "unknown" &&
+                    (0, node_util_1.isDeepStrictEqual)(after["processDeathProof"], sdkUnknownProof)
+                : after["kind"] === "metadata-worker-retirement-complete" &&
+                    after["retired"] === true &&
+                    after["sdkRequestsSent"] === 0;
+            if (!exactRetirement ||
+                after["requestId"] !== requestId ||
+                after["clientId"] !== client.auth.clientId ||
+                !(0, node_util_1.isDeepStrictEqual)(after["owner"], owner) ||
+                after["protectedBytesUnchanged"] !== true ||
+                after["historicalOutcome"] !== "unknown" ||
+                !(0, node_util_1.isDeepStrictEqual)(after["before"], ref(beforeFile)) ||
+                !(0, node_util_1.isDeepStrictEqual)(after["effectStart"], ref(startFile)))
+                fail("Exact completed metadata-only retirement proof required before marker restoration");
+            retirementFacts.push(retirementFile, beforeFile, startFile);
+        }
+        if (workerAlive
+            ? !(0, node_util_1.isDeepStrictEqual)(marker, owner)
+            : marker !== null &&
+                !retiredMetadataMarker &&
+                !(!apply && retirementInspection && (0, node_util_1.isDeepStrictEqual)(marker, owner)) &&
+                !(continuing && (0, node_util_1.isDeepStrictEqual)(marker, retired)))
+            fail("Exact live worker marker or proven graceful marker release required");
+        const facts = [
+            intentFile,
+            authorityFile,
+            workerFile,
+            readyFile,
+            metadataFile,
+            lifecycleFile,
+            observationIntentFile,
+            ...(sdkUnknown
+                ? [
+                    node_path_1.default.join(observation, "start.json"),
+                    node_path_1.default.join(observation, "wire.json"),
+                ]
+                : []),
+            resultFile,
+            retiredFile,
+            ...released,
+            ...(previous ? [previousFile] : []),
+            ...retirementFacts,
+            ...(sdkUnknownProof ? [sdkUnknownProof.path] : []),
+        ].map((file) => sdkUnknownAttempt?.retainedRefs.find((retained) => retained.path === file) ?? ref(file));
+        if (sdkUnknownAttempt)
+            for (const retained of sdkUnknownAttempt.retainedRefs)
+                if (!facts.some((fact) => fact.path === retained.path))
+                    facts.push(retained);
+        if (!apply)
+            return sdkUnknown
+                ? {
+                    ready: true,
+                    operation: "withdraw-after-sdk-unknown",
+                    requestId,
+                    reason,
+                    sdkRequestsSent: 1,
+                    nativeOutcome: "unknown",
+                    historicalOutcome: "unknown",
+                    requiresWorkerRetirement: workerAlive,
+                    processDeathProofRequired: !sdkUnknownProof,
+                    retirementPerformed: false,
+                    applyReady: !workerAlive && !!sdkUnknownProof,
+                    worker: owner,
+                    facts,
+                }
+                : {
+                    ready: true,
+                    requestId,
+                    reason,
+                    sdkRequestsSent: 0,
+                    requiresWorkerRetirement: workerAlive,
+                    retirementPerformed: false,
+                    applyReady: !workerAlive,
+                    worker: owner,
+                    facts,
+                };
+        if (workerAlive !== false)
+            fail("Exact metadata worker must be proven dead through a separately authorized retirement before apply");
+        if (retiredMetadataMarker) {
+            node_fs_1.default.mkdirSync(abortDir, { recursive: true, mode: 0o700 });
+            files.directory(abortDir);
+            files.exclusive(node_path_1.default.join(abortDir, "retired-metadata-owner.json"), owner);
+            if (!(0, node_util_1.isDeepStrictEqual)(read(markerFile), owner) ||
+                api.priorProcessAlive(worker) !== false)
+                fail("Metadata process identity changed before marker retirement");
+            node_fs_1.default.unlinkSync(markerFile);
+        }
+        const abortIntent = {
+            version: 1,
+            kind: sdkUnknown
+                ? "withdraw-sdk-unknown-dead-successor"
+                : "abort-sdk-not-started-dead-successor",
+            reason,
+            clientId: client.auth.clientId,
+            approval: approved,
+            ...(sdkUnknown
+                ? {
+                    authority: entry,
+                    owner,
+                    buildHash: authority["buildHash"],
+                    configHash: authority["configHash"],
+                    sourceCommit: authority["sourceCommit"],
+                    expectedProcess: authority["expectedProcess"],
+                    processDeathProof: sdkUnknownProof,
+                    sdkRequestsSent: 1,
+                    nativeOutcome: "unknown",
+                    historicalOutcome: "unknown",
+                }
+                : {}),
+            facts,
+            guard,
+        };
+        node_fs_1.default.mkdirSync(abortDir, { recursive: true, mode: 0o700 });
+        files.directory(abortDir);
+        const abortIntentFile = node_path_1.default.join(abortDir, "intent.json"), activeBeforeFile = node_path_1.default.join(abortDir, "active-before.json"), activeBefore = {
+            version: 1,
+            authority: entry,
+        };
+        if (sdkUnknown && node_fs_1.default.existsSync(abortIntentFile)) {
+            if (!(0, node_util_1.isDeepStrictEqual)(read(abortIntentFile), abortIntent))
+                fail("Original SDK1 withdrawal intent changed");
+        }
+        else
+            files.exclusive(abortIntentFile, abortIntent);
+        if (sdkUnknown && node_fs_1.default.existsSync(activeBeforeFile)) {
+            if (!(0, node_util_1.isDeepStrictEqual)(read(activeBeforeFile), activeBefore))
+                fail("Original SDK1 active-authority checkpoint changed");
+        }
+        else
+            files.exclusive(activeBeforeFile, activeBefore);
+        if (previous)
+            api.durable(activeFile, previous);
+        else if (node_fs_1.default.existsSync(activeFile))
+            node_fs_1.default.unlinkSync(activeFile);
+        if (!node_fs_1.default.existsSync(markerFile))
+            api.durable(markerFile, retired, true);
+        else if (!(0, node_util_1.isDeepStrictEqual)(read(markerFile), retired))
+            fail("Restored marker changed");
+        const fd = node_fs_1.default.openSync(root, "r");
+        try {
+            node_fs_1.default.fsyncSync(fd);
+        }
+        finally {
+            node_fs_1.default.closeSync(fd);
+        }
+        const complete = {
+            version: 1,
+            kind: sdkUnknown
+                ? "dead-epoch-successor-withdrawn-after-sdk-unknown"
+                : "dead-epoch-successor-aborted-before-sdk",
+            reason,
+            status: sdkUnknown ? "withdrawn" : "aborted",
+            requestId,
+            clientId: client.auth.clientId,
+            approval: approved,
+            ...(sdkUnknown
+                ? {
+                    authority: entry,
+                    owner,
+                    buildHash: authority["buildHash"],
+                    configHash: authority["configHash"],
+                    sourceCommit: authority["sourceCommit"],
+                    expectedProcess: authority["expectedProcess"],
+                    processDeathProof: sdkUnknownProof,
+                    sdkRequestsSent: 1,
+                    nativeOutcome: "unknown",
+                }
+                : {}),
+            facts,
+            sdkRequestsSent: sdkUnknown ? 1 : 0,
+            historicalOutcome: "unknown",
+            modelValidation: "not_performed",
+        };
+        files.exclusive(completeFile, complete);
+        return complete;
+    }
+    const errorFile = node_path_1.default.join(audit, "worker-error.json");
+    if (worker["nonce"] !== intent["nonce"] ||
+        api.priorProcessAlive(worker) !== false ||
+        !(0, node_util_1.isDeepStrictEqual)(read(errorFile), { nonce: intent["nonce"], code: "INSTANCE_CHANGED" }))
+        fail("Exact proven-dead rejected worker required");
+    const lifecycles = node_fs_1.default
+        .readdirSync(root)
+        .filter((name) => /^broker-lifecycle-.*\.json$/.test(name))
+        .map((name) => node_path_1.default.join(root, name))
+        .filter((file) => {
+        const owner = object(read(file)["owner"]);
+        return (owner["pid"] === worker["pid"] && owner["birth"] === worker["birth"]);
+    });
+    if (lifecycles.length !== 1)
+        fail("Unique rejected worker lifecycle required");
+    const lifecycleFile = lifecycles[0], lifecycle = read(lifecycleFile), owner = object(lifecycle["owner"]);
+    const prefix = "broker-startup-" + text(owner["nonce"]);
+    if (lifecycle["stage"] !== "rejected" ||
+        lifecycle["safeToRecover"] !== true ||
+        lifecycle["code"] !== "INSTANCE_CHANGED" ||
+        lifecycle["buildHash"] !== authority["buildHash"] ||
+        lifecycle["configHash"] !== authority["configHash"] ||
+        lifecycle["receipt"] !== node_path_1.default.join(root, prefix + ".receipt.json") ||
+        !(0, node_util_1.isDeepStrictEqual)(lifecycle["binding"], {
+            brokerNonce: owner["nonce"],
+            ownerPid: worker["pid"],
+            ownerBirth: worker["birth"],
+            buildHash: authority["buildHash"],
+            stage: "startup",
+        }) ||
+        node_fs_1.default.readdirSync(root).some((name) => name.startsWith(prefix)))
+        fail("Terminal local rejection without any startup probe evidence required");
+    for (const name of [
+        "worker-ready.json",
+        "complete.json",
+        "observed-current.json",
+        "dead-epoch-current-observation",
+        "isolated-scratch-qualification",
+        "isolated-scratch-close",
+    ])
+        if (node_fs_1.default.existsSync(node_path_1.default.join(audit, name)))
+            fail("Ready, SDK or scratch evidence forbids abort");
+    const retiredFile = node_path_1.default.join(audit, "retired-owner.json"), retired = read(retiredFile);
+    if (!(0, node_util_1.isDeepStrictEqual)(retired, intent["previousOwner"]) ||
+        !(0, node_util_1.isDeepStrictEqual)(retired, authority["previousOwner"]) ||
+        api.priorProcessAlive(retired) !== false)
+        fail("Exact escrowed dead predecessor marker required");
+    const continuing = node_fs_1.default.existsSync(node_path_1.default.join(abortDir, "intent.json"));
+    const activeFile = node_path_1.default.join(root, "active-epoch-succession.json");
+    const active = node_fs_1.default.existsSync(activeFile) ? read(activeFile) : null;
+    if (!(0, node_util_1.isDeepStrictEqual)(active, { version: 1, authority: entry }) &&
+        !(continuing && (0, node_util_1.isDeepStrictEqual)(active, previous)))
+        fail("Active authority changed");
+    const markerFile = node_path_1.default.join(root, "broker.lock");
+    if (node_fs_1.default.existsSync(markerFile) &&
+        !(continuing && (0, node_util_1.isDeepStrictEqual)(read(markerFile), retired)))
+        fail("A broker marker prevents abort");
+    for (const name of ["recovery.lock", "atomic-migration.lock"]) {
+        const file = node_path_1.default.join(root, name), released = node_path_1.default.join(abortDir, "released-" + name + ".json");
+        if (node_fs_1.default.existsSync(file)
+            ? !(0, node_util_1.isDeepStrictEqual)(read(file), guard)
+            : !(continuing &&
+                node_fs_1.default.existsSync(released) &&
+                (0, node_util_1.isDeepStrictEqual)(read(released), guard)))
+            fail("Original recovery guards changed");
+    }
+    const facts = [
+        intentFile,
+        authorityFile,
+        workerFile,
+        errorFile,
+        lifecycleFile,
+        retiredFile,
+        ...(previous ? [previousFile] : []),
+    ].map(ref);
+    const abortIntent = {
+        version: 1,
+        kind: "abort-unstarted-dead-successor",
+        clientId: client.auth.clientId,
+        approval: approved,
+        facts,
+        guard,
+    };
+    if (!apply)
+        return { ready: true, requestId, sdkRequestsSent: 0, facts };
+    node_fs_1.default.mkdirSync(abortDir, { recursive: true, mode: 0o700 });
+    files.directory(abortDir);
+    files.exclusive(node_path_1.default.join(abortDir, "intent.json"), abortIntent);
+    files.exclusive(node_path_1.default.join(abortDir, "active-before.json"), {
+        version: 1,
+        authority: entry,
+    });
+    if (previous)
+        api.durable(activeFile, previous);
+    else if (node_fs_1.default.existsSync(activeFile))
+        node_fs_1.default.unlinkSync(activeFile);
+    if (!node_fs_1.default.existsSync(markerFile))
+        api.durable(markerFile, retired, true);
+    else if (!(0, node_util_1.isDeepStrictEqual)(read(markerFile), retired))
+        fail("Restored marker changed");
+    for (const name of ["atomic-migration.lock", "recovery.lock"]) {
+        const file = node_path_1.default.join(root, name);
+        files.exclusive(node_path_1.default.join(abortDir, "released-" + name + ".json"), guard);
+        if (node_fs_1.default.existsSync(file)) {
+            if (!(0, node_util_1.isDeepStrictEqual)(read(file), guard))
+                fail("Guard changed during abort");
+            node_fs_1.default.unlinkSync(file);
+        }
+        const fd = node_fs_1.default.openSync(root, "r");
+        try {
+            node_fs_1.default.fsyncSync(fd);
+        }
+        finally {
+            node_fs_1.default.closeSync(fd);
+        }
+    }
+    const complete = {
+        version: 1,
+        kind: "dead-epoch-successor-aborted-before-sdk",
+        status: "aborted",
+        requestId,
+        clientId: client.auth.clientId,
+        approval: approved,
+        facts,
+        sdkRequestsSent: 0,
+        historicalOutcome: "unknown",
+        modelValidation: "not_performed",
+    };
+    files.exclusive(completeFile, complete);
+    return complete;
+}
+/** Separate, explicitly authorized OS retirement. Never calls SDK, rewrites a
+ * runtime, sends SIGTERM, clears a historical job or replays an uncertain signal.
+ * Ports are replaceable ONLY by direct offline tests, never by CLI/config. */
+async function retireMetadataWorker(client, approvalFile, proofFile, apply, ports = linuxRetirementPorts) {
+    const approval = object(JSON.parse(node_fs_1.default.readFileSync(approvalFile, "utf8")));
+    const runtime = text(approval["candidateRoot"]), load = (0, node_module_1.createRequire)(node_path_1.default.join(runtime, "src/queue-instance.js"));
+    const api = load("./queue-instance");
+    const files = load("./queue-atomic-migration-files");
+    const ref = (file) => {
+        if (node_fs_1.default.realpathSync(file) !== file || !node_fs_1.default.lstatSync(file).isFile())
+            fail("Canonical regular retirement evidence required");
+        return { path: file, sha256: api.hash(node_fs_1.default.readFileSync(file)) };
+    };
+    const proofRef = ref(node_fs_1.default.realpathSync(proofFile)), proof = object(JSON.parse(node_fs_1.default.readFileSync(proofRef.path, "utf8")));
+    const owner = object(proof["worker"]), fusion = object(proof["fusion"]);
+    const root = node_fs_1.default.realpathSync(client.dir), requestId = text(approval["requestId"]);
+    const audit = node_path_1.default.join(root, "epoch-successions", api.hash(requestId)), dir = node_path_1.default.join(audit, "abort-unstarted");
+    const beforeFile = node_path_1.default.join(dir, "retirement-before.json"), startFile = node_path_1.default.join(dir, "retirement-effect-start.json"), afterFile = node_path_1.default.join(dir, "retirement-after.json");
+    // Authenticated existing-owner preview is also required for an idempotent read.
+    const preview = object(abortUnstartedSuccessor(client, approvalFile, false, {
+        retirementInspection: true,
+    }));
+    if (proof["kind"] !== "metadata-worker-retirement-proof-v1" ||
+        proof["qualified"] !== true ||
+        !(0, node_util_1.isDeepStrictEqual)(proof["proofGaps"], []) ||
+        proof["runtimeRoot"] !== runtime ||
+        proof["requestId"] !== requestId ||
+        proof["buildHash"] !== approval["buildHash"] ||
+        proof["sourceCommit"] !== approval["sourceCommit"] ||
+        proof["epochId"] !== approval["predecessorEpochId"] ||
+        !(0, node_util_1.isDeepStrictEqual)({ pid: fusion["pid"], birth: fusion["birth"] }, approval["expectedProcess"]) ||
+        typeof fusion["version"] !== "string")
+        fail("Exact independent whole-process closure proof and original approval required");
+    ports.certify(proof);
+    if (node_fs_1.default.existsSync(afterFile)) {
+        const after = object(api.readJson(afterFile));
+        if (!(0, node_util_1.isDeepStrictEqual)(after["proof"], proofRef) ||
+            after["requestId"] !== requestId ||
+            after["retired"] !== true ||
+            after["sdkRequestsSent"] !== 0 ||
+            after["historicalOutcome"] !== "unknown")
+            fail("Original retirement receipt changed");
+        return after; // Historical effect receipt only, never another signal.
+    }
+    const references = [proofRef];
+    for (const key of ["protectedFiles", "sourceFiles", "evidenceFiles"]) {
+        const entries = proof[key];
+        if (!Array.isArray(entries) || !entries.length)
+            fail("Complete independent process/source/history manifest required");
+        for (const value of entries) {
+            const entry = object(value), pinned = { path: text(entry["path"]), sha256: text(entry["sha256"]) };
+            if (!(0, node_util_1.isDeepStrictEqual)(ref(pinned.path), pinned))
+                fail("Independent retirement proof is stale or tampered");
+            references.push(pinned);
+        }
+    }
+    const osProofRef = references.find((entry) => node_path_1.default.basename(entry.path) === "os-after.json");
+    if (!osProofRef)
+        fail("Independent exact executable/command-line OS proof required");
+    const expectedOS = object(api.readJson(osProofRef.path));
+    const executable = text(expectedOS["exe"]);
+    references.push({ path: executable, sha256: text(expectedOS["exeSha256"]) });
+    const processIdentity = (value) => ({
+        pid: value["pid"],
+        birth: value["birth"],
+        exe: value["exe"],
+        exeSha256: value["exeSha256"],
+        cmdline: value["cmdline"],
+    });
+    const ready = object(api.readJson(node_path_1.default.join(audit, "worker-ready.json")));
+    const claim = object(api.readJson(node_path_1.default.join(audit, "worker-claim.json")));
+    if (!(0, node_util_1.isDeepStrictEqual)(ready["owner"], owner) ||
+        proof["workerClaimNonce"] !== claim["nonce"] ||
+        owner["pid"] !== claim["pid"] ||
+        owner["birth"] !== claim["birth"])
+        fail("Certified process is not the exact original metadata worker");
+    const verifyRefs = () => {
+        for (const entry of references)
+            if (!(0, node_util_1.isDeepStrictEqual)(ref(entry.path), entry))
+                fail("Retirement evidence changed before/after effect");
+    };
+    const fusionRead = () => {
+        const current = ports.fusion(fusion);
+        if (current["pid"] !== fusion["pid"] ||
+            current["birth"] !== fusion["birth"] ||
+            current["version"] !== fusion["version"] ||
+            current["hasExited"] !== false ||
+            current["responding"] !== true)
+            fail("Fresh Fusion OS process identity changed or is unproven");
+        return current;
+    };
+    const completeAfter = () => {
+        if (api.priorProcessAlive(owner) !== false)
+            fail("Retirement outcome pending; never repeat a signal");
+        verifyRefs();
+        const afterFusion = fusionRead();
+        const after = {
+            version: 1,
+            kind: "metadata-worker-retirement-complete",
+            requestId,
+            clientId: client.auth.clientId,
+            proof: proofRef,
+            before: ref(beforeFile),
+            effectStart: ref(startFile),
+            owner,
+            retired: true,
+            mechanism: "pidfd_send_signal:SIGKILL",
+            gracefulClose: false,
+            fusion: afterFusion,
+            protectedBytesUnchanged: true,
+            sdkRequestsSent: 0,
+            historicalOutcome: "unknown",
+        };
+        files.exclusive(afterFile, after);
+        return after;
+    };
+    if (node_fs_1.default.existsSync(startFile)) {
+        const start = object(api.readJson(startFile));
+        if (!(0, node_util_1.isDeepStrictEqual)(start["proof"], proofRef) ||
+            !(0, node_util_1.isDeepStrictEqual)(start["owner"], owner) ||
+            !(0, node_util_1.isDeepStrictEqual)(start["before"], ref(beforeFile)))
+            fail("Original pending retirement effect changed");
+        if (!apply)
+            return {
+                ready: false,
+                retirementPending: true,
+                noSignalReplay: true,
+                requestId,
+            };
+        return completeAfter(); // Death + fresh Fusion proof only; NEVER another send.
+    }
+    if (preview["reason"] !== "metadata-ready-observation-rejected-before-sdk" ||
+        !(0, node_util_1.isDeepStrictEqual)(preview["worker"], owner))
+        fail("Only the certified SDK-not-started metadata attempt can be retired");
+    const snapshot = async () => {
+        abortUnstartedSuccessor(client, approvalFile, false);
+        ports.certify(proof);
+        verifyRefs();
+        const status = object(await client.call("queue-summary")), control = object(await client.call("control-status"));
+        const successor = object(status["deadEpochSuccessor"]), features = object(status["features"]);
+        if (status["buildHash"] !== proof["buildHash"] ||
+            status["sourceCommit"] !== proof["sourceCommit"] ||
+            status["admissionEpoch"] !== proof["epochId"] ||
+            status["held"] !==
+                "Qualified isolated scratch process is unavailable; metadata only, no SDK or replacement authority" ||
+            status["stopping"] !== false ||
+            successor["requestId"] !== requestId ||
+            successor["currentFactsAvailable"] !== false ||
+            !(0, node_util_1.isDeepStrictEqual)(successor["expectedProcess"], approval["expectedProcess"]) ||
+            control["instanceId"] !== owner["nonce"] ||
+            control["buildHash"] !== proof["buildHash"] ||
+            control["activeOperations"] !== 0 ||
+            !(0, node_util_1.isDeepStrictEqual)(control["activeIds"], []) ||
+            control["unresolved"] !== true ||
+            control["phase"] !== "RECOVERY_BLOCKED" ||
+            features["auditFactsCapture"] !== false ||
+            features["atomicRecoveryProcessLossAudit"] !== false)
+            fail("Certified metadata-only dispatch closure or current quiescence changed");
+        const processResult = ports.process(owner, runtime, references, false, root);
+        const process = object(processResult["process"]);
+        if (!(0, node_util_1.isDeepStrictEqual)(processIdentity(process), processIdentity(expectedOS)))
+            fail("Independent executable/birth/command-line proof differs from the current process");
+        const liveFusion = fusionRead();
+        verifyRefs();
+        return {
+            status,
+            control,
+            process,
+            ...(processResult["interpreter"]
+                ? { interpreter: processResult["interpreter"] }
+                : {}),
+            fusion: liveFusion,
+        };
+    };
+    const first = await snapshot();
+    if (!apply)
+        return {
+            ready: true,
+            requestId,
+            retirementPerformed: false,
+            mechanism: "pidfd_send_signal:SIGKILL",
+            gracefulClose: false,
+            proof: proofRef,
+            owner,
+            snapshot: first,
+            sdkRequestsSent: 0,
+        };
+    node_fs_1.default.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    files.directory(dir);
+    const before = {
+        version: 1,
+        kind: "metadata-worker-retirement-before",
+        requestId,
+        clientId: client.auth.clientId,
+        approval: ref(node_fs_1.default.realpathSync(approvalFile)),
+        proof: proofRef,
+        owner,
+        snapshot: first,
+        references,
+    };
+    if (node_fs_1.default.existsSync(beforeFile)) {
+        const original = object(api.readJson(beforeFile));
+        if (!(0, node_util_1.isDeepStrictEqual)(original["proof"], proofRef) ||
+            !(0, node_util_1.isDeepStrictEqual)(original["owner"], owner) ||
+            !(0, node_util_1.isDeepStrictEqual)(original["references"], references))
+            fail("Original retirement-before proof changed");
+    }
+    else
+        files.exclusive(beforeFile, before);
+    const second = await snapshot();
+    if (!(0, node_util_1.isDeepStrictEqual)(first.status, second.status) ||
+        !(0, node_util_1.isDeepStrictEqual)(first.control, second.control) ||
+        !(0, node_util_1.isDeepStrictEqual)(first.process, second.process) ||
+        !(0, node_util_1.isDeepStrictEqual)(first.interpreter, second.interpreter))
+        fail("Process, status or quiescence changed during retirement preparation");
+    const effectStart = {
+        version: 1,
+        kind: "metadata-worker-retirement-effect-start",
+        requestId,
+        proof: proofRef,
+        before: ref(beforeFile),
+        owner,
+        mechanism: "pidfd_send_signal:SIGKILL",
+        gracefulClose: false,
+    };
+    files.exclusive(startFile, effectStart); // From here any interrupted outcome is UNKNOWN, not a retry license.
+    verifyRefs();
+    ports.process({
+        ...owner,
+        processProof: second.process,
+        interpreterProof: second.interpreter,
+    }, runtime, [...references, ref(beforeFile), ref(startFile)], true, root);
+    return completeAfter();
+}
+if (require.main === module) {
+    void (async () => {
+        try {
+            const args = process.argv.slice(2);
+            const retirement = args.length === 6 &&
+                args[2] === "--retirement-proof" &&
+                ["--preflight-retirement", "--confirm-retire-metadata-worker"].includes(args[4]) &&
+                args[5] === "true";
+            const withdrawal = args.length === 6 &&
+                args[2] === "--sdk-process-death-proof" &&
+                ["--preflight-withdraw-unknown", "--confirm-withdraw-unknown"].includes(args[4]) &&
+                args[5] === "true";
+            const sdk1Retirement = args.length === 6 &&
+                args[2] === "--sdk-process-death-proof" &&
+                [
+                    "--preflight-retire-sdk1",
+                    "--confirm-retire-sdk1-metadata-worker",
+                ].includes(args[4]) &&
+                args[5] === "true";
+            if (args[0] !== "--approval" ||
+                !(retirement ||
+                    withdrawal ||
+                    sdk1Retirement ||
+                    (args.length === 4 &&
+                        ["--confirm-abort", "--preflight"].includes(args[2]) &&
+                        args[3] === "true")))
+                fail("Use --approval FILE with --preflight true / --confirm-abort true, --sdk-process-death-proof FILE --preflight-withdraw-unknown true / --confirm-withdraw-unknown true / --preflight-retire-sdk1 true / --confirm-retire-sdk1-metadata-worker true, or --retirement-proof FILE --preflight-retirement true / --confirm-retire-metadata-worker true; no client/root overrides");
+            const file = node_fs_1.default.realpathSync(args[1]), approval = object(JSON.parse(node_fs_1.default.readFileSync(file, "utf8")));
+            const load = (0, node_module_1.createRequire)(node_path_1.default.join(text(approval["candidateRoot"]), "src/queue-client.js"));
+            const { QueueClient } = load("./queue-client");
+            const client = new QueueClient(undefined, {
+                existingCredentialsOnly: true,
+            });
+            try {
+                // New recovery policy is always the qualified operator's own module,
+                // never an export retrofitted into the immutable predecessor runtime.
+                const sdk1 = sdk1Retirement
+                    ? (0, node_module_1.createRequire)(__filename)("../dist/src/dist/composition/queue-epoch-successor-retirement.js")
+                    : undefined;
+                console.log(JSON.stringify(sdk1
+                    ? await sdk1.retireSdk1MetadataWorker(client, file, node_fs_1.default.realpathSync(args[3]), args[4] === "--confirm-retire-sdk1-metadata-worker")
+                    : retirement
+                        ? await retireMetadataWorker(client, file, node_fs_1.default.realpathSync(args[3]), args[4] === "--confirm-retire-metadata-worker")
+                        : withdrawal
+                            ? abortUnstartedSuccessor(client, file, args[4] === "--confirm-withdraw-unknown", {
+                                withdrawUnknown: true,
+                                processDeathProofFile: node_fs_1.default.realpathSync(args[3]),
+                            })
+                            : abortUnstartedSuccessor(client, file, args[2] === "--confirm-abort"), null, 2));
+            }
+            finally {
+                client.dispose();
+            }
+        }
+        catch (error) {
+            console.error(error);
+            process.exitCode = 1;
+        }
+    })();
+}

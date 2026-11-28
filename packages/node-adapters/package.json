@@ -18,6 +18,7 @@
     "@fmcad/control-center": "0.1.0",
     "@fmcad/core": "0.1.0",
     "basedpyright": "1.40.2",
-    "jsonc-parser": "3.3.1"
+    "jsonc-parser": "3.3.1",
+    "undici": "6.29.1"
   }
 }

@@ -171,6 +171,7 @@ function inspect(
     if (name === "node:module") return { createRequire: () => requireSource };
     if (name === "node:fs")
       return {
+        existsSync: (file: string) => fs.existsSync(file),
         realpathSync(directory: string) {
           assert.equal(directory, reportDirectory);
           return directory;
@@ -191,7 +192,7 @@ function inspect(
     return sourceLoad(name) as unknown;
   };
   const evaluate = vm.runInThisContext(
-    "(function(require, module, exports, __filename) {\n" +
+    "(function(require, module, exports, __filename, __dirname) {\n" +
       source +
       "\nmodule.exports = { batchReceipt };\n})",
     { filename },
@@ -200,8 +201,15 @@ function inspect(
     module: { exports: unknown },
     exports: unknown,
     filename: string,
+    dirname: string,
   ) => void;
-  evaluate(requireSource, module, module.exports, filename);
+  evaluate(
+    requireSource,
+    module,
+    module.exports,
+    filename,
+    path.dirname(filename),
+  );
   const api = module.exports as {
     batchReceipt(input: unknown): StageReceiptEvidence;
   };

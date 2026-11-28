@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.runtime-tests.json",
+  "include": [
+    "tests/normal-observer-launch.test.ts",
+    "tests/normal-observer-launch.windows.test.ts",
+    "tests/controlled-fusion-launch.windows.test.ts"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

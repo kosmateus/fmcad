@@ -5,10 +5,395 @@ import type * as P from "./queue-broker-ports";
 import type {
   PhasedWorkerOptions,
   PhasedWorkers,
-} from "../packages/node-adapters/dist/execution/phased-workers";
+} from "../packages/node-adapters/src/execution/phased-workers";
 import type { QueueGate } from "../packages/node-adapters/dist/execution/gate";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";
+import type {
+  BrokerGrant,
+  BrokerHold,
+  createBrokerSession,
+} from "../packages/core/src/application/broker-session";
+import type { TurnIdentity } from "../packages/core/src/application/broker-execution";
+import type { createAddinAdmission } from "../packages/node-adapters/src/execution/addin-admission-client";
+import { isDeepStrictEqual } from "node:util";
+import type { AdmissionTransport } from "../packages/node-adapters/src/execution/admission-http";
+import { createRequire } from "node:module";
+
+const { createAdmissionRequest } = createRequire(__filename)(
+  "./dist/node-adapters/execution/admission-http",
+) as typeof import("../packages/node-adapters/src/execution/admission-http");
+
+const metadataTool = "get_open_document_metadata";
+
+function refuse(code: string, message: string): never {
+  throw Object.assign(new Error(message), { code, notStarted: true });
+}
+
+export function isAddinMetadata(payload: P.Rpc) {
+  return payload.method === "tools/call" && payload.params?.name === metadataTool;
+}
+
+function metadataWire(payload: P.Rpc) {
+  const params = payload.params;
+  const args = params?.arguments;
+  const id = payload.id;
+  if (
+    !isAddinMetadata(payload) ||
+    payload.jsonrpc !== "2.0" ||
+    !((typeof id === "string" && id.length > 0) ||
+      (typeof id === "number" && Number.isSafeInteger(id))) ||
+    Object.keys(payload).length !== 4 ||
+    !["jsonrpc", "method", "id", "params"].every((key) => Object.hasOwn(payload, key)) ||
+    !params ||
+    Object.keys(params).length !== 2 ||
+    !Object.hasOwn(params, "name") ||
+    !Object.hasOwn(params, "arguments") ||
+    !args ||
+    Array.isArray(args) ||
+    Object.keys(args).length !== 2 ||
+    !Object.hasOwn(args, "fileId") ||
+    !Object.hasOwn(args, "version") ||
+    typeof args["fileId"] !== "string" ||
+    !args["fileId"].trim() ||
+    typeof args["version"] !== "number" ||
+    !Number.isSafeInteger(args["version"]) ||
+    args["version"] <= 0
+  )
+    refuse("INVALID_RPC", "Expected one exact saved-document metadata request");
+  return Object.freeze({
+    jsonrpc: "2.0",
+    method: "tools/call",
+    id,
+    params: Object.freeze({
+      name: metadataTool,
+      arguments: Object.freeze({ fileId: args["fileId"], version: args["version"] }),
+    }),
+  });
+}
+
+export function addinMetadataSelector(payload: P.Rpc) {
+  return {
+    kind: "saved-document-metadata",
+    ...metadataWire(payload).params.arguments,
+  } as const;
+}
+
+/** A capability-specific proof, separate from every Python certificate. */
+export function prepareMetadataWire(payload: P.Rpc): P.MetadataWireProof {
+  const wire = metadataWire(payload);
+  const bytes = JSON.stringify(wire);
+  return Object.freeze({
+    wire,
+    fence(current: P.Rpc) {
+      if (JSON.stringify(current) !== bytes)
+        refuse("INPUT_CHANGED", "Prepared ADDIN metadata bytes changed");
+    },
+  });
+}
+
+export function provisionAddinMetadata(
+  config: P.TrustedAddinMetadataAdmission | undefined,
+  backend: string | undefined,
+  prepare: typeof createAddinAdmission,
+  transport?: AdmissionTransport,
+  authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>,
+) {
+  if (config === undefined) return null;
+  if (
+    !config ||
+    backend !== "addin" ||
+    config.capability !== metadataTool ||
+    !Number.isSafeInteger(config.pid) ||
+    config.pid <= 0
+  )
+    refuse("INVALID_ADMISSION_PROVISIONING", "Expected a provisioned ADDIN metadata capability");
+  const { endpoint, token, pid, birth, instance, epoch, source, build, owner: provisionedOwner } = config;
+  if ([endpoint, token, birth, instance, epoch, source, build, provisionedOwner].some(
+    (pin) => typeof pin !== "string" || !pin.trim(),
+  ))
+    refuse("INVALID_ADMISSION_PROVISIONING", "ADDIN metadata provisioning is incomplete");
+  const dependencies: NonNullable<Parameters<typeof createAdmissionRequest>[1]> & {
+    authorizePhysicalRequest?: (endpoint: string) => Readonly<Record<string, string>>;
+  } = authorizePhysicalRequest ? {authorizePhysicalRequest} : {};
+  const requestPort = createAdmissionRequest(transport, dependencies);
+
+  return {
+    bind(
+      wire: ReturnType<typeof metadataWire>,
+      observed: P.Instance | undefined,
+      pinned: P.Instance,
+      owner: string,
+      request: string,
+      timeoutMs: number,
+    ) {
+      if (owner !== provisionedOwner)
+        refuse("ADMISSION_OWNER_MISMATCH", "Client does not match the provisioned ADDIN owner");
+      const { fileId, version } = wire.params.arguments;
+      const target = fields(observed?.documentState?.state?.identity);
+      const creationId = target["creationId"];
+      const lineage = observed?.documents?.map(fields).filter(
+        (entry) => entry["id"] === creationId && entry["fileId"] === fileId,
+      );
+      const inventory = lineage?.filter((entry) => entry["version"] === version);
+      const entry = inventory?.length === 1 ? inventory[0] : undefined;
+      if (
+        observed?.pid !== pid ||
+        observed.birth !== birth ||
+        pinned.pid !== pid ||
+        pinned.birth !== birth ||
+        observed.documentState?.status !== "complete" ||
+        typeof creationId !== "string" ||
+        !creationId.trim() ||
+        target["fileId"] !== fileId ||
+        target["version"] !== version ||
+        target["isSaved"] !== true ||
+        lineage?.some((row) =>
+          typeof row["version"] !== "number" ||
+          !Number.isSafeInteger(row["version"]) ||
+          row["version"] < 1 ||
+          row["dataFileError"] !== undefined,
+        ) ||
+        !entry ||
+        entry["isSaved"] !== true
+      )
+        refuse("DOCUMENT_ADMISSION_UNPROVEN", "Preflight did not prove the provisioned saved document");
+
+      const identity = Object.freeze({
+        owner,
+        request,
+        instance,
+        epoch,
+        source,
+        build,
+        document: JSON.stringify({ creationId, fileId, version }),
+      });
+      try {
+        // Construction is local. It validates the credentials, endpoint and
+        // exact bytes before a journal can imply that a send was possible.
+        const { binding, admitEvidence } = prepare({ endpoint, token, timeoutMs }, identity, wire, requestPort);
+        return { scope: Object.freeze({ endpoint, token, identity }), binding, admitEvidence };
+      } catch {
+        refuse("INVALID_ADMISSION_PROVISIONING", "Invalid ADDIN admission provisioning");
+      }
+    },
+  };
+}
+
+function fields(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+export function matchMetadataEvidence(
+  response: P.Response,
+  binding: unknown,
+  rpcId: string,
+  wireId: P.Rpc["id"],
+  decode: (raw: string) => unknown,
+): P.Reply {
+  function invalid(): never {
+    throw Object.assign(new Error("Metadata response lacks original bound terminal evidence"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  }
+  let envelope: Record<string, unknown>;
+  try {
+    envelope = fields(decode(response.raw));
+  } catch {
+    return invalid();
+  }
+  const terminal = fields(envelope["record"]);
+  const reply = fields(response.toolResponse);
+  if (
+    response.status !== 200 ||
+    fields(binding)["request"] !== rpcId ||
+    wireId !== `fmcad:${rpcId}` ||
+    envelope["version"] !== 1 ||
+    !isDeepStrictEqual(fields(envelope["binding"]), binding) ||
+    terminal["state"] !== "terminal" ||
+    Object.keys(terminal).length !== 2 ||
+    !Object.hasOwn(terminal, "result") ||
+    Object.keys(reply).length !== 3 ||
+    reply["jsonrpc"] !== "2.0" ||
+    reply["id"] !== wireId ||
+    !isDeepStrictEqual(reply["result"], terminal["result"])
+  )
+    return invalid();
+  return { jsonrpc: "2.0", id: wireId, result: reply["result"] };
+}
+
+export function matchRetainedMetadataEvidence(
+  record: Pick<P.RecordEvidence, "response" | "wireRequest" | "binding">,
+  original: {
+    version: number;
+    kind: string;
+    binding: P.Binding;
+    wireId?: P.Rpc["id"];
+    response: P.Response;
+  } | null,
+  decode: (raw: string) => unknown,
+) {
+  const { response, wireRequest, binding } = record;
+  if (
+    !response ||
+    !wireRequest ||
+    !original ||
+    original.version !== 1 ||
+    original.kind !== "owned-rpc-received-response-v1" ||
+    !isDeepStrictEqual(original.binding, binding) ||
+    original.wireId !== wireRequest.id ||
+    original.response?.status !== response.status ||
+    original.response.raw !== response.raw
+  )
+    throw Object.assign(new Error("ADDIN metadata differs from the original retained response"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  return matchMetadataEvidence(response, binding["addinAdmission"], binding.rpcId, wireRequest.id, decode);
+}
+
+export function usesRetainedMetadataEvidence(
+  record: Pick<P.RecordEvidence, "binding" | "dispatchClass">,
+) {
+  const metadata = record.dispatchClass === "addin-metadata";
+  const binding = Object.hasOwn(record.binding, "addinAdmission");
+  if (metadata !== binding || (metadata && !record.binding["addinAdmission"]))
+    throw Object.assign(new Error("ADDIN metadata dispatch is missing its exact binding"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  return metadata;
+}
+
+type Grant = BrokerGrant<P.LaneContext>;
+type Hold = BrokerHold<P.LaneContext>;
+
+/** Copy only token-free, exact physical identity fields before durable use. */
+export function pinPhysicalTurn(
+  binding: P.PhysicalTurnBinding,
+  request: P.PhysicalTurnRequest,
+  runtime?: Pick<P.Instance, "pid" | "birth" | "version">,
+): P.PhysicalTurnBinding {
+  let targetMatches = false;
+  try { targetMatches = isDeepStrictEqual(JSON.parse(binding.target), request.documentSelector ?? null); }
+  catch { /* Refuse below. */ }
+  if (!targetMatches || binding.version !== 1 || !/^[a-f0-9]{64}$/.test(binding.grantDigest) ||
+      binding.turnId !== request.physicalRequestId ||
+      !Number.isSafeInteger(binding.physicalRuntime?.pid) || binding.physicalRuntime.pid <= 0 ||
+      (runtime && (binding.physicalRuntime.pid !== runtime.pid ||
+        binding.physicalRuntime.birth !== runtime.birth || binding.physicalRuntime.version !== runtime.version)) ||
+      ![binding.generation?.instance, binding.generation?.epoch,
+        binding.physicalRuntime.birth, binding.physicalRuntime.version,
+        binding.physicalRuntime.source, binding.physicalRuntime.build].every(
+          (value) => typeof value === "string" && value.length > 0))
+    refuse("PHYSICAL_BINDING_MISMATCH", "Physical binding must identify the exact original dispatch");
+  return Object.freeze({
+    version: 1, grantDigest: binding.grantDigest,
+    generation: Object.freeze({instance: binding.generation.instance, epoch: binding.generation.epoch}),
+    physicalRuntime: Object.freeze({
+      pid: binding.physicalRuntime.pid, birth: binding.physicalRuntime.birth,
+      version: binding.physicalRuntime.version, source: binding.physicalRuntime.source,
+      build: binding.physicalRuntime.build,
+    }),
+    turnId: binding.turnId, target: binding.target,
+  });
+}
+
+/** Runtime routing for existing grant capabilities; the session still owns
+ * eligibility, and the caller owns durable domain/receipt transitions. */
+export function createBrokerLane(
+  session: ReturnType<typeof createBrokerSession<P.LaneContext>>,
+  ports: { durableHoldReason(): unknown; wakeup(): void },
+) {
+  let current: Grant | null = null;
+  let held: Hold | null = null;
+  let fault: string | null = null;
+  let administrative = false;
+
+  return {
+    snapshot: session.snapshot,
+    assertCurrent: session.assertCurrentGrant,
+    currentGrant: () => current,
+    hasHold: () => held !== null,
+    busy: () =>
+      administrative ||
+      session.snapshot().active !== null ||
+      !!held?.context?.executing,
+    activeWorker: () =>
+      current?.context.postflight
+        ? null
+        : current?.context.worker ?? held?.context?.worker ?? null,
+    heldWorker: () => held?.context?.worker ?? null,
+    heldContext: () => held?.context ?? null,
+    heldReason() {
+      const reason = ports.durableHoldReason();
+      return (
+        fault ??
+        session.snapshot().held?.reason ??
+        (typeof reason === "string" ? reason : null)
+      );
+    },
+    recordFault(reason: string) {
+      fault ??= reason;
+    },
+    faulted: () => fault !== null,
+    setAdministrative(value: boolean) {
+      administrative = value;
+    },
+    begin(job: P.Job, turn: TurnIdentity, scoped: boolean) {
+      current = session.acquire(
+        { job, executing: true },
+        turn,
+        scoped ? held ?? undefined : undefined,
+      );
+      return current;
+    },
+    hold(grant: Grant, reason: string, commit: () => void) {
+      if (current !== grant) return false;
+      held = session.hold(grant, reason);
+      current = null;
+      commit();
+      return true;
+    },
+    setControlHold(reason: string | null) {
+      if (current) return;
+      if (reason !== null) held = session.hold(held, reason);
+      else {
+        if (held) session.settle(held, () => undefined);
+        held = null;
+      }
+    },
+    settle(grant: Grant, commit: () => undefined) {
+      session.settle(grant, commit);
+      current = null;
+      ports.wakeup();
+    },
+    captureRecovery() {
+      const expected = held;
+      function assertCurrent() {
+        if (expected !== held || current)
+          throw Object.assign(
+            new Error("Runtime hold changed before recovery settlement"),
+            { code: "STATE_CONFLICT" },
+          );
+      }
+      return {
+        assertCurrent,
+        settle<T>(commit: () => T): T {
+          assertCurrent();
+          if (!expected) return commit();
+          let result!: T;
+          session.settle(expected, () => {
+            result = commit();
+          });
+          held = null;
+          ports.wakeup();
+          return result;
+        },
+      };
+    },
+  };
+}
 
 interface Control {
   handle(message: P.Message, clientId: string): Promise<unknown>;
@@ -66,7 +451,11 @@ export interface AuditPorts {
     payload: P.Rpc,
     artifact?: PreparedPythonArtifact,
   ): Promise<P.Certificate>;
-  post(payload: P.Rpc, sessionId?: string): Promise<P.Response>;
+  post(payload: P.Rpc, sessionId?: string, physicalContext?: {
+    binding: Record<string, unknown>;
+    documentSelector: {creationId: string} | undefined;
+    receiptPath: string;
+  }): Promise<P.Response>;
   match(response: P.Response, payload: P.Rpc): P.Reply | null;
   remoteReceipt(record: {
     receipt?: string;
@@ -95,12 +484,15 @@ interface ControllerPorts {
   [key: string]: unknown;
 }
 interface SuccessorRuntime {
+  /** Returned only after immutable predecessor/epoch evidence is verified. */
+  effectiveIdentity?: Pick<P.Identity, "buildHash" | "configHash" | "instance">;
   authority: {
     previousBuildHash: string;
     sourceCommit: string;
+    frozenMetadata?: { beneficiary: string; metadataRequestId: string };
     predecessor: { rootState: { sha256: string } };
   };
-  authorityEntry: unknown;
+  authorityEntry: P.Reference;
   audit: string;
 }
 interface AtomicWire extends ScopedPrepared {
@@ -111,6 +503,11 @@ interface AtomicWire extends ScopedPrepared {
   dispatchTimeoutMs: number;
 }
 export interface BrokerModules {
+  "./document-unlock-admission": typeof import("./document-unlock-admission");
+  "./document-unlock-diagnostics": typeof import("./document-unlock-diagnostics");
+  "./document-checkpoint-readback": typeof import("./document-checkpoint-readback");
+  "./document-unlock-controller": typeof import("./document-unlock-controller");
+  "./dist/node-adapters/execution/physical-generation-profile": typeof import("../packages/node-adapters/src/execution/physical-generation-profile");
   "./queue-isolated-epoch": {
     openIsolatedEpoch(dir: string, options?: Record<string, unknown>): P.State;
     epochAdmission(
@@ -153,7 +550,11 @@ export interface BrokerModules {
     readJson<T = unknown>(file: string): T;
     processBirth(pid?: number): string;
     priorProcessAlive(instance: P.Instance): boolean | null;
-    reclaim(dir: string): unknown;
+    reclaim(
+      dir: string,
+      recoverCurrent?: () => void,
+      assertReclaimable?: (owner: unknown) => void,
+    ): unknown;
     buildHash(): string;
     brokerConfigHash(config: P.Config): string;
     probe(client: ProbeClient, options: P.ProbeOptions): Promise<P.Instance>;
@@ -176,6 +577,7 @@ export interface BrokerModules {
     fail(code: string, message: string): never;
   };
   "./python": {
+    pythonArtifactManifest: typeof import("../packages/node-adapters/dist/python/context-binding").pythonArtifactManifest;
     verifyPythonArtifact: typeof import("../packages/node-adapters/dist/python/artifact").verifyPythonArtifact;
     retainPythonOrigin(
       artifact: PreparedPythonArtifact,
@@ -296,8 +698,11 @@ export interface BrokerModules {
     ): P.Client;
   };
   "../package.json": { version: string };
+  "./addin-bridge": { addinBridgeSource(): string };
   "./request-timeout": { requestTimeout(config: P.Config): number };
   "./dist/node-adapters/broker-ipc/normal-admission": typeof import("../packages/node-adapters/dist/broker-ipc/normal-admission");
+  "./dist/node-adapters/broker-ipc/normal-restart": typeof import("../packages/node-adapters/dist/broker-ipc/normal-restart");
+  "./dist/node-adapters/telemetry/phase-timings": typeof import("../packages/node-adapters/src/telemetry/phase-timings");
   "./queue-phased": {
     PhasedWorkers: new (
       options: Omit<
@@ -334,7 +739,7 @@ export interface BrokerModules {
       marker: P.Owner;
       buildHash: string;
       getContext(): {
-        active: P.Context | null;
+        active: boolean;
         busy: boolean;
         stopping: boolean;
         held: string | null;
@@ -368,6 +773,7 @@ export interface BrokerModules {
         fence: BrokerControlFence,
       ): P.ResetProof | undefined;
       diagnostics(): void;
+      beforeNewResume?(): void;
       canResume(): void;
     }): {
       accepts(action: string): boolean;

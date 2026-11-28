@@ -1,0 +1,38 @@
+_ISO_METRIC_COARSE = {
+    'M3': 3.0, 'M4': 4.0, 'M5': 5.0, 'M6': 6.0, 'M8': 8.0, 'M10': 10.0, 'M12': 12.0,
+    'M16': 16.0, 'M20': 20.0, 'M24': 24.0,
+}
+
+_ISO_COARSE_PITCH = {'M3': 0.5, 'M4': 0.7, 'M5': 0.8, 'M6': 1.0, 'M8': 1.25,
+                     'M10': 1.5, 'M12': 1.75, 'M16': 2.0, 'M20': 2.5, 'M24': 3.0}
+
+def thread_catalog(ctx, data):
+    _model_fields(data, ('schemaVersion', 'frame'), ('query', 'system', 'starts'))
+    if data.get('schemaVersion') != 1 or data.get('frame') != 'component':
+        raise ValueError('GM13 thread catalog requires schemaVersion:1 and frame:component')
+    system = data.get('system', 'iso-metric-coarse')
+    if system != 'iso-metric-coarse':
+        raise ValueError('Only the iso-metric-coarse curated table is available')
+    entries = []
+    for designation in sorted(_ISO_METRIC_COARSE, key=lambda d: _ISO_METRIC_COARSE[d]):
+        major = _ISO_METRIC_COARSE[designation]
+        pitch = _ISO_COARSE_PITCH[designation]
+        starts = data.get('starts', 1)
+        if not isinstance(starts, int) or starts < 1:
+            raise ValueError('starts must be a positive integer')
+        lead = starts * pitch
+        entries.append({'designation': designation,
+                        'majorDiameter': {'value': major, 'units': 'mm'},
+                        'pitch': {'value': pitch, 'units': 'mm'},
+                        'pitchDiameter': {'value': major - 0.649519 * pitch, 'units': 'mm'},
+                        'minorDiameter': {'value': major - 1.226869 * pitch, 'units': 'mm'},
+                        'starts': starts, 'lead': {'value': lead, 'units': 'mm'}, 'hand': 'right'})
+    if 'query' in data:
+        query = data['query']
+        entries = [e for e in entries if e['designation'] == query]
+        if not entries:
+            raise ValueError('Unknown designation in curated table: ' + str(query))
+    result = {'system': system, 'curated': True, 'entries': entries,
+              'note': 'Curated subset; not the full installed Fusion thread table.'}
+    return _thread_contract(ctx, 'thread.catalog', result, status='pass', read_only=True,
+                            limitations=['Curated subset of ISO metric coarse; exact installed identifiers still need native discovery.'])

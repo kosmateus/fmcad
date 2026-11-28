@@ -29,7 +29,7 @@ def _section_witness_operands(ctx: "CadContext", refs: "Sequence[JsonValue]", fr
         def copy_body(value: "adsk.core.Base") -> "adsk.fusion.BRepBody | None":
             return manager.copy(value)
 
-        copied_body = budget.call(copy_body, native)
+        copied_body = budget.invoke(copy_body, native)
         if copied_body is None:
             raise RuntimeError('Temporary body copy failed')
         body = copied_body
@@ -40,7 +40,7 @@ def _section_witness_operands(ctx: "CadContext", refs: "Sequence[JsonValue]", fr
             occurrence_transform = _section_witness_cast(
                 '_SectionWitnessNativeOccurrence', occurrence).nativeObject
             transform_source = occurrence_transform if occurrence_transform is not None else occurrence
-            if budget.call(manager.transform, body, transform_source.transform2) is not True:
+            if budget.invoke(manager.transform, body, transform_source.transform2) is not True:
                 raise RuntimeError('Temporary body transform failed')
         bodies.append(body)
     return actual, bodies
@@ -55,13 +55,13 @@ def _section_witness_area(manager: "adsk.fusion.TemporaryBRepManager",
         wire_body, edge_map = manager.createWireFromCurves(curves)
         return wire_body, edge_map
 
-    wire_result = budget.call(create_wire, [edge.geometry for edge in edges])
+    wire_result = budget.invoke(create_wire, [edge.geometry for edge in edges])
     if not wire_result or wire_result[0] is None or getattr(wire_result[0], 'isValid', True) is False:
         raise RuntimeError('Closed loop wire creation failed')
     def create_face(wire_bodies: "list[adsk.fusion.BRepBody]") -> "adsk.fusion.BRepBody | None":
         return manager.createFaceFromPlanarWires(wire_bodies)
 
-    surface = budget.call(create_face, [wire_result[0]])
+    surface = budget.invoke(create_face, [wire_result[0]])
     if surface is None or not surface.isValid:
         raise RuntimeError('Closed loop area construction failed')
     value = _section_witness_number(surface.area, 'Loop area')
@@ -77,7 +77,7 @@ def _section_witness_station(manager: "adsk.fusion.TemporaryBRepManager",
                            section_plane: "adsk.core.Plane") -> "adsk.fusion.BRepBody | None":
         return manager.planeIntersection(target_body, section_plane)
 
-    wire = budget.call(plane_intersection, body, plane)
+    wire = budget.invoke(plane_intersection, body, plane)
     if wire is None or not wire.isValid:
         raise RuntimeError('SDK returned no valid wire; empty or kernel failure is unknown')
     count = len(wire.edges) if isinstance(wire.edges, (list, tuple)) else wire.edges.count
@@ -89,7 +89,7 @@ def _section_witness_station(manager: "adsk.fusion.TemporaryBRepManager",
     def create_face(wire_bodies: "list[adsk.fusion.BRepBody]") -> "adsk.fusion.BRepBody | None":
         return manager.createFaceFromPlanarWires(wire_bodies)
 
-    surface = budget.call(create_face, [wire])
+    surface = budget.invoke(create_face, [wire])
     if surface is None or not surface.isValid:
         raise RuntimeError('Section does not form closed non-overlapping planar loops')
     loops: list[JsonRecord] = []
@@ -126,7 +126,7 @@ def _section_witness_boolean(manager: "adsk.fusion.TemporaryBRepManager",
     # witness - material, or witness intersect material. Both operands already
     # are private temporary copies in one frame. No point classifier is used.
     target, tool = bodies[1], bodies[0]
-    if budget.call(manager.booleanOperation, target, tool, operation) is not True:
+    if budget.invoke(manager.booleanOperation, target, tool, operation) is not True:
         raise RuntimeError('Witness Boolean failed')
     # Some SDK empty results invalidate the body. This is deliberately unknown
     # until a native qualified empty-result contract can distinguish it from failure.

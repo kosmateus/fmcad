@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Declared Scalar Acceptance Bound", "data": {"schemaVersion": 1, "checks": [{"id": "od", "predicate": {"kind": "scalar", "actual": {"value": 25.0}, "expected": {"min": 24.0, "max": 26.0}}, "source": {"path": "drawing", "status": "CONFIRMED"}}]}, "requires": "Open Design document; one declared scalar value inside its expected interval.", "output": "result.status is 'pass', result.checkPassed is true and result.executionSucceeded is true."}
     ],
-    "audit": {"sources": ["assets/cad/checking.py: _check_set, _evaluate_predicate, _checking_contract"], "verified": ["scalar reuse via ctx.call('check')", "vector/count/boolean predicates", "dependency ordering and skip-on-error", "distinct pass/fail/error/missing/stale outcomes", "executionSucceeded vs checkPassed"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["Declared vector/count/boolean values are not independently verified against native geometry."]}
+    "audit": {"sources": ["assets/cad/checking.py: _check_set, _evaluate_predicate, _checking_contract"], "verified": ["scalar reuse via ctx.call('check')", "vector/count/boolean predicates", "dependency ordering and skip-on-error", "distinct pass/fail/error/missing/stale outcomes", "executionSucceeded vs checkPassed"], "tests": ["tests/checking_test.py", "tests/checking.test.ts"], "gaps": [], "bugs": ["Declared vector/count/boolean values are not independently verified against native geometry."]}
   },
   "evidence.package": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Single Drawing Package", "data": {"schemaVersion": 1, "evidence": [{"id": "housing-drawing", "kind": "drawing", "path": "drawings/housing.svg", "revision": "B", "source": {"path": "drawings", "revision": "B", "status": "CONFIRMED"}}]}, "requires": "Open Design document; one drawing evidence item with a matching CONFIRMED source revision.", "output": "result.manifest[0].included is true, result.complete is true and result.status is 'pass'."}
     ],
-    "audit": {"sources": ["assets/cad/checking.py: _evidence_package, _evidence_item, _is_stale_evidence"], "verified": ["manifest construction", "completeness and missing kinds", "staleness detection", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["Declared paths are not read or verified against the filesystem."]}
+    "audit": {"sources": ["assets/cad/checking.py: _evidence_package, _evidence_item, _is_stale_evidence"], "verified": ["manifest construction", "completeness and missing kinds", "staleness detection", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.ts"], "gaps": [], "bugs": ["Declared paths are not read or verified against the filesystem."]}
   },
   "evidence.check": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "Prototype Film Evidence", "data": {"schemaVersion": 1, "evidence": [{"id": "proto-film", "kind": "film", "path": "evidence/proto.mp4", "gate": "G7", "supplierApproval": {"supplier": "molder", "approved": true}}], "required": ["film"]}, "requires": "Open Design document; one film evidence item with supplier approval and the required film kind.", "output": "result.complete is true and result.status is 'pass'."}
     ],
-    "audit": {"sources": ["assets/cad/checking.py: _evidence_check, _evidence_item, _is_stale_evidence"], "verified": ["required kind/id completeness", "staleness vs missing distinction", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["Declared paths are not read or verified against the filesystem."]}
+    "audit": {"sources": ["assets/cad/checking.py: _evidence_check, _evidence_item, _is_stale_evidence"], "verified": ["required kind/id completeness", "staleness vs missing distinction", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.ts"], "gaps": [], "bugs": ["Declared paths are not read or verified against the filesystem."]}
   },
   "deliver": {
     "sections": [
@@ -37,6 +37,6 @@
     "examples": [
       {"label": "Release Gate Over A Passing Checklist", "data": {"schemaVersion": 1, "checks": [{"id": "od", "predicate": {"kind": "scalar", "actual": {"value": 25.0}, "expected": {"min": 24.0, "max": 26.0}}}], "gate": "G7"}, "requires": "Open Design document; one passing scalar check for a release gate.", "output": "result.accepted is true, result.status is 'pass' and result.success is true."}
     ],
-    "audit": {"sources": ["assets/cad/checking.py: _deliver, _check_set, _evidence_check, _evidence_package"], "verified": ["composes check.set and evidence via ctx.call", "empty checklist is an error", "fail/blocked/unknown map to success false", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["No files are written by deliver; real export composition remains a separate native path."]}
+    "audit": {"sources": ["assets/cad/checking.py: _deliver, _check_set, _evidence_check, _evidence_package"], "verified": ["composes check.set and evidence via ctx.call", "empty checklist is an error", "fail/blocked/unknown map to success false", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.ts"], "gaps": [], "bugs": ["No files are written by deliver; real export composition remains a separate native path."]}
   }
 }

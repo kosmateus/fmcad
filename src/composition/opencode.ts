@@ -1,10 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { createFmcad, createCatalogServices } from "../api";
-import type {
-  Dependencies,
-  Presence,
-} from "../../packages/opencode-adapter/src/shared/contracts";
+import type { Dependencies } from "../../packages/opencode-adapter/src/shared/contracts";
 
 const runtimeRequire = createRequire(__filename);
 
@@ -36,11 +33,9 @@ export function dependencies(): Dependencies {
       };
     },
     presence(directory) {
-      const {
-        createReporter,
-      }: {
-        createReporter(directory: string): Presence | null;
-      } = require("../opencode/presence.cjs");
+      const { createReporter } = runtimeRequire(
+        "./library-opencode-presence",
+      ) as typeof import("./library-opencode-presence");
       try {
         return createReporter(directory);
       } catch {

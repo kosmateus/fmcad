@@ -132,6 +132,99 @@ function fixture(
     publishQualification,
   };
 }
+test("typed: shared lineage evidence is read once per traversal and reauthenticated on the next", (t) => {
+  const f = fixture(t, lineage);
+  const epochId = randomUUID();
+  const epochRoot = path.join(f.directory, "admission-epochs", epochId);
+  const qualification = path.join(
+    f.audit,
+    "isolated-scratch-qualification",
+    "result.json",
+  );
+  f.write(qualification, { status: "complete" });
+  const middle: EpochPointer = {
+    ...f.pointer,
+    epochId,
+    root: epochRoot,
+    succession: f.reference(),
+    qualificationReceipt: lineage.reference(qualification),
+  };
+  f.write(path.join(epochRoot, "queue-state.json"), { jobs: {} });
+  f.write(path.join(epochRoot, "instance.json"), {
+    buildHash: f.authority.buildHash,
+  });
+  f.write(path.join(f.directory, "isolated-admission-epoch.json"), middle);
+  const requestId = "second-owned-epoch",
+    audit = path.join(f.directory, "epoch-successions", hash(requestId));
+  fs.mkdirSync(audit, { recursive: true, mode: 0o700 });
+  const snapshot = lineage.predecessorSnapshot(f.directory, audit, true);
+  const qualifiedFile = path.join(audit, "installed-qualification.json");
+  f.write(qualifiedFile, f.qualified);
+  const authority = {
+    ...f.authority,
+    requestId,
+    previousBuildHash: f.authority.buildHash,
+    predecessor: snapshot,
+    qualification: lineage.reference(qualifiedFile),
+  };
+  f.write(path.join(audit, "authority.json"), authority);
+  const next: EpochPointer = {
+    ...middle,
+    epochId: randomUUID(),
+    succession: lineage.reference(path.join(audit, "authority.json")),
+    qualificationReceipt: {
+      path: path.join(audit, "isolated-scratch-qualification", "result.json"),
+      sha256: "e".repeat(64),
+    },
+  };
+  const originalRootBytes = fs.readFileSync(f.rootState);
+  const open = fs.openSync;
+  let reads = 0;
+  t.mock.method(
+    fs,
+    "openSync",
+    (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode) => {
+      if (file === f.rootState) reads++;
+      return open(file, flags, mode);
+    },
+  );
+  assert.equal(lineage.epochLineage(f.directory, next).length, 2);
+  assert.equal(
+    reads,
+    1,
+    "Shared rootState must not be rehashed and decoded for each successor",
+  );
+  assert.equal(lineage.epochLineage(f.directory, next).length, 2);
+  assert.equal(
+    reads,
+    2,
+    "A new traversal must open and authenticate the original bytes again",
+  );
+  f.write(f.rootState, { jobs: { tampered: { state: "succeeded" } } });
+  assert.throws(() => lineage.epochLineage(f.directory, next), {
+    code: "EPOCH_LINEAGE_INVALID",
+  });
+  assert.throws(
+    () => lineage.successionAuthority(f.directory, next.succession!),
+    { code: "EPOCH_LINEAGE_INVALID" },
+  );
+  fs.writeFileSync(f.rootState, originalRootBytes);
+  t.mock.method(
+    fs,
+    "openSync",
+    (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode) => {
+      if (file === f.authorityFile)
+        f.write(f.rootState, { jobs: { replacedDuringTraversal: {} } });
+      return open(file, flags, mode);
+    },
+  );
+  assert.throws(
+    () => lineage.epochLineage(f.directory, next),
+    { code: "EPOCH_LINEAGE_INVALID" },
+    "A changed shared file cannot reuse earlier authenticated bytes within the same traversal",
+  );
+});
+
 for (const [name, implementation] of [
   ["retained", oldLineage],
   ["typed", lineage],

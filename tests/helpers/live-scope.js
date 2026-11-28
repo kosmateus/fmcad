@@ -12,7 +12,7 @@ function source(code) {
   const baseline = process.env.FMCAD_LIVE_BASELINE_FILE
     ? JSON.parse(fs.readFileSync(process.env.FMCAD_LIVE_BASELINE_FILE, 'utf8')) : null;
   const ids = baseline?.documents.map(doc => doc.creationId) || null;
-  let prefix = `\ndef _fmcad_live_visible(d):\n    return ` + (ids ?
+  let prefix = `\nimport adsk.core as _fmcad_scope_core\ndef _fmcad_live_visible(d: _fmcad_scope_core.Document) -> bool:\n    return ` + (ids ?
     `d.creationId in ${JSON.stringify(ids)} or d.name == ${name ? JSON.stringify(name) : 'None'} or d.name.startswith(${JSON.stringify((name || '\0') + '_')})` : 'True') + '\n';
   const target = id || baseline?.activeCreationId;
   if (target) prefix += `import adsk.core as _fmcad_scope_core

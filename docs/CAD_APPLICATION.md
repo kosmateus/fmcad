@@ -131,7 +131,7 @@ npm run build:code
 npm run typecheck:tests
 npm run lint
 node --test tests/cad-application.test.js tests/cad-worker-service.test.js tests/batch*.test.js tests/definition*.test.js tests/run-*.test.js
-node --test tests/cad.test.js tests/python-artifact.test.js tests/helpers.test.js tests/catalog-worker.test.js tests/mcp-catalog.test.js tests/registry.test.js
+node --test tests/cad.test.js tests/python-artifact.test.js tests/helpers.test.js tests/catalog-worker.test.js tests/mcp-catalog.test.js dist/tests/registry.test.js
 ```
 
 The new fake-port tests run actual generated read/mutation Python wrappers with a

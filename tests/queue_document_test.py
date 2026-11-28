@@ -39,6 +39,61 @@ def document(name):
 
 
 class DocumentSnapshots(unittest.TestCase):
+    def test_numeric_parameter_fingerprint_is_unchanged(self):
+        runtime = pathlib.Path(__file__).parents[1] / 'runtime/python/fmcad/adapters/fusion/legacy_queue_document.py'
+        namespace = dict(identity)
+        exec(compile(runtime.read_text(), str(runtime), 'exec'), namespace)
+        for capture in (qd._qd_capture, namespace['_qd_capture']):
+            doc, _, _, _ = document('A')
+            result = capture(NS(documents=Collection(doc)), {'creationId': doc.creationId})
+            with self.subTest(capture=capture.__module__ if hasattr(capture, '__module__') else 'runtime'):
+                self.assertEqual(result['status'], 'complete')
+                self.assertEqual(result['fingerprint'],
+                                 '33e376a30cb4cb0fca465563126b083341559fe8f7e5269a541c5a6ce27784ce')
+
+    def test_text_parameter_fingerprint_uses_inspection_value(self):
+        runtime = pathlib.Path(__file__).parents[1] / 'runtime/python/fmcad/adapters/fusion/legacy_queue_document.py'
+        namespace = dict(identity)
+        exec(compile(runtime.read_text(), str(runtime), 'exec'), namespace)
+        for capture in (qd._qd_capture, namespace['_qd_capture']):
+            doc, design, _, numeric = document('A')
+            text = NS(name='note', expression="'hello'", textValue='hello', unit='Text')
+            design.allParameters = Collection(numeric, text)
+            app = NS(documents=Collection(doc))
+            with self.subTest(capture=capture.__module__ if hasattr(capture, '__module__') else 'runtime'):
+                first = capture(app, {'creationId': doc.creationId})
+                self.assertEqual(first['status'], 'complete')
+                text_row = next(row for row in first['state']['parameters'] if row['name'] == 'note')
+                self.assertEqual(text_row['value'], 'hello')
+                text.textValue = 'changed'
+                second = capture(app, {'creationId': doc.creationId})
+                self.assertEqual(second['status'], 'complete')
+                self.assertNotEqual(first['fingerprint'], second['fingerprint'])
+
+    def test_saved_metadata_selects_exact_version_without_loading_design(self):
+        root = pathlib.Path(__file__).parents[1]
+        runtime = root / 'runtime/python/fmcad/adapters/fusion/legacy_queue_document.py'
+        namespace = dict(identity)
+        exec(compile(runtime.read_text(), str(runtime), 'exec'), namespace)
+        for capture in (qd._qd_capture, namespace['_qd_capture']):
+            older = NS(creationId='older', isSaved=True, dataFile=NS(id='lineage', versionNumber=1))
+            newer = NS(creationId='newer', isSaved=True, dataFile=NS(id='lineage', versionNumber=2))
+            app = NS(documents=Collection(older, newer))
+            selector = {'kind': 'saved-document-metadata', 'fileId': 'lineage', 'version': 2}
+            with self.subTest(capture=capture.__module__):
+                result = capture(app, selector)
+                self.assertEqual(result['status'], 'complete')
+                self.assertEqual(result['state']['identity'],
+                                 {'creationId': 'newer', 'fileId': 'lineage', 'version': 2, 'isSaved': True})
+                duplicate = NS(creationId='duplicate', isSaved=True, dataFile=newer.dataFile)
+                app.documents.values.append(duplicate)
+                self.assertEqual(capture(app, selector)['matches'], 2)
+                app.documents.values.pop()
+                newer.isSaved = False
+                self.assertEqual(capture(app, selector)['matches'], 0)
+                app.documents.values.clear()
+                self.assertEqual(capture(app, selector)['matches'], 0)
+
     def test_other_file_changes_do_not_invalidate_target(self):
         a, _, _, _ = document('A')
         b, _, bc, bp = document('B')

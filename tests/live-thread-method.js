@@ -16,15 +16,30 @@ process.env.FMCAD_LIVE_SUITE = 'thread-method';
 
 const { spawnSync, fixture } = require('./helpers/live-broker');
 const { catalog, validateCad } = require('../src/cad');
+const provenance = require('../dist/tests/scenarios/fixture-provenance');
+const queueBackend = require('../dist/tests/scenarios/queue-backend');
+const liveBroker = require('./helpers/live-broker');
+const { threadInfoBody, threadReadbackBody, threadMajorRadiusMm, assertCosmeticCylinder } = require('../dist/tests/scenarios/native-thread-programs');
 const reportPath = path.join(__dirname, 'live-thread-method-report.json');
+const scenarioRoot = path.join(root, '.test-artifacts', 'scenarios');
+const owner = {
+  runId: randomUUID(), scenarioId: 'thread-method', clientId: process.env.FMCAD_LIVE_CLIENT,
+};
+const ownerRunRoot = path.join(scenarioRoot, owner.runId);
+const ownerDirectory = path.join(ownerRunRoot, owner.scenarioId);
+const ownerReportPath = path.join(ownerDirectory, 'report.json');
+const ownerIndexPath = path.join(ownerRunRoot, 'index.json');
 const targetOperations = ['thread.catalog', 'thread.custom-profile', 'thread.pair-check', 'model.thread'];
 const report = {
   suite: 'thread-method', sourceCommit: childProcess.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
   backend: require('../src/config').loadConfig({ routing: 'queue' }).cfg.backend,
   broker: { routing: 'queue', client: process.env.FMCAD_LIVE_CLIENT },
   name, startedAt: new Date().toISOString(),
-  scope: 'Fresh unsaved document; native cosmetic ThreadFeature is tested when the installed table accepts the exact selector, and custom profile is explicitly checked as recipe-only/no geometry.',
-  commands: [], methodResults: [], assertions: [], tests: [], ownedDocuments: [], remainingOwnedDocuments: 'unknown',
+  scope: 'exclusive-instance',
+  scopeDescription: 'Fresh unsaved document; native cosmetic ThreadFeature is tested when the installed table accepts the exact selector, and custom profile is explicitly checked as recipe-only/no geometry.',
+  owner, directory: ownerDirectory, mode: 'fusion', qualification: 'broker', protocol: null,
+  backendIdentity: null, status: 'running', cleanup: 'not-created',
+  requests: [], commands: [], methodResults: [], assertions: [], tests: [], ownedDocuments: [], remainingOwnedDocuments: 'unknown',
 };
 let baseline;
 let identity;
@@ -33,8 +48,17 @@ let uncertain = false;
 let failure;
 let body;
 let currentCase = 'thread-fixture-setup';
+let originalActiveCreationId = null;
+let originalActive = null;
+let ownerIndex;
 
-function persist() { fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n'); }
+function persist() {
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
+  if (fs.existsSync(ownerDirectory))
+    fs.writeFileSync(ownerReportPath, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
+  if (ownerIndex)
+    fs.writeFileSync(ownerIndexPath, JSON.stringify(ownerIndex, null, 2) + '\n', { mode: 0o600 });
+}
 
 function unknownIn(value) {
   if (!value || typeof value !== 'object') return false;
@@ -43,12 +67,12 @@ function unknownIn(value) {
   return Object.values(value).some(unknownIn);
 }
 
-function cli(args) {
-  const result = spawnSync(process.execPath, ['bin/fmcad.js', ...args, '--timeout', '60000'], {
+function cli(args, requestId = owner.clientId + ':' + randomUUID()) {
+  const result = spawnSync(process.execPath, ['bin/fmcad.js', ...args, '--request-id', requestId, '--timeout', '60000'], {
     cwd: root, encoding: 'utf8', timeout: 180000, maxBuffer: 32 * 1024 * 1024,
   });
   const row = { args, exitCode: result.status, stdout: result.stdout || '', stderr: result.stderr || '',
-    error: result.error?.message, status: 'not-validated' };
+    requestId, error: result.error?.message, status: 'not-validated' };
   report.commands.push(row);
   const text = row.stdout + row.stderr.split(/\r?\n/)
     .filter(line => !line.startsWith('FMCAD_QUEUE_') && !line.startsWith('QUEUE ')).join('\n');
@@ -70,11 +94,11 @@ function cli(args) {
   return row;
 }
 
-function script(body, readOnly = true) {
+function script(body, readOnly = true, requestId) {
   if (!readOnly && uncertain) throw new Error('Mutation stopped after an unknown result.');
   const source = 'import adsk.core, adsk.fusion, json\n\ndef run(_context: str):\n' +
     body.split('\n').map(line => '    ' + line).join('\n');
-  const row = cli(['call', 'fusion_mcp_execute', JSON.stringify({ featureType: 'script', object: { script: source, readOnly } })]);
+  const row = cli(['call', 'fusion_mcp_execute', JSON.stringify({ featureType: 'script', object: { script: source, readOnly } })], requestId);
   const lines = row.stdout.split(/\r?\n/).filter(line => line.startsWith('LIVE_THREAD '));
   if (lines.length !== 1) {
     uncertain = true;
@@ -110,24 +134,19 @@ docs = [{"name": d.name, "creationId": d.creationId, "fileId": d.dataFile.id if 
 print('LIVE_THREAD ' + json.dumps({"version": app.version, "documents": docs}))`);
 }
 
-const stable = docs => docs.map(({ active, ...doc }) => doc)
-  .sort((a, b) => String(a.creationId).localeCompare(String(b.creationId)));
-
 function unchangedOthers(current) {
-  assert.deepEqual(stable(current.documents.filter(doc => doc.creationId !== identity?.creationId)), stable(baseline.documents),
-    'A non-fixture document changed during thread method coverage.');
+  const owned = provenance.discoverOwnedUnsavedFixtures(scenarioRoot, {
+    identity: report.backendIdentity, mode: report.mode, qualification: report.qualification, protocol: report.protocol,
+  });
+  provenance.assertPreservedDocumentInventory(baseline.documents, current.documents, owned,
+    'A baseline document changed or an unowned document appeared during thread method coverage.');
 }
 
 function guard() {
   assert.ok(identity?.creationId, 'No verified owned fixture ID.');
   const current = state();
   unchangedOthers(current);
-  const matches = current.documents.filter(doc => doc.name === name);
-  assert.equal(matches.length, 1, 'Fixture name is ambiguous or missing.');
-  assert.equal(matches[0].creationId, identity.creationId, 'Fixture name now refers to another document.');
-  assert.equal(matches[0].fileId, null, 'Fixture unexpectedly has a cloud file ID.');
-  assert.equal(matches[0].saved, false, 'Fixture unexpectedly saved.');
-  assert.equal(matches[0].active, true, 'Fixture is not active.');
+  provenance.assertOwnedUnsavedDocument(current.documents, identity);
 }
 
 function cad(operation, data, scope = 'root') {
@@ -186,46 +205,145 @@ function closeOwned() {
   if (!identity || uncertain || blockedReason) return false;
   guard();
   const result = script(`app = adsk.core.Application.get()
-matches = [d for d in app.documents if d.name == ${JSON.stringify(name)} and d.creationId == ${JSON.stringify(identity.creationId)}]
-assert len(matches) == 1, 'Fixture identity ambiguous; leave open'
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)}]
+assert len(matches) == 1 and matches[0].name == ${JSON.stringify(identity.name)}, 'Fixture identity ambiguous; leave open'
 doc = matches[0]
 assert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'
 assert doc.close(False), 'Owned unsaved close failed'
 print('LIVE_THREAD ' + json.dumps({"closedCreationId": ${JSON.stringify(identity.creationId)}}))`, false);
   assert.equal(result.closedCreationId, identity.creationId);
   fixture(name);
+  report.cleanup = 'complete';
   return true;
+}
+
+function restoreOriginalActive() {
+  if (!originalActive) return;
+  const expected = originalActive;
+  const restored = script(`app = adsk.core.Application.get()
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(originalActiveCreationId)}]
+assert len(matches) == 1 and matches[0].name == ${JSON.stringify(expected.name)}, 'Original active document identity changed'
+restored = False
+if app.activeDocument is None:
+    assert matches[0].activate(), 'Original active document restoration failed'
+    restored = True
+print('LIVE_THREAD ' + json.dumps({"activeCreationId": app.activeDocument.creationId if app.activeDocument else None, "restored": restored}))`, false);
+  report.activeRestoration = {
+    creationId: originalActiveCreationId,
+    activeCreationId: restored.activeCreationId,
+    status: restored.activeCreationId === originalActiveCreationId ? 'pass' : 'concurrent-active-preserved',
+  };
+}
+
+function initializeOwnerArtifacts(runtime) {
+  fs.mkdirSync(scenarioRoot, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(ownerDirectory, { recursive: true, mode: 0o700 });
+  const { cfg } = require('../src/config').loadConfig({ routing: 'queue' });
+  report.protocol = cfg.backend;
+  report.backendIdentity = 'fusion:' + cfg.backend + ':' + runtime.fingerprint;
+  report.cleanup = 'pending';
+  ownerIndex = {
+    runId: owner.runId,
+    mode: report.mode,
+    qualification: report.qualification,
+    protocol: report.protocol,
+    backendIdentity: report.backendIdentity,
+    processIdentity: provenance.currentProcessIdentity(),
+    before: undefined,
+    cloudBefore: [],
+    scenarioIds: [owner.scenarioId],
+    status: 'running',
+  };
+  persist();
+}
+
+async function createOwnedFixture(runtime) {
+  const requestId = owner.clientId + ':create:' + randomUUID();
+  const entry = { requestId, phase: 'create', intent: { kind: 'script' } };
+  report.requests.push(entry);
+  report.cleanup = 'pending';
+  persist();
+  const created = script(`from typing import cast
+app = adsk.core.Application.get()
+doc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))
+doc.name = ${JSON.stringify(name)}
+print('LIVE_THREAD ' + json.dumps({"name": doc.name, "creationId": doc.creationId, "requestId": ${JSON.stringify(requestId)}, "clientId": ${JSON.stringify(owner.clientId)}, "activeCreationId": app.activeDocument.creationId if app.activeDocument else None}))`, false, requestId);
+  const row = report.commands.at(-1);
+  const accepted = queueBackend.queueExecReceipt(row.stderr, owner, requestId);
+  const original = await liveBroker.readQueueResult({
+    cliPath: path.join(runtime.dist, 'bin', 'fmcad.js'), backend: report.protocol,
+    clientId: owner.clientId, jobId: accepted.jobId, cwd: root,
+  });
+  const result = queueBackend.queueExecution(original, owner, requestId);
+  assert.equal(result.state, 'succeeded', 'Original creation request did not succeed.');
+  assert.equal(result.sdkSettled, true, 'Original creation SDK request is unsettled.');
+  assert.equal(result.mayHaveMutated, true);
+  assert.equal(result.brokerReceipt.jobId, accepted.jobId);
+  assert.equal(result.brokerReceipt.state, 'succeeded');
+  const lines = result.stdout.split(/\r?\n/).filter(line => line.startsWith('LIVE_THREAD '));
+  assert.equal(lines.length, 1, 'Creation receipt has no exact fixture identity.');
+  const value = JSON.parse(lines[0].slice('LIVE_THREAD '.length));
+  assert.deepEqual(created, value, 'Returned and original creation results differ.');
+  assert.equal(value.name, name);
+  assert.equal(value.requestId, requestId);
+  assert.equal(value.clientId, owner.clientId);
+  assert.equal(value.activeCreationId, value.creationId);
+  identity = { name: value.name, creationId: value.creationId };
+  fs.writeFileSync(path.join(ownerDirectory, 'creation.json'), JSON.stringify({
+    ...value, requestId, clientId: owner.clientId,
+  }), { flag: 'wx', mode: 0o600 });
+  entry.result = result;
+  report.document = identity;
+  report.ownedDocuments.push(identity);
+  fixture(name, identity.creationId);
+  persist();
 }
 
 async function main() {
   persist();
-  await require('./run-live').prepareBroker();
+  const runtime = await require('./run-live').prepareBroker();
+  initializeOwnerArtifacts(runtime);
   fixture(name);
-  baseline = state();
+  const rawBaseline = state();
+  const peerFixtures = provenance.discoverOwnedUnsavedFixtures(scenarioRoot, {
+    identity: report.backendIdentity, mode: report.mode, qualification: report.qualification, protocol: report.protocol,
+  });
+  provenance.assertPreservedDocumentInventory(rawBaseline.documents, rawBaseline.documents, peerFixtures,
+    'A peer fixture does not match its source-bound identity.');
+  const activeBefore = rawBaseline.documents.find(doc => doc.active)?.creationId || null;
+  originalActive = provenance.originalActiveDocument(
+    activeBefore,
+    rawBaseline.documents,
+    peerFixtures,
+  ) || null;
+  originalActiveCreationId = originalActive?.creationId || null;
+  baseline = {
+    ...rawBaseline,
+    documents: rawBaseline.documents.filter(doc => !peerFixtures.has(doc.creationId)),
+  };
+  ownerIndex.before = baseline;
   report.fusionVersion = baseline.version;
   report.before = baseline;
-  assert.ok(!baseline.documents.some(doc => doc.name === name), 'Fixture name already exists.');
-
-  const created = cli(['doc', 'new', '--name', name]);
-  assert.equal(created.exitCode, 0, created.stderr || created.stdout);
-  const afterCreate = state();
-  const added = afterCreate.documents.filter(doc => !baseline.documents.some(old => old.creationId === doc.creationId));
-  assert.equal(added.length, 1, 'Document creation did not create exactly one fixture.');
-  assert.equal(added[0].name, name);
-  assert.equal(added[0].fileId, null);
-  assert.equal(added[0].saved, false);
-  identity = { name, creationId: added[0].creationId };
-  fixture(name, identity.creationId);
-  report.ownedDocuments.push(identity);
+  report.originalActiveCreationId = originalActiveCreationId;
+  report.concurrentOwnedActiveAtStart = activeBefore !== null && peerFixtures.has(activeBefore);
   persist();
+
+  await createOwnedFixture(runtime);
+  const afterCreate = state();
+  unchangedOthers(afterCreate);
+  provenance.assertOwnedUnsavedDocument(afterCreate.documents, identity);
 
   try {
     guard();
-    const cylinder = cad('shape.cylinder', { name: 'ThreadCylinder', radius: '5 mm', height: '20 mm' });
+    const nativeInfo = script(threadInfoBody(identity) + "\nprint('LIVE_THREAD ' + json.dumps(thread_result))");
+    const radiusMm = threadMajorRadiusMm(nativeInfo);
+    const radius = `${radiusMm} mm`;
+    report.nativeThreadDescriptor = nativeInfo;
+    const cylinder = cad('shape.cylinder', { name: 'ThreadCylinder', radius, height: '20 mm' });
     check('shape.cylinder', 'one cylindrical fixture body returned', cylinder.bodies.length, 1);
     validated('shape.cylinder');
     body = cylinder.bodies[0];
-    const face = cad('entity.find', { kind: 'face', filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true });
+    const face = cad('entity.find', { kind: 'face', scope: { body }, filters: { geometry: 'cylinder', radius }, unique: true });
     check('entity.find', 'one exact outer cylindrical face selected', face.kind, 'face');
     validated('entity.find');
 
@@ -236,8 +354,9 @@ async function main() {
 
     currentCase = 'thread-catalog-custom-profile-and-pair-check';
     const catalogResult = cad('thread.catalog', { schemaVersion: 1, frame: 'component',
-      system: 'iso-metric-coarse', query: 'M10x1.5', starts: 2 });
-    check('thread.catalog', 'curated query returns exactly M10x1.5', catalogResult.entries.length, 1);
+      system: 'iso-metric-coarse', query: 'M10', starts: 2 });
+    check('thread.catalog', 'curated query returns exactly one M10 entry', catalogResult.entries.length, 1);
+    check('thread.catalog', 'curated designation is M10, not a native thread selector', catalogResult.entries[0].designation, 'M10');
     check('thread.catalog', 'catalog result identifies the curated ISO subset', catalogResult.curated, true);
     check('thread.catalog', 'multi-start lead equals two starts times 1.5 mm pitch', catalogResult.entries[0].lead.value, 3, 1e-9);
     validated('thread.catalog');
@@ -298,6 +417,31 @@ async function main() {
     validated('entity.list');
     const volumeAfter = cad('measure.volume', { ref: body, units: 'mm3' });
     check('measure.volume', 'cosmetic thread preserves BRep volume', volumeAfter.value, volumeBefore.value, 0.001);
+    const matchedReadback = script(threadReadbackBody(identity, body.token, tabular.feature.token) +
+      "\nprint('LIVE_THREAD ' + json.dumps(thread_result))", false);
+    assert.equal(matchedReadback.creationId, identity.creationId);
+    assertCosmeticCylinder(matchedReadback, nativeInfo);
+    report.matchedThreadReadback = matchedReadback;
+    validated('measure.volume');
+
+    // A nominal M10 blank is not the table's tolerance-adjusted major diameter.
+    const nominal = cad('shape.cylinder', { name: 'NominalThreadCylinder', radius: '5 mm', height: '20 mm' });
+    const nominalBody = nominal.bodies[0];
+    const nominalFace = cad('entity.find', { kind: 'face', scope: { body: nominalBody },
+      filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true });
+    const nominalBefore = cad('measure.volume', { ref: nominalBody, units: 'mm3' });
+    const resized = cad('model.thread', { name: 'NominalM10', faces: [nominalFace], internal: false,
+      threadType: 'ISO Metric profile', designation: 'M10x1.5', class: '6g', modeled: false, rightHanded: true });
+    const resizedReadback = script(threadReadbackBody(identity, nominalBody.token, resized.feature.token) +
+      "\nprint('LIVE_THREAD ' + json.dumps(thread_result))", false);
+    assert.equal(resizedReadback.creationId, identity.creationId);
+    assertCosmeticCylinder(resizedReadback, nativeInfo);
+    report.nominalThreadReadback = resizedReadback;
+    const nominalAfter = cad('measure.volume', { ref: nominalBody, units: 'mm3' });
+    const expectedVolume = Math.PI * radiusMm ** 2 * 20;
+    check('measure.volume', 'nominal cylinder resizes to the native table diameter', nominalAfter.value, expectedVolume, 0.001);
+    check('measure.volume', 'nominal resize delta matches the table, not a helical cut', nominalAfter.value - nominalBefore.value,
+      Math.PI * 20 * (radiusMm ** 2 - 5 ** 2), 0.001);
     validated('measure.volume');
     report.tests.push({ name: 'native-tabular-cosmetic-thread', status: 'pass', operations: ['model.thread'] });
   } catch (error) {
@@ -308,19 +452,39 @@ async function main() {
 
   if (!uncertain && !blockedReason && identity) {
     try { report.fixtureClosed = closeOwned(); }
-    catch (error) { failure ||= error; report.cleanupError = error.message; }
+    catch (error) {
+      failure ||= error;
+      report.cleanupError = error.message;
+      report.cleanup = uncertain ? 'deferred' : 'failed';
+    }
   }
+  if (identity && !report.fixtureClosed && report.cleanup === 'pending')
+    report.cleanup = uncertain || blockedReason ? 'deferred' : 'failed';
+  if (!identity) report.cleanup = 'not-created';
   if (!uncertain && !blockedReason) {
     try {
+      if (report.fixtureClosed) restoreOriginalActive();
       const after = state();
       report.after = after;
-      report.remainingOwnedDocuments = after.documents.filter(doc => doc.creationId === identity?.creationId || doc.name === name);
+      report.remainingOwnedDocuments = after.documents.filter(doc => doc.creationId === identity?.creationId);
       unchangedOthers(after);
       if (report.fixtureClosed) {
         assert.deepEqual(report.remainingOwnedDocuments, [], 'Owned thread fixture remains open.');
-        const expectedActive = baseline.documents.find(doc => doc.active)?.creationId || null;
+        const expectedActive = originalActiveCreationId;
         const actualActive = after.documents.find(doc => doc.active)?.creationId || null;
-        assert.equal(actualActive, expectedActive, 'Original active document was not restored.');
+        const peers = provenance.discoverOwnedUnsavedFixtures(scenarioRoot, {
+          identity: report.backendIdentity, mode: report.mode, qualification: report.qualification, protocol: report.protocol,
+        });
+        const baselineIds = new Set(baseline.documents.map(doc => doc.creationId));
+        if (actualActive !== expectedActive && actualActive !== null)
+          assert.ok(baselineIds.has(actualActive) || peers.has(actualActive),
+            'Active identity is not a baseline document or a receipt-proven peer fixture.');
+        if (expectedActive && actualActive !== expectedActive)
+          assert.ok(actualActive !== null,
+            'Original active document was not restored after cleanup.');
+        if (!expectedActive && !report.concurrentOwnedActiveAtStart)
+          assert.ok(actualActive === null || baselineIds.has(actualActive) || peers.has(actualActive),
+            'Concurrent active document is not part of the verified inventory.');
       }
     } catch (error) { failure ||= error; report.finalAuditError = error.message; }
   } else if (blockedReason) {
@@ -335,6 +499,10 @@ async function main() {
         outcomes.includes('blocked') ? 'blocked' : uncertain ? 'unknown' : blockedReason ? 'blocked' : 'not-run' };
   });
   report.finishedAt = new Date().toISOString();
+  report.status = failure || report.tests.some(row => row.status !== 'pass') || report.finalAuditError
+    ? 'failed' : 'passed';
+  if (report.fixtureClosed) report.cleanup = 'complete';
+  if (ownerIndex) ownerIndex.status = 'complete';
   persist();
   console.log('REPORT ' + reportPath);
   if (failure || report.tests.some(row => row.status !== 'pass') || report.finalAuditError ||
@@ -354,6 +522,11 @@ main().catch(error => {
     status: uncertain ? 'unknown' : blockedReason ? 'blocked' : 'not-run',
   }));
   report.finishedAt = new Date().toISOString();
+  report.status = 'failed';
+  if (identity && report.cleanup === 'pending')
+    report.cleanup = uncertain || blockedReason ? 'deferred' : 'failed';
+  if (!identity) report.cleanup = 'not-created';
+  if (ownerIndex) ownerIndex.status = 'complete';
   persist();
   console.error('FAIL model.thread: ' + error.stack);
   process.exitCode = 1;

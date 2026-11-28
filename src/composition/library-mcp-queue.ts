@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import {
   mcpRequestState,
@@ -10,6 +11,22 @@ import type {
   McpResponse,
   OwnedMcpArtifactReference,
 } from "./library-mcp-protocol";
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+} from "../../packages/node-adapters/src/telemetry/diagnostic-log";
+type DebugTraceRuntime = {
+  createDebugTraceContext: typeof import("../../packages/node-adapters/src/telemetry/diagnostic-log").createDebugTraceContext;
+  writeDebugTrace(
+    context: DebugTraceContext | undefined,
+    event: DebugTraceEvent,
+  ): void;
+};
+let loadedTraceRuntime: DebugTraceRuntime | undefined;
+const traceRuntime = (): DebugTraceRuntime =>
+  (loadedTraceRuntime ||= createRequire(__filename)(
+    "../node-adapters/telemetry/diagnostic-log",
+  ) as DebugTraceRuntime);
 import { catalogResult, type McpCatalogState } from "./library-mcp-catalog";
 import { queueMetadata } from "./library-mcp-metadata";
 import { queueTools, validateQueueHelperArguments } from "./library-mcp-tools";
@@ -134,7 +151,9 @@ export function createQueuePost(
     let requestId: string = randomUUID(),
       job: QueueJob | undefined,
       clientContext: QueueRequestContext | undefined,
-      admissionAttempted = false;
+      debugTrace: DebugTraceContext | undefined,
+      admissionAttempted = false,
+      sourceRejectedBeforeAdmission = false;
     const reply = (result: unknown) => ({
       status: 200,
       raw: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
@@ -150,6 +169,18 @@ export function createQueuePost(
         queueTools.find((tool) => tool.name === request.params?.["name"]);
       const { payload, options } = queueMetadata(request);
       requestId = options.requestId || requestId;
+      const traceClientId = client.auth?.clientId ?? context.clientId;
+      if (traceClientId && process.env["FMCAD_DEBUG_TRACE"] === "1") {
+        try {
+          debugTrace = traceRuntime().createDebugTraceContext(
+            requestId,
+            traceClientId,
+            "mcp",
+          );
+        } catch {
+          // Opt-in tracing is diagnostic-only if its runtime is unavailable.
+        }
+      }
       if (
         context.sessionId &&
         options.sessionId &&
@@ -206,6 +237,24 @@ export function createQueuePost(
           }
           case "fmcad_queue_request": {
             const value = await client.findRequest(args["requestId"]!);
+            const diagnostics = value?.job
+              ? {
+                  lookupState: "job_found",
+                  acceptanceState: "accepted",
+                  jobState: value.job.state,
+                  globalQueueState: "not_read",
+                  reason:
+                    value.job.state === "needs_reconciliation"
+                      ? "accepted_job_needs_reconciliation"
+                      : "owned_job_found",
+                }
+              : {
+                  lookupState: "no_owned_job",
+                  acceptanceState: "unknown",
+                  jobState: null,
+                  globalQueueState: "not_read",
+                  reason: "no_owned_job_record",
+                };
             const result = value?.job
               ? Object.assign(
                   {
@@ -216,14 +265,16 @@ export function createQueuePost(
                     context: value.context,
                   },
                   value,
+                  diagnostics,
                 )
               : {
                   requestId: args["requestId"]!,
                   jobId: null,
                   status: "needs_reconciliation",
                   context: value?.context ?? null,
+                  ...diagnostics,
                   instruction:
-                    "No owned receipt is visible in this broker snapshot. Do not resubmit an uncertain request; inspect again after reconnecting.",
+                    "No owned job record is visible. Acceptance is unknown; global queue state was not read. Do not resubmit an uncertain request; inspect again after reconnecting.",
                 };
             const response = helperResult(result);
             return {
@@ -362,6 +413,7 @@ export function createQueuePost(
           : {}),
         clientContext,
         requestId,
+        ...(debugTrace ? { debugTrace } : {}),
         backend: cfg.backend,
         ...queueOptions,
         ...(queueTimeoutMs !== undefined ? { queueTimeoutMs } : {}),
@@ -373,6 +425,8 @@ export function createQueuePost(
         admissionAttempted = !begin;
         job = await client.submit(input);
       } catch (error) {
+        sourceRejectedBeforeAdmission =
+          (error as QueueError).code === "BACKEND_MISMATCH";
         try {
           recovered = await client.findRequest(requestId);
         } catch {
@@ -432,6 +486,7 @@ export function createQueuePost(
               requestStatus: mcpRequestState(current.job.state),
               context: clientContext,
             },
+            ...(debugTrace ? { debugTrace } : {}),
             queueTools: true,
           };
         }
@@ -456,6 +511,7 @@ export function createQueuePost(
             structuredContent: result,
           }),
           queueReceipt: receipt(job),
+          ...(debugTrace ? { debugTrace } : {}),
           queueTools: true,
         };
       }
@@ -503,6 +559,7 @@ export function createQueuePost(
             requestStatus: mcpRequestState(job.state),
             context: clientContext,
           },
+          ...(debugTrace ? { debugTrace } : {}),
           artifactOwner: {
             jobId: job.id,
             ...(input.cwd ? { cwd: input.cwd } : {}),
@@ -549,6 +606,7 @@ export function createQueuePost(
           requestStatus: mcpRequestState(job.state),
           context: clientContext,
         },
+        ...(debugTrace ? { debugTrace } : {}),
         artifactOwner: {
           jobId: job.id,
           ...(input.cwd ? { cwd: input.cwd } : {}),
@@ -586,6 +644,7 @@ export function createQueuePost(
         );
         return {
           ...response,
+          ...(debugTrace ? { debugTrace } : {}),
           raw:
             replies.length === 1
               ? JSON.stringify(replies[0])
@@ -606,13 +665,18 @@ export function createQueuePost(
           "unsupported_queue_route",
           "REQUEST_CONTEXT_CONFLICT",
         ].includes(error.code!);
+      const rejectedBeforeAdmission =
+        error.notStarted === true ||
+        !admissionAttempted ||
+        sourceRejectedBeforeAdmission;
       const requestStatus = job
         ? mcpRequestState(job.state)
-        : validationRequired || !admissionAttempted
+        : rejectedBeforeAdmission
           ? "rejected-before-admission"
           : "needs_reconciliation";
       return {
         status: 200,
+        ...(debugTrace ? { debugTrace } : {}),
         raw: JSON.stringify({
           jsonrpc: "2.0",
           id: request.id,
@@ -628,6 +692,12 @@ export function createQueuePost(
             data: {
               requestId,
               requestStatus,
+              acceptanceState: job
+                ? "accepted"
+                : rejectedBeforeAdmission
+                  ? "rejected-before-admission"
+                  : "unknown",
+              globalQueueState: "not_read",
               ...(validationRequired
                 ? {
                     validation: {

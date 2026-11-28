@@ -150,7 +150,7 @@ export function createSnapshotReaders(policy: SnapshotPolicy) {
   }
   function directSnapshot(
     project: string,
-    options: SnapshotOptions,
+    options: Omit<SnapshotOptions, "dir" | "clients">,
   ): ConsoleSnapshot {
     const { now, alive, readJson, operation } = options;
     const value = policy.base("direct", project, now());

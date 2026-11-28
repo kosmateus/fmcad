@@ -10,6 +10,7 @@ import type {
 import { number, record, text } from "./contracts";
 import * as programs from "./programs";
 import * as saved from "./saved-programs";
+import { savedIdentityTransition } from "./saved-identity";
 
 export interface RequestEvidence {
   readonly requestId: string;
@@ -30,6 +31,7 @@ export interface CloudPolling {
   readonly intervalMs: number;
 }
 const defaultPolling: CloudPolling = { timeoutMs: 120_000, intervalMs: 50 };
+export { defaultPolling as defaultCloudPolling };
 
 export function resultValue(
   entry: RequestEvidence | undefined,
@@ -79,12 +81,29 @@ export function saveIntent(
     JSON.parse(fs.readFileSync(filename, "utf8")) as unknown,
   );
   if (
-    value["creationId"] !== document.creationId ||
-    value["name"] !== document.name ||
     value["clientId"] !== owner.clientId ||
     value["requestId"] !== entry.requestId
   )
     throw new Error("Save intent does not belong to this original request");
+  if (
+    value["creationId"] !== document.creationId ||
+    value["name"] !== document.name
+  ) {
+    const transition = savedIdentityTransition(
+      directory,
+      { creationId: text(value["creationId"]), name: text(value["name"]) },
+      owner,
+      requests,
+    );
+    if (
+      !transition ||
+      transition.creationId !== document.creationId ||
+      transition.name !== document.name
+    )
+      throw new SavedEvidenceError(
+        "Saved document lacks its original identity bridge",
+      );
+  }
   const folder = Object.freeze({
     projectId: text(value["projectId"]),
     folderId: text(value["folderId"]),
@@ -172,12 +191,13 @@ export async function observeSavedFile(
   dispatch: Dispatch,
   allowUnsaved: boolean,
   policy: CloudPolling = defaultPolling,
+  fileName = document.name,
 ): Promise<SavedFile | null> {
   let pinned: SavedFile | undefined = document.file;
   return poll(async () => {
     const value = await dispatch(
       "save-observe",
-      saved.observeSave(document, folder),
+      saved.observeSave(document, folder, fileName),
       document,
     );
     if (value["saved"] === false && allowUnsaved && !value["fileId"])
@@ -201,6 +221,7 @@ export async function cleanupSavedFile(
   requests: readonly RequestEvidence[],
   dispatch: Dispatch,
   policy: CloudPolling = defaultPolling,
+  fileName = document.name,
 ): Promise<void> {
   if (!document.file) throw new Error("Missing saved fixture ownership");
   const owned = document.file;
@@ -248,7 +269,7 @@ export async function cleanupSavedFile(
     // Establish current absence/identity before deciding whether a new delete is needed.
     const state = await dispatch(
       "cleanup-observe",
-      saved.fileOperation(document, false),
+      saved.fileOperation(document, false, fileName),
       document,
       false,
     );
@@ -256,7 +277,7 @@ export async function cleanupSavedFile(
     if (state["absent"] === true) return;
     const value = await dispatch(
       "cleanup-delete",
-      saved.fileOperation(document, true),
+      saved.fileOperation(document, true, fileName),
       document,
       false,
     );
@@ -271,7 +292,7 @@ export async function cleanupSavedFile(
   await poll(async () => {
     const state = await dispatch(
       "cleanup-observe",
-      saved.fileOperation(document, false),
+      saved.fileOperation(document, false, fileName),
       document,
       false,
     );

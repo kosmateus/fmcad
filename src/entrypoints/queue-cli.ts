@@ -3,6 +3,11 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { FmcadConfiguration } from "../api";
+import {
+  decodeDocumentUnlockPublicError,
+  decodeDocumentUnlockRequest,
+  documentUnlockIpcFailure,
+} from "@fmcad/core";
 
 const runtimeRequire = createRequire(__filename);
 
@@ -31,6 +36,7 @@ interface QueueClientPort {
   wait(jobId: string): Promise<QueueResult>;
   register(): Promise<void>;
   call(action: string, options?: Record<string, unknown>): Promise<unknown>;
+  documentUnlock(input: unknown): Promise<unknown>;
   dispose(): void;
 }
 
@@ -83,6 +89,7 @@ interface BrokerControl {
 }
 
 interface RuntimeModules {
+  normalColdAction?(client: QueueClientPort, action: string, requestId: string, authorizationFile?: string, options?: Record<string, string>): unknown;
   savedFixtureAction(
     client: QueueClientPort,
     action: string,
@@ -164,6 +171,32 @@ interface RuntimeModules {
 }
 
 const runtime = {
+  normalColdAction: async (client: QueueClientPort, action: string, requestId: string, authorizationFile?: string, options: Record<string, string> = {}) => {
+    const normal = runtimeRequire("../../dist/composition/queue-normal-cold-successor.js") as typeof import("../composition/queue-normal-cold-successor");
+    const sealed = client as unknown as import("../composition/queue-epoch-successor-types").Client;
+    if (!authorizationFile) throw new Error("Exact normal target, job-owner authorization or fresh read-attempt reference required");
+    const file = path.resolve(authorizationFile);
+    const { reference } = runtimeRequire("../../queue-epoch-lineage.js") as typeof import("../queue-epoch-lineage");
+    if (action === "authorize-normal-currentfacts-retry") {
+      const input = JSON.parse(fs.readFileSync(file, "utf8")) as {
+        evidence: Parameters<typeof normal.authorizeNormalCurrentFactsRetry>[1];
+        candidate: Parameters<typeof normal.authorizeNormalCurrentFactsRetry>[2];
+      };
+      if (Object.keys(input).sort().join() !== "candidate,evidence" || input.candidate.requestId !== requestId ||
+          Object.keys(input.evidence).sort().join() !== "physicalResult,previousAuthority,previousRequestId,validationFailure")
+        throw new Error("Exact fresh normal read request and immutable prior read references required; no caller-supplied queue summary");
+      const queueSummary = await client.call("queue-summary") as Parameters<typeof normal.authorizeNormalCurrentFactsRetry>[1]["queueSummary"];
+      return normal.authorizeNormalCurrentFactsRetry(sealed, { ...input.evidence, queueSummary }, input.candidate);
+    }
+    if (action === "retire-normal-currentfacts-producer") {
+      const grant = JSON.parse(fs.readFileSync(file, "utf8")) as { candidate: { requestId: string } };
+      if (grant.candidate.requestId !== requestId) throw new Error("Normal read producer retirement request differs from its immutable attempt");
+      return normal.retireNormalCurrentFactsRetryProducer(sealed, reference(file), options["apply"] === "true");
+    }
+    if (action === "authorize-normal-successor") return normal.authorizeNormalCurrentStore(sealed, requestId, reference(file));
+    if (action === "retire-normal-metadata-producer") return normal.retireNormalMetadataProducer(sealed, requestId, reference(file), reference(path.resolve(options["sdk-death-proof"]!)), path.resolve(options["producer-runtime"]!), options["apply"] === "true");
+    return normal.recordNormalProducerRetirement(sealed, requestId, reference(file));
+  },
   savedFixtureAction: (client: QueueClientPort, action: string, options: Record<string, string>, buildHash: string) =>
     (runtimeRequire("../../queue-saved-fixture-control.js") as Pick<RuntimeModules, "savedFixtureAction">)
       .savedFixtureAction(client, action, options, buildHash),
@@ -284,6 +317,8 @@ const runtime = {
 } satisfies RuntimeModules;
 
 const summaries = {
+  "transition-backend":
+    "Explicit owner-bound physical addin/MCP transition on the same idle live Fusion and shared SDK queue; never rewrites historical identities or receipts.",
   serve:
     "Run one local multi-agent Fusion broker. Requires explicit ownership handoff and an idle Fusion. Does not start/restart Fusion.",
   exec: "Autostart/connect to the shared broker, submit one whole fmcad command and wait. Startup/queue waiting do not consume execution timeout.",
@@ -321,6 +356,11 @@ const summaries = {
     "Owner-only grant to one registered authenticated client for this exact scratch/epoch; no broker administration or old-document access.",
   "successor-epoch":
     "Owner-authenticated metadata-only startup for an exactly pinned dead predecessor and qualified successor runtime; no SDK or grant copying. Requires --request-id and --succession-approval, plus --preflight true or --confirm-ownership true.",
+  "authorize-normal-successor": "SDK0 original-job-owner authorization for the qualified normal-currentstore ABI; requires a fresh --request-id, --normal-target and --confirm-ownership true. Never reads credential-bearing job requests or clears unknown work.",
+  "authorize-normal-currentfacts-retry": "SDK0 authorize a fresh normal read attempt only after exact terminal SDK-succeeded read-only evidence and validator failure; requires --normal-read-attempt-approval, a fresh --request-id and --confirm-ownership true. Preserves the failed attempt and never retries unknown or mutating work.",
+  "retire-normal-currentfacts-producer": "Preview, or with --apply true retire once, the exact metadata producer of a completed rejected normal read; requires --normal-read-attempt, matching --request-id and --confirm-ownership true. Never closes Fusion or replays a signal.",
+  "record-normal-producers-retired": "Record exact old-SDK and producer absence before a selected new SDK starts; requires epoch owner, --request-id, --job-authorization and --confirm-ownership true. Never signals processes.",
+  "retire-normal-metadata-producer": "Preview the exact normal metadata owner through the existing pidfd kernel after authentic SDK death; --apply true permits its single pinned retirement. Requires epoch owner, --request-id, --job-authorization, --sdk-death-proof, --producer-runtime and --confirm-ownership true. Never closes/restarts Fusion or clears unknown jobs.",
   "observe-successor":
     "One owner-bound read-only current-process observation for an existing dead-epoch successor authority; requires exact --job, --observation-job and --request-id. Never replays unknown work.",
   "authorize-closed-successor":
@@ -335,11 +375,15 @@ const summaries = {
     "Owner-only separate publication read for the original settled first-save job. Never submits another save; accepted/pending/complete facts do not grant modeling authority.",
   "retain-saved-fixture":
     "Owner-only one UI close of the exact separately published unmodified new file, retaining the DataFile and restoring the captured active document. No cloud deletion, implicit save or retry after uncertainty.",
+  "document-unlock":
+    "Read, inspect, or accept broker-verified state for one exact document. Does not execute a CAD operation.",
 } as const;
 
 const optionsHelp = `
 Options: --client LABEL, --request-id ID, --timeout MS (active command execution), --queue-timeout MS (waiting only), --sequence-action begin|continue|end, --sequence-id ID, --sequence-mode automatic|exclusive, --expected-revision N.
+document-unlock: --action status|inspect|accept --doc-id ID or --doc-file-id ID; inspect and accept require --request-id, accept also requires --observation-id.
 serve: --backend mcp|addin, --config PATH, --confirm-ownership true; optional --confirm-version-transition true, --idle-ms MS, --lease-ms MS, --max-queued N, --max-per-client N. Version transition additionally requires a dead prior Fusion process, an unpaused queue with no active, blocked, leased or nonterminal work, an idle UI and all current documents unmodified; it records the transition and does not restart Fusion.
+transition-backend: after an owner-authenticated idle stop, --backend mcp|addin --backend-approval PATH --confirm-ownership true. The private JSON approval pins requestId, existing epoch clientId/clientToken, previousConfig and nextConfig; a preserved stop pause additionally requires its exact completed stopRequestId. Only backend, URL, headers, tool and protocolVersion may change; all other settings remain exact. A live transition requires the same live Fusion. A dead-SDK transition additionally requires the exact completed owner-stop release, a source-bound dead-process proof, and settled normal-epoch work; its single target probe must observe an idle UI and clean documents. Immutable predecessor identities/receipts are retained. The stop pause remains closed until a separate explicit owner resume. This starts the sole shared broker, not a second SDK queue.
 status without --job returns bounded queue totals and broker control state; with --job it returns that job. result/cancel/reconcile require --job ID. Atomic owner acknowledgment: reconcile --job ID --accept-outcome committed|aborted, only after reviewing the exact scoped proof; this does not claim rollback or model validation. release: --sequence-id ID.
 Separate child fmcad argv with -- for exec/submit. CLI stdout remains child stdout; job/sequence receipts use FMCAD_QUEUE_RESULT on stderr.
 Default sequence mode is automatic: CLI preparation runs locally before SDK readiness, one SDK turn is exclusive, and the slot is yielded before local processing/publication. Further SDK turns of the same command rejoin the shared queue and compare the live pinned document/references with the previous turn. Local states are preparing/processing; neither occupies the Fusion slot. A continuation compares the live pinned document and its references, not the global queue counter. DOCUMENT_CHANGED returns refreshed state in the same turn without executing the stale operation. Existing --doc/--doc-id/--doc-file-id flags pin the target; unscoped/unreadable continuations fail closed. Explicit --expected-revision still requests a separate initial global revision fence. Queue waiting starts at SDK readiness; SDK and local processing have separate cumulative timeout budgets.
@@ -380,11 +424,18 @@ export const descriptors = Object.fromEntries(
   ]),
 ) as Record<QueueCommandName, QueueDescriptor>;
 
-function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
+function parse(
+  argv: string[],
+  documentUnlock = false,
+): { opts: QueueOptions; rest: string[] } {
   const delimiter = argv.indexOf("--");
   const own = delimiter < 0 ? argv : argv.slice(0, delimiter);
   const rest = delimiter < 0 ? [] : argv.slice(delimiter + 1);
   const allowed = new Set([
+    "action",
+    "doc-id",
+    "doc-file-id",
+    "observation-id",
     "observation-job",
     "client",
     "request-id",
@@ -417,22 +468,73 @@ function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
     "confirm-current-facts",
     "facts-approval",
     "succession-approval",
+    "normal-target",
+    "normal-read-attempt-approval",
+    "normal-read-attempt",
+    "job-authorization",
+    "sdk-death-proof",
+    "producer-runtime",
+    "apply",
+    "backend-approval",
   ]);
   const opts: QueueOptions = {};
   for (let index = 0; index < own.length; index++) {
-    const key = own[index]!.slice(2);
-    const value = own[++index];
+    const option = own[index]!;
+    const separator = documentUnlock ? option.indexOf("=") : -1;
+    const key = option.slice(2, separator < 0 ? undefined : separator);
+    const value =
+      separator < 0 ? own[++index] : option.slice(separator + 1);
     if (
-      !own[index - 1]!.startsWith("--") ||
+      !option.startsWith("--") ||
       !allowed.has(key) ||
       Object.hasOwn(opts, key) ||
       value === undefined ||
-      value.startsWith("--")
+      (separator < 0 && value.startsWith("--"))
     )
-      throw new Error("Invalid or duplicate queue option: " + own[index - 1]);
+      throw new Error(
+        documentUnlock
+          ? "Unsupported document-unlock option; see help"
+          : "Invalid or duplicate queue option: " + option,
+      );
     opts[key] = value;
   }
   return { opts, rest };
+}
+
+interface DebugTraceReader {
+  flushDebugTrace(): Promise<void>;
+  readDebugTrace(traceId: string): Array<Record<string, unknown>>;
+}
+
+export async function debugTraceCommand(
+  argv: string[],
+  deps: {
+    stdout?: { write(text: string): unknown };
+    stderr?: { write(text: string): unknown };
+  },
+): Promise<number> {
+  const stdout = deps.stdout ?? process.stdout;
+  const stderr = deps.stderr ?? process.stderr;
+  if (argv.length !== 1 || !/^[a-f0-9]{32}$/.test(argv[0] ?? "")) {
+    stderr.write("Usage: fmcad debug trace <trace-id>\n");
+    return 2;
+  }
+  try {
+    const reader = runtimeRequire(
+      "../node-adapters/telemetry/diagnostic-log.js",
+    ) as DebugTraceReader;
+    await reader.flushDebugTrace();
+    const events = reader.readDebugTrace(argv[0]!);
+    if (events.length === 0) {
+      stderr.write("No retained events found for that trace ID.\n");
+      return 1;
+    }
+    for (const event of events) stdout.write(JSON.stringify(event) + "\n");
+    return 0;
+  } catch {
+    stderr.write("Could not safely read retained debug trace events.\n");
+    return 1;
+  }
 }
 
 export async function queueCommand(
@@ -442,7 +544,55 @@ export async function queueCommand(
   const name = argv[0] ?? "";
   if (!Object.hasOwn(descriptors, name))
     throw new Error("Unknown queue command");
-  const { opts, rest } = parse(argv.slice(1));
+  const { opts, rest } = parse(argv.slice(1), name === "document-unlock");
+  let documentUnlockInput:
+    | ReturnType<typeof decodeDocumentUnlockRequest>
+    | undefined;
+  if (name === "document-unlock") {
+    const allowed = new Set([
+      "action",
+      "doc-id",
+      "doc-file-id",
+      "request-id",
+      "observation-id",
+      "client",
+      "config",
+    ]);
+    if (
+      rest.length ||
+      Object.keys(opts).some((key) => !allowed.has(key))
+    )
+      throw new Error(
+        "document-unlock accepts only action, target IDs, requestId, observationId and normal client/config options",
+      );
+    documentUnlockInput = decodeDocumentUnlockRequest({
+      action: opts["action"],
+      target: {
+        ...(opts["doc-id"] === undefined ? {} : { docId: opts["doc-id"] }),
+        ...(opts["doc-file-id"] === undefined
+          ? {}
+          : { docFileId: opts["doc-file-id"] }),
+      },
+      ...(opts["request-id"] === undefined
+        ? {}
+        : { requestId: opts["request-id"] }),
+      ...(opts["observation-id"] === undefined
+        ? {}
+        : { observationId: opts["observation-id"] }),
+    });
+  } else if (
+    ["action", "doc-id", "doc-file-id", "observation-id"].some(
+      (key) => opts[key] !== undefined,
+    )
+  ) {
+    throw new Error(
+      "--action, --doc-id, --doc-file-id and --observation-id are restricted to document-unlock",
+    );
+  }
+  if (opts["backend-approval"] !== undefined && name !== "transition-backend")
+    throw new Error(
+      "--backend-approval requires transition-backend; ordinary serve never reconfigures",
+    );
   if (opts["admission-mode"] !== undefined && (name !== "close-isolated-scratch" ||
       opts["admission-mode"] !== "normal-multidocument" || opts["confirm-ownership"] !== "true"))
     throw new Error("--admission-mode normal-multidocument requires close-isolated-scratch and --confirm-ownership true");
@@ -453,6 +603,20 @@ export async function queueCommand(
   const captureAction = name === "capture-audit-facts";
   const factsApprovalAction = name === "authorize-isolated-scratch";
   const successorAction = name === "successor-epoch";
+  const normalColdAction = ["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer", "authorize-normal-currentfacts-retry", "retire-normal-currentfacts-producer"].includes(name);
+  const normalRetirement = ["retire-normal-metadata-producer", "retire-normal-currentfacts-producer"].includes(name);
+  const normalRequired = name === "authorize-normal-currentfacts-retry" ? ["normal-read-attempt-approval"]
+    : name === "retire-normal-currentfacts-producer" ? ["normal-read-attempt"]
+    : name === "retire-normal-metadata-producer" ? ["job-authorization", "sdk-death-proof", "producer-runtime"] : [name === "record-normal-producers-retired" ? "job-authorization" : "normal-target"];
+  if (normalColdAction && (!opts["request-id"] || opts["confirm-ownership"] !== "true" || rest.length ||
+      normalRequired.some(key => !opts[key]) ||
+      Object.keys(opts).some(key => !["request-id", "confirm-ownership", "config", ...normalRequired, ...(normalRetirement ? ["apply"] : [])].includes(key))))
+    throw new Error("Normal cold successor metadata actions require exact fresh request, sealed owner and explicit confirmation; no overrides");
+  if (opts["apply"] !== undefined && (!normalRetirement || opts["apply"] !== "true")) throw new Error("Pinned normal metadata retirement requires explicit --apply true for an effect");
+  if (["sdk-death-proof", "producer-runtime"].some(key => opts[key] !== undefined) && name !== "retire-normal-metadata-producer") throw new Error("Original SDK death/runtime flags require retire-normal-metadata-producer");
+  if (["normal-read-attempt-approval", "normal-read-attempt"].some(key => opts[key] !== undefined) && !normalColdAction) throw new Error("Fresh normal read flags are restricted to normal read attempt actions");
+  if (!normalColdAction && opts["job-authorization"] !== undefined) throw new Error("--job-authorization is restricted to normal producer retirement");
+  if (!normalColdAction && opts["normal-target"] !== undefined) throw new Error("--normal-target is restricted to normal cold authorization");
   const closedSuccessorAction = name === "authorize-closed-successor";
   const nativeGrantAction = name === "grant-native-fixture";
   const savedFixtureAction = ["probe-saved-destination", "grant-saved-first-save", "observe-saved-first-save", "retain-saved-fixture"].includes(name);
@@ -712,12 +876,42 @@ export async function queueCommand(
   if (name === "reclaim") {
     const directory = runtime.queueDirectory();
     if (fs.existsSync(path.join(directory, "broker.lock")))
-      write(runtime.brokerComposition().reclaimBroker(directory));
+      write(await runtime.brokerComposition().reclaimBroker(directory, () => deps.loadConfig(opts).cfg));
     else write(runtime.queueAutostart().reclaimStart(directory));
     return 0;
   }
-  if (name === "serve") {
+  if (name === "serve" || name === "transition-backend") {
     const { cfg } = deps.loadConfig(opts);
+    let backendTransition:
+      | import("../queue-backend-transition").BackendTransitionApproval
+      | undefined;
+    if (name === "transition-backend") {
+      if (
+        !opts["backend-approval"] ||
+        opts["confirm-ownership"] !== "true" ||
+        rest.length ||
+        Object.keys(opts).some(
+          (key) =>
+            ![
+              "backend",
+              "config",
+              "backend-approval",
+              "confirm-ownership",
+            ].includes(key),
+        )
+      )
+        throw new Error(
+          "transition-backend requires an exact private --backend-approval and explicit ownership; no tuning overrides",
+        );
+      const fd = fs.openSync(opts["backend-approval"], fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const stat = fs.fstatSync(fd);
+        if (!stat.isFile() || stat.size > 1024 * 1024 || (stat.mode & 0o077) !== 0)
+          throw new Error("Backend approval must be a bounded private regular file (mode 0600)");
+        backendTransition = JSON.parse(fs.readFileSync(fd, "utf8")) as typeof backendTransition;
+      } finally { fs.closeSync(fd); }
+      if (!backendTransition) throw new Error("Invalid backend approval");
+    }
     const stateOptions: Record<string, number> = {};
     for (const [flag, field] of [
       ["idle-ms", "idleMs"],
@@ -737,6 +931,7 @@ export async function queueCommand(
       confirmVersionTransition: opts["confirm-version-transition"] === "true",
       stateOptions,
       autoReconcile: cfg.queue?.autoRecover !== false,
+      ...(backendTransition ? { backendTransition } : {}),
     });
     write({
       state: "listening",
@@ -775,6 +970,11 @@ export async function queueCommand(
         "capture-audit-facts",
         "authorize-isolated-scratch",
         "successor-epoch",
+        "authorize-normal-successor",
+        "authorize-normal-currentfacts-retry",
+        "retire-normal-currentfacts-producer",
+        "record-normal-producers-retired",
+        "retire-normal-metadata-producer",
         "observe-successor",
         "authorize-closed-successor",
         "grant-native-fixture",
@@ -785,6 +985,13 @@ export async function queueCommand(
       ].includes(name),
     },
   );
+  if (normalColdAction) {
+    try {
+      if (!runtime.normalColdAction) throw new Error("Normal currentstore successor is unsupported by this runtime");
+      write(await runtime.normalColdAction(client, name, opts["request-id"]!, opts["job-authorization"] ?? opts["normal-target"] ?? opts["normal-read-attempt-approval"] ?? opts["normal-read-attempt"], opts));
+      return 0;
+    } finally { client.dispose(); }
+  }
   if (savedFixtureAction) {
     try {
       const options: Record<string, string> = { epochId: opts["epoch-id"]!, requestId: opts["request-id"]! };
@@ -980,6 +1187,15 @@ export async function queueCommand(
         deps.invocationContext?.purpose ??
         runtime.invocationPurpose();
       if (purpose) input["description"] = purpose;
+      const { prepareRequest } = runtimeRequire(
+        "../../dist/composition/execution-request",
+      ) as typeof import("../composition/execution-request");
+      Object.assign(
+        input,
+        prepareRequest({
+          request: { ...input, argv: pinned, cwd: process.cwd() },
+        }),
+      );
       const revision =
         opts["expected-revision"] ??
         (typeof commandGlobals["expected-revision"] === "string"
@@ -1022,6 +1238,30 @@ export async function queueCommand(
     }
   }
   if (rest.length) throw new Error("Unexpected child argv");
+  if (name === "document-unlock") {
+    let result: unknown;
+    try {
+      await client.register(); // Metadata/control commands do not start Fusion access.
+      result = await client.documentUnlock(documentUnlockInput);
+    } catch {
+      write(documentUnlockIpcFailure());
+      return 1;
+    } finally {
+      client.dispose();
+    }
+    try {
+      if (result instanceof Error) {
+        write(documentUnlockIpcFailure());
+        return 1;
+      }
+      const publicError = decodeDocumentUnlockPublicError(result);
+      write(publicError ?? result);
+      return publicError ? 1 : 0;
+    } catch {
+      write(documentUnlockIpcFailure());
+      return 1;
+    }
+  }
   await client.register(); // Metadata/control commands must not start Fusion access.
   if (name === "audit-atomic") {
     try {

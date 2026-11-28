@@ -5,10 +5,29 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+} from "../packages/node-adapters/src/telemetry/diagnostic-log";
 const runtimeRequire = createRequire(__filename);
+const {
+  decodeDocumentUnlockRequest,
+  DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE,
+} = runtimeRequire("./dist/core") as typeof import("@fmcad/core");
 const { queueDirectory, request } = runtimeRequire("./queue-connection") as {
   queueDirectory(): string;
-  request(dir: string, message: Record<string, unknown>): Promise<unknown>;
+  request(
+    dir: string,
+    message: Record<string, unknown>,
+    options?: {
+      ipcTrace?: {
+        context: DebugTraceContext;
+        action: NonNullable<DebugTraceEvent["action"]>;
+        messageId: string;
+        jobId?: string;
+      };
+    },
+  ): Promise<unknown>;
 };
 interface Config {
   routing?: string;
@@ -41,6 +60,10 @@ interface Input extends Record<string, unknown> {
   argv?: string[];
   requestId?: string;
   cwd?: string;
+}
+interface DebugTraceRuntime {
+  createDebugTraceContext: typeof import("../packages/node-adapters/src/telemetry/diagnostic-log").createDebugTraceContext;
+  writeDebugTrace: typeof import("../packages/node-adapters/src/telemetry/diagnostic-log").writeDebugTrace;
 }
 interface Command {
   key: string;
@@ -336,6 +359,7 @@ class QueueClient {
   readonly instanceId: string;
   readonly exitHandler: () => void;
   private registered = false;
+  private readonly observedRequests = new Map<string, string>();
   constructor(clientId?: string, options: Options = {}) {
     this.dir = queueDirectory();
     this.auth = credentials(clientId, options.existingCredentialsOnly === true);
@@ -345,9 +369,16 @@ class QueueClient {
     this.exitHandler = () => this.dispose();
     process.once("exit", this.exitHandler);
   }
-  async register({ autoStart = false } = {}) {
+  async register({
+    autoStart = false,
+    requestId,
+  }: { autoStart?: boolean; requestId?: string } = {}) {
     try {
-      await request(this.dir, { action: "register", ...this.auth });
+      await request(
+        this.dir,
+        { action: "register", ...this.auth },
+        this.ipcTrace("register", requestId),
+      );
     } catch (error) {
       const { ensureBroker, missing } = runtimeRequire("./queue-autostart") as {
         ensureBroker(
@@ -413,7 +444,103 @@ class QueueClient {
         /* Passive telemetry cannot change admission/execution outcomes. */
       }
     }
-    return request(this.dir, { ...values, action, auth: this.auth });
+    const inputRequestId =
+        input && typeof input === "object" && "requestId" in input
+          ? input.requestId
+          : values["requestId"],
+      jobId = values["jobId"],
+      requestId =
+        typeof inputRequestId === "string"
+          ? inputRequestId
+          : typeof jobId === "string"
+            ? this.observedRequests.get(jobId)
+            : undefined,
+      trace = this.ipcTrace(
+        action,
+        requestId,
+        typeof jobId === "string" ? jobId : undefined,
+      );
+    return request(
+      this.dir,
+      { ...values, action, auth: this.auth },
+      {
+        ...trace,
+        // Raw RPC admission prepares and checks Python before publishing the
+        // job. That work is not a metadata lookup and can exceed its deadline.
+        // Observe this one submission until reply or connection loss; never
+        // resend it merely because preparation outlives the IPC lookup budget.
+        // Document inspection/acceptance also await real queued SDK readback.
+        // Keep observing that original request, not a thirty-second lookup.
+        ...((action === "document-unlock" &&
+          input &&
+          typeof input === "object" &&
+          "action" in input &&
+          ["inspect", "accept"].includes(String(input.action))) ||
+        (action === "submit" &&
+          input &&
+          typeof input === "object" &&
+          "kind" in input &&
+          input.kind === "rpc")
+          ? { timeoutMs: 0 }
+          : {}),
+      },
+    ).then((value) => {
+      if (trace && requestId && value && typeof value === "object") {
+        const job = "job" in value ? value.job : value;
+        if (
+          job &&
+          typeof job === "object" &&
+          "id" in job &&
+          typeof job.id === "string" &&
+          "clientId" in job &&
+          job.clientId === this.auth.clientId &&
+          "requestId" in job &&
+          job.requestId === requestId
+        )
+          this.observedRequests.set(job.id, requestId);
+      }
+      return value;
+    });
+  }
+  async documentUnlock(value: unknown): Promise<unknown> {
+    const input = decodeDocumentUnlockRequest(value);
+    try {
+      return await this.call("document-unlock", { request: { ...input } });
+    } catch {
+      throw Object.assign(new Error(DOCUMENT_UNLOCK_IPC_FAILURE_MESSAGE), {
+        code: "DOCUMENT_UNLOCK_ERROR",
+      });
+    }
+  }
+  private ipcTrace(action: string, requestId?: string, jobId?: string) {
+    if (
+      !requestId ||
+      !["register", "submit", "find-request", "result"].includes(action) ||
+      process.env["FMCAD_DEBUG_TRACE"] !== "1"
+    )
+      return undefined;
+    try {
+      const traceRuntime = runtimeRequire(
+          "./dist/node-adapters/telemetry/diagnostic-log",
+        ) as DebugTraceRuntime,
+        context = traceRuntime.createDebugTraceContext(
+          requestId,
+          this.auth.clientId,
+          "cli",
+        );
+      if (context)
+        return {
+          ipcTrace: {
+            context,
+            action: action as NonNullable<DebugTraceEvent["action"]>,
+            messageId: randomUUID(),
+            ...(jobId ? { jobId } : {}),
+          },
+        };
+    } catch {
+      // Optional metadata cannot change admission, recovery, or execution.
+    }
+    return undefined;
   }
   async findRequest(requestId: string) {
     if (
@@ -531,6 +658,7 @@ class QueueClient {
     return readRequestContextFile(file, this.auth.clientId, requestId);
   }
   dispose() {
+    this.observedRequests.clear();
     process.removeListener("exit", this.exitHandler);
     try {
       this.clientPresence?.dispose();
@@ -555,8 +683,8 @@ class QueueClient {
         );
       }
     }
-    await this.register({ autoStart: true });
     const value = { ...input, requestId: input.requestId || randomUUID() };
+    await this.register({ autoStart: true, requestId: value.requestId });
     const recovery = runtimeRequire(
       "./dist/node-adapters/broker-ipc/response-recovery",
     ) as {
@@ -792,11 +920,32 @@ async function runQueued(
       kind: "command",
       argv: pinned,
       cwd: process.cwd(),
-      timeoutMs: cfg.timeoutMs,
+      timeoutMs: Number(opts["timeoutMs"] ?? cfg.timeoutMs),
       backend: cfg.backend,
       inputFiles: inputFiles(pinned, process.cwd(), { config: opts["config"] }),
       buildHash: instance().buildHash(),
     };
+    let debugTraceRuntime: DebugTraceRuntime | undefined;
+    let debugTrace: ReturnType<DebugTraceRuntime["createDebugTraceContext"]> =
+      undefined;
+    if (process.env["FMCAD_DEBUG_TRACE"] === "1") {
+      try {
+        debugTraceRuntime = runtimeRequire(
+          "./dist/node-adapters/telemetry/diagnostic-log",
+        ) as DebugTraceRuntime;
+        debugTrace = debugTraceRuntime.createDebugTraceContext(
+          requestId,
+          client.auth.clientId,
+          "cli",
+        );
+      } catch {
+        // Opt-in tracing is diagnostic-only if its runtime is unavailable.
+      }
+    }
+    if (debugTrace) {
+      input["debugTrace"] = debugTrace;
+      streams.stderr.write(`FMCAD_DEBUG_TRACE_ID ${debugTrace.traceId}\n`);
+    }
     const invocation = runtimeRequire("./invocation") as {
       context: { getStore(): { description?: string } | undefined };
     };
@@ -805,6 +954,15 @@ async function runQueued(
       streams.invocationContext?.purpose ||
       invocation.context.getStore()?.description;
     if (purpose) input["description"] = purpose;
+    const { prepareRequest } = runtimeRequire(
+      "./dist/composition/execution-request",
+    ) as typeof import("./composition/execution-request");
+    Object.assign(
+      input,
+      prepareRequest({
+        request: { ...input, argv: pinned, cwd: process.cwd() },
+      }),
+    );
     const sequence = sequenceOptions(opts);
     if (sequence) input["sequence"] = sequence;
     if (
@@ -843,11 +1001,81 @@ async function runQueued(
     streams.stderr.write(
       "FMCAD_QUEUE_JOB " + JSON.stringify({ jobId: job.id, requestId }) + "\n",
     );
-    const result = await client.wait(job.id, {
-      progress: (value) =>
-        streams.stderr.write(`QUEUE ${value.id} ${value.state}\n`),
+    let result: Result;
+    try {
+      result = await client.wait(job.id, {
+        progress: (value) =>
+          streams.stderr.write(`QUEUE ${value.id} ${value.state}\n`),
+      });
+    } catch (error) {
+      debugTraceRuntime?.writeDebugTrace(debugTrace, {
+        stage: "caller-received",
+        status: "failed",
+        jobId: job.id,
+        buildHash: String(input["buildHash"]),
+        code: (error as NodeJS.ErrnoException).code,
+        stdoutObservation: "not_observed",
+      });
+      throw error;
+    }
+    const stdoutObservation =
+      typeof result.stdout !== "string"
+        ? "not_observed"
+        : result.stdout.length === 0
+          ? "observed_empty"
+          : "observed_nonempty";
+    debugTraceRuntime?.writeDebugTrace(debugTrace, {
+      stage: "caller-received",
+      status:
+        result.job.state === "succeeded"
+          ? "passed"
+          : result.job.state === "needs_reconciliation"
+            ? "unknown"
+            : "failed",
+      jobId: job.id,
+      buildHash: String(input["buildHash"]),
+      stdoutBytes:
+        typeof result.stdout === "string"
+          ? Buffer.byteLength(result.stdout, "utf8")
+          : undefined,
+      stdoutObservation,
     });
-    if (result.stdout) streams.stdout.write(result.stdout);
+    try {
+      if (result.stdout) streams.stdout.write(result.stdout);
+    } catch (error) {
+      debugTraceRuntime?.writeDebugTrace(debugTrace, {
+        stage: "stdout-written",
+        status: "failed",
+        jobId: job.id,
+        buildHash: String(input["buildHash"]),
+        code:
+          error && typeof error === "object" && "code" in error
+            ? String(error.code)
+            : "STDOUT_WRITE_FAILED",
+        stdoutBytes:
+          typeof result.stdout === "string"
+            ? Buffer.byteLength(result.stdout, "utf8")
+            : undefined,
+        stdoutObservation,
+      });
+      throw error;
+    }
+    debugTraceRuntime?.writeDebugTrace(debugTrace, {
+      stage: "stdout-written",
+      status:
+        typeof result.stdout !== "string"
+          ? "not_observed"
+          : result.stdout.length === 0
+            ? "passed"
+            : "written",
+      jobId: job.id,
+      buildHash: String(input["buildHash"]),
+      stdoutBytes:
+        typeof result.stdout === "string"
+          ? Buffer.byteLength(result.stdout, "utf8")
+          : undefined,
+      stdoutObservation,
+    });
     if (result.stderr) streams.stderr.write(result.stderr);
     for (const report of result.pythonChecks ||
       (result.execution?.pythonCheck ? [result.execution.pythonCheck] : []))

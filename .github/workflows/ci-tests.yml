@@ -6,45 +6,57 @@ on:
 permissions:
   contents: read
 
+env:
+  FMCAD_CI_PACKAGE_TARBALL: .test-artifacts/ci-build/fmcad-package.tgz
+
 jobs:
   prepare:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["22.13.0", "24.x"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: "24.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-domain-import-requirements.txt
+            tests/python-constraints.txt
+      - run: python -m pip install -r tests/python-domain-import-requirements.txt
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: npm run typecheck:tests
       - run: npm run test:prepare-offline
-      # The lockfile-keyed cache includes metadata needed by offline installs.
-      # Each consumer still installs its own locked dependencies with npm ci.
+      - run: npm run report:python-domain-imports -- --output python-domain-imports.dot
+      - run: node .github/scripts/ci-build-artifact.cjs build-output.tar.gz
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
       - uses: actions/cache/save@v4
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
-      - run: node .github/scripts/ci-build-artifact.cjs build-output.tar.gz
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.node }}
+          name: build-${{ github.sha }}
           path: build-output.tar.gz
           retention-days: 90
           overwrite: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-domain-import-graph-${{ github.sha }}
+          path: python-domain-imports.dot
+          retention-days: 90
 
   broker-regressions:
     needs: prepare
@@ -62,17 +74,18 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:
-          name: build-${{ matrix.node }}
+          name: build-${{ github.sha }}
       - run: tar -xzf build-output.tar.gz
-      - if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm run test:prepare-offline
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: mkdir -p /tmp/opencode
       - run: npm run test:broker-regressions
 
   contracts:
@@ -90,29 +103,212 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-domain-import-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: python -m pip install -r tests/python-domain-import-requirements.txt
       - uses: actions/download-artifact@v4
         with:
-          name: build-${{ matrix.node }}
+          name: build-${{ github.sha }}
       - run: tar -xzf build-output.tar.gz
-      - if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm run test:prepare-offline
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: npm run test:python-family-dependencies
       - run: npx prettier --check --end-of-line auto .github/workflows/*.yml .github/scripts/*.cjs tests/ci-gate.test.cjs
       - run: npm run lint
       - run: npm run format:check
       # build already compiles tsconfig.runtime-tests.json; typecheck runs in prepare.
-      - run: node --test dist/tests/scenarios/*.test.js
       - run: npm run typecheck:simulator
       - run: node dist/tests/scenarios/verify-api.js
       - run: npm run test:scenarios:component -- --protocol mcp --owners 2 --suite foundation
       - run: npm run test:scenarios:component -- --protocol addin --owners 2 --suite foundation
       - run: mkdir -p /tmp/opencode
       - run: npm run test:contracts
+      - run: npm run test:fresh-host-proof
+      - run: node --test dist/tests/fusion-bootstrap-autoload.test.js
+      - run: node --test dist/tests/bootstrap-entry-evidence.test.js
+      - run: node --test dist/tests/controlled-fusion-bootstrap.test.js dist/tests/owned-fusion-bootstrap.test.js dist/tests/controlled-fusion-launch.windows.test.js
+      - run: node --test dist/tests/normal-observer-launch.test.js dist/tests/normal-observer-launch.windows.test.js
+      - run: node --test dist/tests/controlled-host-ui.test.js dist/tests/controlled-host-ui.windows.test.js
+      - run: node --test dist/tests/controlled-legacy-ui.test.js dist/tests/controlled-legacy-ui.windows.test.js
+      - run: node --test dist/tests/controlled-lifecycle-lease.test.js
+      - run: node --test dist/tests/controlled-ingress-window.test.js
+      - run: node --test dist/tests/controlled-startup-policy.test.js
+      - run: node --test dist/tests/fixed-startup-observation.test.js
+        env:
+          FMCAD_STARTUP_TEST_TYPING_ROOT: dist/runtime/python/typing
+      - run: node --test --test-concurrency=1 dist/tests/fixed-startup-observation-broker.test.js
+      - run: node --test dist/tests/paused-instance-observation.test.js
+      - run: node --test dist/tests/controlled-native-handoff.test.js dist/tests/controlled-native-handoff.windows.test.js
+      - run: node --test dist/tests/controlled-host-compiler-integration.test.js
+      - run: node --test dist/tests/autodesk-fusion-only.test.js
+      - run: node --test dist/tests/successor-private-provisioning.test.js
+      - run: node --test dist/tests/retained-python-result.test.js
+      - run: node --test dist/tests/frozen-metadata-profile.test.js
+      - run: node --test dist/tests/physical-generation-grant.test.js dist/tests/physical-generation-transport.test.js
+      - run: node --test dist/tests/physical-generation-provision.test.js
+      - run: node --test dist/tests/physical-generation-profile.test.js dist/tests/runtime-root-physical-wiring.test.js
+      - run: node --test dist/tests/document-unlock-domain.test.js
+      - run: node --test dist/tests/document-observation-store.test.js
+      - run: node --test dist/tests/document-unlock-diagnostics.test.js
+      - run: node --test dist/tests/document-unlock-controller.test.js
+      - run: node --test dist/tests/document-checkpoint-broker.test.js
+      - run: node --test dist/tests/document-continuation-broker.test.js
+      - run: node --test dist/tests/protocol-metadata-broker.test.js
+      - run: node --test dist/tests/python-source-effects.test.js
+      - run: node --test dist/tests/isolated-stdout.test.js
+      - run: node --test dist/tests/trusted-metadata-snapshot.test.js
+      - run: node --test dist/tests/readonly-metadata-context.test.js
+      - run: node --test tests/document-creation-broker.test.js tests/document-creation-authority.test.js
+      - run: node --test dist/tests/document-checkpoint-producer.test.js
+      - run: node --test tests/runtime-retirement.test.cjs tests/document-unlock-ipc-deadline.test.mjs tests/checkpoint-receipt-privacy.test.mjs dist/tests/library-native-root.test.js
+      - run: node --test tests/runtime-retirement-bootstrap.test.cjs
+      - run: node --test tests/document-continuation.test.cjs
+      - run: node --test dist/tests/runtime-rebaseline-native.test.js
+      - run: node --test dist/tests/runtime-rebaseline-writer.test.js
+      - run: node --test dist/tests/runtime-rebaseline-reader.test.js
+      - run: node --test dist/tests/document-unlock-public.test.js
+      - run: node --test tests/runtime-root-successor.test.mjs
+      - run: node --test tests/runtime-root-successor-query.test.js
+      - run: node --test dist/tests/runtime-verification-realm.test.js
+      - run: node --test dist/tests/param-checkpoint-guard.test.js dist/tests/param-checkpoint-readback.test.js
+      - run: node --test dist/tests/runtime-upgrade-lineage.test.js
+      - run: node --test dist/tests/frozen-qualification-corpus.test.js
+      - run: node --test dist/tests/frozen-inline-observer.test.js
+      - run: npm run test:python-domain-imports
+
+  scenario-model:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+      - run: tar -xzf build-output.tar.gz
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: mkdir -p /tmp/opencode
+      - run: node --test --test-concurrency=1 dist/tests/scenarios/*.test.js
+
+  modeling-admission:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+      - run: tar -xzf build-output.tar.gz
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - name: Run modeling admission shard
+        run: |
+          set -o pipefail
+          mkdir -p .test-artifacts/modeling
+          npm run test:modeling:admission | tee .test-artifacts/modeling/admission.log
+        env:
+          FMCAD_MODELING_ADMISSION_SHARD: ${{ matrix.shard }}/8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: modeling-admission-${{ matrix.node }}-${{ matrix.shard }}
+          path: .test-artifacts/modeling/
+          include-hidden-files: true
+
+  public-consumers:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+      - run: tar -xzf build-output.tar.gz
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: mkdir -p /tmp/opencode
+      - run: npm run test:public-consumers
+        env:
+          FMCAD_REFERENCE_PYTHON: python3
+          TERM: xterm
 
   python:
     needs: prepare
@@ -126,26 +322,27 @@ jobs:
         with:
           node-version: "24.x"
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-24.x-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
+            tests/python-domain-import-requirements.txt
             tests/python-requirements.txt
             tests/python-constraints.txt
             assets/*requirements.txt
-      - run: python -m pip install -r tests/python-requirements.txt
+      - run: python -m pip install -r tests/python-requirements.txt -r tests/python-domain-import-requirements.txt
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:
-          name: build-24.x
+          name: build-${{ github.sha }}
       - run: tar -xzf build-output.tar.gz
-      - if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm run test:prepare-offline
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
       - run: npm run test:python
 
   control-center-browser:
@@ -160,17 +357,17 @@ jobs:
         with:
           node-version: "24.x"
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-24.x-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:
-          name: build-24.x
+          name: build-${{ github.sha }}
       - run: tar -xzf build-output.tar.gz
-      - if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm run test:prepare-offline
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
       - run: npx playwright install --with-deps chromium
       # Equivalent e2e invocation; build:code and typecheck already ran in prepare.
       - run: node --experimental-strip-types --test tests/browser-network-evidence.test.ts tests/control-center-browser-e2e.test.mts tests/control-center-production-browser.test.mts
@@ -188,47 +385,69 @@ jobs:
   scenario-broker:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ matrix.suite == 'sketches' && 22 || 16 }}
+    timeout-minutes: ${{ matrix.suite.jobMinutes }}
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
     strategy:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
+        concurrency: [1, 2, 10]
         suite:
-          [
-            foundation,
-            saved,
-            parameters,
-            documents,
-            cloud,
-            boxes,
-            attributes,
-            sketches,
-          ]
+          - { id: foundation, owners: 10, jobMinutes: 18 }
+          - { id: saved, owners: 10, jobMinutes: 31 }
+          - { id: parameters, owners: 3, jobMinutes: 36 }
+          - { id: documents, owners: 4, jobMinutes: 41 }
+          - { id: cloud, owners: 10, jobMinutes: 24 }
+          - { id: boxes, owners: 5, jobMinutes: 24 }
+          - { id: attributes, owners: 10, jobMinutes: 71 }
+          - { id: sketches, owners: 10, jobMinutes: 66 }
+          - { id: reopen, owners: 10, jobMinutes: 40 }
+          - { id: revisions, owners: 10, jobMinutes: 46 }
+          - { id: rectangles, owners: 10, jobMinutes: 64 }
+          - { id: transactions, owners: 10, jobMinutes: 46 }
+          - { id: camera, owners: 10, jobMinutes: 31 }
+          - { id: poses, owners: 10, jobMinutes: 36 }
+          - { id: animation, owners: 10, jobMinutes: 41 }
+          - { id: materials, owners: 10, jobMinutes: 31 }
+          - { id: appearances, owners: 10, jobMinutes: 31 }
+          - { id: style-assignments, owners: 10, jobMinutes: 51 }
+          - { id: thread-recipes, owners: 10, jobMinutes: 71 }
+          - { id: gear-pair, owners: 10, jobMinutes: 51 }
+          - { id: engineering-declarations, owners: 10, jobMinutes: 36 }
+          - { id: mechanical-declarations, owners: 10, jobMinutes: 41 }
+          - { id: retained-thread, owners: 2, jobMinutes: 51 }
+          - { id: retained-seal, owners: 2, jobMinutes: 51 }
+          - { id: retained-fasteners, owners: 1, jobMinutes: 51 }
+          - { id: retained-mechanism, owners: 2, jobMinutes: 51 }
+          - { id: retained-pose, owners: 2, jobMinutes: 51 }
+          - { id: retained-interference, owners: 2, jobMinutes: 51 }
+          - { id: retained-containment, owners: 2, jobMinutes: 51 }
+          - { id: retained-gm-contracts, owners: 1, jobMinutes: 186 }
+          - { id: retained-engineering, owners: 1, jobMinutes: 51 }
+          - { id: child-cli, owners: 10, jobMinutes: 31 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24.x"
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-24.x-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:
-          name: build-24.x
+          name: build-${{ github.sha }}
       - run: tar -xzf build-output.tar.gz
-      - if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm run test:prepare-offline
-      # Sketches check four full helper programs per owner; keep time for the final file audit.
-      - run: npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite.id }} --concurrency ${{ matrix.concurrency }} --owners ${{ matrix.suite.owners }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}
+          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite.id }}-c${{ matrix.concurrency }}
           path: .test-artifacts/scenarios/
           include-hidden-files: true
           overwrite: true
@@ -236,7 +455,9 @@ jobs:
   refactor-regressions:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The serial 96-file suite reached only file 40/96 in 13m39s on Node 22.
+    # Allow the measured full-run cost while keeping a finite job-level bound.
+    timeout-minutes: 45
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
     strategy:
@@ -249,15 +470,19 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: actions/cache/restore@v4
-        id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
-          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:
-          name: build-${{ matrix.node }}
+          name: build-${{ github.sha }}
       - run: tar -xzf build-output.tar.gz
-      - if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm run test:prepare-offline
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
       - run: npm run test:regressions
+
+  offline-regressions:
+    needs: prepare
+    uses: ./.github/workflows/offline-regressions.yml

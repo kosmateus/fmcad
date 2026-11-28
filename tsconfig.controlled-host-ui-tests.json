@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.runtime-tests.json",
+  "include": [
+    "tests/controlled-host-ui.test.ts",
+    "tests/controlled-host-ui.windows.test.ts"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

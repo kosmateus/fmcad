@@ -27,7 +27,7 @@ module.exports = function fixture(f, repo, authorityFile, folderProofFile) {
   fs.mkdirSync(jobDir, { recursive: true, mode: 0o700 });
   api.durable(path.join(jobDir, 'request.json'), job.request, true);
   api.durable(path.join(jobDir, 'outcome.json'), { state: job.state, ...job.details }, true);
-  api.durable(path.join(jobDir, 'worker-identity.json'), { pid: 2147483644, birth: 'fake-dead-readiness' }, true);
+  api.durable(path.join(jobDir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic:dead-readiness' }, true);
   require('./settled-probes.cjs')(api, jobDir, job.id, identity.buildHash, epoch);
   const nativeRpc = randomUUID(), nativeBinding = { jobId: job.id, rpcId: nativeRpc, requestHash: 'b'.repeat(64), sourceHash: 'c'.repeat(64),
     buildHash: identity.buildHash, isolatedEpoch: epoch.epochId, qualifiedDocumentHash: api.hash(JSON.stringify(epoch.document)),

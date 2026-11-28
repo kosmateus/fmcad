@@ -82,6 +82,11 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
                   path: "runtime/python/fmcad/domain/capture_integrity.py",
                   dependencies: [],
                 },
+                {
+                  id: "camera-read",
+                  path: "runtime/python/fmcad/adapters/fusion/camera_read.py",
+                  dependencies: ["core"],
+                },
               ]
             : []),
           ...(hasRules
@@ -108,6 +113,7 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
             dependencies: [
               "core",
               ...(family === "io" ? ["capture-integrity"] : []),
+              ...(family === "io" ? ["camera-read"] : []),
               ...(hasRules ? [rules] : []),
               ...(hasUsecase ? [usecase] : []),
             ],
@@ -151,7 +157,9 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
                 ? ["capture-integrity", "docio-review-rules"]
                 : family === "inspect"
                   ? ["legacy-document"]
-                  : [],
+                  : family === "queue_document"
+                    ? ["identity"]
+                    : [],
           },
         ],
       }),
@@ -197,7 +205,7 @@ export function documentIoCadManifest(
   base: readonly BundleModule[],
 ): readonly BundleModule[] {
   const families = documentIoFamilies();
-  return base.flatMap((module) => {
+  const modules = base.flatMap((module) => {
     const family = families.find((item) => item.compatibility === module.path);
     if (!family) return [module];
     return family.units.map((unit) => ({
@@ -213,4 +221,12 @@ export function documentIoCadManifest(
         : {}),
     }));
   });
+  const queueDocument = families.find(
+    (family) => family.family === "legacy-queue_document",
+  );
+  for (const unit of queueDocument?.units ?? []) {
+    if (!modules.some((module) => module.id === unit.id))
+      modules.push({ ...unit });
+  }
+  return modules;
 }

@@ -4,6 +4,8 @@ import type { FmcadConfiguration } from "../api";
 const runtimeRequire = createRequire(__filename);
 
 export interface BrokerCompositionOptions {
+  readonly addinMetadataAdmission?: import("../queue-broker-ports").TrustedAddinMetadataAdmission;
+  readonly backendTransition?: import("../queue-backend-transition").BackendTransitionApproval;
   readonly confirmOwnership: boolean;
   readonly confirmVersionTransition?: boolean;
   readonly stateOptions?: {
@@ -28,7 +30,7 @@ interface BrokerRuntime {
     config: FmcadConfiguration,
     options: BrokerCompositionOptions,
   ): Promise<BrokerHandle>;
-  reclaim(directory: string): unknown;
+  reclaim(directory: string, config?: () => FmcadConfiguration): unknown;
 }
 
 function brokerRuntime(): BrokerRuntime {
@@ -47,6 +49,12 @@ export function serveBroker(
 }
 
 /** Existing-owner cleanup; never starts a broker or Fusion process. */
-export function reclaimBroker(directory: string): unknown {
-  return brokerRuntime().reclaim(directory);
+export function reclaimBroker(
+  directory: string,
+  config?: FmcadConfiguration | (() => FmcadConfiguration),
+): unknown {
+  return brokerRuntime().reclaim(directory, config ? () => ({
+    ...(typeof config === "function" ? config() : config),
+    routing: "queue", queue: {},
+  }) : undefined);
 }

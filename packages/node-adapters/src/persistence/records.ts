@@ -3,6 +3,9 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExecutionSnapshotStore } from "../../../core/src/ports/execution-store";
 
+const MAX_SNAPSHOT_BYTES = 128 * 1024 * 1024;
+export const MAX_JSON_RECORD_BYTES = 16 * 1024 * 1024;
+
 export function failure(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
@@ -123,10 +126,13 @@ export function readBytes(
 
 export function readJson(
   file: string,
-  maxBytes = 16 * 1024 * 1024,
+  maxBytes = MAX_JSON_RECORD_BYTES,
   io = fs,
+  expectedPath?: string,
 ): unknown {
-  return JSON.parse(readBytes(file, maxBytes, io).toString("utf8")) as unknown;
+  return JSON.parse(
+    readBytes(file, maxBytes, io, expectedPath).toString("utf8"),
+  ) as unknown;
 }
 
 /** A pending marker survives an ambiguous rename/fsync. Recovery is explicit. */
@@ -165,7 +171,7 @@ export function createSnapshotStore(
           "Unresolved snapshot durability fault; inspect pending journal before recovery",
         );
       try {
-        return readBytes(file, 128 * 1024 * 1024, io).toString("utf8");
+        return readBytes(file, MAX_SNAPSHOT_BYTES, io).toString("utf8");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
         failure(
@@ -179,6 +185,11 @@ export function createSnapshotStore(
         failure(
           "STORAGE_UNAVAILABLE",
           "Snapshot store requires explicit recovery",
+        );
+      if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_BYTES)
+        failure(
+          "SNAPSHOT_TOO_LARGE",
+          "Serialized snapshot exceeds supported size limit",
         );
       try {
         durable(

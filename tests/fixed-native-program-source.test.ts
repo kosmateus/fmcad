@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
@@ -108,6 +109,45 @@ test("fixed GM07 program pins existing curve methods and exact cleanup scope", (
   const manifest = readManifest(path.join(assets, "gm07-curves-program.json"));
   assert.equal(manifest["fixtureId"], "gm07-curves-program-v1");
   assert.equal(manifest["callerCleanupRequired"], true);
+});
+
+test("fixed GM07 manifest and source keep their byte-pinned LF hashes", () => {
+  const pins = [
+    [
+      "gm07-curves-program.json",
+      "aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5",
+    ],
+    [
+      "gm07-curves.py",
+      "aad7f113451db0784b16235de4d77cf7d8af024c3880338728154274616dbe16",
+    ],
+  ] as const;
+  const relativePaths = pins.map(
+    ([file]) => `assets/native-qualification/${file}`,
+  );
+  const attributes = spawnSync(
+    "git",
+    ["check-attr", "eol", "--", ...relativePaths],
+    { cwd: projectRoot, encoding: "utf8" },
+  );
+  assert.equal(
+    attributes.status,
+    0,
+    attributes.stderr || String(attributes.error),
+  );
+  assert.deepEqual(
+    attributes.stdout.trim().split(/\r?\n/u),
+    relativePaths.map((file) => `${file}: eol: lf`),
+  );
+
+  for (const [file, expected] of pins) {
+    const bytes = fs.readFileSync(path.join(assets, file));
+    const actual = createHash("sha256").update(bytes).digest("hex");
+    assert.equal(actual, expected, file);
+    assert.equal(bytes.includes(0x0d), false, `${file} must use LF bytes`);
+    const crlf = Buffer.from(bytes.toString("utf8").replace(/\n/gu, "\r\n"));
+    assert.notEqual(createHash("sha256").update(crlf).digest("hex"), expected);
+  }
 });
 
 test("fixed data-import source pins existing handlers and owned file cleanup", () => {

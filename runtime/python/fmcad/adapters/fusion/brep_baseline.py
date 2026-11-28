@@ -11,14 +11,14 @@ from typing import cast as _brep_fusion_cast
 if _BREP_FUSION_TYPE_CHECKING:
     class _BrepArtifactsPort(_BrepFusionProtocol):
         def publish(self, manifest: "_BrepManifest",
-                    snapshots: "_BrepSequence[_BrepSnapshot]") -> "JsonRecord": ...
+                    snapshots: "_BrepSequence[_BrepSnapshot[adsk.fusion.BRepBody]]") -> "JsonRecord": ...
 
-        def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot]]": ...
+        def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot[adsk.fusion.BRepBody]]]": ...
 
     class _BrepTemporaryBRepManager(_BrepFusionProtocol):
-        def exportToFile(self, bodies: "_BrepSequence[adsk.fusion.BRepBody]", path: str) -> bool: ...
+        def exportToFile(self, bodies: "list[adsk.fusion.BRepBody]", filename: str) -> bool: ...
 
-        def createFromFile(self, path: str) -> "_BrepSequence[adsk.fusion.BRepBody] | None": ...
+        def createFromFile(self, filename: str) -> "adsk.fusion.BRepBodies | None": ...
 
     class _BrepStageHost(_BrepFusionProtocol):
         paths: list[str]
@@ -58,13 +58,13 @@ class FusionBrepBaselinePort:
     def budget(self) -> None:
         self._budget_check()
 
-    def snapshot(self, ref: "JsonValue", frame: "JsonValue") -> "_BrepSnapshot":
+    def snapshot(self, ref: "JsonValue", frame: "JsonValue") -> "_BrepSnapshot[adsk.fusion.BRepBody]":
         temporary_body = _brep_fusion_cast(
             "_BrepCallable[[CadContext, JsonValue, JsonValue], _MeasureTemporaryBody]",
             self.helpers['_measure_temporary_body'])
         return temporary_body(self.ctx, ref, frame)
 
-    def compare(self, snapshot: "_BrepSnapshot", ref: "JsonValue", frame: "JsonValue",
+    def compare(self, snapshot: "_BrepSnapshot[adsk.fusion.BRepBody]", ref: "JsonValue", frame: "JsonValue",
                 tolerances: "JsonObject") -> "JsonRecord":
         # Validate dimensional numeric values too: the retained helper rejects
         # negative values but legacy SDK doubles may return NaN/Infinity.
@@ -87,13 +87,13 @@ class FusionBrepBaselinePort:
         return result
 
     def publish(self, manifest: "_BrepManifest",
-                snapshots: "_BrepSequence[_BrepSnapshot]") -> "JsonRecord":
+                snapshots: "_BrepSequence[_BrepSnapshot[adsk.fusion.BRepBody]]") -> "JsonRecord":
         if self.artifacts is None:
             return {'status': 'unsupported', 'passed': False, 'precision': 'exact',
                     'reason': 'Owned exact artifact port is not installed'}
         return self.artifacts.publish(manifest, snapshots)
 
-    def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot]]":
+    def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot[adsk.fusion.BRepBody]]]":
         if self.artifacts is None:
             raise RuntimeError('Owned exact artifact port is not installed')
         return self.artifacts.restore(reference)
@@ -114,7 +114,7 @@ class FusionExactBrepSerializer:
     def supported(self) -> bool:
         return hasattr(self.manager, 'exportToFile') and hasattr(self.manager, 'createFromFile')
 
-    def export(self, snapshots: "_BrepSequence[_BrepSnapshot]", trusted_path: str) -> None:
+    def export(self, snapshots: "_BrepSequence[_BrepSnapshot[adsk.fusion.BRepBody]]", trusted_path: str) -> None:
         if not self.supported():
             raise NotImplementedError('Exact temporary BRep serializer unavailable; mesh fallback forbidden')
         if not trusted_path.endswith('.smt'):
@@ -123,7 +123,7 @@ class FusionExactBrepSerializer:
             raise RuntimeError('Exact BRep export failed')
 
     def restore(self, manifest: "_BrepManifest", trusted_path: str,
-                wrap: "_BrepCallable[[adsk.fusion.BRepBody, JsonObject | str, list[int | float]], _MeasureTemporaryBody]") -> "list[_BrepSnapshot]":
+                wrap: "_BrepCallable[[adsk.fusion.BRepBody, JsonObject | str, list[int | float]], _MeasureTemporaryBody]") -> "list[_BrepSnapshot[adsk.fusion.BRepBody]]":
         if not self.supported():
             raise NotImplementedError('Exact temporary BRep serializer unavailable')
         if not trusted_path.endswith('.smt'):
@@ -131,7 +131,7 @@ class FusionExactBrepSerializer:
         bodies = self.manager.createFromFile(trusted_path)
         if bodies is None or len(bodies) != len(manifest['bodies']):
             raise RuntimeError('Exact BRep import count mismatch')
-        result: list[_BrepSnapshot] = []
+        result: list[_BrepSnapshot[adsk.fusion.BRepBody]] = []
         for body, row in zip(bodies, manifest['bodies']):
             if not body.isSolid or not body.isValid:
                 raise RuntimeError('Exact BRep import returned invalid/non-solid body')
@@ -154,7 +154,7 @@ class FusionBrepBaselineArtifacts:
         self.wrap, self.budget = wrap, budget
 
     def publish(self, manifest: "_BrepManifest",
-                snapshots: "_BrepSequence[_BrepSnapshot]") -> "JsonRecord":
+                snapshots: "_BrepSequence[_BrepSnapshot[adsk.fusion.BRepBody]]") -> "JsonRecord":
         if not self.serializer.supported():
             raise NotImplementedError('Exact temporary BRep serializer unavailable; mesh fallback forbidden')
         payloads: list[bytes] = []
@@ -167,7 +167,7 @@ class FusionBrepBaselineArtifacts:
             'status': 'pass', 'precision': 'exact', 'manifest': manifest,
             'stagedPayloadCount': len(payloads)})
 
-    def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot]]":
+    def restore(self, reference: "JsonObject") -> "tuple[_BrepManifest, list[_BrepSnapshot[adsk.fusion.BRepBody]]]":
         if not self.serializer.supported():
             raise NotImplementedError('Exact temporary BRep serializer unavailable')
         record = self.host.read(reference)
@@ -175,7 +175,7 @@ class FusionBrepBaselineArtifacts:
         payloads = _brep_fusion_cast('list[bytes]', record['exactBodies'])
         if len(payloads) != len(manifest['bodies']):
             raise RuntimeError('Exact payload count mismatch')
-        snapshots: list[_BrepSnapshot] = []
+        snapshots: list[_BrepSnapshot[adsk.fusion.BRepBody]] = []
         for row, payload, path in zip(manifest['bodies'], payloads, self.host.paths):
             self.budget()
             if not payload:

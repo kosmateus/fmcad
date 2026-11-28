@@ -1,11 +1,12 @@
 'use strict';
 
 // Live integration-test helpers. These invoke the real fmcad CLI against a
-// coordinator-provided cloud document (FMCAD_TEST_DOC) and assert observable
-// results. They are NOT used by the offline unit suites; every live test
-// guards itself with skipLive() so an unset FMCAD_TEST_DOC skips cleanly.
+// exact saved fixture from ScenarioSession and its durable owned handoff.
+// Every selected case retains its original assertions; an unset FMCAD_TEST_DOC
+// skips native registration, and an unowned shared name is refused before mutation.
 
-const { spawnSync } = require('node:child_process');
+const { spawnSync } = require('../helpers/live-broker');
+const { ownedLease } = require('../../dist/tests/scenarios/legacy-handoff');
 const path = require('node:path');
 
 const ENV = 'FMCAD_TEST_DOC';
@@ -17,18 +18,14 @@ const TRANSPORT_TIMEOUT_MS = 60000;
 const SPAWN_TIMEOUT_MS = 75000;
 const MAX_BUFFER = 32 * 1024 * 1024;
 
-let cachedOpenName = null;
-
 function hasDoc() {
   return Boolean(process.env[ENV] && String(process.env[ENV]).trim());
 }
 
 function getDoc() {
-  if (!hasDoc()) {
-    throw new Error(`${ENV} is not set. Point it at the coordinator-provided cloud test ` +
-      'document before running live integration tests (open name, base name, or document id).');
-  }
-  return String(process.env[ENV]).trim();
+  const lease = ownedLease();
+  if (!lease) throw new Error('Native integration requires an owned ScenarioSession handoff; a shared FMCAD_TEST_DOC name is not an ownership receipt.');
+  return lease.document.name;
 }
 
 // Run the CLI synchronously and return raw stdout; throw on spawn failure or
@@ -81,43 +78,9 @@ function local(args) {
   }
 }
 
-// List open documents via "fmcad doc list" and return [{ name, id }]. Untitled
-// documents have no saved id, so id is null for them (the printed line omits it).
-// The name is the only field that may contain spaces; all trailing fields have
-// space-free values.
-function listOpenDocs() {
-  const stdout = runRaw(['doc', 'list']);
-  const docs = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line.startsWith('DOC ')) continue;
-    const body = line.slice(4);
-    const nameMatch = body.match(/^name=(.*)$/);
-    if (!nameMatch) continue;
-    const rest = nameMatch[1];
-    const keyMatch = rest.match(/\s+(?:id|isActive|isModified|isSaved)=/);
-    const name = keyMatch ? rest.slice(0, keyMatch.index) : rest;
-    const idMatch = rest.match(/\sid=(\S+)/);
-    docs.push({ name, id: idMatch ? idMatch[1] : null });
-  }
-  return docs;
-}
-
-// Resolve the exact open document name. Fusion appends a version suffix to the
-// open name ("Name v21"), and every CAD command requires the exact open name in
-// --doc, so FMCAD_TEST_DOC (a cloud/base name or id) must be mapped to it.
+// Use the original creation receipt, never a basename or version-name guess.
 function docName() {
-  if (cachedOpenName) return cachedOpenName;
-  const target = getDoc();
-  const docs = listOpenDocs();
-  const matches = docs.filter((doc) =>
-    doc.name === target || doc.id === target || doc.name.replace(/\s+v\d+$/, '') === target);
-  if (matches.length !== 1) {
-    throw new Error(`Cannot resolve ${ENV} "${target}" to exactly one open document. ` +
-      `Open documents: ${JSON.stringify(docs)}. Set ${ENV} to the exact open name shown by ` +
-      `"fmcad doc list", its base name without the " vN" version suffix, or its document id.`);
-  }
-  cachedOpenName = matches[0].name;
-  return cachedOpenName;
+  return getDoc();
 }
 
 // Reset the test document for the next scenario. On a saved cloud document this
@@ -139,6 +102,11 @@ function clear() {
   const name = docName();
   const status = fmcad(['document', 'status', '--doc', name]);
   const fileId = status.result && status.result.fileId;
+  const lease = ownedLease();
+  if (!lease || status.result.creationId !== lease.document.creationId || fileId !== lease.document.file.fileId ||
+      status.result.projectId !== lease.document.file.projectId || status.result.folderId !== lease.document.file.folderId) {
+    throw new Error("Observed document/file identity differs from the owned fixture; no clear submitted");
+  }
   if (!fileId) {
     throw new Error(`document status returned no fileId for ${name}: ${JSON.stringify(status)}`);
   }
@@ -180,7 +148,11 @@ function cad(args) {
 // Guard for live tests: call at the top of a test with `if (skipLive(t)) return;`
 // so the offline suite skips instead of failing or accidentally mutating Fusion.
 function skipLive(t) {
-  if (hasDoc()) return false;
+  if (hasDoc()) {
+    const lease = ownedLease();
+    if (!lease || t.name !== lease.testCase) throw new Error("Legacy case does not match its owned handoff");
+    return false;
+  }
   t.skip(`${ENV} not set`);
   return true;
 }

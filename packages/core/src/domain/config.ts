@@ -8,6 +8,8 @@ export interface QueueConfiguration {
   readonly startupTimeoutMs?: number;
   readonly waitTimeoutMs?: number;
   readonly client?: string;
+  /** Offline preparations; SDK mutations still use one lane. Omitted selects the CPU-aware default. */
+  readonly preparationConcurrency?: number;
 }
 
 export interface FmcadConfiguration {
@@ -51,13 +53,6 @@ export const DEFAULT_ADDIN_SETTINGS = {
 const DEFAULTS = {
   backend: "addin",
   addin: DEFAULT_ADDIN_SETTINGS,
-  mcp: {
-    headers: {},
-    timeoutMs: 180000,
-    tool: "fusion_mcp_execute",
-    transport: "node",
-    protocolVersion: "2024-11-05",
-  },
   routing: "queue",
 } as const;
 
@@ -103,6 +98,7 @@ const QUEUE_KEYS = new Set([
   "startupTimeoutMs",
   "waitTimeoutMs",
   "client",
+  "preparationConcurrency",
 ]);
 
 const ADAPTER_KEYS = new Set([
@@ -180,30 +176,49 @@ function validateFileShape(fileValue: ConfigLayer): Record<string, unknown> {
   const file = record(fileValue, "config");
   rejectUnknownKeys(file, ROOT_KEYS, "config");
 
-  if (Object.hasOwn(file, "backends")) {
-    const backends = record(file["backends"], "backends");
-    rejectUnknownKeys(backends, new Set(["mcp", "addin"]), "backends");
-    for (const backend of ["mcp", "addin"] as const) {
-      if (Object.hasOwn(backends, backend)) {
-        const profile = record(backends[backend], `backends.${backend}`);
-        rejectUnknownKeys(profile, BACKEND_KEYS, `backends.${backend}`);
-        aliasValue(profile, "url", ["endpoint"], `backends.${backend}`);
-        aliasValue(profile, "timeoutMs", ["timeout"], `backends.${backend}`);
-        aliasValue(profile, "curlPath", ["curl-path"], `backends.${backend}`);
-        aliasValue(
-          profile,
-          "protocolVersion",
-          ["protocol_version"],
-          `backends.${backend}`,
-        );
-      }
-    }
+  for (const key of [
+    "url",
+    "endpoint",
+    "headers",
+    "timeoutMs",
+    "timeout",
+    "tool",
+    "transport",
+    "curlPath",
+    "curl-path",
+    "protocolVersion",
+    "protocol_version",
+  ] as const) {
+    if (!Object.hasOwn(file, key)) continue;
+    if (key === "url" || key === "endpoint")
+      rejectUnsupportedEndpoint(file[key], `config.${key}`);
+    throw new Error(
+      `config.${key} is a retired native MCP setting; configure the addin backend at http://127.0.0.1:8765/mcp`,
+    );
   }
 
-  aliasValue(file, "url", ["endpoint"], "config");
-  aliasValue(file, "timeoutMs", ["timeout"], "config");
-  aliasValue(file, "curlPath", ["curl-path"], "config");
-  aliasValue(file, "protocolVersion", ["protocol_version"], "config");
+  if (Object.hasOwn(file, "backends")) {
+    const backends = record(file["backends"], "backends");
+    if (Object.hasOwn(backends, "mcp")) {
+      throw new Error(
+        "backends.mcp is no longer supported; configure the addin backend at http://127.0.0.1:8765/mcp",
+      );
+    }
+    rejectUnknownKeys(backends, new Set(["addin"]), "backends");
+    if (Object.hasOwn(backends, "addin")) {
+      const profile = record(backends["addin"], "backends.addin");
+      rejectUnknownKeys(profile, BACKEND_KEYS, "backends.addin");
+      aliasValue(profile, "url", ["endpoint"], "backends.addin");
+      aliasValue(profile, "timeoutMs", ["timeout"], "backends.addin");
+      aliasValue(profile, "curlPath", ["curl-path"], "backends.addin");
+      aliasValue(
+        profile,
+        "protocolVersion",
+        ["protocol_version"],
+        "backends.addin",
+      );
+    }
+  }
 
   if (Object.hasOwn(file, "queue")) {
     const queue = record(file["queue"], "queue");
@@ -228,11 +243,25 @@ function valueFrom(
   return aliasValue(layer, key, aliases, "configuration");
 }
 
-function validateBackend(value: unknown): Backend {
-  if (value !== "mcp" && value !== "addin") {
-    throw new Error('backend must be "mcp" or "addin"');
+function validateBackend(value: unknown): "addin" {
+  if (value === "mcp") {
+    throw new Error(
+      'backend "mcp" is no longer supported; use backend "addin" with autodesk-fusion-mcp at http://127.0.0.1:8765/mcp',
+    );
   }
-  return value;
+  if (value !== "addin") {
+    throw new Error(
+      'backend must be "addin"; native Fusion MCP is no longer supported',
+    );
+  }
+  return "addin";
+}
+
+function validateExplicitBackend(layer: ConfigLayer): void {
+  if (!Object.hasOwn(layer, "backend")) return;
+  const backend = layer["backend"];
+  if (backend === undefined || backend === null) return;
+  validateBackend(backend);
 }
 
 function validatePort(value: unknown, field: string): number {
@@ -343,21 +372,13 @@ function mergeHeaders(...sources: readonly unknown[]): Record<string, string> {
   );
 }
 
-function backendProfile(
-  file: Record<string, unknown>,
-  backend: Backend,
-): {
-  selected: ConfigLayer;
-  legacy: ConfigLayer;
-} {
+function backendProfile(file: Record<string, unknown>): ConfigLayer {
   const backends = Object.hasOwn(file, "backends")
     ? record(file["backends"], "backends")
     : {};
-  const selected = Object.hasOwn(backends, backend)
-    ? record(backends[backend], `backends.${backend}`)
+  return Object.hasOwn(backends, "addin")
+    ? record(backends["addin"], "backends.addin")
     : {};
-  const legacy = backend === "mcp" ? file : {};
-  return { selected, legacy };
 }
 
 function profileValue(profile: ConfigLayer, key: string): unknown {
@@ -379,7 +400,6 @@ function profileField(
   adapter: ConfigLayer,
   environment: ConfigLayer,
   selected: ConfigLayer,
-  legacy: ConfigLayer,
   defaults: ConfigLayer,
   field: string,
 ): unknown {
@@ -397,7 +417,6 @@ function profileField(
     valueFrom(adapter, field, aliases) ??
     valueFrom(environment, field, aliases) ??
     profileValue(selected, field) ??
-    profileValue(legacy, field) ??
     defaults[field]
   );
 }
@@ -502,18 +521,16 @@ function parseEndpoint(text: string): ParsedEndpoint | null {
   };
 }
 
-function validateUrl(
-  value: unknown,
-  backend: Backend,
-  controlCenterPort: number,
-): string {
-  const text = readString(
-    value,
-    backend === "mcp" ? "backends.mcp.url" : "backends.addin.url",
-  );
+function validateUrl(value: unknown, controlCenterPort: number): string {
+  const text = readString(value, "backends.addin.url");
   const endpoint = parseEndpoint(text);
   if (!endpoint || text !== text.trim()) {
     throw new Error("url must be an absolute HTTP(S) URL");
+  }
+  if (endpoint.port === 27182) {
+    throw new Error(
+      "url port 27182 is no longer supported; configure autodesk-fusion-mcp at http://127.0.0.1:8765/mcp",
+    );
   }
   const queryStart = text.indexOf("?");
   const fragmentStart = text.indexOf("#");
@@ -541,8 +558,7 @@ function validateUrl(
       }
     }
   }
-  if (backend === "addin" && !endpoint.loopback)
-    throw new Error("addin url must use a loopback host");
+  if (!endpoint.loopback) throw new Error("addin url must use a loopback host");
   if (
     endpoint.loopback &&
     (endpoint.port === controlCenterPort ||
@@ -553,6 +569,46 @@ function validateUrl(
     );
   }
   return text;
+}
+
+function rejectUnsupportedEndpoint(value: unknown, field: string): void {
+  if (typeof value !== "string") {
+    throw new Error(`${field} must be a string URL`);
+  }
+  const endpoint = parseEndpoint(value);
+  if (!endpoint) {
+    throw new Error(`${field} must be an absolute HTTP(S) URL`);
+  }
+  if (endpoint.port === 27182) {
+    throw new Error(
+      `${field} uses unsupported native Fusion MCP port 27182; configure autodesk-fusion-mcp at http://127.0.0.1:8765/mcp`,
+    );
+  }
+}
+
+function rejectUnsupportedEndpointSources(
+  adapter: ConfigLayer,
+  environment: ConfigLayer,
+  file: ConfigLayer,
+): void {
+  for (const [source, name] of [
+    [adapter, "adapter"],
+    [environment, "environment"],
+    [file, "config"],
+  ] as const) {
+    for (const key of ["url", "endpoint"] as const) {
+      if (Object.hasOwn(source, key))
+        rejectUnsupportedEndpoint(source[key], `${name}.${key}`);
+    }
+  }
+  if (!Object.hasOwn(file, "backends")) return;
+  const backends = record(file["backends"], "backends");
+  if (!Object.hasOwn(backends, "addin")) return;
+  const addin = record(backends["addin"], "backends.addin");
+  for (const key of ["url", "endpoint"] as const) {
+    if (Object.hasOwn(addin, key))
+      rejectUnsupportedEndpoint(addin[key], `backends.addin.${key}`);
+  }
 }
 
 function mergeQueue(sources: readonly ConfigLayer[]): QueueConfiguration {
@@ -591,6 +647,18 @@ function mergeQueue(sources: readonly ConfigLayer[]): QueueConfiguration {
       );
     }
   }
+  const preparationConcurrency = merged["preparationConcurrency"];
+  if (
+    preparationConcurrency !== undefined &&
+    (typeof preparationConcurrency !== "number" ||
+      !Number.isSafeInteger(preparationConcurrency) ||
+      preparationConcurrency < 1 ||
+      preparationConcurrency > 10)
+  ) {
+    throw new Error(
+      "queue.preparationConcurrency must be an integer from 1 to 10",
+    );
+  }
   if (merged["client"] !== undefined)
     merged["client"] = readString(merged["client"], "queue.client");
   return merged as QueueConfiguration;
@@ -603,7 +671,12 @@ export function resolveFmcadConfiguration(
   const environment = record(sources.environment, "environment configuration");
   rejectUnknownKeys(adapter, ADAPTER_KEYS, "adapter configuration");
   rejectUnknownKeys(environment, ENVIRONMENT_KEYS, "environment configuration");
-  const file = validateFileShape(sources.file);
+  const fileSource = record(sources.file, "config");
+  validateExplicitBackend(adapter);
+  validateExplicitBackend(environment);
+  validateExplicitBackend(fileSource);
+  const file = validateFileShape(fileSource);
+  rejectUnsupportedEndpointSources(adapter, environment, file);
   const platformDefaults = record(
     sources.platformDefaults,
     "platform defaults",
@@ -616,7 +689,7 @@ export function resolveFmcadConfiguration(
       valueFrom(file, "backend") ??
       DEFAULTS.backend,
   );
-  const { selected, legacy } = backendProfile(file, backend);
+  const selected = backendProfile(file);
   const backendDefaults = DEFAULTS[backend];
   const platformTransport =
     backend === "addin" ? platformDefaults["addinTransport"] : undefined;
@@ -657,12 +730,10 @@ export function resolveFmcadConfiguration(
   );
 
   const url = validateUrl(
-    profileField(adapter, environment, selected, legacy, defaults, "url"),
-    backend,
+    profileField(adapter, environment, selected, defaults, "url"),
     port,
   );
   const headers = mergeHeaders(
-    legacy["headers"],
     selected["headers"],
     environment["headers"],
     adapter["headers"],
@@ -671,7 +742,6 @@ export function resolveFmcadConfiguration(
     adapter,
     environment,
     selected,
-    legacy,
     defaults,
     "timeoutMs",
   );
@@ -683,14 +753,13 @@ export function resolveFmcadConfiguration(
     throw new Error("timeoutMs must be a finite number greater than zero");
   }
   const tool = readString(
-    profileField(adapter, environment, selected, legacy, defaults, "tool"),
+    profileField(adapter, environment, selected, defaults, "tool"),
     "tool",
   );
   const transportValue = profileField(
     adapter,
     environment,
     selected,
-    legacy,
     defaults,
     "transport",
   );
@@ -701,7 +770,6 @@ export function resolveFmcadConfiguration(
     adapter,
     environment,
     selected,
-    legacy,
     defaults,
     "curlPath",
   );
@@ -710,14 +778,7 @@ export function resolveFmcadConfiguration(
       ? undefined
       : readString(curlPathValue, "curlPath");
   const protocolVersion = readString(
-    profileField(
-      adapter,
-      environment,
-      selected,
-      legacy,
-      defaults,
-      "protocolVersion",
-    ),
+    profileField(adapter, environment, selected, defaults, "protocolVersion"),
     "protocolVersion",
   );
   if (transportValue === "windows-curl") {
@@ -734,7 +795,9 @@ export function resolveFmcadConfiguration(
     DEFAULTS.routing;
   if (routing !== "queue") {
     throw Object.assign(
-      new Error('routing is fixed to "queue"; routing=direct is no longer supported. Use the shared fmcad broker.'),
+      new Error(
+        'routing is fixed to "queue"; routing=direct is no longer supported. Use the shared fmcad broker.',
+      ),
       { code: "UNSUPPORTED_ROUTING" },
     );
   }

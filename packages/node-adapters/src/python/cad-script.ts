@@ -3,10 +3,13 @@ import {
   planCadScript,
   type CadContext,
   type CadData,
+  type CadPrivateReadback,
+  type CameraAliasObservation,
   type OperationDeclaration,
 } from "@fmcad/core";
 import { pythonLiteral } from "./artifact.js";
 import { prepareCadBundle } from "./bundle.js";
+import { cameraAliasRoute } from "./camera-save-payload.js";
 import { resolveRuntimePaths } from "../config-platform/runtime-paths.js";
 import { detectPlatform, toWindowsPath } from "../config-platform/platform.js";
 
@@ -24,6 +27,41 @@ export interface CadPreparationPorts {
   dataImport(operation: string, data: CadData): PreparedImport;
 }
 
+type CheckpointJson =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly CheckpointJson[]
+  | { readonly [key: string]: CheckpointJson };
+
+export interface ParamCheckpointGuardV1 {
+  readonly schema: "fmcad.param-checkpoint-v1";
+  readonly document: {
+    readonly identity: {
+      readonly creationId: string;
+      readonly name: string;
+      readonly fileId: string | null;
+      readonly version: number | null;
+      readonly isSaved: boolean;
+      readonly isModified: boolean;
+    };
+    readonly fingerprint: string;
+  };
+  readonly parameters: readonly {
+    readonly name: string;
+    readonly expression: string;
+    readonly unit: string;
+    readonly value: CheckpointJson;
+    readonly valueType: "numeric" | "text";
+    readonly valueUnits: string | null;
+    readonly comment: string;
+    readonly metadata: { readonly [key: string]: CheckpointJson };
+  }[];
+}
+
+const PARAM_CHECKPOINT_FIELD = "_fmcadCheckpointGuard";
+
 export function fusionPath(value: unknown): string {
   if (typeof value !== "string") throw new Error("File path must be a string");
   if (/^[A-Za-z]:[\\/]|^\\\\/.test(value)) return value;
@@ -38,33 +76,37 @@ interface PathFields extends CadData {
 }
 
 /** Map a cloned payload only; validation and file reads stay at their existing boundaries. */
-export function mapCadPaths(operation: string, data: CadData): CadData {
+export function mapCadPaths(
+  operation: string,
+  data: CadData,
+  pathMapper: (value: unknown) => string = fusionPath,
+): CadData {
   const out = structuredClone(data) as PathFields;
   if (
     operation.startsWith("export.") ||
     operation.startsWith("checkpoint.") ||
     operation === "import.file"
   ) {
-    if (out["path"]) out["path"] = fusionPath(out["path"]);
-    if (out["directory"]) out["directory"] = fusionPath(out["directory"]);
+    if (out["path"]) out["path"] = pathMapper(out["path"]);
+    if (out["directory"]) out["directory"] = pathMapper(out["directory"]);
     if (out.parts)
-      for (const part of out.parts) part.path = fusionPath(part.path);
+      for (const part of out.parts) part.path = pathMapper(part.path);
   }
   if (operation === "shot.pack")
-    for (const shot of out.shots!) shot.path = fusionPath(shot.path);
+    for (const shot of out.shots!) shot.path = pathMapper(shot.path);
   if (operation === "view.compare")
-    for (const field of ["left", "right"]) out[field] = fusionPath(out[field]);
+    for (const field of ["left", "right"]) out[field] = pathMapper(out[field]);
   if (operation === "texture.heightmap" && out["path"])
-    out["path"] = fusionPath(out["path"]);
+    out["path"] = pathMapper(out["path"]);
   if (
     ["motion.sample", "animation.joints", "explode.render"].includes(operation)
   ) {
-    if (out["directory"]) out["directory"] = fusionPath(out["directory"]);
-    if (out.frameFiles) out.frameFiles = out.frameFiles.map(fusionPath);
+    if (out["directory"]) out["directory"] = pathMapper(out["directory"]);
+    if (out.frameFiles) out.frameFiles = out.frameFiles.map(pathMapper);
   }
   if (operation === "animation.export") {
-    if (out.frames) out.frames = out.frames.map(fusionPath);
-    if (out["output"]) out["output"] = fusionPath(out["output"]);
+    if (out.frames) out.frames = out.frames.map(pathMapper);
+    if (out["output"]) out["output"] = pathMapper(out["output"]);
   }
   return out;
 }
@@ -74,7 +116,17 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
     operation: string,
     data: CadData,
     context: CadContext,
+    pathMapper: (value: unknown) => string = fusionPath,
+    checkpointGuard?: ParamCheckpointGuardV1,
+    privateReadback?: CadPrivateReadback,
+    cameraAlias?: CameraAliasObservation,
   ) {
+    if (Object.hasOwn(data, PARAM_CHECKPOINT_FIELD))
+      throw new Error("Parameter checkpoint guard is compiler-owned");
+    if (checkpointGuard !== undefined && operation !== "param.apply")
+      throw new Error(
+        "Parameter checkpoint guard is only valid for param.apply",
+      );
     const entry = ports.validate(operation, data);
     if (operation === "inspect.pack") data = ports.inspection(data);
     if (entry["curve"]) data = ports.curve(operation, data);
@@ -86,21 +138,35 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
           : (imported.result.items ?? [])
               .map((row) => row.model)
               .filter((model): model is ImportModel => Boolean(model));
-      for (const model of models) model.fusionPath = fusionPath(model.path);
+      for (const model of models) model.fusionPath = pathMapper(model.path);
       data = imported;
     }
+    const preparedData = mapCadPaths(operation, data, pathMapper);
+    if (checkpointGuard !== undefined)
+      preparedData[PARAM_CHECKPOINT_FIELD] = structuredClone(checkpointGuard);
     const plan = planCadScript(
       operation,
-      mapCadPaths(operation, data),
+      preparedData,
       context,
       entry,
       pythonLiteral,
+      privateReadback,
+      cameraAlias,
+      operation === "camera.save"
+        ? cameraAliasRoute(
+            resolveRuntimePaths({ anchor: __filename }).installation,
+            context,
+            cameraAlias,
+          )
+        : undefined,
     );
     return prepareCadBundle(
       resolveRuntimePaths({ anchor: __filename }).installation,
       plan.wrapper,
       { request: plan.request, context: plan.context },
       plan.profile,
+      [],
+      cameraAlias,
     );
   }
   function buildCadScript(

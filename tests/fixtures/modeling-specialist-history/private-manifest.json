@@ -1,0 +1,12 @@
+{
+  "selection-rules-internal": {
+    "path": "src/catalog/selection-rules-internal.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "c5770693548b7a915a351321930d7da27cd93d64ea79ccb43cacafabe0de94a6"
+  },
+  "brep-baseline-internal": {
+    "path": "src/catalog/brep-baseline-internal.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "aa9509cd4c509bc63bddf1e6b22d866d1bd037718927b111a8841ac3b804a485"
+  }
+}

@@ -185,7 +185,7 @@ const specials: Record<string, string> = {
   "capabilities probe":
     "Jawnie zleca pojedynczą próbę SDK przez broker dla wskazanej operacji katalogu. Wymaga przypiętej tożsamości dokumentu; pomoc, inspekcja i lista narzędzi nie wykonują próby.",
   console:
-    "Uruchamia terminalową konsolę monitorowania w trybie broker lub bezpośrednim. Nie uruchamia brokera i nie odpytuje Fusion. Bez --project wybiera najbliższy projekt nadrzędny; jawna ścieżka musi być poprawna. Zamknięcie panelu nie kończy usług i nie cofa pauzy.",
+    "Wypisuje adres gotowego Control Center bez wymagania terminala. Bez --project wybiera widok globalny, a jawna ścieżka wymaga dokładnie jednego zarejestrowanego projektu. diagnostic i --web pozostają aliasami zgodności. Zamknięcie polecenia nie kończy usług i nie cofa pauzy.",
   help: "Wyświetla pomoc ogólną lub pomoc wybranego polecenia bez uruchamiania usług.",
   init: "Tworzy konfigurację fmcad; --force pozwala zastąpić istniejący plik. --from-opencode importuje ustawienia połączenia MCP.",
   doctor:
@@ -282,7 +282,7 @@ export function detail(entry: RegisteredCommand): string {
     ? "\nTo wyszukiwanie jest lokalne: nie ładuje konfiguracji, nie używa backendu i nie odpytuje Fusion.\n\nOpcje wspólne:\n  --purpose TEXT  Opcjonalny cel polecenia; do 1000 znaków Unicode, bez znaków sterujących.\n"
     : "\nOpcje wspólne:\n  --purpose TEXT  Opcjonalny cel polecenia; do 1000 znaków Unicode, bez znaków sterujących.\n" +
       "  --config PATH  Plik konfiguracji. --backend mcp|addin  Jawny wybór serwera.\n" +
-      "  --timeout MS  Limit wykonania; w kolejce nie obejmuje oczekiwania.\n" +
+      "  --timeout MS  Dodatni całkowity limit aktywnego wykonania żądania; nie obejmuje oczekiwania w kolejce, nie zmienia konfiguracji brokera ani nie gwarantuje anulowania mutacji.\n" +
       "Brak automatycznego ponawiania ani przełączania backendu. Niepewny wynik uzgodnij przed kolejną operacją.\n";
   if (entry.kind === "queue")
     result +=

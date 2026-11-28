@@ -24,6 +24,7 @@ function inventory(value: unknown, identity: string): string {
       .map(record)
       .map((item) => {
         const { complete: _complete, ...stable } = item;
+        void _complete;
         return stable;
       })
       .sort((a, b) => text(a[identity]).localeCompare(text(b[identity]))),
@@ -65,7 +66,11 @@ export async function auditRecovery(
       row["backendIdentity"] !== backend.identity
     )
       throw new Error("Foreign recovery scenario report");
-    if (row["cleanup"] !== "complete" && row["status"] !== "unsupported")
+    if (
+      row["cleanup"] !== "complete" &&
+      row["status"] !== "unsupported" &&
+      !(row["status"] === "not-run" && row["cleanup"] === "not-created")
+    )
       return;
   }
   const owner = {

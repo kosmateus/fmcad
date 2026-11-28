@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm32-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-32 (sheet metal forming/flattening/bend tables).
 // The family is an external declared-segment recipe; the public native
 // flat-pattern API is a gated availability and is reported blocked, never faked.

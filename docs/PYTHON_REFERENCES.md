@@ -29,7 +29,7 @@ npm run build:code
 python3 -B -m unittest tests.python_document_io_test.RuntimeInventoryTests.test_every_retained_definition_has_exactly_its_previous_count tests.python_document_io_test.RuntimeInventoryTests.test_clean_rules_import_without_sdk_filesystem_or_processes
 python3 -B tests/python_references_test.py
 python3 -B -m unittest tests.references_native_test tests.reference_native_test tests.reference_images_test
-node --test tests/reference.test.js tests/references-refresh.test.js tests/integration/gm05-reference.test.js
+node --test dist/tests/reference.test.js tests/references-refresh.test.js tests/integration/gm05-reference.test.js
 node --test tests/typesgeometry/geometry_shapes_inventory_test.cjs
 ```
 

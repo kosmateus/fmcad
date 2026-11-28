@@ -46,7 +46,13 @@ export function selectDocument(
 export interface DocumentSnapshot {
   status?: string;
   fingerprint?: string;
-  state?: { identity?: { creationId?: string } };
+  state?: {
+    identity?: {
+      creationId?: string;
+      name?: string;
+      fileId?: string | null;
+    };
+  };
 }
 /** The fingerprint is document/dependency scoped, never a global queue revision. */
 export function compareDocumentState(

@@ -4,7 +4,7 @@ import type { PreparedPythonArtifact } from "../../domain/python-artifact";
 /** Transport-neutral targeting. Output formatting belongs to the entrypoint. */
 export interface CadContext {
   doc?: string | null;
-  component?: string | null;
+  component?: string | Readonly<Record<string, unknown>> | null;
   projectId?: string | null;
   docId?: string | null;
   docFileId?: string | null;
@@ -14,6 +14,17 @@ export interface CadContext {
 }
 export type CadData = Record<string, unknown>;
 export type CadOutput = Record<string, unknown>;
+/** Private readback; never decoded as an input to the public operation. */
+export interface CameraAliasObservation {
+  readonly name: string;
+  readonly raw: string;
+  readonly absent?: true;
+  readonly docId: string;
+  readonly observed?: readonly {
+    readonly name: string;
+    readonly raw: string;
+  }[];
+}
 export interface CadExecutionRequest {
   operation: string;
   context: Readonly<CadContext>;
@@ -34,6 +45,7 @@ export interface CadServices {
     operation: string,
     data: CadData,
     context: CadContext,
+    cameraAlias?: CameraAliasObservation,
   ): PreparedPythonArtifact;
   execution: CadExecutionPort;
   /** Route selection is synchronous; a selected coordinator may be asynchronous.

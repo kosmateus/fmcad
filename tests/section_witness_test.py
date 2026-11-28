@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 from types import SimpleNamespace as NS
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SHAPES = json.loads((ROOT / 'tests/fixtures/section_witness_shapes.json').read_text())
@@ -204,6 +205,71 @@ class SectionWitnessTests(unittest.TestCase):
             return True
         self.manager.booleanOperation = boolean
         self.assertEqual(self.witness()['status'], 'unknown')
+
+
+class BudgetCallbackContractTests(unittest.TestCase):
+    def setUp(self):
+        self.ns, _, _ = load()
+        self.Budget = self.ns['_SectionWitnessBudget']
+
+    def test_invoke_and_compat_call_preserve_callback_arguments_results_and_count(self):
+        budget = self.Budget({})
+        observations = []
+        result = object()
+
+        def callback(value, *, label):
+            observations.append((budget.calls, value, label))
+            return result
+
+        self.assertIs(budget.invoke(callback, 'body', label='invoke'), result)
+        self.assertIs(budget.call(callback, 'witness', label='call'), result)
+        self.assertEqual(observations, [
+            (1, 'body', 'invoke'),
+            (2, 'witness', 'call'),
+        ])
+        self.assertEqual(budget.calls, 2)
+
+    def test_invoke_and_compat_call_preserve_exception_identity_after_counting(self):
+        for method_name in ('invoke', 'call'):
+            with self.subTest(method=method_name):
+                budget = self.Budget({})
+                error = RuntimeError(method_name)
+
+                def callback():
+                    self.assertEqual(budget.calls, 1)
+                    raise error
+
+                with self.assertRaises(RuntimeError) as raised:
+                    getattr(budget, method_name)(callback)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(budget.calls, 1)
+
+    def test_invoke_and_compat_call_gate_budget_before_callback_and_allow_nested_calls(self):
+        budget = self.Budget({'limits': {'kernelCalls': 2}})
+        observations = []
+
+        def inner(value):
+            observations.append((budget.calls, value))
+            return value
+
+        def outer():
+            return budget.call(inner, 'nested')
+
+        self.assertEqual(budget.invoke(outer), 'nested')
+        self.assertEqual(observations, [(2, 'nested')])
+        with self.assertRaisesRegex(RuntimeError, 'budget exhausted'):
+            budget.invoke(inner, 'blocked-by-count')
+        self.assertEqual(observations, [(2, 'nested')])
+        self.assertEqual(budget.calls, 2)
+
+        deadline_budget = self.Budget({'limits': {'timeMs': 1}})
+        deadline_budget.started = 0.0
+        deadline_calls = []
+        with patch.object(self.ns['_section_time'], 'monotonic', return_value=1.0):
+            with self.assertRaisesRegex(RuntimeError, 'budget exhausted'):
+                deadline_budget.call(lambda: deadline_calls.append('called'))
+        self.assertEqual(deadline_calls, [])
+        self.assertEqual(deadline_budget.calls, 0)
 
 
 class ExistingMeasurementFrameTests(unittest.TestCase):

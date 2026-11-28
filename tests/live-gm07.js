@@ -1,21 +1,22 @@
 'use strict';
 
 // GM07 fixed-run adapter. The installed source-pinned program owns all method
-// calls; this wrapper never creates a document or sends raw modeling Python.
-// Its explicit caller cleanup closes only the exact verified unsaved scratch.
+// calls; this runner creates only its uniquely named scratch and sends no raw
+// modeling Python. Caller cleanup closes only that exact verified scratch.
 const assert = require('node:assert/strict');
 const childProcess = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { prepareNativeInvocation, observeNativeInvocation } = require('../dist/tests/live-import-receipts.js');
+const { readQueueResult } = require('./helpers/live-broker');
+const { queueExecution } = require('../dist/tests/scenarios/queue-backend.js');
 
 const root = path.resolve(__dirname, '..');
 const name = 'FMCAD_GM07_' + crypto.randomUUID().replaceAll('-', '_');
 const fixtureId = 'gm07-curves-program-v1';
 const fixturePrefix = 'NQGM07CURVE01';
 const fixedSourceCommit = '0fc1d992db1a3c7b7c5b3d3944d44aba8bc3fa0d';
-const expectedRuntimeRoot = '/home/kamil/.local/share/fmcad/releases/b811af8/node_modules/fmcad';
-const expectedBuildHash = 'b865bd3ca761ba71d4a2661d487301823f0326b6faf1df101cc8e345a5e60526';
 const expectedManifestSha256 = 'aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5';
 const expectedScriptSha256 = 'aad7f113451db0784b16235de4d77cf7d8af024c3880338728154274616dbe16';
 const targetOperations = ['sketch.profile-file', 'curve.fit', 'curve.inspect', 'curve.offset', 'curve.offset-edit'];
@@ -25,7 +26,6 @@ const reportPath = path.join(__dirname, 'live-gm07-report.json');
 process.env.FMCAD_LIVE_ROUTING = 'queue';
 process.env.FMCAD_LIVE_SUITE = 'gm07';
 
-const { spawnSync, fixture } = require('./helpers/live-broker');
 const { catalog } = require('../src/cad');
 const { contracts } = require('../src/catalog');
 const report = {
@@ -35,12 +35,13 @@ const report = {
   broker: { routing: 'queue', client: process.env.FMCAD_LIVE_CLIENT || null },
   name,
   startedAt: new Date().toISOString(),
-  scope: 'Existing exact owner-bound pristine unsaved scratch only. The fixed source creates one sketch; the caller closes only that exact scratch after terminal-result verification. No document creation, save, cloud write, existing-geometry edit or preference change.',
+  scope: 'The suite creates one uniquely named owner-bound pristine unsaved scratch; the fixed source creates one sketch; caller cleanup closes only that exact scratch after terminal-result verification. No save, cloud write, existing-geometry edit or preference change.',
   fixedProgram: {
     fixtureId, sourceCommit: fixedSourceCommit, fixturePrefix,
-    runtimeRoot: expectedRuntimeRoot, buildHash: expectedBuildHash,
+    runtimeRoot: process.env.FMCAD_LIVE_RUNTIME_ROOT || null,
+    buildHash: process.env.FMCAD_LIVE_BUILD_HASH || null,
     manifestSha256: expectedManifestSha256, scriptSha256: expectedScriptSha256,
-    status: 'OFFLINE-CANDIDATE-QUALIFIED; NOT-ACTIVE; NATIVE-NOTRUN',
+    status: 'NOT-CHECKED; NATIVE-NOTRUN',
   },
   commands: [], methodResults: [], assertions: [], tests: [], ownedDocuments: [],
   remainingOwnedDocuments: 'unknown',
@@ -48,13 +49,8 @@ const report = {
 };
 
 let identity;
-let restoreDocumentId;
-let baseline;
-let documentCreated = false;
 let uncertain = false;
 let blockedReason;
-let fixedRunSettled = false;
-let failure;
 
 function persist() {
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
@@ -67,6 +63,15 @@ function requiredEnv(name) {
       { code: 'NATIVE_FIXTURE_SCOPE_REQUIRED' });
   }
   return value;
+}
+
+function runtimePins() {
+  const selectedRoot = requiredEnv('FMCAD_LIVE_RUNTIME_ROOT');
+  assert.ok(path.isAbsolute(selectedRoot), 'FMCAD_LIVE_RUNTIME_ROOT must be an absolute path.');
+  return {
+    runtimeRoot: fs.realpathSync(selectedRoot),
+    expectedBuildHash: requiredEnv('FMCAD_LIVE_BUILD_HASH'),
+  };
 }
 
 // Same execution-only interpretation as the corrected GM12 helper: a nested
@@ -109,7 +114,8 @@ function inspectY(result) {
   };
 }
 
-function fixedContract(runtimeRoot, expectedBuild = null) {
+function fixedContract(runtimeRoot, expectedBuild) {
+  assert.match(expectedBuild, /^[a-f0-9]{64}$/u, 'FMCAD_LIVE_BUILD_HASH must be a SHA-256 fingerprint.');
   const runtime = require(path.join(runtimeRoot, 'dist/src/queue-instance.js'));
   const { fixtureContract } = require(path.join(runtimeRoot, 'dist/src/queue-native-fixture-grant.js'));
   const contract = fixtureContract(fixtureId);
@@ -141,14 +147,13 @@ function fixedContract(runtimeRoot, expectedBuild = null) {
   const installedBuild = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'dist/runtime-build.json'), 'utf8'));
   const buildHash = runtime.buildHash();
   assert.equal(installedBuild.fingerprint, buildHash, 'Runtime fingerprint differs from installed package identity.');
-  if (expectedBuild) assert.equal(buildHash, expectedBuild, 'Build differs from the offline-qualified candidate.');
-  return { runtime, contract, manifest, manifestSha256, scriptSha256, scriptPath, cliPath, buildHash };
+  assert.equal(buildHash, expectedBuild, 'Build differs from the offline-qualified candidate.');
+  return { runtimeRoot, runtime, contract, manifest, manifestSha256, scriptSha256, scriptPath, cliPath, buildHash };
 }
 
 function offlineCheck() {
-  const runtimeRoot = fs.realpathSync(process.env.FMCAD_LIVE_RUNTIME_ROOT || expectedRuntimeRoot);
-  assert.equal(runtimeRoot, expectedRuntimeRoot, 'Use only the source-pinned GM07 candidate for offline checks.');
-  const pinned = fixedContract(runtimeRoot);
+  const { runtimeRoot, expectedBuildHash } = runtimePins();
+  const pinned = fixedContract(runtimeRoot, expectedBuildHash);
   const pythonCheck = childProcess.spawnSync('python3', ['-B', '-c',
     'import runpy,sys; value=runpy.run_path(sys.argv[1]); assert callable(value["run"])', pinned.scriptPath],
   { encoding: 'utf8', timeout: 10000 });
@@ -170,11 +175,12 @@ function offlineCheck() {
     helperVersion: pinned.contract.helperVersion,
     scope: pinned.manifest.scope,
     callerCleanupRequired: pinned.manifest.callerCleanupRequired,
+    status: 'OFFLINE-CANDIDATE-QUALIFIED; NATIVE-NOTRUN',
     adapterCheck: 'PASS-OFFLINE',
     nativeStatus: 'NOTRUN-no-active-runtime-grant-or-fresh-scope',
   };
   report.tests = [{ name: 'gm07-fixed-source-offline-adapter-check', status: 'NOTRUN',
-    note: 'Manifest/source/build hashes match the inactive offline-qualified candidate; no broker or Fusion request was made.' }];
+    note: 'Manifest/source hashes and the explicit runtime build pin match; no broker or Fusion request was made.' }];
   report.operationCoverage = coverageOperations.map(operation => ({ operation, canonical: true,
     test: 'tests/live-gm07.js', status: 'NOTRUN-before-native-fixed-run' }));
   report.finishedAt = new Date().toISOString();
@@ -182,97 +188,36 @@ function offlineCheck() {
   console.log('OFFLINE CHECK PASS; GM07 Fusion methods remain NOTRUN');
 }
 
-function cli(args) {
-  const result = spawnSync(process.execPath, ['bin/fmcad.js', ...args, '--timeout', '60000'], {
-    cwd: root, encoding: 'utf8', timeout: 0, maxBuffer: 32 * 1024 * 1024,
-  });
-  const row = { args, exitCode: result.status, stdout: result.stdout || '', stderr: result.stderr || '',
-    error: result.error?.message, signal: result.signal || undefined, status: 'not-validated' };
-  report.commands.push(row);
-  const text = row.stdout + row.stderr.split(/\r?\n/)
-    .filter(line => !line.startsWith('FMCAD_QUEUE_') && !line.startsWith('QUEUE ')).join('\n');
-  if (result.error || result.signal || result.status === null || !text.trim() ||
-      /empty response|timeout|timed?\s*out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|MCP_ERROR|HTTP [45]\d\d/i.test(text)) {
-    uncertain = true;
-    row.status = 'unknown';
-    persist();
-    throw new Error('Indeterminate lifecycle result; stop and inspect without retry.');
-  }
-  if (/EPOCH_CLIENT_NOT_GRANTED|NATIVE_FIXTURE_SCOPE_REQUIRED|NATIVE_FIXTURE_CHANGED|BUILD_CHANGED|no modeling grant for the isolated scratch/i.test(text)) {
-    blockedReason = text.trim();
-    row.status = 'blocked-before-native';
-    persist();
-    throw new Error('Exact fixed-run admission blocked before a GM07 method ran.');
-  }
-  row.status = result.status === 0 ? 'transport-returned' : 'command-failed';
-  persist();
-  return row;
-}
-
-function lifecycleScript(source, readOnly = true) {
-  const wrapped = 'import adsk.core, adsk.fusion, json\n\ndef run(_context: str):\n' +
-    source.split('\n').map(line => '    ' + line).join('\n');
-  const row = cli(['call', 'fusion_mcp_execute', JSON.stringify({ featureType: 'script', object: { script: wrapped, readOnly } })]);
-  const lines = row.stdout.split(/\r?\n/).filter(line => line.startsWith('LIVE_GM07 '));
-  if (lines.length !== 1) {
-    uncertain = true;
-    row.status = 'unknown';
-    persist();
-    throw new Error('Lifecycle script returned no unambiguous result; stop without retry.');
-  }
-  let parsed;
-  try { parsed = JSON.parse(lines[0].slice('LIVE_GM07 '.length)); }
-  catch {
-    uncertain = true;
-    row.status = 'unknown';
-    persist();
-    throw new Error('Lifecycle script returned malformed JSON; stop without retry.');
-  }
-  assert.equal(row.exitCode, 0, row.stderr || row.stdout);
-  if (isExecutionUnknown(parsed)) {
-    uncertain = true;
-    row.status = 'unknown';
-    row.parsed = parsed;
-    persist();
-    throw new Error('Lifecycle result is pending/unknown; stop without replay.');
-  }
-  row.parsed = parsed;
-  row.status = 'validated';
-  persist();
-  return parsed;
-}
-
-function state() {
-  fixture(null, null);
-  return lifecycleScript(`app = adsk.core.Application.get()
-docs = [{"name": d.name, "creationId": d.creationId, "fileId": d.dataFile.id if d.dataFile else None, "saved": d.isSaved, "modified": d.isModified, "active": d == app.activeDocument} for d in app.documents]
-print('LIVE_GM07 ' + json.dumps({"version": app.version, "documents": docs}))`);
-}
-
-function stableDocuments(docs) {
-  return docs.map(({ active, ...doc }) => doc).sort((a, b) => String(a.creationId).localeCompare(String(b.creationId)));
-}
-
-function runFixedProgram(pinned, clientId, fusionVersion) {
+async function runFixedProgram(pinned, clientId, fusionVersion, requestId = 'gm07-curves-' + crypto.randomUUID()) {
   assert.ok(process.argv.includes('--run'), 'Explicit --run is required; the default path never dispatches.');
-  const requestId = 'gm07-curves-' + crypto.randomUUID();
   const fixedArgs = { approved: true, creationId: identity.creationId,
     expectedFusionVersion: fusionVersion, fixturePrefix };
   const args = [pinned.cliPath, 'run', pinned.scriptPath, '--helpers', 'cad-v1', '--args', JSON.stringify(fixedArgs),
     '--doc', identity.name, '--doc-id', identity.creationId, '--request-id', requestId, '--timeout', '180000'];
-  const result = childProcess.spawnSync(process.execPath, args, {
-    cwd: root, encoding: 'utf8', timeout: 240000, maxBuffer: 32 * 1024 * 1024,
-    env: { ...process.env, FMCAD_ROUTING: 'queue', FMCAD_CLIENT: clientId },
+  const intentFile = prepareNativeInvocation(path.join(root, '.test-artifacts/native-invocations'), {
+    requestId, clientId, document: identity, runtimeRoot: pinned.runtimeRoot, buildHash: pinned.buildHash,
+    fixtureId, manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256, command: args,
   });
+  const command = { requestId, clientId, runtimeRoot: pinned.runtimeRoot, buildHash: pinned.buildHash,
+    fixtureId, manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
+    fixedSourceCommit, arguments: fixedArgs, intentFile, status: 'dispatch-intent' };
+  report.commands.push(command);
+  persist(); // Persist exact original request and driver birth before a possibly mutating spawn.
+  let result;
+  try {
+    result = childProcess.spawnSync(process.execPath, args, {
+      cwd: root, encoding: 'utf8', timeout: 240000, maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, FMCAD_ROUTING: 'queue', FMCAD_CLIENT: clientId },
+    });
+  } catch (error) {
+    uncertain = true; command.status = 'unknown'; command.error = error.message; persist(); throw error;
+  }
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const jobLines = stderr.split(/\r?\n/).filter(line => line.startsWith('FMCAD_QUEUE_JOB '));
   const terminalLines = stderr.split(/\r?\n/).filter(line => line.startsWith('FMCAD_QUEUE_RESULT '));
-  const command = { requestId, clientId, runtimeRoot: pinned.runtimeRoot, buildHash: pinned.buildHash,
-    fixtureId, manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
-    fixedSourceCommit, arguments: fixedArgs, exitCode: result.status, signal: result.signal || undefined,
-    error: result.error?.message, stdout, stderr, status: 'not-validated' };
-  report.commands.push(command);
+  Object.assign(command, { exitCode: result.status, signal: result.signal || undefined,
+    error: result.error?.message, stdout, stderr, status: 'not-validated' });
   persist();
   if (result.error || result.signal || result.status === null || jobLines.length > 1 ||
       jobLines.length > 0 && terminalLines.length !== 1) {
@@ -302,7 +247,44 @@ function runFixedProgram(pinned, clientId, fusionVersion) {
     persist();
     throw new Error('Malformed terminal queue receipt; stop without replay.');
   }
-  const jobNotice = jobLines.length === 1 ? JSON.parse(jobLines[0].slice('FMCAD_QUEUE_JOB '.length)) : null;
+  let jobNotice;
+  let execution;
+  try {
+    jobNotice = jobLines.length === 1 ? JSON.parse(jobLines[0].slice('FMCAD_QUEUE_JOB '.length)) : null;
+    assert.equal(jobNotice?.requestId, requestId);
+    assert.equal(queueResult.requestId, requestId);
+    assert.equal(queueResult.id, jobNotice?.jobId);
+    const original = await readQueueResult({ cliPath: pinned.cliPath, backend: 'addin',
+      clientId, jobId: jobNotice.jobId, cwd: root });
+    execution = queueExecution(original, { clientId }, requestId);
+    assert.equal(original.job.id, jobNotice.jobId);
+    assert.equal(execution.sdkSettled, true);
+    assert.equal(execution.state, queueResult.state);
+    assert.equal(original.stdout, stdout);
+    assert.deepEqual(queueResult.outcome || queueResult.operationResult, original.job.operationResult);
+    if (queueResult.clientId !== undefined) assert.equal(queueResult.clientId, original.job.clientId);
+    if (queueResult.executionOutcome !== undefined) assert.equal(queueResult.executionOutcome, original.job.operationResult.executionOutcome);
+    assert.equal(original.job.operationResult.version, 1);
+    assert.equal(original.job.operationResult.requestId, requestId);
+    assert.equal(original.job.operationResult.jobId, jobNotice.jobId);
+    assert.equal(original.job.operationResult.acceptance, 'accepted');
+    assert.equal(original.job.operationResult.executionOutcome, execution.state);
+    assert.equal(original.provenance.status, 'available');
+    const sources = original.provenance.inputs.filter(input => input.kind === 'source');
+    assert.equal(sources.length, 1);
+    assert.equal(sources[0].sha256, pinned.scriptSha256);
+    assert.equal(sources[0].originalPath, pinned.scriptPath);
+    assert.equal(sources[0].bytes, fs.statSync(pinned.scriptPath).size);
+    command.originalResultFile = intentFile + '.original.json';
+    fs.writeFileSync(command.originalResultFile, JSON.stringify(original, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    // The public CLI emits a thin outcome notice, not a full worker receipt.
+    // All identity and execution fields here come from that original worker.
+    observeNativeInvocation(intentFile, jobNotice, { ...original.job,
+      executionOutcome: original.job.operationResult.executionOutcome });
+  } catch (error) {
+    uncertain = true; command.status = 'unknown'; command.error = error.message; persist();
+    throw new Error('Fixed-run accepted/terminal identity or outcome is unverified; inspect the original request, never replay.', { cause: error });
+  }
   command.jobId = jobNotice?.jobId || null;
   command.queueResult = queueResult;
   if (isExecutionUnknown(queueResult)) {
@@ -363,7 +345,6 @@ function runFixedProgram(pinned, clientId, fusionVersion) {
     persist();
     throw new Error('Settled payload does not prove the exact unsaved owner document; inspect before cleanup.');
   }
-  fixedRunSettled = true;
   assert.equal(payload.version, 1);
   assert.equal(payload.fixturePrefix, fixturePrefix);
   assert.equal(payload.document?.creationId, identity.creationId);
@@ -394,7 +375,7 @@ function runFixedProgram(pinned, clientId, fusionVersion) {
     runtimeRoot: pinned.runtimeRoot, buildHash: pinned.buildHash, fixtureId, manifestSha256: pinned.manifestSha256,
     scriptSha256: pinned.scriptSha256, helperCallsOnly: envelope.helperCallsOnly };
   persist();
-  return payload;
+  return { value: payload, execution };
 }
 
 function recordCalls(payload) {
@@ -467,135 +448,87 @@ function runAssertions(payload) {
   persist();
 }
 
-function closeOwned() {
-  if (!identity || uncertain || !documentCreated) return false;
-  // This is the manifest's caller-owned cleanup only, never a test-method
-  // dispatch. Clear the helper scope so it cannot activate another document.
-  fixture(null, null);
-  const expectedOtherDocuments = baseline.documents.map(({ active, ...doc }) => doc);
-  const expectedOtherJson = JSON.stringify(expectedOtherDocuments);
-  const expectedModified = fixedRunSettled ? 'True' : 'False';
-  const closed = lifecycleScript(`app = adsk.core.Application.get()
-matches = [d for d in app.documents if d.name == ${JSON.stringify(identity.name)} and d.creationId == ${JSON.stringify(identity.creationId)}]
-assert len(matches) == 1, 'Exact test-owned scratch identity ambiguous; leave open'
-doc = matches[0]
-assert app.activeDocument == doc, 'Exact test-owned scratch is not active; do not switch documents'
-assert doc.dataFile is None and not doc.isSaved, 'Unexpected saved/cloud scratch; leave open'
-assert doc.isModified is ${expectedModified}, 'Scratch modification state differs from the settled test phase'
-restore_id = ${JSON.stringify(restoreDocumentId)}
-expected_others = sorted(tuple(row) for row in json.loads(${JSON.stringify(expectedOtherJson)}))
-before_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)
-                       for d in app.documents if d.creationId != doc.creationId)
-assert before_others == expected_others, 'An existing document changed during the GM07 test'
-if restore_id is not None:
-    assert len([d for d in app.documents if d.creationId == restore_id]) == 1, 'Original active document disappeared'
-assert doc.close(False), 'Exact test-owned scratch close failed'
-app = adsk.core.Application.get()
-after_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)
-                      for d in app.documents)
-assert after_others == expected_others, 'Another document changed during exact scratch cleanup'
-active_id = app.activeDocument.creationId if app.activeDocument else None
-assert active_id == restore_id, 'Original active document was not restored'
-print('LIVE_GM07 ' + json.dumps({"closedCreationId": ${JSON.stringify(identity.creationId)},
-                                 "activeCreationId": active_id, "remainingDocuments": len(app.documents)}))`, false);
-  assert.equal(closed.closedCreationId, identity.creationId);
-  assert.equal(closed.activeCreationId, restoreDocumentId);
-  report.cleanupResult = closed;
-  return true;
+function gm07OwnedScenario(pinned, fusionVersion) {
+  return {
+    id: 'gm07-source-pinned',
+    scope: 'exclusive-instance',
+    requires: ['documents', 'fixture-export', 'original-user-view'],
+    async run(session) {
+      identity = session.document;
+      assert.equal(identity.file, undefined, 'GM07 requires an unsaved owner scratch');
+      session.expectCleanupModified(false);
+      report.name = identity.name;
+      report.broker.client = session.report.owner.clientId;
+      report.ownedDocuments.push({ ...identity, createdBySuite: true });
+      persist();
+      await session.verifyOwnedUnsaved('observe-gm07-before-fixed-run');
+      const payload = await session.registeredRequest('gm07-fixed-run', {
+        fixtureId, manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
+        buildHash: pinned.buildHash, document: identity,
+      }, async (binding) => {
+        const { value, execution } = await runFixedProgram(pinned, binding.owner.clientId, fusionVersion, binding.requestId);
+        assert.ok(execution, 'Missing exact original GM07 result; do not replay');
+        assert.equal(execution.brokerReceipt?.jobId, report.nativeRun.jobId, 'Foreign GM07 original job');
+        assert.equal(execution.brokerReceipt?.clientId, binding.owner.clientId, 'Foreign GM07 original owner');
+        return { value, execution };
+      });
+      session.expectCleanupModified(true);
+      report.fusionVersion = payload.fusionVersion;
+      report.fixtureStatusBefore = payload.document.before;
+      report.afterNativeRun = payload.document.after;
+      report.fixture = { ...payload.document.before, designBefore: payload.designBefore };
+      report.nativeResult = payload;
+      report.fixtureDesignBaseline = payload.designBefore;
+      runAssertions(payload);
+      report.tests = [{ name: 'gm07-source-pinned-native-methods', status: 'pass', operations: coverageOperations }];
+      persist();
+    },
+  };
 }
 
 async function main() {
+  const { runtimeRoot, expectedBuildHash } = runtimePins();
+  const pinned = fixedContract(runtimeRoot, expectedBuildHash);
+  const fusionVersion = requiredEnv('FMCAD_LIVE_FUSION_VERSION');
+  const { QueueScenarioBackend } = require('../dist/tests/scenarios/queue-backend.js');
+  const { runScenarios } = require('../dist/tests/scenarios/runner.js');
+  const { scenarioArtifactRoot } = require('../dist/tests/scenarios/artifact-root.js');
+  const { toWindowsPath, detectPlatform } = require('../src/dist/config-platform');
+  const { cfg } = require('../src/config').loadConfig({ routing: 'queue' });
+  assert.equal(cfg.backend, 'addin');
+  assert.equal(cfg.url, 'http://127.0.0.1:8765/mcp');
+  const backend = new QueueScenarioBackend('fusion', 'addin',
+    new Set(['documents', 'fixture-export', 'original-user-view']), root, cfg,
+    file => toWindowsPath(file, detectPlatform()));
+  report.fixedProgram = { ...report.fixedProgram, runtimeRoot, buildHash: pinned.buildHash,
+    manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
+    status: 'RUNTIME-BUILD-VERIFIED; NATIVE-NOTRUN' };
   persist();
   try {
-    const runtimeRoot = fs.realpathSync(requiredEnv('FMCAD_LIVE_RUNTIME_ROOT'));
-    const pinned = fixedContract(runtimeRoot);
-    process.env.FMCAD_LIVE_ROUTING = 'queue';
-    const clientId = requiredEnv('FMCAD_LIVE_CLIENT');
-    report.broker.client = clientId;
-    const fusionVersion = requiredEnv('FMCAD_LIVE_FUSION_VERSION');
-    fixture(null, null);
-    baseline = state();
-    report.before = baseline;
-    restoreDocumentId = baseline.documents.find(doc => doc.active)?.creationId || null;
-    assert.ok(!baseline.documents.some(doc => doc.name === name), 'Random GM07 fixture name already exists.');
-
-    const created = cli(['doc', 'new', '--name', name, '--json']);
-    const afterCreate = state();
-    const baselineIds = new Set(baseline.documents.map(doc => doc.creationId));
-    const added = afterCreate.documents.filter(doc => !baselineIds.has(doc.creationId));
-    if (added.length !== 1) {
-      if (created.exitCode === 0 || added.length > 1) uncertain = true;
-      throw new Error('Document creation and read-only reconciliation did not identify exactly one owned scratch; inspect, never retry.');
-    }
-    identity = { name: added[0].name, creationId: added[0].creationId };
-    documentCreated = true;
-    report.documentCreationExitCode = created.exitCode;
-    assert.equal(identity.name, name, 'CLI created a document with an unexpected name.');
-    assert.match(identity.creationId, /^[0-9a-f-]{36}$/i, 'New scratch did not return an exact creationId.');
-    assert.equal(added[0].fileId, null, 'New scratch unexpectedly has a cloud file ID.');
-    assert.equal(added[0].saved, false, 'New scratch unexpectedly saved.');
-    assert.equal(added[0].modified, false, 'New scratch was not pristine before the GM07 program.');
-    assert.equal(added[0].active, true, 'New scratch was not active; do not switch documents.');
-    fixture(identity.name, identity.creationId);
-    report.name = identity.name;
-    report.ownedDocuments.push({ ...identity, createdBySuite: true });
-    report.fixture = added[0];
-    if (created.exitCode !== 0) {
-      throw new Error('Document creation returned a terminal CLI failure, but one exact new scratch was observed; closing only that owned scratch.');
-    }
-
-    report.fixedProgram = { ...report.fixedProgram, runtimeRoot, buildHash: pinned.buildHash,
-      manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
-      scope: pinned.manifest.scope, callerCleanupRequired: true,
-      nativeStatus: 'EXPLICIT-RUN-REQUESTED; own unsaved document created; broker admission not yet established' };
+    const [owned] = await runScenarios(backend, [gm07OwnedScenario(pinned, fusionVersion)],
+      scenarioArtifactRoot(root, 'fusion'), 1);
+    report.lifecycle = owned;
+    uncertain ||= owned.cleanup === 'deferred';
+    report.fixtureClosed = owned.cleanup === 'complete' && Boolean(owned.document);
+    report.remainingOwnedDocuments = report.fixtureClosed ? [] : 'unknown';
+    report.cleanup = { status: owned.cleanup, document: owned.document, report: path.join(owned.directory, 'report.json') };
+    report.fixedProgram.nativeStatus = owned.status === 'passed' ? 'PASS-NATIVE-FIXED-RUN-AND-OWN-CLEANUP'
+      : owned.cleanup === 'deferred' ? 'UNKNOWN-INSPECT-ORIGINAL-REQUEST-NO-REPLAY' : 'FAIL';
+    report.finalAuditStatus = owned.status === 'passed' ? 'PASS-receipt-bound-coordinator-and-own-cleanup' : 'NOT-PASS';
+    if (owned.status !== 'passed') report.tests = [{ name: 'gm07-source-pinned-native-methods',
+      status: owned.cleanup === 'deferred' ? 'unknown' : 'fail', error: owned.error || owned.cleanupError }];
+    report.operationCoverage = coverageOperations.map(operation => ({ operation, canonical: true,
+      test: 'tests/live-gm07.js', status: report.methodResults.some(row => row.operation === operation && row.status === 'pass')
+        ? 'pass' : owned.cleanup === 'deferred' ? 'unknown' : 'not-passed' }));
+    report.finishedAt = new Date().toISOString();
     persist();
-
-    const payload = runFixedProgram(pinned, clientId, fusionVersion);
-    report.fusionVersion = payload.fusionVersion;
-    report.fixtureStatusBefore = payload.document.before;
-    report.afterNativeRun = payload.document.after;
-    report.fixture = { ...payload.document.before, designBefore: payload.designBefore };
-    report.nativeResult = payload;
-    report.fixtureDesignBaseline = payload.designBefore;
-    runAssertions(payload);
-    report.tests = [{ name: 'gm07-source-pinned-native-methods', status: 'pass', operations: coverageOperations }];
-  } catch (error) {
-    failure = error;
-    if (error.code === 'NATIVE_FIXTURE_SCOPE_REQUIRED' || /FMCAD_LIVE_(CLIENT|RUNTIME_ROOT|DOC_NAME|DOC_ID|RESTORE_DOC_ID|FUSION_VERSION) is required/.test(error.message))
-      blockedReason = error.message;
-    report.tests = [{ name: 'gm07-source-pinned-native-methods',
-      status: uncertain ? 'unknown' : blockedReason ? 'blocked' : 'fail', error: error.message,
-      ...(blockedReason ? { blocker: blockedReason } : {}) }];
+    assert.equal(owned.status, 'passed', owned.error || owned.cleanupError || 'GM07 lifecycle failed');
+    assert.equal(report.fixtureClosed, true, 'GM07 exact own cleanup incomplete');
+    console.log('REPORT ' + reportPath);
+    console.log('PASS GM07 source-pinned native methods: ' + targetOperations.join(', '));
+  } finally {
+    backend.close();
   }
-
-  if (!uncertain && documentCreated && identity) {
-    try { report.fixtureClosed = closeOwned(); }
-    catch (error) { failure ||= error; report.cleanupError = error.message; }
-  }
-  if (report.fixtureClosed) {
-    report.remainingOwnedDocuments = [];
-    report.after = report.cleanupResult;
-    report.cleanup = { closedCreationId: identity.creationId, restoredActiveCreationId: restoreDocumentId,
-      status: 'exact test-owned unsaved scratch discard-closed; original documents unchanged' };
-  } else if (blockedReason) {
-    report.finalAuditStatus = 'NOTRUN-after-explicit-block';
-    report.cleanupStatus = documentCreated
-      ? 'cleanup blocked; inspect the exact owned unsaved document without retry'
-      : 'no test document was created; cleanup was unnecessary';
-  } else if (uncertain) {
-    report.finalAuditStatus = 'NOTRUN-after-unknown; inspect exact scratch and reconcile, never replay';
-  }
-
-  report.operationCoverage = coverageOperations.map(operation => ({ operation, canonical: true,
-    test: 'tests/live-gm07.js', status: report.methodResults.some(row => row.operation === operation && row.status === 'pass')
-      ? 'pass' : uncertain ? 'unknown' : blockedReason ? 'blocked' : 'not-passed' }));
-  report.finishedAt = new Date().toISOString();
-  persist();
-  console.log('REPORT ' + reportPath);
-  if (failure || report.tests?.[0]?.status !== 'pass' || report.finalAuditError || !report.fixtureClosed) {
-    console.error('FAIL GM07 source-pinned suite: ' + (failure?.message || report.finalAuditError || 'run or exact cleanup incomplete'));
-    process.exitCode = 1;
-  } else console.log('PASS GM07 source-pinned native methods: ' + targetOperations.join(', '));
 }
 
 async function entry() {
@@ -622,7 +555,7 @@ async function entry() {
 }
 
 entry().catch(error => {
-  blockedReason = /EPOCH_CLIENT_NOT_GRANTED|NATIVE_FIXTURE_SCOPE_REQUIRED|NATIVE_FIXTURE_CHANGED|BUILD_CHANGED/.test(error.message)
+  blockedReason = /EPOCH_CLIENT_NOT_GRANTED|NATIVE_FIXTURE_SCOPE_REQUIRED|NATIVE_FIXTURE_CHANGED|BUILD_CHANGED|FMCAD_LIVE_(RUNTIME_ROOT|BUILD_HASH)/.test(error.message)
     ? error.message : blockedReason;
   report.tests = [{ name: 'gm07-source-pinned-wrapper-setup',
     status: uncertain ? 'unknown' : blockedReason ? 'blocked' : 'fail', error: error.message,

@@ -1,5 +1,7 @@
 """Geometry feature: domain; retained cad-v1 shared namespace."""
 
+from fmcad.domain.values import JsonObject
+
 
 _FEATURE_EDITABLE_NATIVE = {
     'ExtrudeFeature': ['profile', 'startExtent', 'extentOne', 'extentTwo', 'operation', 'participantBodies'],

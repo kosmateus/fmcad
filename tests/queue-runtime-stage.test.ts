@@ -5,33 +5,30 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const runtimeRequire = createRequire(__filename);
-const { stageQueueRuntime, stageQueueTestFixtures } = runtimeRequire(
-  "../scripts/devtools/stage-queue-runtime.js",
-) as {
-  stageQueueRuntime(root: string): void;
-  stageQueueTestFixtures(root: string): void;
-};
+const { stageQueueRuntime, stageQueueTestFixtures, queueRuntimeModules } =
+  runtimeRequire("../scripts/devtools/stage-queue-runtime.js") as {
+    stageQueueRuntime(root: string): void;
+    stageQueueTestFixtures(root: string): void;
+    queueRuntimeModules: readonly string[];
+  };
 
 test("queue staging publishes exact compiler bytes and preserves unrelated files", (t) => {
   const root = fs.mkdtempSync(path.join(tmpdir(), "queue-emission-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/library-build/src");
   fs.mkdirSync(compiled, { recursive: true });
-  const names = [
-    "queue-broker",
-    "queue-client",
-    "queue-closed-epoch-proof",
-    "queue-isolated-epoch",
-    "queue-scratch-control",
-    "queue-admission",
-    "queue-fixed-fixture-admission",
-    "queue-instance-liveness",
-    "queue-epoch-lineage",
-  ];
+  const names = queueRuntimeModules;
+  assert.ok(names.includes("atomic-runtime-abi"));
+  assert.ok(names.includes("composition/queue-broker"));
+  assert.ok(names.includes("queue-broker-modules"));
   for (const name of names)
     for (const extension of [".js", ".d.ts"]) {
+      fs.mkdirSync(path.dirname(path.join(compiled, name)), {
+        recursive: true,
+      });
       fs.writeFileSync(
         path.join(compiled, name + extension),
         "compiler output: " + name + extension,
@@ -69,11 +66,35 @@ test("missing compiler output rejects before any partial publication", (t) => {
   assert.equal(fs.existsSync(path.join(root, "src")), false);
 });
 
-test("legacy fixture consumers receive emitted CJS from canonical CTS, not handwritten wrappers", (t) => {
+test("legacy fixture consumers receive emitted CJS and runtime CJS fixtures are staged", (t) => {
   const root = fs.mkdtempSync(path.join(tmpdir(), "queue-fixture-emission-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/tests/fixtures");
   fs.mkdirSync(compiled, { recursive: true });
+  const source = path.join(root, "tests/fixtures");
+  fs.mkdirSync(source, { recursive: true });
+  const workspaceNames = [
+    "atomic-audit-upgrade.cjs",
+    "epoch-audit.cjs",
+    "fake-wsl-platform.cjs",
+    "fake-wsl-preload.cjs",
+    "backend-successor.cjs",
+    "runtime-upgrade-lineage.cjs",
+    "current-epoch-upgrade.cjs",
+    "dead-epoch-successor.cjs",
+    "publish-saved-fixture.cjs",
+    "saved-first-save-evidence.cjs",
+    "saved-first-save.cjs",
+    "saved-native-destination.cjs",
+    "settled-probes.cjs",
+    "native-source-envelope.cjs",
+    "frozen-inline-observer-evidence.json",
+  ];
+  for (const filename of workspaceNames)
+    fs.writeFileSync(
+      path.join(source, filename),
+      "workspace fixture: " + filename,
+    );
   const names = [
     "closed-scratch-artifacts.cjs",
     "closed-epoch-successor.cjs",
@@ -84,17 +105,60 @@ test("legacy fixture consumers receive emitted CJS from canonical CTS, not handw
       path.join(compiled, filename),
       "compiler output: " + filename,
     );
+  for (const filename of [
+    "dead-epoch-successor.test.js",
+    "frozen-inline-observer.test.js",
+    "frozen-metadata-profile.test.js",
+    "runtime-upgrade-lineage.test.js",
+    "integration/offline-cli.js",
+  ]) {
+    const file = path.join(root, "dist/tests", filename);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "compiled test: " + filename);
+  }
+  fs.mkdirSync(path.join(root, "dist/src"), { recursive: true });
   stageQueueTestFixtures(root);
   for (const filename of names)
     assert.deepEqual(
       fs.readFileSync(path.join(root, "tests/fixtures", filename)),
       fs.readFileSync(path.join(compiled, filename)),
     );
+  for (const filename of workspaceNames)
+    assert.deepEqual(
+      fs.readFileSync(path.join(compiled, filename)),
+      fs.readFileSync(path.join(source, filename)),
+    );
+  const corpus = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "dist/src/frozen-metadata-test-corpus.json"),
+      "utf8",
+    ),
+  ) as { files: Array<{ file: string; sha256: string }> };
+  assert.ok(
+    corpus.files.some(
+      (entry) => entry.file === "tests/runtime-upgrade-lineage.test.js",
+    ),
+  );
+  assert.ok(
+    corpus.files.some(
+      (entry) => entry.file === "tests/fixtures/runtime-upgrade-lineage.cjs",
+    ),
+  );
+  for (const entry of corpus.files)
+    assert.equal(
+      entry.sha256,
+      createHash("sha256")
+        .update(fs.readFileSync(path.join(root, "dist", entry.file)))
+        .digest("hex"),
+    );
 });
 
 test("queue declarations resolve against the installed runtime providers", () => {
   const root = path.resolve(__dirname, "../..");
   const files = [
+    "queue-broker",
+    "composition/queue-broker",
+    "queue-broker-ports",
     "queue-admission",
     "queue-fixed-fixture-admission",
     "queue-instance-liveness",

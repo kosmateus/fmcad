@@ -1,6 +1,7 @@
 // Public boundary for host-independent domain, application, ports, and catalog modules.
 export * from "./domain/contracts";
 export * from "./domain/config";
+export * from "./domain/physical-backend";
 export * from "./domain/outcome";
 export * from "./domain/evidence";
 export * from "./domain/time-policy";
@@ -11,6 +12,23 @@ export * from "./domain/diagnostics";
 export * from "./ports";
 export * from "./catalog";
 export * from "./domain/queue-model";
+export * from "./domain/document-checkpoint";
+export type { DocumentCreation, DocumentCreationAuthority } from "./domain/document-creation";
+export type {
+  DocumentContinuation,
+  DocumentContinuationAuthority,
+} from "./domain/document-continuation";
+export type {
+  DocumentMetadataRead,
+  DocumentMetadataReadAuthority,
+} from "./domain/document-metadata-read";
+export type {
+  AppliedRuntimeRetirement,
+  RuntimeRetiredExposure,
+  RuntimeRetirementAuthority,
+} from "./domain/runtime-retirement";
+export type { DocumentConflict, RetiredDocumentConflict } from "./domain/document-conflicts";
+export { quarantineTargetConflicts } from "./domain/queue-quarantine";
 export * from "./domain/queue";
 export * from "./domain/document";
 export * from "./domain/queue-control";
@@ -23,10 +41,13 @@ export * from "./domain/native-drive";
 export * from "./application/semantic-model-state";
 export * from "./application/observation";
 export * from "./application/mcp-context";
+export * from "./application/document-unlock";
 export type * from "./ports/mcp-context-port";
 export * from "./domain/python-artifact";
 export * from "./domain/python-checker";
 export * from "./application/python-admission";
+export * from "./application/cad/source-selection";
+export * from "./application/cad/payload-dependencies";
 export * from "./application/engineering";
 export type {
   EngineeringRuntime,
@@ -58,3 +79,7 @@ export * from "./application/execution-service";
 export * from "./application/execution-probe";
 export * from "./application/cad";
 export * from "./application/broker-control";
+
+export * from "./application/console-model";
+
+export * from "./application/console-details";

@@ -7,7 +7,7 @@
     "examples": [
       {"label":"Right-handed helix with pitch and turns","data":{"schemaVersion":1,"frame":"component","radius":"4 mm","pitch":"5.75 mm","turns":8,"hand":"right","startPhase":"0 deg","tolerance":"0.01 mm"},"requires":"A selected component; no existing geometry.","output":"result.arcLength is turns * sqrt(pitch^2 + (2*pi*radius)^2); result.samplePoints feed visualization."}
     ],
-    "audit":{"sources":["assets/cad/spring.py:curve_helix,_helix_curve,_helix_parameters"],"verified":["Pitch vs turns+height exclusivity","Hand, phase and tolerance validation","Recipe representation, native Coil never claimed"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["Native persistent 3D helical path insertion not exposed by installed SDK"]}
+    "audit":{"sources":["assets/cad/spring.py:curve_helix,_helix_curve,_helix_parameters"],"verified":["Pitch vs turns+height exclusivity","Hand, phase and tolerance validation","Recipe representation, native Coil never claimed"],"tests":["tests/spring_test.py","tests/spring.test.ts"],"gaps":[],"bugs":["Native persistent 3D helical path insertion not exposed by installed SDK"]}
   },
   "shape.spring": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label":"Ground compression spring","data":{"schemaVersion":1,"frame":"component","name":"Spring","wireDiameter":"0.5 mm","meanDiameter":"8 mm","activeCoils":6,"totalCoils":8,"freeLength":"35 mm","endStyle":"ground","hand":"right"},"requires":"A selected component; no existing geometry.","output":"result.stiffness uses active coils; result.solidHeight is totalCoils * wireDiameter."}
     ],
-    "audit":{"sources":["assets/cad/spring.py:shape_spring,_spring_geometry"],"verified":["Diameter ordering and solid height","Active vs total coil split for stiffness/mass","Ground/plain ends are recipe representations, not native geometry"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["Ground-end geometry and the wire-section sweep are declared native gaps (no persistent native helical path)"]}
+    "audit":{"sources":["assets/cad/spring.py:shape_spring,_spring_geometry"],"verified":["Diameter ordering and solid height","Active vs total coil split for stiffness/mass","Ground/plain ends are recipe representations, not native geometry"],"tests":["tests/spring_test.py","tests/spring.test.ts"],"gaps":[],"bugs":["Ground-end geometry and the wire-section sweep are declared native gaps (no persistent native helical path)"]}
   },
   "spring.evaluate": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label":"P054 spring stiffness and forces","data":{"schemaVersion":1,"frame":"component","wireDiameter":"0.5 mm","meanDiameter":"8 mm","activeCoils":6,"totalCoils":8,"freeLength":"35 mm","shearModulus":"77000 N/mm^2","density":"7850 kg/m^3","installedLength":"27 mm","compressedLength":"17 mm"},"requires":"A selected component; read-only.","output":"result.stiffness.value is approximately 0.195821 N/mm for these inputs."}
     ],
-    "audit":{"sources":["assets/cad/spring.py:spring_evaluate,_spring_geometry"],"verified":["P054 fixture stiffness/force/energy reproduction","Active vs total coil semantics","Unit-bearing shear modulus and density"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["Linear model only; no buckling or fatigue"]}
+    "audit":{"sources":["assets/cad/spring.py:spring_evaluate,_spring_geometry"],"verified":["P054 fixture stiffness/force/energy reproduction","Active vs total coil semantics","Unit-bearing shear modulus and density"],"tests":["tests/spring_test.py","tests/spring.test.ts"],"gaps":[],"bugs":["Linear model only; no buckling or fatigue"]}
   },
   "spring.configure": {
     "sections": [
@@ -37,6 +37,6 @@
     "examples": [
       {"label":"Compressed state with guide rod","data":{"schemaVersion":1,"frame":"component","wireDiameter":"0.5 mm","meanDiameter":"8 mm","activeCoils":6,"totalCoils":8,"freeLength":"35 mm","shearModulus":"77000 N/mm^2","installedLength":"27 mm","compressedLength":"17 mm","guide":{"kind":"rod","diameter":"7.4 mm"}},"requires":"A selected component; read-only.","output":"result.checks include material-volume and guide-rod with margins."}
     ],
-    "audit":{"sources":["assets/cad/spring.py:spring_configure,_spring_geometry"],"verified":["Compressed below solid height fails","Guide rod/tube clearance","Slenderness unknown reporting"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["No buckling/fatigue/lateral-stability certification"]}
+    "audit":{"sources":["assets/cad/spring.py:spring_configure,_spring_geometry"],"verified":["Compressed below solid height fails","Guide rod/tube clearance","Slenderness unknown reporting"],"tests":["tests/spring_test.py","tests/spring.test.ts"],"gaps":[],"bugs":["No buckling/fatigue/lateral-stability certification"]}
   }
 }

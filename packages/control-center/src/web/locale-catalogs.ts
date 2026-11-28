@@ -1,54 +1,28 @@
 import {
   ENGLISH_SYSTEM_CONTROL_CATALOG,
   SYSTEM_CONTROL_CATALOGS,
-  type SystemControlCatalog,
-  type SystemControlMessageKey,
 } from "./locale-system-controls.js";
 import {
   ENGLISH_SYSTEM_VIEW_CATALOG,
   SYSTEM_VIEW_CATALOGS,
-  type SystemViewCatalog,
-  type SystemViewMessageKey,
 } from "./locale-system-view.js";
+import { ENGLISH_WEB_UI_CATALOG, WEB_UI_CATALOGS } from "./locale-web-ui.js";
+import { AGENTS_PROJECTS_MESSAGES } from "./agents-projects.js";
+import { agentsProjectsCatalogFor } from "./locale-agents-projects.js";
 import {
-  ENGLISH_WEB_UI_CATALOG,
-  WEB_UI_CATALOGS,
-  type WebUiCatalog,
-  type WebUiMessageKey,
-} from "./locale-web-ui.js";
+  appExtraCatalogFor,
+  ENGLISH_APP_EXTRA_CATALOG,
+} from "./locale-app-extra.js";
+import { LOCALE_CODES } from "./locale-types.js";
+import type { LocaleCode, MessageValue } from "./locale-types.js";
 
-export const LOCALE_CODES = [
-  "bg",
-  "hr",
-  "cs",
-  "da",
-  "nl",
-  "en",
-  "et",
-  "fi",
-  "fr",
-  "de",
-  "el",
-  "hu",
-  "ga",
-  "it",
-  "lv",
-  "lt",
-  "mt",
-  "pl",
-  "pt",
-  "ro",
-  "sk",
-  "sl",
-  "es",
-  "sv",
-  "uk",
-] as const;
-
-export type LocaleCode = (typeof LOCALE_CODES)[number];
-export type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
-export type PluralMessage = Readonly<Partial<Record<PluralCategory, string>>>;
-export type MessageValue = string | PluralMessage;
+export { LOCALE_CODES } from "./locale-types.js";
+export type {
+  LocaleCode,
+  MessageValue,
+  PluralCategory,
+  PluralMessage,
+} from "./locale-types.js";
 
 export const LOCALE_INFO = {
   bg: { name: "Български", flag: "BG" },
@@ -151,24 +125,19 @@ const CORE_ENGLISH_CATALOG = {
 export const ENGLISH_CATALOG = {
   ...CORE_ENGLISH_CATALOG,
   ...ENGLISH_WEB_UI_CATALOG,
+  ...ENGLISH_APP_EXTRA_CATALOG,
+  ...AGENTS_PROJECTS_MESSAGES,
   ...ENGLISH_SYSTEM_VIEW_CATALOG,
   ...ENGLISH_SYSTEM_CONTROL_CATALOG,
 } as const;
 
-type CoreMessageKey = keyof typeof CORE_ENGLISH_CATALOG;
-export type MessageKey =
-  | CoreMessageKey
-  | WebUiMessageKey
-  | SystemControlMessageKey
-  | SystemViewMessageKey;
-export type Catalog = Readonly<
-  Record<CoreMessageKey, MessageValue> &
-    WebUiCatalog &
-    SystemControlCatalog &
-    SystemViewCatalog
->;
+export type MessageKey = keyof typeof ENGLISH_CATALOG;
+export type Catalog = Readonly<Record<MessageKey, MessageValue>>;
 
-const catalogs = {
+const catalogs: Record<
+  Exclude<LocaleCode, "en">,
+  Readonly<Record<string, MessageValue>>
+> = {
   bg: {
     "language.select": "Избор на език",
     "language.system": "Системен / автоматичен",
@@ -1284,7 +1253,7 @@ const catalogs = {
     "nav.logs": "Logi",
     "nav.system": "System",
     "nav.projects": "Projekty",
-    "scope.global": "Globalnie",
+    "scope.global": "Wszystkie projekty",
     "scope.project": "Projekt",
     "common.openMenu": "Otwórz menu",
     "common.search": "Szukaj",
@@ -1836,18 +1805,20 @@ const catalogs = {
       other: "{count} елемента",
     },
   },
-} as const satisfies Record<
-  Exclude<LocaleCode, "en">,
-  Readonly<Record<CoreMessageKey, MessageValue>>
->;
+};
 
 function catalogFor(locale: LocaleCode): Catalog {
   if (locale === "en") return ENGLISH_CATALOG;
-  return {
+  const base: Record<string, MessageValue> = {
     ...catalogs[locale],
     ...WEB_UI_CATALOGS[locale],
     ...SYSTEM_VIEW_CATALOGS[locale],
     ...SYSTEM_CONTROL_CATALOGS[locale],
+  };
+  return {
+    ...base,
+    ...appExtraCatalogFor(locale, base),
+    ...agentsProjectsCatalogFor(locale, base),
   } as Catalog;
 }
 

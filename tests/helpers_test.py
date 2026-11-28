@@ -117,10 +117,16 @@ class HelperTest(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output): self.facade._terminal()
         self.assertEqual(output.getvalue().count('FMCAD_RESULT '), 1)
+        public = io.StringIO()
+        with contextlib.redirect_stdout(public): self.facade.terminal()
+        self.assertEqual(public.getvalue(), output.getvalue())
         output = io.StringIO()
         with contextlib.redirect_stdout(output): self.facade._terminal(RuntimeError('partial'))
         self.assertEqual(output.getvalue().count('FMCAD_RESULT '), 1)
         self.assertIn('"success": false', output.getvalue())
+        public = io.StringIO()
+        with contextlib.redirect_stdout(public): self.facade.terminal(RuntimeError('partial'))
+        self.assertEqual(public.getvalue(), output.getvalue())
 
     def test_stage_inspection_uses_only_the_injected_authenticated_worker_snapshot(self):
         snapshot = {

@@ -6,11 +6,15 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type { AtomicClient } from "../src/composition/batch-atomic.js";
 import type { BatchCatalog, CadData } from "@fmcad/core";
+import decodePythonLiteral from "./fixtures/python-literal.cjs";
 
 const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "package.json"));
 type Api = typeof import("../src/composition/batch-atomic.js");
 const current = load("./src/batch-atomic.js") as Api;
+const { preparePythonArtifact } = load(
+  "./src/python.js",
+) as typeof import("../packages/node-adapters/src/python/artifact.js");
 const historical = load("./tests/fixtures/historical-module.cjs") as (
   revision: string,
   source: string,
@@ -27,9 +31,7 @@ const { validateBatch } = load("./src/batch.js") as {
   validateBatch: typeof import("../packages/core/src/application/cad/batch-plan.js").validateBatch;
 };
 const { catalog } = load("./src/cad.js") as { catalog: BatchCatalog };
-const literal = load("./tests/fixtures/python-literal.cjs") as (
-  source: string,
-) => unknown;
+const literal = decodePythonLiteral;
 function requestData(source: string): unknown {
   // The baseline used a JSON string wrapper. Decode only its data, never Python.
   const prefix = "__import__('json').loads(";
@@ -98,11 +100,15 @@ async function execute(
     capabilities: { backend: "addin", atomicBatch: true },
     server: { timeoutMs: 180000 },
     async callTool(request) {
-      const line = request.object.script
-        .split("\n")
-        .find((item) => item.startsWith("_ATOMIC_REQUEST = "));
-      assert.ok(line);
-      const args = requestData(line.slice("_ATOMIC_REQUEST = ".length));
+      const assignment = /_ATOMIC_REQUEST(?:: "JsonObject")? = /u.exec(
+        request.object.script,
+      );
+      assert.ok(assignment);
+      const valueStart = assignment.index + assignment[0].length;
+      const lineEnd = request.object.script.indexOf("\n", valueStart);
+      const args = requestData(
+        request.object.script.slice(valueStart, lineEnd),
+      );
       assert.ok(args && typeof args === "object" && "operation" in args);
       const phase = phases.find((item) => item === args.operation);
       assert.ok(phase);
@@ -149,7 +155,7 @@ async function execute(
   return { result, calls };
 }
 
-test("atomic preparation retains the complete artifact and request", () => {
+test("atomic preparation retains the complete artifact with a typed request", () => {
   for (const operation of phases) {
     const args = {
       operation,
@@ -159,14 +165,31 @@ test("atomic preparation retains the complete artifact and request", () => {
       docFileId: context.docFileId,
       steps: [{ id: "only", operation: "entity.list", data: { kind: "body" } }],
     };
-    assert.deepEqual(
-      current.prepareAtomicScript(args),
-      beforeExtraction.prepareAtomicScript(args),
+    const expected = beforeExtraction.prepareAtomicScript(args);
+    const previousWrapper = expected.units.find(
+      (unit) => unit.id === "wrapper",
     );
-    assert.equal(
-      current.buildAtomicScript(args),
-      beforeExtraction.buildAtomicScript(args),
+    assert.ok(previousWrapper);
+    const oldDeclaration =
+      '_ATOMIC_REQUEST: "JsonObject"\n\n_ATOMIC_REQUEST = ';
+    const newDeclaration = '_ATOMIC_REQUEST: "JsonObject" = ';
+    const expectedWrapper = previousWrapper.source.replace(
+      oldDeclaration,
+      newDeclaration,
     );
+    assert.notEqual(expectedWrapper, previousWrapper.source);
+    const adjusted = preparePythonArtifact(
+      expected.units.map(({ id, filename, source, role }) => ({
+        id,
+        filename,
+        source: id === "wrapper" ? expectedWrapper : source,
+        role,
+      })),
+      { context: expected.context, request: expected.request },
+    );
+    const actual = current.prepareAtomicScript(args);
+    assert.deepEqual(actual, adjusted);
+    assert.equal(current.buildAtomicScript(args), adjusted.script);
   }
 });
 

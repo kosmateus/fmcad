@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING as _Identity_TYPE_CHECKING, Protocol as _Identi
 
 
 if _Identity_TYPE_CHECKING:
+    from collections.abc import Iterable as _IdentityIterable
     class _IdentityDataProject(_IdentityProtocol):
         @property
         def id(self) -> str: ...
@@ -98,6 +99,10 @@ def _document_target(app: '_IdentityApplication', doc_name: object, project_id: 
     collection = app.documents
     documents: list['_IdentityDocument'] | tuple['_IdentityDocument', ...] = (collection if isinstance(collection, (list, tuple)) else
                  [collection.item(i) for i in range(collection.count)])
+    return _document_unique_matching(documents, doc_name, project_id)
+
+
+def _document_unique_matching(documents: '_IdentityIterable[_IdentityDocument]', doc_name: str, project_id: object=None) -> '_IdentityDocument':
     docs: list['_IdentityDocument'] = []
     for doc in documents:
         if doc.name != doc_name:
@@ -121,6 +126,20 @@ def _document_target(app: '_IdentityApplication', doc_name: object, project_id: 
     return docs[0]
 
 
+def _document_file_pin(doc: '_IdentityDocument') -> 'str | None':
+    file, error = _document_data_file(doc)
+    if error:
+        raise ValueError('doc-file-id cannot be verified for document %s: %s' %
+                         (doc.name, error['message']))
+    return file.id if file else None
+
+
+def _document_check_pin(doc: '_IdentityDocument', label: str, expected: str, actual: 'str | None') -> None:
+    if actual != expected:
+        raise ValueError('%s mismatch for document %s: expected %s, got %s' %
+                         (label, doc.name, expected, actual))
+
+
 def _document_assert_identity(doc: '_IdentityDocument', doc_id: object=None, doc_file_id: object=None) -> None:
     import re
     # Assertions on the unique named target, never selectors or active-doc checks.
@@ -132,14 +151,8 @@ def _document_assert_identity(doc: '_IdentityDocument', doc_id: object=None, doc
         if label == 'doc-id':
             actual = doc.creationId
         else:
-            file, error = _document_data_file(doc)
-            if error:
-                raise ValueError('doc-file-id cannot be verified for document %s: %s' %
-                                 (doc.name, error['message']))
-            actual = file.id if file else None
-        if actual != expected:
-            raise ValueError('%s mismatch for document %s: expected %s, got %s' %
-                             (label, doc.name, expected, actual))
+            actual = _document_file_pin(doc)
+        _document_check_pin(doc, label, expected, actual)
 
 
 def _document_activate_target(app: '_IdentityApplication', doc: '_IdentityDocument', doc_id: object=None, doc_file_id: object=None) -> None:

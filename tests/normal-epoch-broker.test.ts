@@ -23,6 +23,16 @@ function record(value: unknown): Record<string, unknown> {
   );
   return value as Record<string, unknown>;
 }
+const { decodeNativeProgram, nativeReceipts } = createRequire(__filename)(
+  "../../tests/fixtures/native-source-envelope.cjs",
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 
 async function syntheticChild(root: string, upgrade: boolean): Promise<void> {
   const repo = path.resolve(
@@ -84,12 +94,25 @@ async function syntheticChild(root: string, upgrade: boolean): Promise<void> {
           true,
           "Same-build reopen must remain metadata-only",
         );
-        const body = record(record(args)["object"]);
+        const request = record(args);
+        assert.equal(request["featureType"], "script");
+        const body = record(request["object"]);
         assert.equal(body["readOnly"], true);
+        const script = body["script"];
+        assert.ok(typeof script === "string");
+        assert.ok(script.includes("# FMCAD native source envelope v1\n"));
         assert.ok(
-          typeof body["script"] === "string" &&
-            body["script"].includes("FMCAD_QUEUE_INSTANCE "),
+          decodeNativeProgram(script).includes("FMCAD_QUEUE_INSTANCE "),
         );
+        const receipts = nativeReceipts(script, f.dir, observation);
+        assert.ok(
+          receipts.length > 0,
+          "probe wire must include a bound receipt",
+        );
+        for (const receipt of receipts) {
+          fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+          fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+        }
         probes++;
         return Promise.resolve({
           failed: false,

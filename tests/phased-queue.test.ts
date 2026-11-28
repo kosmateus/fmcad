@@ -6,9 +6,79 @@ import * as os from "node:os";
 import path from "node:path";
 import * as net from "node:net";
 import { spawn, type SpawnOptions } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import Module, { createRequire } from "node:module";
 import { isolateRuntimeTestEnvironment } from "./runtime-test-environment.js";
+
+test("public broker isolates released UNKNOWN across processes without weakening active-turn fences", async (t) => {
+  const env = { ...process.env };
+  delete env["NODE_TEST_CONTEXT"];
+  const child = spawn(
+    process.execPath,
+    [
+      "--test",
+      "--test-force-exit",
+      path.resolve(
+        __dirname,
+        "../../tests/fixtures/unknown-request-isolation.cjs",
+      ),
+    ],
+    { stdio: ["ignore", "pipe", "pipe"], env },
+  );
+  let stdout = "",
+    stderr = "";
+  child.stdout.on("data", (data: Buffer) => {
+    stdout += data.toString();
+  });
+  child.stderr.on("data", (data: Buffer) => {
+    stderr += data.toString();
+  });
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  t.diagnostic(stdout);
+  if (stderr) t.diagnostic(stderr);
+  assert.equal(code, 0, stdout + stderr);
+  assert.match(stdout, /(?:#|ℹ) tests 6(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) pass 6(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) fail 0(?:\r?\n|$)/);
+});
+
+test("public broker rejects partial isolation evidence and restores original physical dispatch catalogs", async (t) => {
+  const env = { ...process.env };
+  delete env["NODE_TEST_CONTEXT"];
+  const child = spawn(
+    process.execPath,
+    [
+      "--test",
+      "--test-force-exit",
+      path.resolve(
+        __dirname,
+        "../../tests/fixtures/unknown-review-regressions.cjs",
+      ),
+    ],
+    { stdio: ["ignore", "pipe", "pipe"], env },
+  );
+  let stdout = "",
+    stderr = "";
+  child.stdout.on("data", (data: Buffer) => {
+    stdout += data.toString();
+  });
+  child.stderr.on("data", (data: Buffer) => {
+    stderr += data.toString();
+  });
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  t.diagnostic(stdout);
+  if (stderr) t.diagnostic(stderr);
+  assert.equal(code, 0, stdout + stderr);
+  assert.match(stdout, /(?:#|ℹ) tests 9(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) pass 9(?:\r?\n|$)/);
+  assert.match(stdout, /(?:#|ℹ) fail 0(?:\r?\n|$)/);
+});
 
 type ClientAuth = { clientId: string; clientToken: string };
 type QueueJob = {
@@ -73,9 +143,13 @@ type ClientStatus = BrokerStatus & {
 };
 type QueueBroker = { close(): Promise<void>; status(): BrokerStatus };
 type BrokerOptions = {
+  preparationConcurrency?: number;
   autoReconcile?: boolean;
   typedPort?: boolean;
-  checkPrepared?: (payload: unknown) => Promise<void>;
+  checkPrepared?: (
+    payload: unknown,
+    options?: { signal?: AbortSignal },
+  ) => Promise<void>;
 };
 type PhysicalRequest = {
   id: string | number | null;
@@ -120,6 +194,16 @@ type MutableModuleLoader = {
 
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
+const { decodeNativeProgram, nativeReceipts } = runtimeRequire(
+  path.join(projectRoot, "tests/fixtures/native-source-envelope.cjs"),
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 const mutableModule = Module as unknown as MutableModuleLoader;
 const loadModule = mutableModule._load;
 mutableModule._load = function (request, parent, ...args) {
@@ -145,6 +229,8 @@ const queueAdmission = runtimeRequire(
     admission: {
       check(
         payload: unknown,
+        artifact?: unknown,
+        options?: { signal?: AbortSignal },
       ): Promise<{ kind: string; fence(outgoing: unknown): void }>;
     };
     checkPrepared(prepared: unknown): Promise<unknown>;
@@ -152,15 +238,18 @@ const queueAdmission = runtimeRequire(
     checkerFingerprint(): unknown;
   };
 };
-let fakeAdmissionCheck: ((payload: unknown) => Promise<void>) | undefined;
+let fakeAdmissionCheck: BrokerOptions["checkPrepared"];
 queueAdmission.createProductionQueueAdmission = () => ({
   admission: {
-    async check(payload) {
+    async check(payload, _artifact, options) {
       const script = (
         payload as { params?: { arguments?: { object?: { script?: string } } } }
       ).params?.arguments?.object?.script;
-      if (script && !script.includes("FMCAD_QUEUE_INSTANCE"))
-        await fakeAdmissionCheck?.(payload);
+      if (
+        script &&
+        !decodeNativeProgram(script).includes("FMCAD_QUEUE_INSTANCE")
+      )
+        await fakeAdmissionCheck?.(payload, options);
       return { kind: "python", fence() {} };
     },
   },
@@ -254,39 +343,39 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
     runId: "native-fixture",
     requestHash: "b".repeat(64),
     sessionNonce: "c".repeat(32),
-    backend: "mcp",
+    backend: "addin",
     resolvedIdentity: { creationId: "native-document" },
   };
-  function receipt(script: string): NativeBinding | undefined {
-    const binding = script.match(
-      /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-    );
-    const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-    if (!binding || !file || !binding[1] || !file[1]) return;
-    const record = JSON.parse(JSON.parse(binding[1]));
-    const target = JSON.parse(file[1])
-      .replace(/^\\\\wsl\$\\[^\\]+/, "")
-      .replaceAll("\\", "/");
-    durable(target, {
-      ...record,
-      terminal: true,
-      outcome: "succeeded",
-      instance,
-    });
-    return { binding: record, receipt: target };
+  function receipt(
+    script: string,
+    observation: Record<string, unknown> = instance,
+  ): NativeBinding | undefined {
+    const receipts = nativeReceipts(script, dir, observation);
+    for (const item of receipts) durable(item.file, item.value);
+    const emitted =
+      receipts.find((item) => item.value["probeObservation"] !== undefined) ??
+      receipts[0];
+    return emitted
+      ? { binding: emitted.value, receipt: emitted.file }
+      : undefined;
   }
   const physical: {
     server: { timeoutMs: number };
     _parse: typeof JSON.parse;
+    _openSession(): Promise<string>;
     _post(payload: PhysicalRequest): Promise<PhysicalResult>;
     callTool(value: ToolValue, toolName?: string): Promise<ToolResult>;
   } = {
     server: { timeoutMs: 5000 },
     _parse: JSON.parse,
+    async _openSession() {
+      return "fixture-session";
+    },
     async _post(payload) {
       wireIds.push(payload.id);
       const script = payload.params?.arguments?.object?.script || "";
-      const tag = script.includes("SDK_A") ? "A" : "B";
+      const decodedScript = decodeNativeProgram(script);
+      const tag = decodedScript.includes("SDK_A") ? "A" : "B";
       count++;
       maximum = Math.max(maximum, count);
       trace.push("sdk-start-" + tag);
@@ -345,35 +434,46 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
     },
     async callTool(value, toolName) {
       const script = value.object?.script || "";
-      if (script.includes("FMCAD_QUEUE_INSTANCE")) {
+      const decodedScript = decodeNativeProgram(script);
+      if (decodedScript.includes("FMCAD_QUEUE_INSTANCE")) {
         probes++;
-        if (script.includes("preflight-") && preflightDelay)
+        if (decodedScript.includes("preflight-") && preflightDelay)
           await sleep(preflightDelay);
-        if (script.includes("postflight-") && postflightDelay) {
+        if (decodedScript.includes("postflight-") && postflightDelay) {
           postflightStarted = true;
           await sleep(postflightDelay);
         }
-        if (losePostflight && script.includes("postflight-")) {
+        if (losePostflight && decodedScript.includes("postflight-")) {
           losePostflight = false;
-          finishPostflight = () => receipt(script);
+          const observation = {
+            ...instance,
+            documentState: {
+              status: "complete",
+              fingerprint,
+              state: { identity: { creationId: "A" }, references: [] },
+            },
+          };
+          finishPostflight = () => receipt(script, observation);
           throw Object.assign(
             new Error("Lost postflight reply; remote probe has not finished"),
             { code: "ECONNRESET" },
           );
         }
-        receipt(script);
+        const observation = {
+          ...instance,
+          documentState: {
+            status: "complete",
+            fingerprint,
+            state: { identity: { creationId: "A" }, references: [] },
+          },
+        };
+        const emitted = receipt(script, observation);
+        const boundProbe = emitted?.binding["probeObservation"] !== undefined;
         return {
-          failed: false,
-          text:
-            "FMCAD_QUEUE_INSTANCE " +
-            JSON.stringify({
-              ...instance,
-              documentState: {
-                status: "complete",
-                fingerprint,
-                state: { identity: { creationId: "A" }, references: [] },
-              },
-            }),
+          failed: !boundProbe,
+          text: boundProbe
+            ? "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observation)
+            : "Source-bound probe receipt was not emitted",
         };
       }
       const response = await this._post({
@@ -382,7 +482,7 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
         method: "tools/call",
         params: { name: toolName || "fusion_mcp_execute", arguments: value },
       });
-      if (acceptedCloudSave && script.includes("SDK_A")) {
+      if (acceptedCloudSave && decodedScript.includes("SDK_A")) {
         acceptedCloudSave = false;
         return {
           failed: false,
@@ -415,13 +515,13 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
             }),
         };
       }
-      if (malformedNative && script.includes("SDK_A")) {
+      if (malformedNative && decodedScript.includes("SDK_A")) {
         malformedNative = false;
         return {
           text: "malformed adapted native reply",
         } as unknown as ToolResult; // Deliberately missing failed:boolean.
       }
-      if (lateNative && script.includes("SDK_A")) {
+      if (lateNative && decodedScript.includes("SDK_A")) {
         lateNative = false;
         return {
           failed: false,
@@ -493,11 +593,18 @@ const Module=require('node:module');const load=Module._load;Module._load=functio
     );
   fakeAdmissionCheck = brokerOptions.checkPrepared ?? (async () => {});
   const broker = await serve(
-    { backend: "mcp", timeoutMs: 5000 },
+    {
+      backend: "addin",
+      timeoutMs: 5000,
+      queue: {
+        preparationConcurrency: brokerOptions.preparationConcurrency ?? 2,
+      },
+    },
     {
       dir,
       confirmOwnership: true,
       createBackend: () => physical,
+      nativePath: (file: string) => file,
       pollMs: 5,
       ...brokerOptions,
       spawnWorker(exe: string, args: string[], options: SpawnOptions) {
@@ -532,7 +639,7 @@ const Module=require('node:module');const load=Module._load;Module._load=functio
         inputFiles: inputFiles(argv, dir),
         cwd: dir,
         timeoutMs: 5000,
-        backend: "mcp",
+        backend: "addin",
         ...options,
       },
     }) as Promise<SubmittedJob>;
@@ -864,6 +971,67 @@ test("killing the observing worker does not release an active SDK call or replay
   assert.equal(f.maximum(), 1);
 });
 
+test("preparation capacity defaults to available CPU and rejects unbounded configuration", () => {
+  const { resolvePreparationConcurrency } = runtimeRequire(
+    path.join(projectRoot, "src/queue-phased.js"),
+  ) as typeof import("../src/queue-phased");
+  assert.equal(resolvePreparationConcurrency(undefined, 2), 1);
+  assert.equal(resolvePreparationConcurrency(undefined, 4), 1);
+  assert.equal(resolvePreparationConcurrency(undefined, 8), 2);
+  assert.equal(resolvePreparationConcurrency(undefined, 32), 4);
+  assert.equal(resolvePreparationConcurrency(10, 2), 10);
+  for (const value of [0, 11, 1.5, "2", null, NaN, Infinity])
+    assert.throws(() => resolvePreparationConcurrency(value, 4), {
+      code: "INVALID_PREPARATION_CONCURRENCY",
+    });
+});
+for (const concurrency of [1, 2])
+  test(
+    "configured preparation workers preserve the single SDK queue: " +
+      concurrency,
+    async (t) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let checks = 0;
+      t.after(() => release());
+      const f = await fixture(t, {
+        preparationConcurrency: concurrency,
+        async checkPrepared() {
+          checks++;
+          await gate;
+        },
+      });
+      const first = await f.submit(f.a, "publish.py"),
+        second = await f.submit(f.b, "fast.py");
+      await until(
+        () => checks === concurrency,
+        "configured offline preparation slots",
+      );
+      assert.equal(
+        fs.existsSync(
+          path.join(f.dir, "jobs", second.id, "worker-identity.json"),
+        ),
+        concurrency === 2,
+        "A backlogged worker has no running process or local deadline until its configured slot opens",
+      );
+      assert.deepEqual(
+        f.trace,
+        [],
+        "Offline preparation has no physical SDK authority",
+      );
+      release();
+      await f.complete(f.a, first.id);
+      await f.complete(f.b, second.id);
+      assert.equal(
+        f.maximum(),
+        1,
+        "Both configured preparation levels retain one physical SDK lane",
+      );
+    },
+  );
+
 test("input bytes changed during the offline checker are refused at the actual physical boundary", async (t) => {
   let checked: () => void = () => {};
   let release: () => void = () => {};
@@ -893,6 +1061,96 @@ test("input bytes changed during the offline checker are refused at the actual p
   assert.equal(result.execution.mayHaveMutated, false);
   assert.deepEqual(f.trace, []);
 });
+
+test(
+  "fallback admission is aborted with its local worker and never dispatches or replays",
+  {},
+  async (t) => {
+    let checked!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      checked = resolve;
+    });
+    let rejectPending: ((reason: Error) => void) | undefined;
+    let capturedSignal: AbortSignal | undefined;
+    let observedAbort = false,
+      checks = 0;
+    // Even the failing historical implementation can clean up its fake gate.
+    t.after(() => rejectPending?.(new Error("fixture cleanup")));
+    const f = await fixture(t, {
+      async checkPrepared(_payload, options) {
+        checks++;
+        if (checks > 1) return;
+        capturedSignal = options?.signal;
+        checked();
+        await new Promise<void>((_resolve, reject) => {
+          rejectPending = reject;
+          capturedSignal?.addEventListener(
+            "abort",
+            () => {
+              observedAbort = true;
+              reject(
+                Object.assign(new Error("aborted fixture admission"), {
+                  code: "FIXTURE_ADMISSION_ABORTED",
+                }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    });
+    const requestId = "owned-aborted-preparation";
+    const submitted = await f.submit(f.a, "publish.py", [], { requestId });
+    await reached;
+    const identity = JSON.parse(
+      fs.readFileSync(
+        path.join(f.dir, "jobs", submitted.id, "worker-identity.json"),
+        "utf8",
+      ),
+    ) as { pid: number; birth: string };
+    const instance = runtimeRequire(
+      path.join(projectRoot, "src/queue-instance.js"),
+    ) as { processBirth(pid: number): string };
+    assert.equal(instance.processBirth(identity.pid), identity.birth);
+    assert.equal(
+      fs.realpathSync("/proc/" + identity.pid + "/cwd"),
+      fs.realpathSync(f.dir),
+    );
+    process.kill(identity.pid, "SIGKILL");
+    const result = await until(async () => {
+      const value = await f.result(f.a, submitted.id);
+      return value.job.state === "failed" && value;
+    }, "local worker exit without SDK");
+    assert.ok(
+      capturedSignal,
+      "Fallback admission must receive the owning local AbortSignal",
+    );
+    assert.equal(capturedSignal.aborted, true);
+    assert.equal(
+      observedAbort,
+      true,
+      "The checker wait is released by actual worker closure",
+    );
+    assert.equal(result.execution.sdkSettled, true);
+    assert.equal(result.execution.mayHaveMutated, false);
+    assert.equal(result.job.physicalTurns || 0, 0);
+    assert.deepEqual(f.trace, []);
+    const duplicate = await f.submit(f.a, "publish.py", [], { requestId });
+    assert.equal(duplicate.id, submitted.id);
+    assert.equal(
+      checks,
+      1,
+      "Receipt lookup does not repeat even the aborted preparation",
+    );
+    assert.deepEqual(f.trace, []);
+    const next = await f.submit(f.b, "fast.py");
+    await f.complete(f.b, next.id);
+    assert.equal(f.broker.status().blocked, null);
+    assert.equal(f.trace.filter((item) => item === "sdk-start-A").length, 0);
+    assert.equal(f.trace.filter((item) => item === "sdk-start-B").length, 1);
+    assert.equal(f.maximum(), 1);
+  },
+);
 
 test("pause between checker and grant invalidates the original context without SDK submission", async (t) => {
   let checked: () => void = () => {};
@@ -1220,6 +1478,11 @@ test("failed native reconciliation preserves unavailable output after the observ
     fs.existsSync(path.join(f.dir, "jobs", a.id, "worker-result.json")),
     false,
   );
+  assert.equal(
+    fs.existsSync(path.join(f.dir, "jobs", a.id, "postflight-start.json")),
+    false,
+    "worker exit with a pending RPC cannot start postflight",
+  );
   const b = await f.submit(f.b, "fast.py");
   finishSdk();
   await until(
@@ -1228,6 +1491,10 @@ test("failed native reconciliation preserves unavailable output after the observ
   );
   f.finishNative(true);
   await f.complete(f.b, b.id);
+  assert.ok(
+    fs.existsSync(path.join(f.dir, "jobs", b.id, "postflight.json")),
+    "the next independently settled turn performs its own postflight",
+  );
   const result = await f.result(f.a, a.id);
   assert.equal(result.job.code, "RESULT_UNAVAILABLE");
   assert.equal(result.job.state, "failed");
@@ -1581,27 +1848,28 @@ test("a mismatched or stale wire response is rejected rather than delivered to t
 
 test("raw MCP callers keep their original RPC IDs even when both clients submit the same ID", async (t) => {
   const f = await fixture(t);
+  // IPC arrival order intentionally differs from the queue's canonical order.
+  const payload = (tag: "A" | "B") => ({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "fusion_mcp_execute",
+      arguments: {
+        featureType: "script",
+        object: {
+          script: "# SDK_" + tag + "\ndef run(context: str) -> None: pass",
+        },
+      },
+    },
+  });
   const submit = (auth: ClientAuth, tag: "A" | "B") =>
     f.call(auth, "submit", {
       request: {
         kind: "rpc",
         requestId: randomUUID(),
         timeoutMs: 5000,
-        payload: {
-          jsonrpc: "2.0",
-          id: 2,
-          method: "tools/call",
-          params: {
-            name: "fusion_mcp_execute",
-            arguments: {
-              featureType: "script",
-              object: {
-                script:
-                  "# SDK_" + tag + "\ndef run(context: str) -> None: pass",
-              },
-            },
-          },
-        },
+        payload: payload(tag),
       },
     });
   const [a, b] = await Promise.all([submit(f.a, "A"), submit(f.b, "B")]);
@@ -1619,6 +1887,34 @@ test("raw MCP callers keep their original RPC IDs even when both clients submit 
   assert.equal(JSON.parse(second.result.content[0].text).tag, "B");
   assert.equal(new Set(f.wireIds).size, 2);
   assert.equal(f.maximum(), 1);
+  for (const [job, tag] of [
+    [a, "A"],
+    [b, "B"],
+  ] as const) {
+    const directory = path.join(f.dir, "jobs", job.id);
+    const journals = fs
+      .readdirSync(directory)
+      .filter(
+        (name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json",
+      );
+    assert.equal(journals.length, 1, "each caller's prepared RPC sent once");
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(directory, journals[0]!), "utf8"),
+    );
+    assert.equal(journal.terminal, true);
+    assert.equal(
+      journal.binding.requestHash,
+      createHash("sha256")
+        .update(JSON.stringify(payload(tag)))
+        .digest("hex"),
+      "snapshot key ordering does not rewrite the receipt binding",
+    );
+    assert.equal(
+      journal.remoteReceipt.requestHash,
+      journal.binding.requestHash,
+    );
+    assert.equal(journal.remoteReceipt.rpcId, journal.binding.rpcId);
+  }
 });
 
 test("receipt reconciliation restores the caller ID when recovering a missing raw-result copy", async (t) => {

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { createRequire } from "node:module";
-import type { Readable, Writable } from "node:stream";
+import type { Readable } from "node:stream";
 import type {
   CatalogMcpTool,
   CatalogServices,
@@ -109,8 +109,8 @@ interface McpCompatibility {
   ): void;
   readonly queueTools: McpApplicationOptions["queueTools"];
   readonly responseMessages: (raw: string) => unknown[];
-  readonly createForwarder: (...args: never[]) => unknown;
-  readonly createCatalogPost: (...args: never[]) => unknown;
+  readonly createForwarder: typeof import("../composition/library-mcp-forwarder").createForwarder;
+  readonly createCatalogPost: typeof import("../composition/library-mcp-compat").createCatalogPost;
   createQueuePost(
     client: unknown,
     config: FmcadConfiguration,
@@ -128,7 +128,7 @@ export interface McpStdioDependencies {
   onOwnedResult?: OwnedMcpResultReporter;
   stdin?: Readable;
   stdout?: StdioWritable;
-  stderr?: Writable;
+  stderr?: { write(text: string): unknown };
 }
 
 export interface McpStdioTelemetry {
@@ -415,8 +415,22 @@ export function startStdio(
     }
   }
   let telemetry: McpStdioTelemetry | undefined;
+  const createTelemetry =
+    dependencies.createTelemetry ??
+    (!injectedRuntime
+      ? (): McpStdioTelemetry => {
+          const producer = runtimeRequire(
+            "../composition/control-center-telemetry.js",
+          ) as typeof import("../composition/control-center-telemetry.js");
+          return producer.createMcpStdioTelemetry({
+            clientId,
+            instanceId,
+            queueDirectory: runtimeModules.queueConnection.queueDirectory(),
+          });
+        }
+      : undefined);
   try {
-    telemetry = dependencies.createTelemetry?.();
+    telemetry = createTelemetry?.();
   } catch {
     try {
       stderr.write(

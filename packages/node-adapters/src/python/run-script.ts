@@ -5,9 +5,11 @@ import {
   validateRunRequest,
   type RunIdentity,
   type RunRequest,
+  type RunSourceManifest,
+  type RunUnit,
 } from "@fmcad/core";
 import { pythonLiteral, preparePythonArtifact } from "./artifact.js";
-import { cadBundleUnits } from "./bundle.js";
+import { selectRunBundle } from "./source-selection.js";
 import {
   resolveRuntimePaths,
   type RuntimePathsOptions,
@@ -20,6 +22,35 @@ export interface RunScriptOptions extends Omit<RuntimePathsOptions, "anchor"> {
 export interface RunSourcePorts {
   observeSource(filename: string, bytes: Buffer): void;
   verifySource(filename: string, bytes: Buffer): void;
+}
+
+function verifiedCadSourceManifest(
+  root: string,
+  source: string,
+): RunSourceManifest | undefined {
+  if (!source.includes("# Resolved manifest source units:")) return;
+  const prelude = source.startsWith("DOC_NAME = None\n")
+    ? "DOC_NAME = None\n"
+    : "";
+  const bundle = source.slice(prelude.length);
+  let selected: ReturnType<typeof selectRunBundle>;
+  try {
+    selected = selectRunBundle(root, source);
+  } catch {
+    return;
+  }
+  const prepared = selected.map((unit) => unit.source).join("\n\n");
+  if (!prepared || !bundle.startsWith(prepared)) return;
+  const units: RunUnit[] = selected.map(({ id, filename, source, role }) => ({
+    id,
+    filename,
+    source,
+    role,
+  }));
+  return {
+    units,
+    userSource: prelude + bundle.slice(prepared.length),
+  };
 }
 
 /** Read once: provenance, queue admission and preparation share the same bytes. */
@@ -74,15 +105,28 @@ export function createRunScriptAdapter(ports: RunSourcePorts) {
     const bytes = readFileSync(file);
     ports.observeSource(file, bytes);
     ports.verifySource(file, bytes);
+    const source = bytes.toString("utf8");
+    const sourceManifest =
+      helperVersion === undefined
+        ? verifiedCadSourceManifest(
+            resolveRuntimePaths({ anchor: __filename }).installation,
+            source,
+          )
+        : undefined;
     return prepareRun(
       request,
-      { filename: file, source: bytes.toString("utf8") },
+      {
+        filename: file,
+        source,
+        ...(sourceManifest ? { sourceManifest } : {}),
+      },
       {
         pythonValue: pythonLiteral,
         prepare: preparePythonArtifact,
-        runtime: (version) => {
+        runtime: (version, source) => {
           const paths = resolveRuntimePaths({ anchor: __filename });
-          if (version) return cadBundleUnits(paths.installation);
+          if (version)
+            return selectRunBundle(paths.installation, source.source);
           const filename = "fmcad/adapters/fusion/identity.py";
           return [
             {

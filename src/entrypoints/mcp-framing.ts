@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ConsoleTelemetryOwnedResultInput } from "@fmcad/node-adapters";
 
-export const MCP_MAX_INPUT_FRAME_BYTES = 1024 * 1024;
+export const MCP_MAX_INPUT_FRAME_BYTES = 10 * 1024 * 1024;
 export const MCP_MAX_STDOUT_FRAME_BYTES = 8 * 1024 * 1024;
 export const MCP_MAX_PENDING_REQUESTS = 4;
 export const MCP_MAX_SIZE_DIAGNOSTICS = 20;

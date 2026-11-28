@@ -14,8 +14,9 @@ from functools import wraps
 
 import adsk.core
 import adsk.fusion
-from typing import TYPE_CHECKING, TYPE_CHECKING as _CAD_TYPE_CHECKING
+from typing import TYPE_CHECKING, TYPE_CHECKING as _CAD_TYPE_CHECKING, Protocol as _CadProtocol
 from typing import TypeAlias as _CadTypeAlias, TypedDict as _CadTypedDict, cast as _cad_cast, overload as _cad_overload
+from typing import NoReturn as _CadNoReturn
 
 
 if TYPE_CHECKING:
@@ -24,6 +25,17 @@ else:
     CAD_HANDLERS = {}
 if TYPE_CHECKING:
     CadEntity: _CadTypeAlias = adsk.core.Base
+
+if TYPE_CHECKING:
+    class _CadBasicReferenceResolver(_CadProtocol):
+        @_cad_overload
+        def __call__(self, ref: object, kind: "Literal['sketch']") -> "adsk.fusion.Sketch": ...
+
+        @_cad_overload
+        def __call__(self, ref: object, kind: "Literal['profile']") -> "adsk.fusion.Profile": ...
+
+        @_cad_overload
+        def __call__(self, ref: object, kind: None = None) -> "CadEntity": ...
 
 if TYPE_CHECKING:
     class _ParameterUpdate(_CadTypedDict):
@@ -310,6 +322,94 @@ class CadContext:
             component = occurrence.component
         return component, occurrence
 
+    def _cad_resolve_basic_reference(
+            self, ref: 'str | JsonObject', kind: 'str | None',
+            resolve_reference: '_CadBasicReferenceResolver',
+            resolve_scope: 'Callable[[JsonObject], tuple[adsk.fusion.Component, adsk.fusion.Occurrence | None]]'
+            ) -> 'CadEntity':
+        """Resolve token, name, profile, and origin references without query adapters."""
+        data: JsonObject = _cad_cast('JsonObject', {'name': ref} if isinstance(ref, str) else dict(_cad_cast('dict[object, object]', ref)))
+        reference_kind = _cad_cast('str | None', data.get('kind'))
+        if kind and reference_kind and kind != reference_kind:
+            raise ValueError('Reference kind conflicts with required kind')
+        kind = kind or reference_kind
+        component, occurrence = resolve_scope(data)
+        name = _cad_cast('str | None', data.get('name'))
+        if data.get('token'):
+            candidates = list(self.design.findEntityByToken(_cad_cast('str', data['token'])))
+            if data.get('path') is not None:
+                natives = [getattr(e, 'nativeObject', None) or e for e in candidates]
+                candidates = [e for e in _cad_items(self.root.allOccurrences)
+                              if e.fullPathName == _cad_cast('str', data['path']) and
+                              (getattr(e, 'nativeObject', None) or e) in natives]
+            explicit_scope = 'component' in data or 'occurrence' in data
+            if explicit_scope:
+                candidates = [e for e in candidates if _cad_owner(e) == component]
+            candidates = [e for e in candidates if not kind or _cad_kind(e) == kind]
+            entity = _cad_unique(candidates, 'Entity token')
+            # A token is authoritative over a stale display name, not over context or kind.
+            if occurrence is not None and _cad_owner(entity) == component:
+                entity = self._proxy(entity, occurrence)
+        elif kind == 'profile' and 'sketch' in data:
+            sketch_ref = data['sketch']
+            if isinstance(sketch_ref, str):
+                sketch_ref = {'name': sketch_ref}
+            sketch_ref = dict(_cad_cast('JsonObject', sketch_ref))
+            for key in ('component', 'occurrence'):
+                if key in data:
+                    sketch_ref[key] = data[key]
+            sketch = resolve_reference(sketch_ref, 'sketch')
+            profiles = _cad_items(sketch.profiles)
+            if 'loopCount' in data:
+                loops = _cad_cast('int', data['loopCount'])
+                if type(loops) is not int or loops < 1 or 'index' in data:
+                    raise ValueError('Profile loopCount must be a positive integer and cannot be combined with index')
+                entity = _cad_unique([p for p in profiles if p.profileLoops.count == loops],
+                                     'Sketch profiles with loopCount %d' % loops)
+            elif 'index' in data:
+                index = _cad_cast('int', data['index'])
+                if type(index) is not int or index < 0 or index >= len(profiles):
+                    raise ValueError('Profile index must be an explicit in-range zero-based integer')
+                entity = profiles[index]
+            else:
+                entity = _cad_unique(profiles, 'Sketch profiles; supply an explicit index when ambiguous')
+            entity = _cad_cast('adsk.fusion.Profile', self._proxy(entity, _cad_cast('adsk.fusion.Occurrence | None', getattr(sketch, 'assemblyContext', None))))
+            if 'index' in data:
+                self._profile_selections.append((entity, _cad_cast('int', data['index'])))
+        elif name == 'root':
+            entity = self.root
+        elif name in _CAD_ORIGINS:
+            entity = self._proxy(_cad_cast('adsk.core.Base', getattr(component, _CAD_ORIGINS[name])), occurrence)
+        else:
+            if not isinstance(name, str) or not name:
+                raise ValueError('Reference requires token, name, or a profile sketch')
+            candidates = list(self._entities(kind, component, occurrence))
+            if kind is None:
+                candidates += list(self._entities('component')) + list(self._entities('occurrence'))
+            matches = [e for e in candidates if _cad_cast('str | None', getattr(e, 'name', None)) == name or
+                       (_cad_kind(e) == 'occurrence' and _cad_cast('adsk.fusion.Occurrence', e).fullPathName == name)]
+            alias = _cad_cast('adsk.core.Attribute | None', self.root.attributes.itemByName(_CAD_ALIAS_GROUP, name))
+            if alias:
+                target = resolve_reference(_cad_cast(object, json.loads(alias.value)), None)
+                if (not kind or _cad_kind(target) == kind) and (_cad_owner(target) == component or
+                                                                _cad_kind(target) in ('component', 'occurrence', 'parameter')):
+                    target_context = _cad_cast('adsk.fusion.Occurrence | None', getattr(target, 'assemblyContext', None))
+                    if occurrence is None or target_context is None or target_context == occurrence:
+                        matches.append(self._proxy(target, occurrence))
+            entity = _cad_unique(matches, 'Reference ' + name)
+        if kind and _cad_kind(entity) != kind:
+            raise ValueError('Expected %s, got %s' % (kind, _cad_kind(entity)))
+        if _cad_kind(entity) == 'profile' and data.get('token') and ('index' in data or 'loopCount' in data):
+            if 'sketch' not in data:
+                raise ValueError('An explicit profile index or loopCount requires a sketch reference')
+            selected = resolve_reference({k: v for k, v in data.items() if k != 'token'}, 'profile')
+            if (_cad_cast('adsk.core.Base', getattr(selected, 'nativeObject', None) or selected)) != (_cad_cast('adsk.core.Base', getattr(entity, 'nativeObject', None) or entity)):
+                raise ValueError('Profile token disagrees with explicit sketch/index or loopCount selection')
+            if 'index' in data:
+                self._profile_selections.append((_cad_cast('adsk.fusion.Profile', entity), _cad_cast(int, data['index'])))
+        return entity
+
+
     def _proxy(self, entity: 'CadEntity', occurrence: 'adsk.fusion.Occurrence | None') -> 'CadEntity':
         if occurrence is None or _cad_kind(entity) in ('component', 'parameter', 'occurrence'):
             return entity
@@ -453,86 +553,8 @@ class CadContext:
             raise TypeError('Entity reference must be a name or reference object')
         if isinstance(ref, dict) and 'query' in ref:
             return _entity_resolve_reference(self, _cad_cast('JsonObject', ref), kind)
-        data: JsonObject = _cad_cast('JsonObject', {'name': ref} if isinstance(ref, str) else dict(_cad_cast('dict[object, object]', ref)))
-        reference_kind = _cad_cast('str | None', data.get('kind'))
-        if kind and reference_kind and kind != reference_kind:
-            raise ValueError('Reference kind conflicts with required kind')
-        kind = kind or reference_kind
-        component, occurrence = self._scope(data)
-        name = _cad_cast('str | None', data.get('name'))
-        if data.get('token'):
-            candidates = list(self.design.findEntityByToken(_cad_cast('str', data['token'])))
-            if data.get('path') is not None:
-                natives = [getattr(e, 'nativeObject', None) or e for e in candidates]
-                candidates = [e for e in _cad_items(self.root.allOccurrences)
-                              if e.fullPathName == _cad_cast('str', data['path']) and
-                              (getattr(e, 'nativeObject', None) or e) in natives]
-            explicit_scope = 'component' in data or 'occurrence' in data
-            if explicit_scope:
-                candidates = [e for e in candidates if _cad_owner(e) == component]
-            candidates = [e for e in candidates if not kind or _cad_kind(e) == kind]
-            entity = _cad_unique(candidates, 'Entity token')
-            # A token is authoritative over a stale display name, not over context or kind.
-            if occurrence is not None and _cad_owner(entity) == component:
-                entity = self._proxy(entity, occurrence)
-        elif kind == 'profile' and 'sketch' in data:
-            sketch_ref = data['sketch']
-            if isinstance(sketch_ref, str):
-                sketch_ref = {'name': sketch_ref}
-            sketch_ref = dict(_cad_cast('JsonObject', sketch_ref))
-            for key in ('component', 'occurrence'):
-                if key in data:
-                    sketch_ref[key] = data[key]
-            sketch = self.resolve(sketch_ref, 'sketch')
-            profiles = _cad_items(sketch.profiles)
-            if 'loopCount' in data:
-                loops = _cad_cast('int', data['loopCount'])
-                if type(loops) is not int or loops < 1 or 'index' in data:
-                    raise ValueError('Profile loopCount must be a positive integer and cannot be combined with index')
-                entity = _cad_unique([p for p in profiles if p.profileLoops.count == loops],
-                                     'Sketch profiles with loopCount %d' % loops)
-            elif 'index' in data:
-                index = _cad_cast('int', data['index'])
-                if type(index) is not int or index < 0 or index >= len(profiles):
-                    raise ValueError('Profile index must be an explicit in-range zero-based integer')
-                entity = profiles[index]
-            else:
-                entity = _cad_unique(profiles, 'Sketch profiles; supply an explicit index when ambiguous')
-            entity = _cad_cast('adsk.fusion.Profile', self._proxy(entity, _cad_cast('adsk.fusion.Occurrence | None', getattr(sketch, 'assemblyContext', None))))
-            if 'index' in data:
-                self._profile_selections.append((entity, _cad_cast('int', data['index'])))
-        elif name == 'root':
-            entity = self.root
-        elif name in _CAD_ORIGINS:
-            entity = self._proxy(_cad_cast('adsk.core.Base', getattr(component, _CAD_ORIGINS[name])), occurrence)
-        else:
-            if not isinstance(name, str) or not name:
-                raise ValueError('Reference requires token, name, or a profile sketch')
-            candidates = list(self._entities(kind, component, occurrence))
-            if kind is None:
-                candidates += list(self._entities('component')) + list(self._entities('occurrence'))
-            matches = [e for e in candidates if _cad_cast('str | None', getattr(e, 'name', None)) == name or
-                       (_cad_kind(e) == 'occurrence' and _cad_cast('adsk.fusion.Occurrence', e).fullPathName == name)]
-            alias = _cad_cast('adsk.core.Attribute | None', self.root.attributes.itemByName(_CAD_ALIAS_GROUP, name))
-            if alias:
-                target = self.resolve(_cad_cast(object, json.loads(alias.value)))
-                if (not kind or _cad_kind(target) == kind) and (_cad_owner(target) == component or
-                                                              _cad_kind(target) in ('component', 'occurrence', 'parameter')):
-                    target_context = _cad_cast('adsk.fusion.Occurrence | None', getattr(target, 'assemblyContext', None))
-                    if occurrence is None or target_context is None or target_context == occurrence:
-                        matches.append(self._proxy(target, occurrence))
-            entity = _cad_unique(matches, 'Reference ' + name)
-        if kind and _cad_kind(entity) != kind:
-            raise ValueError('Expected %s, got %s' % (kind, _cad_kind(entity)))
-        if _cad_kind(entity) == 'profile' and data.get('token') and ('index' in data or 'loopCount' in data):
-            if 'sketch' not in data:
-                raise ValueError('An explicit profile index or loopCount requires a sketch reference')
-            selected = self.resolve({k: v for k, v in data.items() if k != 'token'}, 'profile')
-            if (_cad_cast('adsk.core.Base', getattr(selected, 'nativeObject', None) or selected)) != (_cad_cast('adsk.core.Base', getattr(entity, 'nativeObject', None) or entity)):
-                raise ValueError('Profile token disagrees with explicit sketch/index or loopCount selection')
-            if 'index' in data:
-                self._profile_selections.append((_cad_cast('adsk.fusion.Profile', entity), _cad_cast(int, data['index'])))
-        return entity
+        return CadContext._cad_resolve_basic_reference(
+            self, _cad_cast('str | JsonObject', ref), kind, self.resolve, self._scope)
 
     def ref(self, entity: 'adsk.core.Base') -> 'JsonRecord':
         # Fusion exposes a root token that findEntityByToken may not resolve.
@@ -756,6 +778,159 @@ def _cad_param_inspect(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
     return {'parameters': [_cad_parameter_info(ctx, p) for p in parameters]}
 
 
+def _cad_param_checkpoint(ctx: 'CadContext') -> 'JsonValue':
+    captured = _qd_capture(ctx.app, {'creationId': ctx.doc.creationId})
+    if captured.get('status') != 'complete':
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Current document and dependency snapshot is unavailable')
+    state = captured.get('state')
+    if not isinstance(state, dict):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
+    state = _cad_cast('JsonObject', state)
+    identity = state.get('identity')
+    if not isinstance(identity, dict):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
+    fingerprint = captured.get('fingerprint')
+    if 'dataFileError' in identity:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is unavailable')
+    identity_fields = {'creationId', 'name', 'fileId', 'version', 'isSaved', 'isModified'}
+    if set(identity) != identity_fields or identity.get('creationId') != ctx.doc.creationId or \
+            not isinstance(identity.get('creationId'), str) or not identity['creationId'] or \
+            not isinstance(identity.get('name'), str) or not identity['name'] or \
+            identity.get('name') != ctx.doc.name or type(identity.get('isSaved')) is not bool or \
+            type(identity.get('isModified')) is not bool:
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Exact document identity is malformed or changed')
+    file_id, version = identity.get('fileId'), identity.get('version')
+    if (file_id is not None and (not isinstance(file_id, str) or not file_id)) or \
+            (version is not None and (type(version) is not int or version < 1)) or \
+            ((file_id is None) != (version is None)) or \
+            (identity['isSaved'] and (file_id is None or version is None)):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Saved document file/version identity is unavailable')
+    if not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: Document fingerprint is unavailable')
+    parameters = _cad_param_inspect(ctx, {'includeModel': True})['parameters']
+    return {'schema': 'fmcad.param-checkpoint-v1',
+            'document': {'identity': identity, 'fingerprint': fingerprint},
+            'parameters': parameters}
+
+
+def _cad_checkpoint_canonical_json(value: object) -> str:
+    def tagged(item: object) -> 'JsonValue':
+        if item is None:
+            return ['null']
+        if type(item) is bool:
+            return ['boolean', item]
+        if isinstance(item, str):
+            return ['string', item]
+        if type(item) in (int, float):
+            # The broker JSON round-trip uses JavaScript numbers; keep booleans
+            # distinct while normalizing its finite numeric representation.
+            number = float(_cad_cast('int | float', item))
+            if not math.isfinite(number):
+                raise ValueError('Non-finite JSON number')
+            if number == 0:
+                number = 0.0
+            return ['number', number]
+        if isinstance(item, list):
+            values = _cad_cast('list[object]', item)
+            return ['array', [tagged(element) for element in values]]
+        if isinstance(item, dict):
+            entries = _cad_cast('dict[object, object]', item)
+            if any(not isinstance(key, str) for key in entries):
+                raise TypeError('JSON object keys must be strings')
+            string_entries = _cad_cast('dict[str, object]', entries)
+            return ['object', [[key, tagged(string_entries[key])] for key in sorted(string_entries)]]
+        raise TypeError('Unsupported JSON value')
+
+    return json.dumps(tagged(value), separators=(',', ':'), allow_nan=False)
+
+
+def _cad_param_assert_checkpoint(ctx: 'CadContext', expected: object) -> None:
+    def changed(reason: str) -> '_CadNoReturn':
+        raise RuntimeError('DOCUMENT_STATE_CHANGED: ' + reason)
+
+    if not isinstance(expected, dict):
+        changed('Accepted parameter checkpoint is malformed')
+    expected = _cad_cast('JsonObject', expected)
+    if set(expected) != {'schema', 'document', 'parameters'} or \
+            expected.get('schema') != 'fmcad.param-checkpoint-v1':
+        changed('Accepted parameter checkpoint is malformed')
+    document = expected.get('document')
+    if not isinstance(document, dict):
+        changed('Accepted document checkpoint is malformed')
+    if set(document) != {'identity', 'fingerprint'}:
+        changed('Accepted document checkpoint is malformed')
+    identity = document.get('identity')
+    fields = {'creationId', 'name', 'fileId', 'version', 'isSaved', 'isModified'}
+    if not isinstance(identity, dict):
+        changed('Accepted document identity is malformed')
+    if set(identity) != fields or \
+            not isinstance(identity.get('creationId'), str) or not identity['creationId'] or \
+            not isinstance(identity.get('name'), str) or not identity['name'] or \
+            type(identity.get('isSaved')) is not bool or type(identity.get('isModified')) is not bool:
+        changed('Accepted document identity is malformed')
+    file_id, version = identity.get('fileId'), identity.get('version')
+    if (file_id is not None and (not isinstance(file_id, str) or not file_id)) or \
+            (version is not None and (type(version) is not int or version < 1)) or \
+            ((file_id is None) != (version is None)) or \
+            (identity['isSaved'] and (file_id is None or version is None)):
+        changed('Accepted saved document file/version identity is malformed')
+    fingerprint = document.get('fingerprint')
+    if not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+        changed('Accepted document fingerprint is malformed')
+    parameters = expected.get('parameters')
+    parameter_fields = {'name', 'expression', 'unit', 'value', 'valueType',
+                        'valueUnits', 'comment', 'metadata'}
+    if not isinstance(parameters, list):
+        changed('Accepted full parameter inspection is malformed')
+    parameters = _cad_cast('list[object]', parameters)
+    names: set[str] = set()
+    try:
+        for parameter_value in parameters:
+            if not isinstance(parameter_value, dict):
+                changed('Accepted full parameter inspection is malformed')
+            parameter = _cad_cast('JsonObject', parameter_value)
+            name = parameter.get('name')
+            expression = parameter.get('expression')
+            unit = parameter.get('unit')
+            value_type = parameter.get('valueType')
+            value_units = parameter.get('valueUnits')
+            comment = parameter.get('comment')
+            metadata = parameter.get('metadata')
+            if set(parameter) != parameter_fields or \
+                    not isinstance(name, str) or not name or \
+                    name in names or not isinstance(expression, str) or \
+                    not isinstance(unit, str) or \
+                    value_type not in ('numeric', 'text') or \
+                    (value_units is not None and not isinstance(value_units, str)) or \
+                    not isinstance(comment, str) or not isinstance(metadata, dict):
+                changed('Accepted full parameter inspection is malformed')
+            value = parameter['value']
+            if value_type == 'numeric':
+                if type(value) not in (int, float) or not math.isfinite(_cad_cast('int | float', value)) or \
+                        value_units != 'Fusion internal units (cm, rad, kg, s)':
+                    changed('Accepted numeric parameter inspection is malformed')
+            elif not isinstance(value, str) or value_units is not None:
+                changed('Accepted text parameter inspection is malformed')
+            names.add(name)
+        expected_json = _cad_checkpoint_canonical_json(expected)
+    except (OverflowError, TypeError, ValueError):
+        changed('Accepted full parameter inspection is not valid JSON')
+    try:
+        current = _cad_param_checkpoint(ctx)
+    except RuntimeError as error:
+        if str(error).startswith('DOCUMENT_STATE_CHANGED:'):
+            raise
+        changed('Current document checkpoint could not be read')
+    except Exception:
+        changed('Current document checkpoint could not be read')
+    try:
+        current_json = _cad_checkpoint_canonical_json(current)
+    except (OverflowError, TypeError, ValueError):
+        changed('Current document checkpoint is not valid JSON')
+    if current_json != expected_json:
+        changed('Document or full parameter inspection no longer matches the accepted checkpoint')
+
+
 def _cad_param_dependencies(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
     _cad_fields(data, optional=('name',))
     parameters = _cad_items(ctx.design.allParameters)
@@ -774,7 +949,7 @@ def _cad_param_dependencies(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecor
 
 
 def _cad_param_apply(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
-    _cad_fields(data, ('parameters',), ('overwrite', 'confirm'))
+    _cad_fields(data, ('parameters',), ('overwrite', 'confirm', '_fmcadCheckpointGuard'))
     specifications = data['parameters']
     if not isinstance(specifications, list) or not specifications:
         raise ValueError('parameters must be a nonempty array')
@@ -876,6 +1051,8 @@ def _cad_param_apply(ctx: 'CadContext', data: 'JsonObject') -> 'JsonRecord':
                 raise ValueError('metadata.tolerance must be a nonnegative expression in parameter units')
             if evaluate(tolerance, spec['unit'], spec['unit'] == '')[1] < 0:
                 raise ValueError('metadata.tolerance cannot be negative')
+    if '_fmcadCheckpointGuard' in data:
+        _cad_param_assert_checkpoint(ctx, data['_fmcadCheckpointGuard'])
     result: list[JsonValue] = []
     for name in order:
         spec = pending[name]

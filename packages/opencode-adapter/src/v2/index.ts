@@ -6,6 +6,7 @@ import {
   createTools,
   helpSchema,
   executeSchema,
+  documentUnlockSchema,
   AdapterError,
   wait,
 } from "../shared/tools";
@@ -85,6 +86,33 @@ export function createV2(deps: Dependencies): Plugin.Plugin {
             tool.signal.throwIfAborted();
             await ctx.permission.assert({ ...input, action: "shell" });
           },
+          async authorizeControl(resource, metadata) {
+            await ctx.permission.assert({
+              sessionID: tool.sessionID,
+              agent: tool.agent,
+              source: {
+                type: "tool",
+                messageID: tool.messageID,
+                id: tool.id,
+              },
+              resources: [resource],
+              metadata,
+              action: "fmcad_execute",
+            });
+            tool.signal.throwIfAborted();
+            await ctx.permission.assert({
+              sessionID: tool.sessionID,
+              agent: tool.agent,
+              source: {
+                type: "tool",
+                messageID: tool.messageID,
+                id: tool.id,
+              },
+              resources: [resource],
+              metadata,
+              action: "shell",
+            });
+          },
         };
       }
       try {
@@ -108,6 +136,20 @@ export function createV2(deps: Dependencies): Plugin.Plugin {
             async execute(input, tool) {
               return {
                 content: await tools.execute(input, await invocation(tool)),
+              };
+            },
+          });
+          editor.add({
+            name: "fmcad_document_unlock",
+            description:
+              "Read or accept broker-verified document recovery state. Does not execute CAD operations.",
+            input: documentUnlockSchema,
+            async execute(input, tool) {
+              return {
+                content: await tools.documentUnlock(
+                  input,
+                  await invocation(tool),
+                ),
               };
             },
           });

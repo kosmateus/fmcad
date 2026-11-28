@@ -109,7 +109,9 @@ function sameOwner(
   );
 }
 
-function validateReference(value: unknown): SelectionRuleArtifactReference {
+export function validateReference(
+  value: unknown,
+): SelectionRuleArtifactReference {
   const reference = record(value, "Selection rule artifact reference");
   if (
     Object.keys(reference).sort().join(",") !==

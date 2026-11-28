@@ -30,6 +30,9 @@ POST_BASELINE_CASES = {
     # They execute their own assertions; the original golden traces stay fixed.
     'assembly_test.AssemblyTests.test_joint_drive_reports_evaluated_setter_and_post_capture_values_separately',
     'fastener_test.FastenerTests.test_native_fixture_declaration_uses_legacy_tapped_kind_not_native_blind_kind',
+    # 9bceb13 adds the curated live selector regression after the golden baseline.
+    # It runs its own assertions in both suites; do not recapture old traces.
+    'thread_test.ThreadTests.test_live_catalog_selector_matches_the_curated_table',
     # Native MotionLink was added after the legacy parity baseline. These cases
     # still execute and assert here; they have no pre-migration implementation.
     'mechanism_test.MechanismTests.test_native_representation_does_not_infer_motion_link_from_api_presence',

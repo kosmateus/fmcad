@@ -77,6 +77,53 @@ interface TypingPointer extends JsonRecord {
 
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
+test("the actual retained data-import inventory observation passes production checking", async () => {
+  const source = fs.readFileSync(
+    path.join(projectRoot, "tests/live-data-import.ts"),
+    "utf8",
+  );
+  const match =
+    /async function state\(\) \{\s+const current = await script\(`([\s\S]*?)`\);/u.exec(
+      source,
+    );
+  assert.ok(match, "Missing actual data-import inventory program");
+  assert.ok(
+    !match[1]!.includes("${"),
+    "Inventory interpolation requires an explicit fixture",
+  );
+  const load = createRequire(path.join(projectRoot, "package.json"));
+  const { createPythonChecker } = load(
+    "./packages/node-adapters/dist/python/checker",
+  ) as typeof import("../packages/node-adapters/src/python/checker");
+  const { preparePythonArtifact } = load(
+    "./packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../packages/node-adapters/src/python/artifact");
+  const typingRoot = path.join(projectRoot, "dist/runtime/python/typing");
+  const checker = createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  const program =
+    "DOC_NAME = None\nimport adsk.core, json\ndef run(_context: str) -> None:\n" +
+    match[1]!
+      .split("\n")
+      .map((line) => "    " + line)
+      .join("\n") +
+    '\nrun("")\n';
+  const artifact = preparePythonArtifact([
+    {
+      id: "data-import-inventory",
+      filename: "observation.py",
+      role: "user",
+      source: program,
+    },
+  ]);
+  const result = await checker.check({ artifact, context: { kind: "run" } });
+  assert.equal(result.status, "passed", JSON.stringify(result));
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.provenance.checkerVersion, "1.40.2");
+});
 const programs: readonly FixedProgram[] = [
   "containment",
   "sections",
@@ -109,129 +156,137 @@ function parseTypingPointer(value: unknown): TypingPointer {
 }
 
 for (const program of programs) {
-  test(`production checker qualifies fixed ${program} through the existing cad-v1 prepare/wire path`, async (t) => {
-    const pathsModule = runtimeRequire(
-      path.join(projectRoot, "src/dist/config-platform/index.js"),
-    ) as ConfigPlatformModule;
-    const runtimeRoot = pathsModule.resolveRuntimePaths({
-      anchor: __filename,
-    }).runtime;
-    const typingPointerPath = path.join(runtimeRoot, "typing/current.json");
-    if (!fs.existsSync(typingPointerPath)) {
-      t.skip(
-        "Full production checker qualification requires the generated typing snapshot from npm run build; no checker analysis was run.",
+  test(
+    `production checker qualifies fixed ${program} through the existing cad-v1 prepare/wire path`,
+    { timeout: 180_000 },
+    async (t) => {
+      const installFakeWslPlatform = runtimeRequire(
+        path.join(projectRoot, "tests/fixtures/fake-wsl-platform.cjs"),
+      ) as () => () => void;
+      t.after(installFakeWslPlatform());
+      const pathsModule = runtimeRequire(
+        path.join(projectRoot, "src/dist/config-platform/index.js"),
+      ) as ConfigPlatformModule;
+      const runtimeRoot = pathsModule.resolveRuntimePaths({
+        anchor: __filename,
+      }).runtime;
+      const typingPointerPath = path.join(runtimeRoot, "typing/current.json");
+      if (!fs.existsSync(typingPointerPath)) {
+        t.skip(
+          "Full production checker qualification requires the generated typing snapshot from npm run build; no checker analysis was run.",
+        );
+        return;
+      }
+      const pointer = parseTypingPointer(
+        JSON.parse(fs.readFileSync(typingPointerPath, "utf8")) as unknown,
       );
-      return;
-    }
-    const pointer = parseTypingPointer(
-      JSON.parse(fs.readFileSync(typingPointerPath, "utf8")) as unknown,
-    );
-    const typingManifestPath = path.join(
-      runtimeRoot,
-      "typing/snapshots",
-      pointer.snapshot,
-      "manifest.json",
-    );
-    const typingManifest = fs.readFileSync(typingManifestPath);
-    assert.equal(
-      createHash("sha256").update(typingManifest).digest("hex"),
-      pointer.snapshot,
-      "Generated typing manifest must match its content-addressed snapshot",
-    );
+      const typingManifestPath = path.join(
+        runtimeRoot,
+        "typing/snapshots",
+        pointer.snapshot,
+        "manifest.json",
+      );
+      const typingManifest = fs.readFileSync(typingManifestPath);
+      assert.equal(
+        createHash("sha256").update(typingManifest).digest("hex"),
+        pointer.snapshot,
+        "Generated typing manifest must match its content-addressed snapshot",
+      );
 
-    const output = fs.mkdtempSync("/tmp/opencode/fixed-native-program-");
-    t.after(() => fs.rmSync(output, { recursive: true, force: true }));
-    const queueInstance = runtimeRequire(
-      path.join(projectRoot, "src/queue-instance.js"),
-    ) as QueueInstanceModule;
-    const document: DocumentIdentity = {
-      name: "FMCAD_OFFLINE_CONTAINMENT",
-      creationId: "owned-offline-id",
-      fileId: null,
-    };
-    const instance: ProcessInstance = {
-      pid: process.pid,
-      birth: queueInstance.processBirth(),
-      version: "offline-fixture",
-    };
-    const fixturePrefixes: Partial<Record<FixedProgram, string>> = {
-      "gm07-curves": "NQGM07CURVE01",
-      "data-import": "NQGM07IMPORT01",
-    };
-    const runModule = runtimeRequire(
-      path.join(projectRoot, "src/run.js"),
-    ) as RunModule;
-    const artifact = runModule.prepareRunScript(
-      path.join(projectRoot, "assets/native-qualification", `${program}.py`),
-      {
-        approved: true,
-        creationId: document.creationId,
-        expectedFusionVersion: instance.version,
-        fixturePrefix: fixturePrefixes[program] || "NQCONTAINMENT01",
-      },
-      true,
-      document.name,
-      { docId: document.creationId },
-      "cad-v1",
-      [],
-      { projectDirectory: output },
-    );
-    const recoveryModule = runtimeRequire(
-      path.join(projectRoot, "src/queue-atomic-recovery-audit.js"),
-    ) as RecoveryAuditModule;
-    const prepared = recoveryModule.prepareRecoveryAuditWire({
-      reader: { artifact },
-      receipt: path.join(output, "never-sent.json"),
-      instance,
-      buildHash: queueInstance.buildHash(),
-      jobId: "offline-fixed-native",
-      auditBinding: {
-        purpose: "fixed-native-fixture-v1",
-        currentInstance: instance,
-        expectedDocument: document,
-      },
-      payload: {
-        jsonrpc: "2.0",
-        id: "offline",
-        method: "tools/call",
-        params: {
-          name: "execute_python",
-          arguments: {
-            code: `${artifact.script}\n\nrun("")\n`,
-            persistent: false,
+      const output = fs.mkdtempSync("/tmp/opencode/fixed-native-program-");
+      t.after(() => fs.rmSync(output, { recursive: true, force: true }));
+      const queueInstance = runtimeRequire(
+        path.join(projectRoot, "src/queue-instance.js"),
+      ) as QueueInstanceModule;
+      const document: DocumentIdentity = {
+        name: "FMCAD_OFFLINE_CONTAINMENT",
+        creationId: "owned-offline-id",
+        fileId: null,
+      };
+      const instance: ProcessInstance = {
+        pid: process.pid,
+        birth: queueInstance.processBirth(),
+        version: "offline-fixture",
+      };
+      const fixturePrefixes: Partial<Record<FixedProgram, string>> = {
+        "gm07-curves": "NQGM07CURVE01",
+        "data-import": "NQGM07IMPORT01",
+      };
+      const runModule = runtimeRequire(
+        path.join(projectRoot, "src/run.js"),
+      ) as RunModule;
+      const artifact = runModule.prepareRunScript(
+        path.join(projectRoot, "assets/native-qualification", `${program}.py`),
+        {
+          approved: true,
+          creationId: document.creationId,
+          expectedFusionVersion: instance.version,
+          fixturePrefix: fixturePrefixes[program] || "NQCONTAINMENT01",
+        },
+        true,
+        document.name,
+        { docId: document.creationId },
+        "cad-v1",
+        [],
+        { projectDirectory: output },
+      );
+      const recoveryModule = runtimeRequire(
+        path.join(projectRoot, "src/queue-atomic-recovery-audit.js"),
+      ) as RecoveryAuditModule;
+      const prepared = recoveryModule.prepareRecoveryAuditWire({
+        reader: { artifact },
+        receipt: path.join(output, "never-sent.json"),
+        instance,
+        buildHash: queueInstance.buildHash(),
+        jobId: "offline-fixed-native",
+        auditBinding: {
+          purpose: "fixed-native-fixture-v1",
+          currentInstance: instance,
+          expectedDocument: document,
+        },
+        payload: {
+          jsonrpc: "2.0",
+          id: "offline",
+          method: "tools/call",
+          params: {
+            name: "execute_python",
+            arguments: {
+              code: `${artifact.script}\n\nrun("")\n`,
+              persistent: false,
+            },
           },
         },
-      },
-    });
-    const admissionModule = runtimeRequire(
-      path.join(projectRoot, "src/queue-admission.js"),
-    ) as QueueAdmissionModule;
-    const admissionRuntime = pathsModule.resolveRuntimePaths({
-      anchor: __filename,
-    }).runtime;
-    const certificate = await admissionModule
-      .createProductionQueueAdmission(admissionRuntime)
-      .admission.check(prepared.outgoing, prepared.artifact);
-    if (certificate.report.status !== "passed")
-      t.diagnostic(
-        `Production checker report: ${JSON.stringify(certificate.report)}`,
+      });
+      const admissionModule = runtimeRequire(
+        path.join(projectRoot, "src/queue-admission.js"),
+      ) as QueueAdmissionModule;
+      const admissionRuntime = pathsModule.resolveRuntimePaths({
+        anchor: __filename,
+      }).runtime;
+      const certificate = await admissionModule
+        .createProductionQueueAdmission(admissionRuntime)
+        .admission.check(prepared.outgoing, prepared.artifact);
+      if (certificate.report.status !== "passed")
+        t.diagnostic(
+          `Production checker report: ${JSON.stringify(certificate.report)}`,
+        );
+      assert.equal(certificate.report.status, "passed");
+      assert.equal(certificate.report.provenance.checker, "basedpyright");
+      certificate.fence(prepared.outgoing);
+      const changed = structuredClone(prepared.outgoing);
+      const params = changed["params"];
+      assert.ok(
+        params !== null && typeof params === "object" && !Array.isArray(params),
       );
-    assert.equal(certificate.report.status, "passed");
-    assert.equal(certificate.report.provenance.checker, "basedpyright");
-    certificate.fence(prepared.outgoing);
-    const changed = structuredClone(prepared.outgoing);
-    const params = changed["params"];
-    assert.ok(
-      params !== null && typeof params === "object" && !Array.isArray(params),
-    );
-    const args = (params as JsonRecord)["arguments"];
-    assert.ok(
-      args !== null && typeof args === "object" && !Array.isArray(args),
-    );
-    const script = (args as JsonRecord)["code"];
-    assert.equal(typeof script, "string");
-    (args as JsonRecord)["code"] = `${script}\n# unsigned source drift`;
-    assert.throws(() => certificate.fence(changed));
-    assert.equal(fs.existsSync(path.join(output, "never-sent.json")), false);
-  });
+      const args = (params as JsonRecord)["arguments"];
+      assert.ok(
+        args !== null && typeof args === "object" && !Array.isArray(args),
+      );
+      const script = (args as JsonRecord)["code"];
+      assert.equal(typeof script, "string");
+      (args as JsonRecord)["code"] = `${script}\n# unsigned source drift`;
+      assert.throws(() => certificate.fence(changed));
+      assert.equal(fs.existsSync(path.join(output, "never-sent.json")), false);
+    },
+  );
 }

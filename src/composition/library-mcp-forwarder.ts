@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { redactDiagnostic, formatJsonError } from "@fmcad/core";
 import { parseMcpResponseMessages } from "../entrypoints/mcp-framing";
 import { queueTools } from "./library-mcp-tools";
@@ -8,6 +9,32 @@ import type {
   JsonRpcMessage,
   McpResponse,
 } from "./library-mcp-protocol";
+type DebugTraceRuntime = {
+  writeDebugTrace: typeof import("../../packages/node-adapters/src/telemetry/diagnostic-log").writeDebugTrace;
+  flushDebugTrace: typeof import("../../packages/node-adapters/src/telemetry/diagnostic-log").flushDebugTrace;
+};
+let loadedTraceRuntime: DebugTraceRuntime | undefined;
+const traceRuntime = (): DebugTraceRuntime =>
+  (loadedTraceRuntime ||= createRequire(__filename)(
+    "../node-adapters/telemetry/diagnostic-log",
+  ) as DebugTraceRuntime);
+function writeTrace(
+  context: Parameters<DebugTraceRuntime["writeDebugTrace"]>[0],
+  event: Parameters<DebugTraceRuntime["writeDebugTrace"]>[1],
+): void {
+  try {
+    traceRuntime().writeDebugTrace(context, event);
+  } catch {
+    // Optional trace diagnostics must not change the MCP response.
+  }
+}
+async function flushTrace(): Promise<void> {
+  try {
+    await traceRuntime().flushDebugTrace();
+  } catch {
+    // Optional trace diagnostics must not change the MCP response.
+  }
+}
 export interface ForwarderConfiguration {
   backend?: string;
   routing?: string;
@@ -27,6 +54,76 @@ interface CompatibilityMessage extends JsonRpcMessage {
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+function traceJobId(value: unknown): string | undefined {
+  if (!object(value) || typeof value["jobId"] !== "string") return undefined;
+  return /^[A-Za-z0-9_-]{1,128}$/.test(value["jobId"])
+    ? value["jobId"]
+    : undefined;
+}
+function responseTraceSummary(
+  messages: readonly CompatibilityMessage[],
+  requestId: JsonRpcRequest["id"],
+) {
+  const response = messages.find(
+    (message) => message.id === requestId && object(message.result),
+  );
+  if (!response || !object(response.result))
+    return {
+      responseKeys: [] as string[],
+      contentCount: 0,
+      contentTextBytes: 0,
+      stdoutObservation: "not_observed" as const,
+    };
+  const result = response.result as Record<string, unknown>;
+  const structured = object(result["structuredContent"])
+    ? result["structuredContent"]
+    : undefined;
+  const content = Array.isArray(result["content"]) ? result["content"] : [];
+  let contentTextBytes = 0;
+  let stdout: string | undefined =
+    typeof structured?.["stdout"] === "string"
+      ? structured["stdout"]
+      : undefined;
+  for (const item of content) {
+    if (!object(item) || typeof item["text"] !== "string") continue;
+    contentTextBytes += Buffer.byteLength(item["text"], "utf8");
+    if (stdout !== undefined) continue;
+    try {
+      const decoded: unknown = JSON.parse(item["text"]);
+      if (object(decoded) && typeof decoded["stdout"] === "string")
+        stdout = decoded["stdout"];
+    } catch {
+      // Text content is not necessarily a JSON public Python result.
+    }
+  }
+  let structuredBytes: number | undefined;
+  if (structured) {
+    try {
+      structuredBytes = Buffer.byteLength(JSON.stringify(structured), "utf8");
+    } catch {
+      // Structured content was observed but its serialized size is unavailable.
+    }
+  }
+  const summary = {
+    responseKeys: Object.keys(result).slice(0, 24),
+    contentCount: content.length,
+    contentTextBytes,
+    ...(structuredBytes === undefined ? {} : { structuredBytes }),
+    ...(typeof result["message"] === "string"
+      ? { messageBytes: Buffer.byteLength(result["message"], "utf8") }
+      : {}),
+    stdoutObservation:
+      stdout === undefined
+        ? ("not_observed" as const)
+        : stdout.length === 0
+          ? ("observed_empty" as const)
+          : ("observed_nonempty" as const),
+    ...(stdout === undefined
+      ? {}
+      : { stdoutBytes: Buffer.byteLength(stdout, "utf8") }),
+  };
+  return summary;
+}
 const SIZE_DIAGNOSTIC_THRESHOLD_BYTES = 8 * 1024 * 1024;
 const MAX_SIZE_DIAGNOSTICS = 20;
 const SAFE_DIAGNOSTIC_METHODS = new Set([
@@ -89,10 +186,35 @@ export function createForwarder(
     }
     const hasId = Object.hasOwn(request, "id");
     let response: McpResponse | undefined;
+    let parsedTrace = false;
+    let stdoutObservation:
+      "not_observed" | "observed_empty" | "observed_nonempty" = "not_observed";
+    let stdoutBytes: number | undefined;
     try {
       response = await post(request, session, version);
       if (response.status < 200 || response.status >= 300)
         throw new Error("HTTP " + response.status);
+      if (response.debugTrace) {
+        writeTrace(response.debugTrace, {
+          stage: "caller-received",
+          status: "returned",
+          jobId: traceJobId(response.queueReceipt),
+          rawBytes: Buffer.byteLength(response.raw || "", "utf8"),
+          rawSha256: createHash("sha256")
+            .update(response.raw || "")
+            .digest("hex"),
+          artifactRef:
+            response.ownedArtifact?.name === "rpc-result.json"
+              ? "rpc-result.json"
+              : undefined,
+          stdoutObservation: "not_observed",
+        });
+        try {
+          log("FMCAD_DEBUG_TRACE_ID " + response.debugTrace.traceId);
+        } catch {
+          // Diagnostic output must not change the MCP response.
+        }
+      }
       if (response.sessionId) session = response.sessionId;
       let messages = parseMcpResponseMessages(
         response.raw,
@@ -129,6 +251,18 @@ export function createForwarder(
         if (message.jsonrpc !== "2.0")
           throw new Error("Invalid upstream JSON-RPC message");
       }
+      if (response.debugTrace) {
+        const responseSummary = responseTraceSummary(messages, request.id);
+        stdoutObservation = responseSummary.stdoutObservation;
+        stdoutBytes = responseSummary.stdoutBytes;
+        writeTrace(response.debugTrace, {
+          stage: "parsed",
+          status: "passed",
+          jobId: traceJobId(response.queueReceipt),
+          ...responseSummary,
+        });
+        parsedTrace = true;
+      }
       for (const message of messages) {
         if (message.id !== request.id) continue;
         if (
@@ -164,7 +298,33 @@ export function createForwarder(
           message.id === request.id &&
           (Object.hasOwn(message, "result") || Object.hasOwn(message, "error"));
         const frame = JSON.stringify(message) + "\n";
-        send(message, frame);
+        try {
+          send(message, frame);
+          if (isMatchingResponse && response.debugTrace)
+            writeTrace(response.debugTrace, {
+              stage: "stdout-written",
+              status: "written",
+              jobId: traceJobId(response.queueReceipt),
+              frameBytes: Buffer.byteLength(frame, "utf8"),
+              stdoutBytes,
+              stdoutObservation,
+            });
+        } catch (error) {
+          if (isMatchingResponse && response.debugTrace)
+            writeTrace(response.debugTrace, {
+              stage: "stdout-written",
+              status: "failed",
+              jobId: traceJobId(response.queueReceipt),
+              code:
+                error && typeof error === "object" && "code" in error
+                  ? String(error.code)
+                  : "STDOUT_WRITE_FAILED",
+              frameBytes: Buffer.byteLength(frame, "utf8"),
+              stdoutBytes,
+              stdoutObservation,
+            });
+          throw error;
+        }
         if (isMatchingResponse)
           stdoutFrameBytes = Buffer.byteLength(frame, "utf8");
       }
@@ -220,8 +380,24 @@ export function createForwarder(
           }
         }
       }
+      if (response.debugTrace) await flushTrace();
     } catch (caught) {
       const error = caught as Error;
+      if (response?.debugTrace && !parsedTrace)
+        writeTrace(response.debugTrace, {
+          stage: "parsed",
+          status: "failed",
+          jobId: traceJobId(response.queueReceipt),
+          code:
+            error && typeof error === "object" && "code" in error
+              ? String(error.code)
+              : "MCP_PARSE_FAILED",
+          rawBytes: Buffer.byteLength(response.raw || "", "utf8"),
+          rawSha256: createHash("sha256")
+            .update(response.raw || "")
+            .digest("hex"),
+          stdoutObservation: "not_observed",
+        });
       const detail =
         error instanceof SyntaxError &&
         /^\s+at JSON\.parse \(/m.test(error.stack || "")
@@ -243,6 +419,7 @@ export function createForwarder(
           },
         });
       else log(message);
+      if (response?.debugTrace) await flushTrace();
     }
   };
 }

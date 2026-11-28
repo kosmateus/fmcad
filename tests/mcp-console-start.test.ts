@@ -1,10 +1,12 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import type { FmcadConfiguration } from "../packages/core/dist/domain/config.js";
 
-const { startStdio } = require(
+const load = createRequire(__filename);
+const { startStdio } = load(
   path.join(process.cwd(), "dist/src/dist/entrypoints/mcp-stdio.js"),
 ) as typeof import("../dist/library-build/src/entrypoints/mcp-stdio.js");
 const config: FmcadConfiguration = {

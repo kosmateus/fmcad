@@ -49,7 +49,7 @@
         "Native, proxy, datum and BRep witness values are independent observations"
       ],
       "tests": [
-        "tests/semantic-model-state-e2e.test.js",
+        "tests/semantic-model-state-e2e.test.ts",
         "tests/semantic_model_state_test.py"
       ],
       "gaps": ["Native Fusion qualification and complete scratch restore require separate authorization."],
@@ -96,7 +96,7 @@
     "audit": {
       "sources": ["runtime/python/fmcad/adapters/fusion/semantic_model_state.py", "runtime/python/fmcad/domain/semantic_model_state.py"],
       "verified": ["Root and nested instances are explicit", "Identity does not depend on volatile tokens", "No global store"],
-      "tests": ["tests/semantic-model-state-e2e.test.js", "tests/semantic_model_state_test.py"],
+      "tests": ["tests/semantic-model-state-e2e.test.ts", "tests/semantic_model_state_test.py"],
       "gaps": ["Native geometry and visibility semantics require authorized Fusion qualification."],
       "bugs": []
     }
@@ -140,7 +140,7 @@
     "audit": {
       "sources": ["runtime/python/fmcad/domain/semantic_model_state.py", "packages/core/src/domain/semantic-model-state.ts"],
       "verified": ["Reorder is stable", "Repeated instances remain separate", "Allowed movement is pose-only and path-qualified"],
-      "tests": ["tests/semantic-model-state-e2e.test.js", "tests/semantic_model_state_test.py"],
+      "tests": ["tests/semantic-model-state-e2e.test.ts", "tests/semantic_model_state_test.py"],
       "gaps": ["Native Fusion qualification and exact BRep equivalence are not claimed."],
       "bugs": []
     }

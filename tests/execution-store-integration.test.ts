@@ -1,0 +1,612 @@
+import type { Client } from "../src/queue-broker-ports.js";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { randomUUID, createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import type { TestContext } from "node:test";
+import { object, field, string } from "./modeling-unit-test-support.js";
+import "./fixtures/broker-records-contract.js";
+const fixtureDirectory = path.join(process.cwd(), "tests");
+const load = createRequire(
+  path.join(fixtureDirectory, "execution-store-integration.test.ts"),
+);
+const restorePlatform = (
+  load("./fixtures/fake-wsl-platform.cjs") as () => () => void
+)();
+test.after(restorePlatform);
+const { serve } = load(
+  "../src/queue-broker",
+) as typeof import("../src/queue-broker.js");
+const { request } = load(
+  "../src/queue-connection",
+) as typeof import("../src/entrypoints/queue-connection.js");
+const { QueueState } = load(
+  "../src/queue-state",
+) as typeof import("../src/queue-state.js");
+const { readOwnedResult } = load(
+  "../src/queue-response-files",
+) as typeof import("../packages/node-adapters/src/persistence/owned-results.js");
+const { readAcceptedInput } = load(
+  "../src/dist/node-adapters/persistence/accepted-inputs",
+) as typeof import("../packages/node-adapters/src/persistence/accepted-inputs.js");
+const { createBrokerRecords } = load(
+  "../src/dist/node-adapters/persistence/broker-records",
+) as typeof import("../packages/node-adapters/src/persistence/broker-records.js");
+const { runBoundInstanceProbe } = load(
+  "./fixtures/bound-instance-probe.cjs",
+) as {
+  runBoundInstanceProbe(
+    script: string,
+    identity: {
+      pid: number;
+      birth: string;
+      version: string;
+      activeCommand: string;
+    },
+  ): { text: string };
+};
+
+function acceptedBytes(dir: string, reference: unknown): Buffer {
+  // The persisted descriptor is untrusted; let the actual reader validate it.
+  const result: unknown = Reflect.apply(readAcceptedInput, undefined, [
+    dir,
+    reference,
+  ]);
+  assert.equal(field(result, "status"), "available");
+  const bytes = field(result, "bytes");
+  assert.ok(Buffer.isBuffer(bytes));
+  return bytes;
+}
+
+function fixture(t: TestContext, cleanup = true) {
+  const root = fs.mkdtempSync("/tmp/opencode/execution-integrated-");
+  if (cleanup) t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, "queue"),
+    project = path.join(root, "project");
+  fs.mkdirSync(path.join(project, ".cad"), { recursive: true });
+  return { root, dir, project };
+}
+
+test("broker large project RPC/provenance survive restart; foreign owner and symlink fail closed", async (t) => {
+  const f = fixture(t, false);
+  let sends = 0;
+  let broker: Awaited<ReturnType<typeof serve>> | null;
+  const identity = {
+    pid: 99,
+    birth: "mock:99",
+    version: "mock",
+    activeCommand: "SelectCommand",
+    documents: [],
+    documentState: { status: "metadata-only" },
+  };
+  const physical: Client = {
+    _openSession: async () => assert.fail("unexpected SDK session"),
+    listTools: async () => assert.fail("unexpected tool discovery"),
+    executeUiGuardedScript: async () => assert.fail("unexpected UI mutation"),
+    server: { timeoutMs: 3000 },
+    _parse: JSON.parse,
+    async _post(payload) {
+      sends++;
+      return {
+        status: 200,
+        raw: JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: { data: "x".repeat(1100 * 1024) },
+        }),
+      };
+    },
+    async callTool(value) {
+      assert.equal(field(value, "object", "readOnly"), true);
+      // Run the real prepared probe against the existing offline SDK fixture so
+      // its source-bound receipt agrees with the observation, not just its text.
+      const probe = runBoundInstanceProbe(
+        string(field(value, "object", "script")),
+        identity,
+      );
+      return {
+        failed: false,
+        text: probe.text,
+      };
+    },
+  };
+  const start = () =>
+    serve(
+      { backend: "addin", timeoutMs: 3000 },
+      {
+        dir: f.dir,
+        confirmOwnership: true,
+        createBackend: () => physical,
+        pollMs: 5,
+      },
+    );
+  broker = await start();
+  t.after(async () => {
+    try {
+      if (broker) await broker.close();
+    } finally {
+      fs.rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+  const auth = { clientId: "owner", clientToken: "secret-owner" },
+    foreign = { clientId: "foreign", clientToken: "secret-foreign" };
+  await request(f.dir, { action: "register", ...auth });
+  await request(f.dir, { action: "register", ...foreign });
+  const call = (action: string, values: Record<string, unknown> = {}) =>
+    request(f.dir, { action, auth, ...values });
+  const source = path.join(f.project, "source.py");
+  fs.writeFileSync(source, "accepted-source\r\n");
+  const input = {
+    kind: "rpc",
+    requestId: randomUUID(),
+    timeoutMs: 3000,
+    cwd: f.project,
+    payload: { jsonrpc: "2.0", id: 1, method: "ping" },
+    inputFiles: [
+      {
+        path: source,
+        sha256: createHash("sha256")
+          .update("accepted-source\r\n")
+          .digest("hex"),
+      },
+    ],
+  };
+  const job = await call("submit", { request: input });
+  let result: unknown;
+  for (let i = 0; i < 200; i++) {
+    result = await call("result", { jobId: field(job, "id") });
+    if (field(result, "job", "state") === "succeeded") break;
+    assert.equal(
+      ["failed", "needs_reconciliation"].includes(
+        string(field(result, "job", "state")),
+      ),
+      false,
+      JSON.stringify(field(result, "job")),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(field(result, "job", "state"), "succeeded");
+  assert.equal(
+    field(result, "outputs", "rpc", "artifact", "storage"),
+    "project",
+  );
+  assert.equal(field(result, "provenance", "status"), "available");
+  assert.deepEqual(
+    JSON.parse(
+      acceptedBytes(f.dir, field(result, "provenance", "inputs", 0)).toString(
+        "utf8",
+      ),
+    ),
+    input.payload,
+  );
+  fs.writeFileSync(source, "current-source");
+  await broker.close();
+  broker = null;
+  broker = await start();
+  const after = await call("result", { jobId: field(job, "id") });
+  const evidence = createBrokerRecords(f.dir).evidence;
+  const id = string(field(job, "id"));
+  const journals = evidence.readRpcRecords(id);
+  assert.equal(journals.length, 1);
+  assert.equal(journals[0]?.terminal, true);
+  assert.equal(journals[0]?.binding.jobId, id);
+  const rpcId = string(journals[0]?.binding.rpcId);
+  assert.deepEqual(evidence.readReceivedResponse(id, rpcId)?.response, journals[0]?.response);
+  assert.equal(
+    acceptedBytes(f.dir, field(after, "provenance", "inputs", 1)).toString(),
+    "accepted-source\r\n",
+  );
+  assert.deepEqual(
+    field(after, "outputs", "rpc", "artifact"),
+    field(result, "outputs", "rpc", "artifact"),
+  );
+  const bytes: unknown = Reflect.apply(readOwnedResult, undefined, [
+    f.dir,
+    { jobId: field(job, "id"), cwd: f.project },
+    field(after, "outputs", "rpc", "artifact"),
+  ]);
+  assert.ok(Buffer.isBuffer(bytes));
+  assert.equal(
+    field(
+      JSON.parse(string(field(JSON.parse(bytes.toString("utf8")), "raw"))),
+      "result",
+      "data",
+      "length",
+    ),
+    1100 * 1024,
+  );
+  await assert.rejects(
+    request(f.dir, {
+      action: "result",
+      auth: foreign,
+      jobId: field(job, "id"),
+    }),
+    /Only the submitting client/,
+  );
+  const retried = await call("submit", { request: input });
+  assert.equal(field(retried, "id"), field(job, "id"));
+  assert.equal(sends, 1);
+  // Historical records without provenance must not capture today's input on retry.
+  fs.rmSync(path.join(f.dir, "admissions"), { recursive: true });
+  assert.equal(
+    field(await call("submit", { request: input }), "id"),
+    field(job, "id"),
+  );
+  assert.deepEqual(
+    field(await call("result", { jobId: field(job, "id") }), "provenance"),
+    { status: "missing" },
+  );
+  fs.unlinkSync(string(field(after, "outputs", "rpc", "path")));
+  fs.symlinkSync("/etc/passwd", string(field(after, "outputs", "rpc", "path")));
+  await assert.rejects(
+    call("result", { jobId: field(job, "id") }),
+    /ELOOP|symbolic|symlink/,
+  );
+  assert.equal(sends, 1, "artifact faults never replay execution");
+});
+
+test("integrated queue commit failure preserves unfinished receipt and blocks restart", (t) => {
+  const f = fixture(t),
+    state = new QueueState(f.dir);
+  const job = state.submit({
+    clientId: "owner",
+    requestId: "once",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: {},
+  });
+  state.next();
+  const receipt = path.join(f.dir, "receipt.json");
+  fs.writeFileSync(receipt, '{"terminal":false}');
+  const original = fs.renameSync;
+  fs.renameSync = (...args) => {
+    if (args[1] === state.file)
+      throw Object.assign(new Error("injected full disk"), { code: "ENOSPC" });
+    return original(...args);
+  };
+  try {
+    assert.throws(() => state.finish(string(field(job, "id"))), {
+      code: "STORAGE_UNAVAILABLE",
+    });
+  } finally {
+    fs.renameSync = original;
+  }
+  assert.throws(() => state.status(string(field(job, "id"))), {
+    code: "STORAGE_UNAVAILABLE",
+  });
+  assert.notEqual(
+    field(state.data, "jobs", string(field(job, "id")), "state"),
+    "succeeded",
+  );
+  assert.throws(() => state.next(), { code: "STORAGE_UNAVAILABLE" });
+  assert.equal(fs.readFileSync(receipt, "utf8"), '{"terminal":false}');
+  assert.throws(() => new QueueState(f.dir), { code: "STORAGE_UNAVAILABLE" });
+  assert.equal(
+    field(
+      JSON.parse(fs.readFileSync(state.file, "utf8")),
+      "jobs",
+      string(field(job, "id")),
+      "state",
+    ),
+    "running",
+  );
+});
+
+test("version-1 unfinished snapshots restore unknown, corrupt/truncated/unknown versions never succeed", (t) => {
+  const f = fixture(t),
+    state = new QueueState(f.dir);
+  const job = state.submit({
+    clientId: "owner",
+    requestId: "once",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: {},
+  });
+  state.next();
+  const restored = new QueueState(f.dir);
+  assert.equal(
+    field(restored.status(string(field(job, "id"))), "state"),
+    "needs_reconciliation",
+  );
+  assert.equal(restored.next(), null);
+  const snapshot = object(JSON.parse(fs.readFileSync(state.file, "utf8")));
+  object(snapshot)["version"] = 999;
+  fs.writeFileSync(state.file, JSON.stringify(snapshot));
+  assert.throws(() => new QueueState(f.dir), { code: "CORRUPT_STATE" });
+  fs.writeFileSync(state.file, '{"version":1');
+  assert.throws(() => new QueueState(f.dir), { code: "CORRUPT_STATE" });
+});
+
+test("cancelled admission history stays reopenable when the next admission exceeds the snapshot limit", (t) => {
+  const f = fixture(t),
+    state = new QueueState(f.dir),
+    payload = { data: "x".repeat(15 * 1024 * 1024) },
+    history: Array<{ id: string; requestId: string }> = [];
+
+  // Each request is below the broker's 16 MiB message cap. They are admitted
+  // and cancelled without calling next(), so this scenario never reaches an SDK.
+  for (let index = 0; index < 8; index++) {
+    const requestId = `history-${index}`;
+    const job = state.submit({
+      clientId: "owner",
+      requestId,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload,
+    });
+    history.push({ id: string(field(job, "id")), requestId });
+    assert.equal(
+      field(state.cancel(string(field(job, "id")), "owner"), "state"),
+      "cancelled",
+    );
+  }
+
+  let admissionError: unknown;
+  try {
+    state.submit({
+      clientId: "owner",
+      requestId: "history-over-limit",
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload,
+    });
+  } catch (error) {
+    admissionError = error;
+  }
+  let pauseResult: unknown;
+  let pauseError: unknown;
+  try {
+    pauseResult = state.pause(true);
+  } catch (error) {
+    pauseError = error;
+  }
+  let reopened: InstanceType<typeof QueueState> | undefined;
+  let restoreError: unknown;
+  try {
+    reopened = new QueueState(f.dir);
+  } catch (error) {
+    restoreError = error;
+  }
+
+  assert.equal(
+    (admissionError as { code?: string } | undefined)?.code,
+    "SNAPSHOT_TOO_LARGE",
+    `admission error=${String(admissionError)}; restore error=${String(restoreError)}`,
+  );
+  assert.equal(
+    pauseError,
+    undefined,
+    `known capacity refusal poisoned the live queue: ${String(pauseError)}`,
+  );
+  assert.equal(field(pauseResult, "paused"), true);
+  assert.equal(restoreError, undefined);
+  assert.ok(reopened);
+  const restoredJobs = object(field(reopened.status(), "jobs"));
+  assert.equal(field(reopened.status(), "paused"), true);
+  assert.deepEqual(
+    Object.keys(restoredJobs).sort(),
+    history.map(({ id }) => id).sort(),
+    "the last rejected admission must not replace or prune prior history",
+  );
+  for (const { id, requestId } of history) {
+    const job = reopened.status(id);
+    assert.equal(field(job, "requestId"), requestId);
+    assert.equal(field(job, "state"), "cancelled");
+  }
+});
+
+test("an exact-limit running snapshot reopens with its unknown state intact", (t) => {
+  const f = fixture(t),
+    now = () => 1_700_000_000_000,
+    state = new QueueState(f.dir, { now }),
+    payload = { data: "x".repeat(15 * 1024 * 1024) };
+
+  for (let index = 0; index < 8; index++) {
+    const job = state.submit({
+      clientId: "owner",
+      requestId: `history-${index}`,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload,
+    });
+    state.cancel(string(field(job, "id")), "owner");
+  }
+
+  const active = state.submit({
+    clientId: "owner",
+    requestId: "active",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: {},
+  });
+  const calibrationDir = path.join(f.root, "calibration");
+  fs.mkdirSync(calibrationDir);
+  fs.copyFileSync(
+    state.file,
+    path.join(calibrationDir, path.basename(state.file)),
+  );
+  const calibration = new QueueState(calibrationDir, { now });
+  const turn = state.next();
+  const calibrationTurn = calibration.next();
+  assert.equal(field(turn, "id"), field(active, "id"));
+  assert.equal(field(turn, "state"), "running");
+  assert.equal(field(calibrationTurn, "id"), field(active, "id"));
+
+  const snapshotLimit = 128 * 1024 * 1024;
+  const beforePadding = fs.statSync(state.file).size;
+  assert.equal(fs.statSync(calibration.file).size, beforePadding);
+  calibration.submit({
+    clientId: "owner",
+    requestId: "edge-padding",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: { data: "" },
+  });
+  const emptyPayloadOverhead =
+    fs.statSync(calibration.file).size - beforePadding;
+  const paddingBytes = snapshotLimit - beforePadding - emptyPayloadOverhead;
+  assert.ok(paddingBytes > 0);
+
+  let paddingError: unknown;
+  let paddingJob: unknown;
+  try {
+    paddingJob = state.submit({
+      clientId: "owner",
+      requestId: "edge-padding",
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload: { data: "x".repeat(paddingBytes) },
+    });
+  } catch (error) {
+    paddingError = error;
+  }
+  const durableBytes = fs.statSync(path.join(f.dir, "queue-state.json")).size;
+  assert.equal(
+    paddingError,
+    undefined,
+    `padding error=${String(paddingError)}; durable bytes=${durableBytes}`,
+  );
+  assert.equal(durableBytes, snapshotLimit);
+  const snapshotHash = createHash("sha256")
+    .update(fs.readFileSync(state.file))
+    .digest("hex");
+
+  let reopened: InstanceType<typeof QueueState> | undefined;
+  let reopenError: unknown;
+  try {
+    reopened = new QueueState(f.dir);
+  } catch (error) {
+    reopenError = error;
+  }
+  assert.equal(reopenError, undefined, String(reopenError));
+  assert.ok(reopened);
+  assert.equal(
+    createHash("sha256").update(fs.readFileSync(state.file)).digest("hex"),
+    snapshotHash,
+    "capacity-limited recovery must not rewrite the last durable snapshot",
+  );
+  assert.equal(
+    field(reopened.status(string(field(active, "id"))), "state"),
+    "needs_reconciliation",
+  );
+  assert.equal(
+    field(reopened.status(string(field(paddingJob, "id"))), "state"),
+    "queued",
+  );
+  assert.equal(reopened.next(), null);
+});
+
+test("an exact-limit snapshot recovers every local phased state without replay or a durable claim", (t) => {
+  const f = fixture(t),
+    now = () => 1_700_000_000_000,
+    state = new QueueState(f.dir, { now }),
+    historyPayload = { data: "x".repeat(15 * 1024 * 1024) };
+
+  for (let index = 0; index < 8; index++) {
+    const job = state.submit({
+      clientId: "owner",
+      requestId: `history-${index}`,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload: historyPayload,
+    });
+    state.cancel(string(field(job, "id")), "owner");
+  }
+
+  const submitPhased = (requestId: string) =>
+    state.submit({
+      clientId: "owner",
+      requestId,
+      kind: "command",
+      timeoutMs: 1000,
+      phased: true,
+      argv: ["offline-worker"],
+      cwd: f.project,
+    });
+  const processing = submitPhased("processing");
+  state.readyTurn(string(field(processing, "id")));
+  assert.equal(field(state.next(), "id"), field(processing, "id"));
+  state.releaseTurn(string(field(processing, "id")), 1000);
+  assert.equal(
+    field(state.status(string(field(processing, "id"))), "state"),
+    "processing",
+  );
+
+  const queued = submitPhased("queued");
+  state.readyTurn(string(field(queued, "id")));
+  const preparing = submitPhased("preparing");
+  assert.equal(
+    field(state.status(string(field(preparing, "id"))), "state"),
+    "preparing",
+  );
+  assert.equal(
+    field(state.status(string(field(queued, "id"))), "state"),
+    "queued",
+  );
+
+  const calibrationDir = path.join(f.root, "calibration");
+  fs.mkdirSync(calibrationDir);
+  fs.copyFileSync(
+    state.file,
+    path.join(calibrationDir, path.basename(state.file)),
+  );
+  const calibration = new QueueState(calibrationDir, { now, recover: false });
+  const snapshotLimit = 128 * 1024 * 1024;
+  const beforePadding = fs.statSync(state.file).size;
+  calibration.submit({
+    clientId: "owner",
+    requestId: "edge-padding",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: { data: "" },
+  });
+  const emptyPayloadOverhead =
+    fs.statSync(calibration.file).size - beforePadding;
+  const paddingBytes = snapshotLimit - beforePadding - emptyPayloadOverhead;
+  assert.ok(paddingBytes > 0 && paddingBytes < 16 * 1024 * 1024);
+
+  const padding = state.submit({
+    clientId: "owner",
+    requestId: "edge-padding",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: { data: "x".repeat(paddingBytes) },
+  });
+  assert.equal(fs.statSync(state.file).size, snapshotLimit);
+  const snapshotHash = createHash("sha256")
+    .update(fs.readFileSync(state.file))
+    .digest("hex");
+
+  let reopenCommits = 0;
+  const reopened = new QueueState(f.dir, {
+    onCommittedSnapshot: () => {
+      reopenCommits++;
+    },
+  });
+  assert.equal(reopenCommits, 0);
+  assert.equal(
+    createHash("sha256").update(fs.readFileSync(state.file)).digest("hex"),
+    snapshotHash,
+  );
+  for (const job of [preparing, processing, queued]) {
+    const restored = reopened.status(string(field(job, "id")));
+    assert.equal(field(restored, "state"), "failed");
+    assert.equal(field(restored, "code"), "LOCAL_WORKER_INTERRUPTED");
+  }
+  assert.equal(
+    field(reopened.status(string(field(padding, "id"))), "state"),
+    "queued",
+  );
+  assert.throws(() => reopened.next(), { code: "SNAPSHOT_TOO_LARGE" });
+  assert.equal(
+    field(reopened.status(string(field(padding, "id"))), "state"),
+    "queued",
+  );
+  assert.equal(reopenCommits, 0);
+  assert.equal(
+    createHash("sha256").update(fs.readFileSync(state.file)).digest("hex"),
+    snapshotHash,
+  );
+});
