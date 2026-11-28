@@ -9,6 +9,7 @@ import {
 } from "@fmcad/core";
 import { pythonLiteral } from "./artifact.js";
 import { prepareCadBundle } from "./bundle.js";
+import { cameraAliasRoute } from "./camera-save-payload.js";
 import { resolveRuntimePaths } from "../config-platform/runtime-paths.js";
 import { detectPlatform, toWindowsPath } from "../config-platform/platform.js";
 
@@ -151,6 +152,7 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
       pythonLiteral,
       privateReadback,
       cameraAlias,
+      operation === "camera.save" ? cameraAliasRoute(context,cameraAlias) : undefined,
     );
     return prepareCadBundle(
       resolveRuntimePaths({ anchor: __filename }).installation,

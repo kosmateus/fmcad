@@ -51,7 +51,8 @@ def _io_camera_state(ctx: "_IoCameraReadContext",
 def _camera_pose(doc: "adsk.core.Document", camera: "adsk.core.Camera") -> "_IoCameraState":
     types = adsk.core.CameraTypes
     names = ('OrthographicCameraType', 'PerspectiveCameraType', 'PerspectiveWithOrthoFacesCameraType')
-    name = next((n for n in names if _cad_cast("adsk.core.CameraTypes", getattr(types, n)) == camera.cameraType), None)
+    projection = camera.cameraType
+    name = next((n for n in names if _cad_cast("adsk.core.CameraTypes", getattr(types, n)) == projection), None)
     if name is None:
         raise ValueError('Unsupported camera type; cannot provide a restorable snapshot')
     state = _cad_cast("_IoCameraState", {'document': _camera_document_identity(doc), 'eye': _cad_xyz(camera.eye),

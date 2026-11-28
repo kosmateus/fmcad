@@ -22,7 +22,7 @@ test("ADDIN camera wire and scoped receipt retain live guards and erase static-o
     logical.script,
     python.pythonArtifactManifest(logical),
   );
-  const code = adapted.script + "\n\nrun()\n";
+  const code = adapted.script + "\nrun()\n";
   const origin = python.pythonArtifactManifest(adapted);
   const invocation = {
     ...context,

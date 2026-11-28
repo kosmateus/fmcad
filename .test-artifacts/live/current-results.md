@@ -1,3 +1,9 @@
+## 2026-11-28 09:27 UTC — Kamera po pierwszych poprawkach minimalności
+
+**Wykonanie i pomiar fizycznego transportu: 1/1 scenariusz PASS. Minimalność: FAIL w ponownym review.** Na źródle `3194ff2b536f1d240de59a68fad747df8fbfb3e2` oba odczyty zwróciły identyczny stan kamery, a dokument `9bcb9f6a-77f0-4375-8a3a-f31ffc94f119` zamknięto i potwierdzono jego brak na liście. Dwa pliki wysłanego Pythona miały po 6 873 B, zamiast 25 745 B. Każde żądanie miało 7 187 B JSON i zawierało wewnętrzny program o rozmiarze 4 406 B.
+
+Niezależna Astra potwierdziła usunięcie typów, nieużywanego kontekstu oraz gałęzi audytu i innych operacji. Wskazała dalsze konkretne nadmiary, m.in. budowę listy dokumentów i ponowne odczyty typu kamery. Poprawione bajty wymagają nowego live i review. [Lokalny manifest](../camera-62f45685-9247-46c8-852b-cd9c7ebc02cd/review/manifest.json).
+
 ## 2026-11-28 09:07 UTC — Odczyt kamery z zapisem rzeczywistych bajtów
 
 **Scenariusz: 1 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN**, dla jednego wariantu `camera.save` bez selektora komponentu. Oba odczyty w Fusion przez ADDIN 8765 zwróciły identyczny widok ortograficzny oraz poprawną tożsamość nowego dokumentu. Po zamknięciu wyłącznie własnego dokumentu potwierdzono jego brak na publicznej liście.

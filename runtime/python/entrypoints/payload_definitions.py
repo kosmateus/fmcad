@@ -56,12 +56,13 @@ class NullSpecializer(ast.NodeTransformer):
         return self.generic_visit(node) if value is None else self.visit(node.body if value else node.orelse)
 
 
-def project_class(node, members, bindings):
+def project_class(node, members, bindings, overloads):
     if not isinstance(node, ast.ClassDef) or not members or len(set(members)) != len(members):
         raise ValueError('Expected a class and unique requested methods')
     if set(bindings) - set(members):
         raise ValueError('Bindings for unselected class method')
     methods = []
+    implemented = set()
     for method in node.body:
         if isinstance(method, ast.Expr) and isinstance(method.value, ast.Constant) and isinstance(method.value.value, str):
             continue
@@ -69,6 +70,20 @@ def project_class(node, members, bindings):
             raise ValueError('Class initialization needs an explicit source plan')
         if method.name not in members:
             continue
+        stub = (len(method.decorator_list) == 1
+                and isinstance(method.decorator_list[0], ast.Name)
+                and method.decorator_list[0].id in overloads
+                and len(method.body) == 1 and isinstance(method.body[0], ast.Expr)
+                and isinstance(method.body[0].value, ast.Constant)
+                and method.body[0].value.value is Ellipsis)
+        if method.name in implemented:
+            raise ValueError('Rebound class member: ' + method.name)
+        if stub:
+            # Preserved for the checker. Only a real typing.overload stub may
+            # precede the unique implementation; erasure removes these stubs.
+            methods.append(method)
+            continue
+        implemented.add(method.name)
         names = bindings.get(method.name, {})
         if names:
             parameters = {arg.arg for arg in method.args.posonlyargs + method.args.args + method.args.kwonlyargs}
@@ -86,13 +101,13 @@ def project_class(node, members, bindings):
             if not method.body:
                 method.body = [ast.Pass()]
         methods.append(method)
-    if sorted(method.name for method in methods) != sorted(members):
+    if implemented != set(members):
         raise ValueError('Missing or ambiguous class member')
     node.body = methods
     return ast.unparse(node) + '\n'
 
 
-def extract_definition(source, symbol, import_name=None, guard=None, members=None, bindings_plan=None, type_only=False):
+def extract_definition(source, symbol, import_name=None, guard=None, members=None, bindings_plan=None, type_only=False, null_arguments=None):
     tree = ast.parse(source)
     if bindings_plan is not None and members is None or members is not None and import_name is not None:
         raise ValueError('Invalid class projection reference')
@@ -126,8 +141,27 @@ def extract_definition(source, symbol, import_name=None, guard=None, members=Non
         if len(matches) != 1 or bindings(matches[0]) != [symbol]:
             raise ValueError('Expected one unambiguous canonical definition: ' + symbol)
         node = matches[0]
+        if null_arguments is not None:
+            if not isinstance(node, ast.FunctionDef) or not null_arguments or members or guard or node.decorator_list:
+                raise ValueError('Invalid null-argument projection')
+            count = len(null_arguments)
+            if ([arg.arg for arg in node.args.args[-count:]] != null_arguments
+                    or len(node.args.defaults) < count or node.args.vararg or node.args.kwarg
+                    or any(not isinstance(v, ast.Constant) or v.value is not None for v in node.args.defaults[-count:])):
+                raise ValueError('Only trailing null defaults can be projected')
+            if any(isinstance(v, ast.Name) and v.id in null_arguments and not isinstance(v.ctx, ast.Load) for v in ast.walk(node)):
+                raise ValueError('Null argument was reassigned')
+            node = NullSpecializer(null_arguments).visit(node)
+            if any(isinstance(v, ast.Name) and v.id in null_arguments for v in ast.walk(node)):
+                raise ValueError('Projected argument is still used')
+            del node.args.args[-count:]
+            del node.args.defaults[-count:]
+            return ast.unparse(node) + '\n'
         if members is not None:
-            return project_class(node, members, bindings_plan or {})
+            overloads = {alias.asname or 'overload' for statement in tree.body
+                         if isinstance(statement, ast.ImportFrom) and statement.level == 0
+                         and statement.module == 'typing' for alias in statement.names if alias.name == 'overload'}
+            return project_class(node, members, bindings_plan or {}, overloads)
         decorators = getattr(node, 'decorator_list', [])
         first = min([node.lineno] + [item.lineno for item in decorators])
         lines = source.splitlines(keepends=True)
@@ -143,7 +177,7 @@ def main():
     json.dump([{'id': item['id'],
                 'source': extract_definition(item['source'], item['symbol'],
                                              item.get('importName'), item.get('guard'),
-                                             item.get('members'), item.get('bindings'), item.get('typeOnly', False))}
+                                             item.get('members'), item.get('bindings'), item.get('typeOnly', False), item.get('nullArguments'))}
                for item in request['definitions']], sys.stdout)
 
 

@@ -25,7 +25,10 @@ def _camera_add_alias_match(ctx: "CadContext", matches: "list[adsk.core.Base]", 
 
 
 def _camera_select_component(ctx: "CadContext", name: str, matches: "list[adsk.core.Base]") -> None:
-    entity = _cad_unique(matches, 'Reference ' + name)
+    _camera_apply_component(ctx, _cad_unique(matches, 'Reference ' + name))
+
+
+def _camera_apply_component(ctx: "CadContext", entity: "adsk.core.Base") -> None:
     kind = _cad_kind(entity)
     if kind == 'occurrence':
         ctx.occurrence = _cad_cast('adsk.fusion.Occurrence', entity)

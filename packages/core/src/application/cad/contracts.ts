@@ -19,6 +19,10 @@ export interface CameraAliasObservation {
   readonly name: string;
   readonly raw: string;
   readonly docId: string;
+  readonly observed?: readonly {
+    readonly name: string;
+    readonly raw: string;
+  }[];
 }
 export interface CadExecutionRequest {
   operation: string;

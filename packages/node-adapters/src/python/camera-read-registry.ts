@@ -7,18 +7,9 @@ const fields = "runtime/python/fmcad/domain/values.py";
 
 /** Projection is live camera state: all three supported projections are reachable. */
 export const cameraSaveHandlerPlan = {
-  roots: ["_camera_read"],
+  roots: ["_camera_active_viewport", "_camera_pose"],
   conditions: {},
   definitions: [
-    {
-      symbol: "_camera_read",
-      sourceId: "camera.save",
-      dependencies: [
-        { symbol: "_camera_active_viewport" },
-        { symbol: "_camera_pose" },
-        { symbol: "_cad_cast" },
-      ],
-    },
     {
       symbol: "_camera_active_viewport",
       sourceId: "camera.viewport",
@@ -50,7 +41,6 @@ export const cameraSaveHandlerPlan = {
 };
 
 export const cameraSaveCanonicalSources = [
-  { id: "camera.save", filename: camera, symbol: "_camera_read" },
   {
     id: "camera.viewport",
     filename: camera,

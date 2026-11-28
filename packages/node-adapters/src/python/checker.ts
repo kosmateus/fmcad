@@ -946,7 +946,7 @@ export function createPythonChecker(
           (artifact.context as Record<string,unknown>)["cameraReceipt"]:undefined;
         if (receiptHint) {
           const hint=checkerObject(receiptHint);
-          const code=camera?.addin ? camera.source+"\n\nrun()\n" : null;
+          const code=camera?.addin ? camera.source+"\nrun()\n" : null;
           if (!code || hint["version"]!==1 || typeof hint["mappedPath"]!=="string" ||
               checkerObject(artifact.request)["sourceHash"]!==checkerHash(code))
             throw new Error("Registered camera receipt lacks a canonical input binding");
@@ -1403,7 +1403,7 @@ export function createPythonChecker(
             unit.analysisSourceHash=checkerHash(checkedSource);
           }
           if (camera) {
-            for (const suffix of ["", '\n\nrun("")\n', "\n\nrun()\n"]) {
+            for (const suffix of ["", '\n\nrun("")\n', "\nrun()\n"]) {
               if (checkedSource === camera.source + suffix) {
                 checkedSource = camera.typed + suffix;
                 unit.analysisSourceHash = checkerHash(checkedSource);

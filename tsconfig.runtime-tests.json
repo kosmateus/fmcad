@@ -13,6 +13,7 @@
     "tests/camera-receipt.test.ts",
     "tests/camera-registered-wire.test.ts",
     "tests/camera-component-registry.test.ts",
+    "tests/camera-alias-continuation.test.ts",
     "tests/camera-read-registry.test.ts",
     "tests/controlled-ingress-window.test.ts",
     "tests/controlled-startup-policy.test.ts",

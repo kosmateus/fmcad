@@ -34,7 +34,6 @@ const prepare = () =>
 
 // This oracle is intentionally independent of the registry and its planner.
 const requiredFunctions = [
-  "_camera_read",
   "_camera_active_viewport",
   "_camera_document_identity",
   "_camera_pose",
@@ -79,11 +78,13 @@ for kind in range(3):
             raise AssertionError('camera.save must never write to the viewport')
     viewport = Viewport()
     ctx = types.SimpleNamespace(doc=doc, app=types.SimpleNamespace(activeDocument=doc, activeViewport=viewport))
-    state = namespace['_camera_read'](ctx.app, ctx.doc)['state']
+    def read():
+        return namespace['_camera_pose'](ctx.doc, namespace['_camera_active_viewport'](ctx.app,ctx.doc).camera)
+    state = read()
     states.append(state)
     ctx.app.activeDocument = object()
     try:
-        namespace['_camera_read'](ctx.app, ctx.doc)
+        read()
     except ValueError:
         pass
     else:
@@ -91,7 +92,7 @@ for kind in range(3):
     ctx.app.activeDocument = doc
     viewport.__dict__['parentDocument'] = object()
     try:
-        namespace['_camera_read'](ctx.app, ctx.doc)
+        read()
     except ValueError:
         pass
     else:
@@ -106,7 +107,7 @@ print(json.dumps(states))
 
 test("camera.save registry executes only its exact canonical handler closure", () => {
   const artifact = prepare();
-  assert.equal(artifact.units.length, 8);
+  assert.equal(artifact.units.length, 7);
   const result = execute(artifact.script);
   assert.equal(result.status, 0, result.stderr);
   const states = JSON.parse(result.stdout);

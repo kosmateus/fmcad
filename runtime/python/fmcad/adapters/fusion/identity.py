@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING as _Identity_TYPE_CHECKING, Protocol as _Identi
 
 
 if _Identity_TYPE_CHECKING:
+    from collections.abc import Iterable as _IdentityIterable
     class _IdentityDataProject(_IdentityProtocol):
         @property
         def id(self) -> str: ...
@@ -98,13 +99,10 @@ def _document_target(app: '_IdentityApplication', doc_name: object, project_id: 
     collection = app.documents
     documents: list['_IdentityDocument'] | tuple['_IdentityDocument', ...] = (collection if isinstance(collection, (list, tuple)) else
                  [collection.item(i) for i in range(collection.count)])
-    docs = _document_named_top_level(documents, doc_name)
-    if project_id is not None:
-        docs = [d for d in docs if d.dataFile and d.dataFile.parentProject.id == project_id]
-    return _document_unique_name(docs, doc_name)
+    return _document_unique_matching(documents, doc_name, project_id)
 
 
-def _document_named_top_level(documents: 'list[_IdentityDocument] | tuple[_IdentityDocument, ...]', doc_name: str) -> 'list[_IdentityDocument]':
+def _document_unique_matching(documents: '_IdentityIterable[_IdentityDocument]', doc_name: str, project_id: object=None) -> '_IdentityDocument':
     docs: list['_IdentityDocument'] = []
     for doc in documents:
         if doc.name != doc_name:
@@ -121,10 +119,8 @@ def _document_named_top_level(documents: 'list[_IdentityDocument] | tuple[_Ident
             if 'Failed to get temporary file' not in str(error):
                 raise
         docs.append(doc)
-    return docs
-
-
-def _document_unique_name(docs: 'list[_IdentityDocument]', doc_name: str) -> '_IdentityDocument':
+    if project_id is not None:
+        docs = [d for d in docs if d.dataFile and d.dataFile.parentProject.id == project_id]
     if len(docs) != 1:
         raise ValueError('Document %s: expected one match, found %d' % (doc_name, len(docs)))
     return docs[0]

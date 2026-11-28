@@ -62,10 +62,7 @@ export function planCameraSaveContext(
       {
         symbol: "_document_target",
         sourceId: "camera.context.target",
-        dependencies: [
-          { symbol: "_document_named_top_level" },
-          { symbol: "_document_unique_name" },
-        ],
+        dependencies: [{ symbol: "_document_unique_matching" }],
       },
       {
         symbol: "_document_assert_identity",
@@ -76,8 +73,7 @@ export function planCameraSaveContext(
         ],
       },
       ...[
-        "_document_named_top_level",
-        "_document_unique_name",
+        "_document_unique_matching",
         "_document_file_pin",
         "_document_check_pin",
       ].map((symbol) => ({
@@ -96,8 +92,7 @@ export function planCameraSaveContext(
     ],
     references: [
       ...[
-        "_document_named_top_level",
-        "_document_unique_name",
+        "_document_unique_matching",
         "_document_file_pin",
         "_document_check_pin",
       ].map((symbol) => ({
@@ -141,6 +136,13 @@ export function planCameraSaveContext(
       },
     ],
     typingReferences: [
+      {
+        id: "camera.context.type.iterable",
+        filename: identity,
+        symbol: "_IdentityIterable",
+        guard: "_Identity_TYPE_CHECKING",
+        importName: "collections.abc.Iterable",
+      },
       {
         id: "camera.context.type.identity-guard",
         filename: identity,

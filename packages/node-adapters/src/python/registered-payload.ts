@@ -12,6 +12,7 @@ export interface CanonicalPayloadDefinition {
   readonly guard?: string;
   /** Extract beneath the canonical guard for a single checker-only block. */
   readonly typeOnly?: boolean;
+  readonly nullArguments?: readonly string[];
   readonly members?: readonly string[];
   readonly bindings?: Readonly<Record<string, Readonly<Record<string, null>>>>;
 }

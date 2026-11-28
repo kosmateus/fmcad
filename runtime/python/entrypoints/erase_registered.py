@@ -4,11 +4,25 @@ import json
 import sys
 
 
+def type_expression(node):
+    if isinstance(node, (ast.Constant, ast.Name)):
+        return True
+    if isinstance(node, ast.Subscript):
+        return (isinstance(node.value, ast.Name) and node.value.id in {'dict', 'list', 'tuple', 'set', 'frozenset', 'type'}
+                and type_expression(node.slice))
+    if isinstance(node, ast.Tuple):
+        return all(type_expression(item) for item in node.elts)
+    return isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr) and type_expression(node.left) and type_expression(node.right)
+
+
 class Erase(ast.NodeTransformer):
     def __init__(self, tree):
         self.casts = {alias.asname or alias.name for node in ast.walk(tree)
                       if isinstance(node, ast.ImportFrom) and node.module == 'typing'
                       for alias in node.names if alias.name == 'cast'}
+        self.overloads = {alias.asname or alias.name for node in ast.walk(tree)
+                          if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                          for alias in node.names if alias.name == 'overload'}
         for node in ast.walk(tree):
             if ((isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load) and node.id in self.casts)
                     or isinstance(node, ast.arg) and node.arg in self.casts):
@@ -16,7 +30,7 @@ class Erase(ast.NodeTransformer):
 
     def visit_Call(self, node):
         if isinstance(node.func, ast.Name) and node.func.id in self.casts:
-            if len(node.args) != 2 or node.keywords or not isinstance(node.args[0], (ast.Constant, ast.Name)):
+            if len(node.args) != 2 or node.keywords or not type_expression(node.args[0]):
                 raise ValueError('Unsupported registered type cast')
             return self.visit(node.args[1])
         return self.generic_visit(node)
@@ -41,6 +55,11 @@ class Erase(ast.NodeTransformer):
         return ast.copy_location(ast.Assign(targets=[node.target], value=self.visit(node.value)), node)
 
     def visit_FunctionDef(self, node):
+        if (len(node.decorator_list) == 1 and isinstance(node.decorator_list[0], ast.Name)
+                and node.decorator_list[0].id in self.overloads and len(node.body) == 1
+                and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant)
+                and node.body[0].value.value is Ellipsis):
+            return None
         node.returns = None
         node.type_comment = None
         return self.generic_visit(node)

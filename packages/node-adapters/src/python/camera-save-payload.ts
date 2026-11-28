@@ -10,10 +10,36 @@ import {
 } from "./camera-read-registry.js";
 import { planCameraSaveContext } from "./camera-context-registry.js";
 import { cameraComponentNamePlan } from "./camera-component-registry.js";
+import { planCameraAlias } from "./camera-alias-registry.js";
 import { prepareCanonicalRegisteredPayload } from "./registered-payload.js";
 import { preparePythonArtifact, pythonLiteral } from "./artifact.js";
 import type { PythonArtifactManifest } from "@fmcad/core";
 import { eraseRegisteredPython } from "./registered-erasure.js";
+
+function aliasPlan(context: CadContext, alias?: CameraAliasObservation) {
+  const raw =
+    alias?.raw ??
+    (context.component != null && typeof context.component === "object"
+      ? JSON.stringify(context.component)
+      : undefined);
+  return raw === undefined ? null : planCameraAlias(raw, alias?.observed);
+}
+
+export function cameraAliasRoute(
+  context: CadContext,
+  alias?: CameraAliasObservation,
+) {
+  const plan = aliasPlan(context, alias);
+  return plan
+    ? {
+        resolverSymbol: plan.resolverSymbol,
+        aliasBindings: plan.aliasBindings,
+        mayDiscover: plan.definitions.some(
+          (entry) => entry.symbol === "_CameraAliasRequired",
+        ),
+      }
+    : undefined;
+}
 
 /** Single composition boundary used by both public frontends and the broker compiler. */
 export function typedCameraSavePayload(
@@ -35,23 +61,25 @@ export function typedCameraSavePayload(
     );
   const context = metadata.context as CadContext;
   const named = typeof context.component === "string";
+  const scoped = context.component != null;
+  const aliases = aliasPlan(context, cameraAlias);
   const target = planCameraSaveContext(
-    named ? { ...context, component: null } : context,
+    scoped ? { ...context, component: null } : context,
   );
   if (!target)
     throw new Error("Camera read requires a registered component resolver");
-  const component = named
+  const component = scoped
     ? cameraComponentNamePlan(cameraAlias ? "resume-alias" : "initial")
     : null;
-  if (cameraAlias) throw new Error("Unresolved camera alias source plan");
   const typing = [
     ...cameraSaveTypingSources,
     ...target.typingReferences,
     ...(component?.typingReferences ?? []),
+    ...(aliases?.typingReferences ?? []),
   ].filter(
     (ref) =>
       ref.importName !== "typing.TYPE_CHECKING" &&
-      (named ||
+      (scoped ||
         !["_IdentityApplication", "_IdentityDocuments"].includes(ref.symbol)),
   );
   return prepareCanonicalRegisteredPayload(
@@ -60,26 +88,41 @@ export function typedCameraSavePayload(
       ...cameraSaveHandlerPlan.definitions,
       ...target.definitions,
       ...(component?.definitions ?? []),
+      ...(aliases?.definitions ?? []),
     ],
     [
       ...cameraSaveCanonicalSources,
-      ...target.references,
+      ...target.references.map((ref) =>
+        !scoped &&
+        context.projectId == null &&
+        ref.symbol === "_document_unique_matching"
+          ? { ...ref, nullArguments: ["project_id"] }
+          : ref.symbol === "CadContext" && aliases?.contextMembers.length
+            ? {
+                ...ref,
+                members: [
+                  ...new Set([
+                    ...(ref.members ?? []),
+                    ...aliases.contextMembers,
+                  ]),
+                ],
+              }
+            : ref,
+      ),
       ...(component?.references ?? []),
+      ...(aliases?.references ?? []),
     ],
     [
       "adsk",
       "adsk.fusion",
-      ...(named
+      ...(scoped
         ? target.roots
         : [
-            "_document_named_top_level",
-            "_document_unique_name",
-            ...(context.docId != null || context.docFileId != null
-              ? ["_document_check_pin"]
-              : []),
+            "_document_unique_matching",
             ...(context.docFileId != null ? ["_document_file_pin"] : []),
           ]),
-      ...(component?.roots ?? []),
+      ...(named ? component!.roots : scoped ? ["_camera_apply_component"] : []),
+      ...(aliases?.roots ?? []),
       ...cameraSaveHandlerPlan.roots,
     ],
     target.conditions,
@@ -101,7 +144,7 @@ function cameraArtifact(
   alias: CameraAliasObservation | undefined,
   addin: boolean,
 ) {
-  const source = eraseRegisteredPython(root, typed.script);
+  const source = eraseRegisteredPython(root, typed.script).trimEnd();
   return preparePythonArtifact(
     [
       {
@@ -166,6 +209,16 @@ function canonicalCamera(
   ] as const) {
     const v = req[key];
     if (v == null) continue;
+    if (
+      key === "component" &&
+      typeof v === "object" &&
+      v !== null &&
+      !Array.isArray(v) &&
+      JSON.stringify(v) === JSON.stringify(ctx[key])
+    ) {
+      context.component = v as Record<string, unknown>;
+      continue;
+    }
     if (typeof v !== "string" || v !== ctx[key])
       throw new Error("Invalid registered camera target");
     context[key] = v;
@@ -192,6 +245,7 @@ function canonicalCamera(
     pythonLiteral,
     undefined,
     alias,
+    cameraAliasRoute(context, alias),
   );
   const addin = addinOverride ?? descriptor["addin"] === true;
   const wrapper = addin
@@ -207,7 +261,7 @@ function canonicalCamera(
     throw new Error("Canonical camera source changed");
   return {
     typed,
-    source: eraseRegisteredPython(root, typed.script),
+    source: eraseRegisteredPython(root, typed.script).trimEnd(),
     context,
     request: plan.request,
     alias,
@@ -245,7 +299,7 @@ export function matchesCameraInvocation(
   )
     return false;
   const camera = reconstructCamera(root, origin);
-  return camera?.addin === true && source === camera.source + "\n\nrun()\n";
+  return camera?.addin === true && source === camera.source + "\nrun()\n";
 }
 
 /** The official SDK calls run(context); ADDIN appends its own invocation. */

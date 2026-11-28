@@ -62,7 +62,7 @@ if _fmcad_guard_command not in ('', 'SelectCommand'):
     raise RuntimeError('An interactive Fusion command is open (' + _fmcad_guard_command + '); user script not started. Use ui.inspect then authorized ui.resolve; no retry is automatic.')
 `;
     const send = await super.prepareWireCall(
-      { code: camera ? camera.script + "\n\nrun()\n" : guard + script + '\n\nrun("")\n', persistent: false },
+      { code: camera ? camera.script + "\nrun()\n" : guard + script + '\n\nrun("")\n', persistent: false },
       "execute_python",
       origin,
     );

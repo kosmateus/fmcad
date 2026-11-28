@@ -55,8 +55,17 @@ export async function executeCad(
       entry.offline === true,
       services.sketchValidates(operation),
     );
-  if (operation === "camera.save" && typeof context.component === "string")
+  if (operation === "camera.save" && context.component != null) {
     data = { ...data }; // camera.save has no accepted input fields
+    if (typeof context.component === "object")
+      context = {
+        ...context,
+        component: JSON.parse(JSON.stringify(context.component)) as Record<
+          string,
+          unknown
+        >,
+      };
+  }
   const send = async (alias?: CameraAliasObservation) => {
     const artifact = services.prepare(operation, data, context, alias);
     const out = await services.execution.execute({
@@ -80,29 +89,47 @@ export async function executeCad(
     return parseNativeResult(text);
   };
   let output = await send();
-  if (operation === "camera.save" && Object.hasOwn(output, "_cameraAlias")) {
+  let observation: CameraAliasObservation | undefined;
+  while (operation === "camera.save" && Object.hasOwn(output, "_cameraAlias")) {
     const observed = output["_cameraAlias"];
+    const direct =
+      typeof context.component === "object" && context.component != null;
+    const nested = observation !== undefined || direct;
     if (
-      typeof context.component !== "string" ||
+      context.component == null ||
       output["operation"] !== operation ||
       output["document"] !== context.doc ||
       !record(observed) ||
-      observed["name"] !== context.component ||
+      typeof observed["name"] !== "string" ||
+      (!nested && observed["name"] !== context.component) ||
       typeof observed["raw"] !== "string" ||
       typeof observed["docId"] !== "string" ||
       !observed["docId"] ||
-      (context.docId != null && observed["docId"] !== context.docId)
+      (context.docId != null && observed["docId"] !== context.docId) ||
+      (observation && observed["docId"] !== observation.docId)
     )
       throw unknownNativeOutcome(
         new Error("Camera selector returned a mismatched continuation"),
       );
-    output = await send({
-      name: context.component,
-      raw: observed["raw"],
-      docId: observed["docId"],
-    });
-    if (Object.hasOwn(output, "_cameraAlias"))
-      throw new Error("Unresolved nested camera alias continuation");
+    const next = { name: observed["name"], raw: observed["raw"] };
+    if (!observation)
+      observation = {
+        name: direct ? "" : observed["name"],
+        raw: direct ? JSON.stringify(context.component) : observed["raw"],
+        docId: observed["docId"],
+      };
+    if (nested) {
+      const known = observation.observed ?? [];
+      if (
+        (!direct && next.name === observation.name) ||
+        known.some((row) => row.name === next.name)
+      )
+        throw new Error(
+          "Cyclic or changed camera component alias: " + next.name,
+        );
+      observation = { ...observation, observed: [...known, next] };
+    }
+    output = await send(observation);
   }
   if (services.failed(output)) output["success"] = false;
   const result = output["result"];

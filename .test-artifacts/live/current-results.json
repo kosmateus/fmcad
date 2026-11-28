@@ -1,5 +1,21 @@
 {
   "latestRegisteredCameraSave": {
+    "source": "3194ff2b536f1d240de59a68fad747df8fbfb3e2",
+    "broker": "577cee241a5b16996907ceaca5e2a40b7a126a074986b544c1fa6fc6b1af7dd2",
+    "native": "76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
+    "transport": "public CLI via ADDIN 8765",
+    "variant": "camera.save {}, exact name and docId without component",
+    "overall": "PASS",
+    "independentReview": "FAIL",
+    "cameraResults": {"PASS": 2, "FAIL": 0, "denominator": 2},
+    "docId": "9bcb9f6a-77f0-4375-8a3a-f31ffc94f119",
+    "cleanup": "CLOSED",
+    "jobs": ["62dfc46a-0c52-4f03-bd23-72aed1777665", "2d207f9b-b27e-4ae5-855a-4f9a6e5253a0"],
+    "checkedWireSha256": ["df278f5dad69201c96eb45ed0a9d3bfc9deaca27fdf6a06f1586c5e217068eac", "b484edfc4cae4f52681acb047c02ab1838d6e99356da3f95622292fdc565d368"],
+    "physicalBytesPerRequest": {"json": 7187, "code": 6873, "embeddedProgram": 4406},
+    "evidence": ".test-artifacts/camera-62f45685-9247-46c8-852b-cd9c7ebc02cd/review/manifest.json"
+  },
+  "previousRegisteredCameraSaveBroadReceipt": {
     "source": "def488f172ed8d2635a64c66c6a2f91a1bebbf8c",
     "broker": "1e9ca3a8b552b8659e17f11d41c6676c0c03d890bfb8dcd609545d9f97adcb1c",
     "native": "76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
@@ -12,7 +28,7 @@
     "jobs": ["71961cf7-b39f-43c6-8162-0b0868ebe6fd", "72c49a14-94df-4a51-9fa4-97f11beda5f0"],
     "checkedWireSha256": ["9610b696509a1e337883b64440ebbfc67167d38b8c6dae5b2becdc2ed7b4a974", "f24983e9155a7314c3ecc272f0400d84743f6ac5bb27ee07da1a3eea3af24f62"],
     "physicalBytesPerRequest": {"json": 26546, "code": 25745, "embeddedProgram": 12157},
-    "independentReview": "REQUESTED",
+    "independentReview": "FAIL",
     "evidence": ".test-artifacts/camera-0309a49f-d8ac-42b9-b8da-d7f5fb84074a/review/manifest.json"
   },
   "previousRegisteredCameraSaveWithoutCapture": {
