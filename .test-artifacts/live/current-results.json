@@ -1,4 +1,23 @@
 {
+  "latestCurrentNativePublicMcp": {
+    "status": "PASS",
+    "scope": "Single ordinary public MCP stdio geometry workflow; no stop/resume",
+    "counts": { "PASS": 1, "FAIL": 0, "NOTRUN": 0, "RUNNING": 0, "UNKNOWN": 0, "denominator": 1 },
+    "runtimeCode": "9eda002269a97a9b69bc6a5718a118288154003d",
+    "build": "bc9c78119948ef747356d3debcad2eef5f2df236b9114d5a3c50f0c1d482bc90",
+    "nativeSource": "6df813600f76d7b23bdf4d4ccf48b3d8fa84d70f",
+    "nativeIntegratedMain": "71fbd09dbe7bd466b7fc077dbf09e7413ec4f8d3",
+    "dimensionsMm": [40, 20, 10],
+    "measuredVolumeMm3": 8000,
+    "cleanup": "CLOSED",
+    "fusionIdentityUnchanged": true,
+    "brokerRestarted": false,
+    "safeHandback": "RUNNING; no active jobs/operations; no unresolved state",
+    "issue": "fmcad-y69.1.15.30.5.2.2.29.9.32.138.5",
+    "evidence": "/tmp/opencode/luna-current-public-cad-20261126/live-evidence/public-mcp-15ff5529-7f07-4512-83a6-f41877431069/",
+    "evidenceManifest": "SHA256SUMS verified by executor",
+    "limitations": ["Does not qualify paused queued read after resume", "Does not qualify the full live catalog"]
+  },
   "latestPinnedResumeReadAttempt": {
     "status": "FAIL",
     "source": "6f1c71a",

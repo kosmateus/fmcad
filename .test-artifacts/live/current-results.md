@@ -1,3 +1,11 @@
+## 2026-11-28 04:57 UTC — Publiczne MCP na aktualnym Native PASS
+
+- **1/1 workflow PASS** na kodzie wykonawczym `9eda002`, buildzie `bc9c78119948ef747356d3debcad2eef5f2df236b9114d5a3c50f0c1d482bc90` i Native `6df81360`, zintegrowanym do `main` jako `71fbd09`. Publiczne MCP stdio utworzyło bryłę 40 × 20 × 10 mm; niezależne odczyty potwierdziły BRep solid oraz 8000 mm³. Cleanup: **CLOSED**.
+- Wykonawca potwierdził niezmienioną tożsamość Fusion, brak restartu brokera/Fusion oraz bezpieczne przekazanie: kolejka RUNNING, brak aktywnych zadań/operacji i unresolved state. Zadanie `138.5` closed z właściwym właścicielem. Przyjęto wynik autora bez ponawiania jego testów.
+- Dowody: `/tmp/opencode/luna-current-public-cad-20261126/live-evidence/public-mcp-15ff5529-7f07-4512-83a6-f41877431069/`; autor zweryfikował `SHA256SUMS`. Ten wynik nie obejmuje naprawianego w `138.4` odczytu przyjętego podczas pauzy ani pełnego katalogu 11 profili.
+
+---
+
 ## 2026-11-28 02:46 UTC — Mocniejszy test odczytu po resume FAIL
 
 - Świeży workflow wymaga terminalnego `succeeded` również dla pomocniczego `document.status` z dokładnym name i creationId, wysłanego podczas stop-pauzy. Ten warunek **FAIL: 0/1 PASS, 1/1 FAIL**. Job `b47f58ed-ee29-412b-960b-4e5542336740` zakończył się `DOCUMENT_CHANGED`, `not_started`, `userScriptSubmitted=false`, `mayHaveMutated=false`. Zebrany currentState wskazuje właściwy dokument, lecz `previousFingerprint=null`; naprawa jest przydzielona w zadaniu `138.4`.
