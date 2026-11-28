@@ -1363,7 +1363,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
     } else assertResetSubmissionOpen(dir);
   }
-  function isResumedPinnedStatusRead(job: P.Job | undefined) {
+  // This only permits inspecting a prepared read before its fresh preflight.
+  // The product turn still verifies its exact target and fences the actual send.
+  function isResumedPinnedStatusReadCandidate(job: P.Job | undefined) {
     if (
       !job ||
       job.kind !== "command" ||
@@ -1391,10 +1393,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if ((state.epoch || approvedRuntimeRoot) && job) admitEpochRequest(job.request);
     if (buildHash() !== codeHash)
       fail("BUILD_CHANGED", "Executable changed during local preparation");
-    if (job && expectedContextEpoch !== (state.data.contextEpoch || 0)) {
-      if (!isResumedPinnedStatusRead(state.data.jobs[job.id]))
-        fail("DOCUMENT_CHANGED", "Context changed during local preparation");
-    }
+    if (
+      job &&
+      expectedContextEpoch !== (state.data.contextEpoch || 0) &&
+      !isResumedPinnedStatusReadCandidate(state.data.jobs[job.id])
+    )
+      fail("DOCUMENT_CHANGED", "Context changed during local preparation");
     for (const input of (job && job.request?.inputFiles) || []) {
       if (
         hash(
@@ -1565,7 +1569,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         if (
           job &&
           !prepared.metadataOnly &&
-          prepared.contextEpoch !== (state.data.contextEpoch || 0)
+          prepared.contextEpoch !== (state.data.contextEpoch || 0) &&
+          !isResumedPinnedStatusReadCandidate(state.data.jobs[job.id])
         )
           fail("DOCUMENT_CHANGED", "Context changed after final preparation");
         for (const input of (job && job.request.inputFiles) || []) {
