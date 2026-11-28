@@ -32,6 +32,67 @@ const scopedQuery = {
   query: { kind: "component", scope: { component: "root" } },
 };
 
+test("only a proven singleton query uses the bound SDK receiver", () => {
+  const bound = planCameraAlias(attr(scopedQuery));
+  assert.equal(bound.rootQuery, true);
+  assert.equal(bound.receiver, "design");
+  assert.equal(bound.acceptsRaw, false);
+  assert.deepEqual(bound.contextMembers, []);
+  assert.deepEqual(bound.contextTypingMembers, []);
+  for (const raw of [
+    attr({ query: { ...scopedQuery.query, expect: 1 } }),
+    attr({ query: { ...scopedQuery.query, filters: { name: "part" } } }),
+    '{"query":{"kind":"face","kind":"component","scope":{"component":"root"}}}',
+    '{"query":{"kind":"component","scope":{"component":"r oot"}}}',
+  ])
+    assert.equal(planCameraAlias(raw).rootQuery, false, raw);
+  assert.equal(
+    planCameraAlias('"another"', [{ name: "another", raw: attr(scopedQuery) }])
+      .rootQuery,
+    false,
+  );
+});
+
+test("bound root query checks and erases without any context or generic resolver", async () => {
+  const plan = planCameraAlias(attr(scopedQuery));
+  const target = planCameraSaveContext({});
+  const local = (r: { filename: string }) => ({
+    ...r,
+    filename: path.relative(root, path.resolve(r.filename)),
+  });
+  const artifact: PreparedPythonArtifact = prepareCanonicalRegisteredPayload(
+    root,
+    [...h.definitions, ...target.definitions, ...plan.definitions],
+    [...refs, ...target.references, ...plan.references.map(local)],
+    ["adsk", "adsk.fusion", ...plan.roots],
+    {},
+    {
+      id: "wrapper",
+      filename: "<fmcad-wrapper>",
+      role: "wrapper",
+      source: "def run(_context: str):\n    pass\n",
+    },
+    {},
+    plan.typingReferences.map(local),
+  );
+  const wire: string = eraseRegisteredPython(root, artifact.script);
+  assert.deepEqual(
+    [...wire.matchAll(/^def (\w+)\(/gm)].map((m) => m[1]).sort(),
+    [
+      "_cad_xyz",
+      "_camera_bound_root_query",
+      "_camera_default_tolerance",
+      "run",
+    ],
+  );
+  assert.doesNotMatch(wire, /\b(?:json|CadContext|_entity_\w+)\b/);
+  const report = await checker.check({
+    artifact,
+    context: { kind: "raw", entrypoint: "run" },
+  });
+  assert.equal(report.status, "passed", JSON.stringify(report.diagnostics));
+});
+
 const cases: {
   label: string;
   raw: string;
@@ -128,6 +189,15 @@ const cases: {
     status: "ok",
     check: true,
     absent: [
+      "_entity_query",
+      "_entity_resolve_reference",
+      "_entity_candidates",
+      "_entity_filters",
+      "_entity_describe",
+      "_entity_reasons",
+      "_entity_stats",
+      "_entity_interval",
+      "_entity_geometry",
       "_entity_neighbors",
       "_entity_attribute_owner",
       "_entity_frame_target",
@@ -151,6 +221,18 @@ const cases: {
       "_entity_matrix",
       "point",
     ],
+  },
+  {
+    label: "bound root with reordered keys",
+    raw: '{ "query": { "scope": {"component":"root"}, "kind":"component" }}',
+    status: "ok",
+    absent: ["_entity_query"],
+  },
+  {
+    label: "explicit failing root expectation still reports diagnostics",
+    raw: attr({ query: { ...scopedQuery.query, expect: 2 } }),
+    status: "ValueError",
+    absent: ["_camera_bound_root_query"],
   },
   {
     label: "unscoped component query",
@@ -392,7 +474,7 @@ for (const c of cases)
         id: "wrapper",
         filename: "<fmcad-wrapper>",
         role: "wrapper",
-        source: `def run(_context: str):\n    ctx = CadContext("Test")\n    print(${plan.resolverSymbol}(ctx, ${JSON.stringify(c.raw)}))\n`,
+        source: `def run(_context: str):\n    ctx = CadContext("Test")\n    print(${plan.resolverSymbol}(${plan.rootQuery ? "ctx.design, ctx.root, ctx.doc, ctx.assert_identity" : `ctx, ${JSON.stringify(c.raw)}`}))\n`,
       },
       {},
       [
@@ -416,6 +498,7 @@ for (const c of cases)
         attributes: c.attributes ?? {},
         aliasBindings: plan.aliasBindings,
         resolverSymbol: plan.resolverSymbol,
+        rootQuery: plan.rootQuery,
         script,
       }),
     });

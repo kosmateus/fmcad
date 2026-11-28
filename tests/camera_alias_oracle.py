@@ -52,7 +52,8 @@ def main():
         else:
             raise AssertionError('expected a continuation')
         return
-    actual = outcome(lambda: namespace[request['resolverSymbol']](ctx, raw))
+    resolve = namespace[request['resolverSymbol']]
+    actual = outcome(lambda: resolve(ctx.design, ctx.root, ctx.doc, ctx.assert_identity) if request['rootQuery'] else resolve(ctx, raw))
     if request.get('stale'):
         assert actual == ('RuntimeError', 'DOCUMENT_STATE_CHANGED: component alias changed during selection'), actual
     else:
@@ -60,6 +61,9 @@ def main():
         unittest.TestCase().assertEqual(actual, canonical)
         if request.get('status'):
             assert actual[0] == request['status'], actual
+        if request['rootQuery']:
+            from camera_root_query_effects import verify_root_query_effects
+            verify_root_query_effects(owner.core, resolve)
 
 
 if __name__ == '__main__':

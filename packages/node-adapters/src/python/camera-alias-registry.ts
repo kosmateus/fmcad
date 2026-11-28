@@ -3,6 +3,8 @@ const core = "assets/cad/core.py";
 const values = "runtime/python/fmcad/domain/values.py";
 const entity = "runtime/python/fmcad/adapters/fusion/entity.py";
 const alias = "runtime/python/fmcad/adapters/fusion/camera_alias.py";
+const boundRoot =
+  "runtime/python/fmcad/adapters/fusion/camera_bound_root_query.py";
 const fusion = "runtime/python/fmcad/adapters/fusion/values.py";
 const rootScope = "runtime/python/fmcad/adapters/fusion/camera_query_root.py";
 const parameterCollection =
@@ -192,6 +194,8 @@ interface Source {
 // Direct global dependencies, not whole source files. Context method calls
 // recurse through the private, per-invocation context rather than module imports.
 const needs: Readonly<Record<string, string>> = {
+  _camera_bound_root_query: "_camera_default_tolerance math _cad_xyz _cad_cast",
+  _camera_default_tolerance: "math",
   _camera_alias_name:
     "json _cad_cast _camera_component_candidates _camera_alias_target _camera_add_alias_match _cad_unique",
   _camera_alias_typed_name:
@@ -301,7 +305,19 @@ export function planCameraAlias(
     callbacks.add(symbol);
     return symbol;
   }
-  const resolverSymbol = route(raw);
+  // Strip JSON whitespace, never characters inside strings. Do not certify
+  // duplicate keys, extra options, or a different literal with similar values.
+  const compact = raw.replace(/"(?:\\.|[^"\\])*"|[ \t\r\n]+/g, (token) =>
+    token[0] === '"' ? token : "",
+  );
+  const rootQuery =
+    !observed.length &&
+    (compact ===
+      '{"query":{"kind":"component","scope":{"component":"root"}}}' ||
+      compact ===
+        '{"query":{"scope":{"component":"root"},"kind":"component"}}');
+  const resolverSymbol = rootQuery ? "_camera_bound_root_query" : route(raw);
+  if (rootQuery) callbacks.add(resolverSymbol);
   const seen = new Set<string>();
   const aliasBindings = observed.map(({ name, raw: text }) => {
     if (seen.has(name)) throw new Error("Duplicate camera alias observation");
@@ -351,12 +367,20 @@ export function planCameraAlias(
       });
     }
   }
-  for (const symbol of callbacks) source(alias, symbol);
+  for (const symbol of callbacks) source(rootQuery ? boundRoot : alias, symbol);
+  if (rootQuery) {
+    source(boundRoot, "_camera_default_tolerance");
+    source(core, "math", { importName: "math" });
+    source(values, "Callable", {
+      importName: "collections.abc.Callable",
+      onlyType: true,
+    });
+  }
   if (names) {
     source(alias, "_CameraAliasRequired");
     source(alias, "_camera_alias_target");
   }
-  if ([...callbacks].some((s) => s !== "_camera_alias_root"))
+  if (!rootQuery && [...callbacks].some((s) => s !== "_camera_alias_root"))
     source(core, "json", { importName: "json" });
   const contextMembers: string[] = [];
   const contextTypingMembers: string[] = [];
@@ -613,6 +637,9 @@ export function planCameraAlias(
     source(core, "_cad_items", { onlyType: true });
   return {
     resolverSymbol,
+    receiver: rootQuery ? ("design" as const) : ("context" as const),
+    acceptsRaw: !rootQuery,
+    rootQuery,
     aliasBindings,
     contextMembers,
     contextTypingMembers,
