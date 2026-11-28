@@ -515,6 +515,7 @@ function hasRuntimeRootEvidence(directory: string): boolean {
     .hasRuntimeRootEvidence(directory);
 }
 export async function serve(cfg: P.Config, options: P.Options = {}) {
+  cfg = { ...cfg, backend: cfg.backend ?? "addin" };
   const startupCapture = options.captureStartupObservation;
   if (startupCapture !== undefined && typeof startupCapture !== "function")
     fail("STARTUP_OBSERVATION_UNPROVEN", "Private startup observation capture must be a function");
@@ -624,7 +625,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "routing=direct is no longer supported; start the shared fmcad broker with routing=queue",
     );
   assertAutodeskFusionBackend(cfg);
-  cfg = { ...cfg, backend: cfg.backend ?? "addin" };
   const admissionCurlPath = cfg["curlPath"];
   if (admissionCurlPath !== undefined && typeof admissionCurlPath !== "string")
     fail("INVALID_CONFIG", "Admission curlPath must be a string when provided");

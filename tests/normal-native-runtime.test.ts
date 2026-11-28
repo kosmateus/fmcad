@@ -2,10 +2,36 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { discoverNormalNativeRuntime, mapWindowsRuntimePath } from "../packages/node-adapters/src/execution/normal-native-runtime";
 import { physicalBrokerPortsFromEnvironment } from "../packages/node-adapters/src/execution/physical-generation-profile";
 import { PhysicalGenerationProvisionError } from "../packages/node-adapters/src/execution/physical-generation-provision";
+import { DEFAULT_ADDIN_SETTINGS } from "../packages/core/src/domain/config";
+
+test("public broker composition discovers the default addin backend before any SDK startup", async t => {
+  const f = fixture(t);
+  const load = createRequire(path.resolve(__dirname, "../../src/queue-broker.js"));
+  const module = load.resolve("./dist/node-adapters/execution/normal-native-runtime");
+  load(module);
+  const original = load.cache[module]!.exports;
+  const profile = process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+  delete process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"];
+  t.after(() => {
+    load.cache[module]!.exports = original;
+    if (profile !== undefined) process.env["FMCAD_PHYSICAL_OPERATOR_PROFILE"] = profile;
+  });
+  load.cache[module]!.exports = {
+    async discoverNormalNativeRuntime(directory: string) {
+      assert.equal(directory, f.root);
+      throw new Error("DEFAULT_NATIVE_DISCOVERY_REACHED");
+    },
+  };
+  const broker = load(path.resolve(__dirname, "../../src/queue-broker.js")) as typeof import("../src/composition/queue-broker");
+  // No ownership confirmation: even a regression cannot proceed to the SDK.
+  await assert.rejects(broker.serve(DEFAULT_ADDIN_SETTINGS, { dir: f.root }), /DEFAULT_NATIVE_DISCOVERY_REACHED/);
+  assert.equal(fs.existsSync(path.join(f.root, "broker.lock")), false);
+});
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "normal-discovery-"));
