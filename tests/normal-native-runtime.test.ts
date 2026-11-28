@@ -19,8 +19,8 @@ function fixture(t: test.TestContext) {
   const config = {
     kind: "fmcad-normal-native-runtime", version: 1,
     installedForkDirectory: "C:\\AddIns\\AutodeskFusionMCP",
-    provisionPath: "C:\\Local\\fmcad\\addin-admission\\normal-provisions\\current.json",
-    nativePrivateDirectory: "C:\\Local\\fmcad\\addin-admission\\clients",
+    provisionPath: "C:\\Local\\AutodeskFusionMCP\\physical\\normal-provisions\\current.json",
+    nativePrivateDirectory: "C:\\Local\\AutodeskFusionMCP\\physical\\clients",
     descriptor: {
       handoffId: "normal-start-instance-epoch",
       generation: { instance: "instance", epoch: "epoch" },

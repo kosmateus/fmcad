@@ -11,7 +11,7 @@ const powershell = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.ex
 const discoverPaths = `
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-$directory = Join-Path $env:LOCALAPPDATA 'fmcad\\addin-admission'
+$directory = Join-Path $env:LOCALAPPDATA 'AutodeskFusionMCP\\physical'
 $file = Join-Path $directory 'normal-runtime.json'
 if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-Output 'null'; exit 0 }
 $config = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
@@ -85,7 +85,7 @@ export async function discoverNormalNativeRuntime(
   const mappedInstalled = mapPath(installed);
   const nativePython = text(metadata["nativePython"]);
   const localAppData = text(metadata["localAppData"]);
-  const nativeDirectory = path.win32.join(localAppData, "fmcad", "addin-admission");
+  const nativeDirectory = path.win32.join(localAppData, "AutodeskFusionMCP", "physical");
   const provisionPath = text(config["provisionPath"]);
   const nativePrivateDirectory = text(config["nativePrivateDirectory"]);
   if (path.win32.dirname(provisionPath) !== path.win32.join(nativeDirectory, "normal-provisions") ||
