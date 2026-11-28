@@ -16,7 +16,7 @@ To run the full public fmcad selection flow through `fs-cli`:
 node scripts/integration/swarm-camera.cjs run OWNED-PIN.json NEW-EVIDENCE-DIR [component]
 ```
 
-`SWARM_CLI` optionally selects the executable. The runner writes each fresh request before submitting it, uses `get` for that request, and leaves all evidence in the new directory. The existing fmcad host handles private alias observations and pins the next program to the original document. On success `camera-result.json` contains the validated final snapshot. On an unknown outcome, inspect the recorded request ID rather than submitting it again.
+`SWARM_CLI` optionally selects the executable. Set `SWARM_DIRECTORY` to pass the same `--directory PATH` to every `execute` and `get`; otherwise `fs-cli` uses its default. The runner writes each fresh request before submitting it, uses `get` for that request, and leaves all evidence in the new directory. The existing fmcad host handles private alias observations and pins the next program to the original document. On success `camera-result.json` contains the validated final snapshot. On an unknown outcome, inspect the recorded request ID rather than submitting it again.
 
 Offline test with a built swarm checkout and its installed SDK type definitions:
 

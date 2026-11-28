@@ -3,6 +3,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
 const { execFileSync } = require("node:child_process");
+const { spawnSync } = require("node:child_process");
+const { mkdtempSync, writeFileSync, readFileSync, rmSync } = require("node:fs");
+const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const {
   prepareCamera,
@@ -16,6 +19,53 @@ const runPython = (source) =>
     ["-I", "-S", "-B", join(__dirname, "fixtures/swarm-camera-python.py")],
     { input: source, encoding: "utf8" },
   );
+
+test("runner sends execute and get to the same configured directory without splitting its path", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "camera runner "));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cli = join(dir, "capture.cjs"),
+    log = join(dir, "calls"),
+    evidence = join(dir, "evidence");
+  writeFileSync(
+    cli,
+    `#!/usr/bin/env node
+const fs=require("node:fs"), args=process.argv.slice(2);
+fs.appendFileSync(process.env.CALLS,JSON.stringify(args)+"\\n");
+const first=args[0]==="execute";
+const requestId=first?JSON.parse(fs.readFileSync(args[1])).requestId:args[1];
+console.log(JSON.stringify({requestId,id:"same-job",state:first?"queued":"failed"}));
+`,
+    { mode: 0o700 },
+  );
+  const run = spawnSync(
+    process.execPath,
+    [
+      join(__dirname, "../scripts/integration/swarm-camera.cjs"),
+      "run",
+      join(__dirname, "fixtures/swarm-camera-document.json"),
+      evidence,
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, SWARM_DIRECTORY: dir, SWARM_CLI: cli, CALLS: log },
+    },
+  );
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /failed; do not resubmit/);
+  const [submit, get, ...others] = readFileSync(log, "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((s) => JSON.parse(s));
+  const { requestId } = JSON.parse(readFileSync(submit[1], "utf8"));
+  assert.deepEqual(submit, [
+    "execute",
+    join(evidence, requestId + ".json"),
+    "--directory",
+    dir,
+  ]);
+  assert.deepEqual(get, ["get", requestId, "--directory", dir]);
+  assert.equal(others.length, 0);
+});
 
 test("fresh pinned raw requests use source definitions, without a legacy broker envelope", () => {
   const saved = { ...pin, fileId: "file-from-test", version: 1 };

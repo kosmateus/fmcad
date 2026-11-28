@@ -146,13 +146,21 @@ async function main([mode, pinFile, output, ...rest]) {
   const document = JSON.parse(readFileSync(pinFile, "utf8"));
   if (mode === "prepare") return save(output, prepareCamera(document, rest[0]));
   mkdirSync(output, { mode: 0o700 }); // New, private directory; keep original requests after failures.
+  const directoryArgs =
+    process.env.SWARM_DIRECTORY === undefined
+      ? []
+      : ["--directory", process.env.SWARM_DIRECTORY];
   const cli = (...args) =>
     JSON.parse(
-      execFileSync(process.env.SWARM_CLI || "fs-cli", args, {
-        encoding: "utf8",
-        timeout: 60000,
-        maxBuffer: 4 * 1024 * 1024,
-      }),
+      execFileSync(
+        process.env.SWARM_CLI || "fs-cli",
+        [...args, ...directoryArgs],
+        {
+          encoding: "utf8",
+          timeout: 60000,
+          maxBuffer: 4 * 1024 * 1024,
+        },
+      ),
     );
   const result = await runCamera(document, rest[0], async (request) => {
     const file = join(output, request.requestId + ".json");
