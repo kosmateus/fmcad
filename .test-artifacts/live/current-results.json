@@ -1,5 +1,17 @@
 {
   "latestRegisteredCameraMatrix": {
+    "source":"e52c4189061a7a0225e8b4d2ad3f085fd0a15bb6",
+    "broker":"7de1280762dbc5cf241130beb46bd35ec9709e1a7613b19c2c5cb08c14e9e4a6",
+    "native":"76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
+    "transport":"ADDIN 8765","targetedOffline":{"passed":8,"total":8},
+    "publicReads":{"PASS":7,"FAIL":0,"NOTRUN":0,"RUNNING":0,"UNKNOWN":0},
+    "cliReads":6,"mcpReads":1,"verifiedPhysicalScripts":13,
+    "changedDecodedStagesAfterNormalizingDocumentPins":["registry-chain#2","registry-chain#3"],
+    "nestedAliasPythonBytes":[4681,10235,8951],
+    "docId":"3f32ddc0-28c2-49e4-89cb-c40384aca6d8","cleanup":"CLOSED",
+    "review":"REQUESTED","evidence":".test-artifacts/camera-ba3e732c-0639-4f6f-af44-e0b86d601f54/review/manifest.json"
+  },
+  "registeredCameraMatrixR5": {
     "source":"f076f7c2e5caa4bb2ce527a0a50f5b1584681e8a",
     "broker":"a43286f2d5c462cd074f1dcf99888c558b1c2680aef6b1b3a3508e871805d6ec",
     "native":"76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
@@ -10,7 +22,7 @@
     "physicalPythonBytes":{"tokenAliasTwice":[4686,8576],"plainName":[4679,8273],"root":[6793],"nestedAlias":[4681,10457,8951],"query":[4681,10462],"mcpDocumentOnly":[6462]},
     "readback":"All seven camera states equal; finite and valid snapshot; verified document creationId",
     "docId":"d8ac6679-7500-45ff-a709-7d778f000760","cleanup":"CLOSED",
-    "review":"REQUESTED",
+    "review":{"PASS":11,"FAIL":2,"totalPhysicalScripts":13,"findings":"Nested alias stages 2 and 3 changed name enumeration order; stage 2 also retained unused kind distinctions."},
     "evidence":".test-artifacts/camera-00878bbb-c9b7-4451-9246-3adc6260d104/review/manifest.json"
   },
   "previousRegisteredCameraMatrix": {

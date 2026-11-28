@@ -1,4 +1,10 @@
+## Kamera `e52c4189` — zachowana kolejność błędów SDK
+
+Docelowe testy offline **8/8 PASS**. Live **7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (sześć odczytów CLI, jeden publicznym MCP); wszystkie zwróciły identyczny stan kamery. Dokument zamknięto. Potwierdzono **13/13 fizycznych skryptów**. Po podstawieniu pinów dokumentu tylko dwa programy różnią się od poprzedniego przebiegu: etapy 2 i 3 zagnieżdżonej nazwy (10 235 i 8 951 B wraz z wrapperem). Zostały przekazane do ponownej oceny. [Manifest](../camera-ba3e732c-0639-4f6f-af44-e0b86d601f54/review/manifest.json).
+
 ## Kamera `f076f7c2` — ponowny odczyt w Fusion po pięciu poprawkach minimalności
+
+Wynik przeglądu `f076f7c2`: 11/13 PASS, 2/13 FAIL. Uwagi dotyczą wyłącznie etapów 2 i 3 zagnieżdżonej nazwy.
 
 **62/62 testy offline PASS. 7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (siedem rzeczywistych odczytów: sześć CLI, jeden MCP; ADDIN 8765). Każdy zwrócił ten sam sprawdzony stan kamery. Własny dokument zamknięto, a jego brak na liście potwierdzono. **13/13** fizycznych skryptów jest powiązanych z potwierdzeniami wykonania. Końcowe skrypty tokenu mają po 8 576 B, dwa etapy zagnieżdżonej nazwy 10 457 i 8 951 B, a zapytanie 10 462 B zamiast 50 212 B. Wysłano [manifest tego przebiegu](../camera-00878bbb-c9b7-4451-9246-3adc6260d104/review/manifest.json) do ponownego niezależnego przeglądu.
 
