@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "tests/test-wire-capture.test.ts",
     "tests/controlled-ingress-window.test.ts",
     "tests/controlled-startup-policy.test.ts",
     "tests/fixed-startup-observation.test.ts",

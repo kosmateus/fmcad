@@ -8,6 +8,7 @@ import type {
 } from "./contracts.js";
 import { unknownOutcome } from "./contracts.js";
 import { requestSettings } from "./http.js";
+import { captureTestWire } from "./test-wire-capture.js";
 
 const quote = (value: string) =>
   '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
@@ -131,6 +132,7 @@ export async function postCurl(
 ): Promise<Response> {
   const body = Buffer.from(JSON.stringify(payload));
   const settings = requestSettings(server, options, body);
+  captureTestWire(body);
   const response = await requestCurlBytes(
     {
       url: server.url,
