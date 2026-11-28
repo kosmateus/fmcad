@@ -266,6 +266,9 @@ function preparedCore(
     source += `
 
 if _CAD_TYPE_CHECKING:
+    def _qd_capture(app: "adsk.core.Application",
+                    selector: dict[str, object] | None) -> dict[str, object]: ...
+
     def _entity_resolve_reference(ctx: "CadContext", ref: "JsonObject",
                                   kind: str | None = None) -> "adsk.core.Base": ...
 
