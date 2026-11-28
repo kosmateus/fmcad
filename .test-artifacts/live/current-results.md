@@ -1,3 +1,7 @@
+## Kamera `f076f7c2` — ponowny odczyt w Fusion po pięciu poprawkach minimalności
+
+**62/62 testy offline PASS. 7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (siedem rzeczywistych odczytów: sześć CLI, jeden MCP; ADDIN 8765). Każdy zwrócił ten sam sprawdzony stan kamery. Własny dokument zamknięto, a jego brak na liście potwierdzono. **13/13** fizycznych skryptów jest powiązanych z potwierdzeniami wykonania. Końcowe skrypty tokenu mają po 8 576 B, dwa etapy zagnieżdżonej nazwy 10 457 i 8 951 B, a zapytanie 10 462 B zamiast 50 212 B. Wysłano [manifest tego przebiegu](../camera-00878bbb-c9b7-4451-9246-3adc6260d104/review/manifest.json) do ponownego niezależnego przeglądu.
+
 ## Kamera `b55ec56` — odczyt w Fusion przez CLI i MCP
 
 **7 PASS / 0 FAIL / 0 NOTRUN / 0 RUNNING / 0 UNKNOWN** (mianownik: siedem publicznych odczytów kamery). Sześć odczytów wykonano przez CLI, jeden przez publiczne MCP; wszystkie dotarły do Fusion przez ADDIN 8765. Dwa odczyty aliasu tokenowego, zwykła nazwa, `root`, alias zagnieżdżony, zapytanie i odczyt bez komponentu zwróciły identyczny stan. Sprawdzono tożsamość dokumentu, jednostki i parametry kamery. Własny dokument zamknięto i potwierdzono jego brak na liście.

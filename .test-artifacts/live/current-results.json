@@ -1,5 +1,19 @@
 {
   "latestRegisteredCameraMatrix": {
+    "source":"f076f7c2e5caa4bb2ce527a0a50f5b1584681e8a",
+    "broker":"a43286f2d5c462cd074f1dcf99888c558b1c2680aef6b1b3a3508e871805d6ec",
+    "native":"76bcaa451e91b2801edf3bfa70dc89d83f51da9c230e245c00619c9b0768fffb",
+    "transport":"ADDIN 8765",
+    "offline":{"passed":62,"total":62},
+    "publicReads":{"PASS":7,"FAIL":0,"NOTRUN":0,"RUNNING":0,"UNKNOWN":0},
+    "cliReads":6,"mcpReads":1,"verifiedPhysicalScripts":13,
+    "physicalPythonBytes":{"tokenAliasTwice":[4686,8576],"plainName":[4679,8273],"root":[6793],"nestedAlias":[4681,10457,8951],"query":[4681,10462],"mcpDocumentOnly":[6462]},
+    "readback":"All seven camera states equal; finite and valid snapshot; verified document creationId",
+    "docId":"d8ac6679-7500-45ff-a709-7d778f000760","cleanup":"CLOSED",
+    "review":"REQUESTED",
+    "evidence":".test-artifacts/camera-00878bbb-c9b7-4451-9246-3adc6260d104/review/manifest.json"
+  },
+  "previousRegisteredCameraMatrix": {
     "source":"b55ec56d220ae05338e312948872137dac1a8017",
     "broker":"d91ae2225cc96a6c325de83107e5b3408b8bc464cd8bde42fb39ad0060a7a573",
     "transport":"ADDIN 8765",
